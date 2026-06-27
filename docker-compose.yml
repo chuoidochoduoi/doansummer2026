@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres-db-doan
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: vh692004
+      POSTGRES_DB: msme_database
+    ports:
+      - "5433:5432" # Đổi cổng bên ngoài máy host thành 5433
+    volumes:
+      - postgres_data_new:/var/lib/postgresql/data # Đổi tên volume để ép tạo mới
+
+volumes:
+  postgres_data_new: # Khởi tạo volume mới tinh
