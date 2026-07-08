@@ -1,0 +1,121 @@
+package org.example.doansummer2026.service;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
+import lombok.RequiredArgsConstructor;
+import org.example.doansummer2026.config.JwtService;
+import org.example.doansummer2026.dto.auth.AuthResponse;
+import org.example.doansummer2026.dto.auth.ChangePasswordRequest;
+import org.example.doansummer2026.dto.auth.LoginRequest;
+import org.example.doansummer2026.dto.auth.RefreshRequest;
+import org.example.doansummer2026.dto.auth.RegisterRequest;
+import org.example.doansummer2026.exception.BadRequestException;
+import org.example.doansummer2026.model.Account;
+import org.example.doansummer2026.model.Profile;
+import org.example.doansummer2026.enums.Role;
+import org.example.doansummer2026.repository.ProfileRepository;
+import org.example.doansummer2026.service.interfaces.AuthServiceInterface;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
+
+@Service
+@Transactional
+@RequiredArgsConstructor
+public class AuthService implements AuthServiceInterface {
+
+    private final AccountService accountService;
+    private final ProfileRepository profileRepository;
+    private final JwtService jwtService;
+    private final OtpService otpService;
+    private final PasswordEncoder passwordEncoder;
+    public AuthResponse register(RegisterRequest req) {
+        // Xac thuc OTP truoc khi dang ky
+        if (!otpService.verifyOtp(req.phone(), req.otp())) {
+            throw new BadRequestException("OTP khong hop le hoac da het han");
+        }
+
+        // Tao account voi role PATIENT
+        Account account = accountService.create(req.phone(), req.password(), Role.PATIENT);
+
+        // Tao profile lien ket
+        Profile profile = Profile.builder()
+                .account(account)
+                .fullName("User " + UUID.randomUUID().toString().substring(0, 8))
+                .phone(req.phone())
+                .build();
+        profileRepository.save(profile);
+        return buildAuthResponse(account);
+    }
+
+    public AuthResponse login(LoginRequest req) {
+        Account account = accountService.findByUsername(req.username());
+
+        if (!passwordEncoder.matches(req.password(), account.getPasswordHash())) {
+            throw new BadRequestException("Username hoac password khong dung");
+        }
+
+        if (!account.getIsActive()) {
+            throw new BadRequestException("Tai khoan da bi khoa");
+        }
+
+        if (!account.getIsActive()) {
+            throw new BadRequestException("Tai khoan da bi khoa");
+        }
+        return buildAuthResponse(account);
+    }
+
+    public AuthResponse refresh(RefreshRequest req) {
+        try {
+            Claims claims = jwtService.parseClaims(req.refreshToken());
+            String type = claims.get("type", String.class);
+            if (!"refresh".equals(type)) {
+                throw new BadRequestException("Token khong phai refresh token");
+            }
+            String username = claims.getSubject();
+            Account account = accountService.findByUsername(username);
+            if (!account.getIsActive()) {
+                throw new BadRequestException("Tai khoan da bi khoa");
+            }
+            return buildAuthResponse(account);
+        } catch (JwtException | IllegalArgumentException ex) {
+            throw new BadRequestException("Refresh token khong hop le hoac het han");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public Account currentAccount() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getName() == null) {
+            throw new BadRequestException("Chua xac thuc");
+        }
+        return accountService.findByUsername(auth.getName());
+    }
+
+    public void changeMyPassword(ChangePasswordRequest req) {
+        Account me = currentAccount();
+        accountService.changePassword(me.getAccountId(), req.oldPassword(), req.newPassword());
+    }
+
+    private AuthResponse buildAuthResponse(Account account) {
+        String access = jwtService.generateAccessToken(account);
+        String refresh = jwtService.generateRefreshToken(account);
+        return new AuthResponse(
+                access,
+                refresh,
+                "Bearer",
+                jwtService.getAccessExpirationMs() / 1000L,
+                new AuthResponse.AccountInfo(
+                        account.getAccountId(),
+                        account.getUsername(),
+                        account.getRole().name())
+        );
+    }
+}
