@@ -8,6 +8,7 @@ import java.util.UUID;
 public record InvoiceItemResponse(
         UUID itemId,
         UUID serviceId,
+        String serviceName,
         String serviceSnapshot,
         String serviceCodeSnapshot,
         BigDecimal unitPrice,
@@ -17,7 +18,8 @@ public record InvoiceItemResponse(
 ) {
     public static InvoiceItemResponse from(InvoiceItem i) {
         UUID serviceId = i.getService() != null ? i.getService().getServiceId() : null;
-        return new InvoiceItemResponse(i.getItemId(), serviceId, i.getServiceSnapshot(),
+        String serviceName = i.getService() != null ? i.getService().getName() : i.getServiceSnapshot();
+        return new InvoiceItemResponse(i.getItemId(), serviceId, serviceName, i.getServiceSnapshot(),
                 i.getServiceCodeSnapshot(), i.getUnitPrice(), i.getQuantity(),
                 i.getLineTotal(), i.getNote());
     }

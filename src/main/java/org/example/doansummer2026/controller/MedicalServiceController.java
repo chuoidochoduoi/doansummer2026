@@ -32,7 +32,7 @@ public class MedicalServiceController {
     private final MedicalServiceService service;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PageResponse<MedicalServiceResponse>> list(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) UUID categoryId,
@@ -56,7 +56,7 @@ public class MedicalServiceController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<MedicalServiceResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }

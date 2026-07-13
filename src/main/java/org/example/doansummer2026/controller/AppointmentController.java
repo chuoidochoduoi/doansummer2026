@@ -14,6 +14,7 @@ import org.example.doansummer2026.dto.appointment.AppointmentResponse;
 import org.example.doansummer2026.dto.appointment.AppointmentUpdateRequest;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.service.AppointmentService;
+import org.example.doansummer2026.service.AuthService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -36,6 +37,7 @@ import java.util.UUID;
 public class AppointmentController {
 
     private final AppointmentService service;
+    private final AuthService authService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('RECEPTIONIST','ADMIN')")
@@ -85,13 +87,15 @@ public class AppointmentController {
     /**
      * Check-in tu appointment: tao ra CustomerVisit + Invoice.
      * - QueueTicket se duoc tao khi Invoice duoc thanh toan.
+     * - issuedById se tu dong lay tu staff dang dang nhap neu khong truyen.
      */
     @PostMapping("/{id}/check-in")
     @PreAuthorize("hasAnyRole('RECEPTIONIST','ADMIN')")
     public ResponseEntity<AppointmentCheckInResponse> checkIn(
             @PathVariable UUID id,
             @Valid @RequestBody AppointmentCheckInRequest req) {
-        return RestResponses.ok(service.checkIn(new AppointmentCheckInRequest(id, req.serviceIds(), req.issuedById())));
+        UUID issuedById = req.issuedById() != null ? req.issuedById() : authService.currentStaffId();
+        return RestResponses.ok(service.checkIn(new AppointmentCheckInRequest(id, req.serviceIds(), issuedById)));
     }
 
     /**

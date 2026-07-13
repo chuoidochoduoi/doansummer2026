@@ -6,7 +6,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
@@ -20,23 +19,20 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID>, JpaSpec
 
     boolean existsByInvoiceCode(String invoiceCode);
 
-    default Page<Invoice> search(UUID customerId, InvoiceStatus status,
-                                  LocalDate from, LocalDate to, Pageable pageable) {
-        Specification<Invoice> spec = (root, query, cb) -> cb.conjunction();
+    @org.springframework.data.jpa.repository.Query(
+            "SELECT DISTINCT i FROM Invoice i " +
+            "LEFT JOIN FETCH i.items it LEFT JOIN FETCH it.service " +
+            "WHERE (:customerId IS NULL OR i.customer.profileId = :customerId) " +
+            "AND (:status IS NULL OR i.status = :status) " +
+            "AND (:from IS NULL OR i.issueDate >= :from) " +
+            "AND (:to IS NULL OR i.issueDate <= :to)"
+    )
+    Page<Invoice> search(@org.springframework.data.repository.query.Param("customerId") UUID customerId,
+                         @org.springframework.data.repository.query.Param("status") InvoiceStatus status,
+                         @org.springframework.data.repository.query.Param("from") LocalDate from,
+                         @org.springframework.data.repository.query.Param("to") LocalDate to,
+                         Pageable pageable);
 
-        if (customerId != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("customer").get("profileId"), customerId));
-        }
-        if (status != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
-        }
-        if (from != null) {
-            spec = spec.and((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("issueDate"), from));
-        }
-        if (to != null) {
-            spec = spec.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("issueDate"), to));
-        }
-
-        return findAll(spec, pageable);
-    }
+    @org.springframework.data.jpa.repository.Query("SELECT i FROM Invoice i LEFT JOIN FETCH i.items it LEFT JOIN FETCH it.service WHERE i.id = :id")
+    Optional<Invoice> findById(@org.springframework.data.repository.query.Param("id") UUID id);
 }

@@ -33,7 +33,7 @@ import org.example.doansummer2026.enums.SystemRole;
 /**
  * Thong tin nhan vien: khoa, chuyen khoa, vi tri, giay phep hanh nghe.
  * - staffCode sinh tu dong khi persist (dinh dang STF-yyyyMMdd-XXXX).
- * - Moi Profile STAFF co 1 StaffInfo.
+ * - Moi Profile RECEPTIONIST/CASHIER/NURSE/DOCTOR co 1 StaffInfo.
  */
 @Entity
 @Table(name = "staff_info")

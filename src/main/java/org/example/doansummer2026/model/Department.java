@@ -2,6 +2,8 @@ package org.example.doansummer2026.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -18,6 +20,7 @@ import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
 import java.util.UUID;
+import org.example.doansummer2026.enums.DepartmentType;
 
 @Entity
 @Table(name = "department")
@@ -43,4 +46,9 @@ public class Department extends BaseEntity {
     @Size(max = 500)
     @Column(length = 500)
     private String description;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "department_type", nullable = false, length = 20)
+    @Builder.Default
+    private DepartmentType departmentType = DepartmentType.EXAMINATION;
 }

@@ -20,12 +20,14 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
- * Filter doc Authorization: Bearer ... , verify JWT va set SecurityContext.
- * Khi token loi -> tra 401 JSON thay vi mac dinh cua Spring.
+ * Filter đọc Authorization: Bearer ... , verify JWT và set SecurityContext.
+ * Khi token lỗi -> trả về 401 JSON thay vì mặc định của Spring.
  */
 @Component
 @RequiredArgsConstructor
@@ -52,13 +54,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             Claims claims = jwtService.parseClaims(token);
             String username = claims.getSubject();
             String role = claims.get("role", String.class);
+            String sid = claims.get("sid", String.class);
+
             if (username == null || role == null) {
                 writeError(response, "Token khong hop le", request.getRequestURI());
                 return;
             }
+
+            // Authentication info: username + staffId (nếu có)
+            Map<String, Object> principal = new HashMap<>();
+            principal.put("username", username);
+            if (sid != null) {
+                principal.put("staffId", sid);
+            }
+
             UsernamePasswordAuthenticationToken auth =
                     new UsernamePasswordAuthenticationToken(
-                            username,
+                            principal,
                             null,
                             List.of(new SimpleGrantedAuthority("ROLE_" + role)));
             SecurityContextHolder.getContext().setAuthentication(auth);

@@ -5,7 +5,6 @@ import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.dto.customerVisit.CustomerVisitCreateRequest;
 import org.example.doansummer2026.dto.customerVisit.CustomerVisitResponse;
 import org.example.doansummer2026.dto.customerVisit.CustomerVisitUpdateRequest;
-import org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Appointment;
 import org.example.doansummer2026.model.CustomerVisit;
@@ -24,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -88,22 +87,25 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
             appointmentRepo.save(appointment);
         }
 
-        // Tao InvoiceItem cho moi service (gia mac dinh tu MedicalService)
-        List<InvoiceItemCreateRequest> items = new java.util.ArrayList<>();
-        for (UUID serviceId : req.serviceIds()) {
-            MedicalService service = serviceRepo.findById(serviceId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
-            items.add(new org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest(
-                    serviceId,
-                    service.getName(),
-                    null, // serviceCodeSnapshot
-                    service.getPrice(),
-                    1,
-                    null
-            ));
+        // Tao InvoiceItem cho moi service (gia mac dinh tu MedicalService) - optional
+        List<org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest> items = new ArrayList<>();
+        List<UUID> serviceIds = req.serviceIds();
+        if (serviceIds != null && !serviceIds.isEmpty()) {
+            for (UUID serviceId : serviceIds) {
+                MedicalService service = serviceRepo.findById(serviceId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
+                items.add(new org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest(
+                        serviceId,
+                        service.getName(),
+                        null, // serviceCodeSnapshot
+                        service.getPrice(),
+                        1,
+                        null
+                ));
+            }
         }
 
-        // Tao Invoice DRAFT khi tao CustomerVisit (co items)
+        // Tao Invoice PENDING khi tao CustomerVisit (co items)
         var invoiceResponse = invoiceService.create(new org.example.doansummer2026.dto.invoice.InvoiceCreateRequest(
                 customer.getProfileId(),
                 saved.getVisitId(),
@@ -113,7 +115,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
                 null,
                 null,
                 req.issuedById(),
-                items
+                items.isEmpty() ? null : items
         ));
         return CustomerVisitResponse.from(saved, invoiceResponse.invoiceId());
     }

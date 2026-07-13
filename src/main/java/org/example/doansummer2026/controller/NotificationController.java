@@ -33,7 +33,7 @@ public class NotificationController {
     private final NotificationService service;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PageResponse<NotificationResponse>> list(
             @RequestParam(required = false) UUID recipientId,
             @RequestParam(required = false) NotificationStatus status,
@@ -48,20 +48,20 @@ public class NotificationController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<NotificationResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<NotificationResponse> create(@Valid @RequestBody NotificationCreateRequest req) {
         NotificationResponse created = service.create(req);
         return RestResponses.created("/api/v1/notifications/{id}", created.notificationId(), created);
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<NotificationResponse> update(@PathVariable UUID id,
                                                        @Valid @RequestBody NotificationUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));

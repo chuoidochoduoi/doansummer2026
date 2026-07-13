@@ -19,6 +19,7 @@ public interface InvoiceServiceInterface {
     InvoiceResponse update(UUID id, InvoiceUpdateRequest req);
     InvoiceResponse issue(UUID id);
     InvoiceResponse cancel(UUID id);
+    InvoiceResponse pay(UUID id);
     void delete(UUID id);
     Invoice findById(UUID id);
     void recalculatePaidAmount(UUID id);

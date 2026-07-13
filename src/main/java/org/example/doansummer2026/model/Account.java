@@ -24,7 +24,7 @@ import org.example.doansummer2026.enums.Role;
 /**
  * Tai khoan dang nhap he thong.
  * - username duy nhat, luu BCrypt password o passwordHash.
- * - role (PATIENT/STAFF/ADMIN) dung cho Spring Security hasRole(...).
+ * - role (PATIENT/RECEPTIONIST/CASHIER/NURSE/DOCTOR/ADMIN) dung cho Spring Security hasRole(...).
  * - isActive = false <=> tai khoan bi vo hieu hoa (khoa mem).
  *
  * KHONG extend BaseEntity vi da co isActive lam co khoa mem rieng,

@@ -37,7 +37,7 @@ import org.example.doansummer2026.enums.InvoiceStatus;
  * - subtotal: tong tien hang (sum InvoiceItem.unitPrice * quantity).
  * - discount: giam gia (voucher, bao hiem...). Co the am neu la phu thu.
  * - totalAmount = subtotal - discount. Co the khac voi tong cac transaction da thanh toan (neu con no).
- * - status: flow DRAFT -> ISSUED -> PAID (hoac CANCELLED/REFUNDED).
+ * - status: flow PENDING -> PAID (hoac CANCELLED).
  * - Quan he:
  *   - customer: Profile (bat buoc).
  *   - visit: CustomerVisit (optional - neu hoa don cho 1 lan kham cu the).
@@ -119,7 +119,7 @@ public class Invoice extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default
-    private InvoiceStatus status = InvoiceStatus.DRAFT;
+    private InvoiceStatus status = InvoiceStatus.PENDING;
 
     @Column(columnDefinition = "TEXT")
     private String note;
@@ -132,4 +132,5 @@ public class Invoice extends BaseEntity {
             cascade = {jakarta.persistence.CascadeType.PERSIST, jakarta.persistence.CascadeType.MERGE})
     @Builder.Default
     private List<InvoiceItem> items = new ArrayList<>();
-}
+
+    }

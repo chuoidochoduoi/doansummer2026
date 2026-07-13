@@ -18,6 +18,7 @@ public interface MedicalRecordServiceInterface {
     MedicalRecordResponse create(MedicalRecordCreateRequest req);
     MedicalRecordResponse update(UUID id, MedicalRecordUpdateRequest req);
     MedicalRecordResponse complete(UUID id);
+    MedicalRecordResponse complete(UUID id, MedicalRecordUpdateRequest req);
     void delete(UUID id);
     MedicalRecord findById(UUID id);
 }

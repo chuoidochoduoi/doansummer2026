@@ -30,9 +30,9 @@ public class StaffController {
 
     private final StaffService staffService;
 
-    /** STAFF/ADMIN xem danh sach. */
+    /** ADMIN xem danh sach. */
     @GetMapping
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PageResponse<StaffResponse>> search(
             @RequestParam(required = false) UUID departmentId,
             @RequestParam(required = false) UUID specializationId,
@@ -42,12 +42,12 @@ public class StaffController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<StaffResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(staffService.get(id));
     }
 
-    /** ADMIN tao nhan vien moi (kem account STAFF + profile). */
+    /** ADMIN tao nhan vien moi (kem account + profile). */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<StaffResponse> create(@RequestBody StaffCreateRequest req) {

@@ -62,12 +62,22 @@ public class InvoiceService implements InvoiceServiceInterface {
     public PageResponse<InvoiceResponse> search(UUID customerId, InvoiceStatus status,
                                                  LocalDate from, LocalDate to, Pageable pageable) {
         Page<Invoice> page = repo.search(customerId, status, from, to, pageable);
-        return PageResponse.from(page, i -> InvoiceResponse.from(i, true));
+        return PageResponse.from(page, i -> {
+            List<UUID> txIds = transactionRepo.findByInvoice_InvoiceId(i.getInvoiceId()).stream()
+                    .map(t -> t.getTransactionId())
+                    .toList();
+            return InvoiceResponse.from(i, txIds);
+        });
     }
 
     @Transactional(readOnly = true)
     public InvoiceResponse get(UUID id) {
-        return InvoiceResponse.from(findById(id), true);
+        Invoice i = repo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
+        List<UUID> txIds = transactionRepo.findByInvoice_InvoiceId(id).stream()
+                .map(t -> t.getTransactionId())
+                .toList();
+        return InvoiceResponse.from(i, txIds);
     }
 
     public InvoiceResponse create(InvoiceCreateRequest req) {
@@ -100,7 +110,7 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .tax(req.tax() != null ? req.tax() : BigDecimal.ZERO)
                 .totalAmount(BigDecimal.ZERO)
                 .paidAmount(BigDecimal.ZERO)
-                .status(InvoiceStatus.DRAFT)
+                .status(InvoiceStatus.PENDING)
                 .note(req.note())
                 .issuedBy(issuedBy)
                 .items(new ArrayList<>())
@@ -112,13 +122,13 @@ public class InvoiceService implements InvoiceServiceInterface {
             }
         }
         recalculateTotals(saved);
-        return InvoiceResponse.from(repo.save(saved), true);
+        return InvoiceResponse.from(repo.save(saved));
     }
 
     public InvoiceResponse update(UUID id, InvoiceUpdateRequest req) {
         Invoice i = findById(id);
-        if (i.getStatus() != InvoiceStatus.DRAFT) {
-            throw new ConflictException("Chi sua duoc hoa don o trang thai DRAFT; hien tai: " + i.getStatus());
+        if (i.getStatus() != InvoiceStatus.PENDING) {
+            throw new ConflictException("Chi sua duoc hoa don o trang thai PENDING; hien tai: " + i.getStatus());
         }
         if (req.dueDate() != null) i.setDueDate(req.dueDate());
         if (req.discount() != null) i.setDiscount(req.discount());
@@ -132,24 +142,24 @@ public class InvoiceService implements InvoiceServiceInterface {
             }
         }
         recalculateTotals(i);
-        return InvoiceResponse.from(repo.save(i), true);
+        return InvoiceResponse.from(repo.save(i));
     }
 
     public InvoiceResponse issue(UUID id) {
         Invoice i = findById(id);
-        if (i.getStatus() != InvoiceStatus.DRAFT) {
-            throw new ConflictException("Chi xuat hoa don o trang thai DRAFT; hien tai: " + i.getStatus());
+        if (i.getStatus() != InvoiceStatus.PENDING) {
+            throw new ConflictException("Chi xuat hoa don o trang thai PENDING; hien tai: " + i.getStatus());
         }
         if (i.getItems().isEmpty()) {
             throw new BadRequestException("Khong the xuat hoa don khong co dong nao");
         }
-        i.setStatus(InvoiceStatus.ISSUED);
-        return InvoiceResponse.from(repo.save(i), true);
+        i.setStatus(InvoiceStatus.PENDING);
+        return InvoiceResponse.from(repo.save(i));
     }
 
     public InvoiceResponse cancel(UUID id) {
         Invoice i = findById(id);
-        if (i.getStatus() == InvoiceStatus.PAID || i.getStatus() == InvoiceStatus.REFUNDED) {
+        if (i.getStatus() == InvoiceStatus.PAID) {
             throw new ConflictException("Khong the huy hoa don da thanh toan: " + i.getStatus());
         }
         boolean hasSuccess = transactionRepo.findByInvoice_InvoiceId(id).stream()
@@ -158,7 +168,20 @@ public class InvoiceService implements InvoiceServiceInterface {
             throw new ConflictException("Khong the huy - da co giao dich thanh cong");
         }
         i.setStatus(InvoiceStatus.CANCELLED);
-        return InvoiceResponse.from(repo.save(i), true);
+        return InvoiceResponse.from(repo.save(i));
+    }
+
+    public InvoiceResponse pay(UUID id) {
+        Invoice i = findById(id);
+        if (i.getStatus() == InvoiceStatus.PAID) {
+            throw new ConflictException("Hoa don da thanh toan: " + i.getStatus());
+        }
+        if (i.getStatus() == InvoiceStatus.CANCELLED) {
+            throw new ConflictException("Khong the thanh toan hoa don da huy: " + i.getStatus());
+        }
+        i.setPaidAmount(i.getTotalAmount());
+        i.setStatus(InvoiceStatus.PAID);
+        return InvoiceResponse.from(repo.save(i));
     }
 
     public void delete(UUID id) {
@@ -181,16 +204,14 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .map(t -> t.getAmount())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         i.setPaidAmount(paid);
-        if (i.getStatus() == InvoiceStatus.CANCELLED || i.getStatus() == InvoiceStatus.REFUNDED) {
+        if (i.getStatus() == InvoiceStatus.CANCELLED) {
             return;
         }
         int cmp = paid.compareTo(i.getTotalAmount());
         if (cmp >= 0) {
             i.setStatus(InvoiceStatus.PAID);
-        } else if (paid.compareTo(BigDecimal.ZERO) > 0) {
-            i.setStatus(InvoiceStatus.PARTIALLY_PAID);
-        } else if (i.getStatus() == InvoiceStatus.PAID || i.getStatus() == InvoiceStatus.PARTIALLY_PAID) {
-            i.setStatus(InvoiceStatus.ISSUED);
+        }  else if (i.getStatus() == InvoiceStatus.PAID ) {
+            i.setStatus(InvoiceStatus.PENDING);
         }
         Invoice saved = repo.save(i);
         // Tu dong tao QueueTicket cho moi InvoiceItem khi Invoice duoc thanh toan

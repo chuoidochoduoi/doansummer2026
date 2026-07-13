@@ -14,6 +14,7 @@ import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.model.Profile;
 import org.example.doansummer2026.enums.Role;
 import org.example.doansummer2026.repository.ProfileRepository;
+import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.service.interfaces.AuthServiceInterface;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -24,6 +25,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -36,6 +38,7 @@ public class AuthService implements AuthServiceInterface {
     private final JwtService jwtService;
     private final OtpService otpService;
     private final PasswordEncoder passwordEncoder;
+    private final StaffInfoRepository staffRepo;
     public AuthResponse register(RegisterRequest req) {
         // Xac thuc OTP truoc khi dang ky
         if (!otpService.verifyOtp(req.phone(), req.otp())) {
@@ -93,10 +96,20 @@ public class AuthService implements AuthServiceInterface {
     @Transactional(readOnly = true)
     public Account currentAccount() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth.getName() == null) {
+        if (auth == null || auth.getPrincipal() == null) {
             throw new BadRequestException("Chua xac thuc");
         }
-        return accountService.findByUsername(auth.getName());
+        String username;
+        Object principal = auth.getPrincipal();
+        if (principal instanceof Map<?, ?> map) {
+            username = (String) map.get("username");
+        } else {
+            username = auth.getName();
+        }
+        if (username == null) {
+            throw new BadRequestException("Chua xac thuc");
+        }
+        return accountService.findByUsername(username);
     }
 
     public void changeMyPassword(ChangePasswordRequest req) {
@@ -104,9 +117,29 @@ public class AuthService implements AuthServiceInterface {
         accountService.changePassword(me.getAccountId(), req.oldPassword(), req.newPassword());
     }
 
+    /** Lay staffId cua user dang dang nhap (null neu khong phai staff). */
+    @Transactional(readOnly = true)
+    public UUID currentStaffId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getPrincipal() == null) {
+            return null;
+        }
+        Object principal = auth.getPrincipal();
+        if (principal instanceof Map<?, ?> map) {
+            String sid = (String) map.get("staffId");
+            return sid != null ? UUID.fromString(sid) : null;
+        }
+        return null;
+    }
+
     private AuthResponse buildAuthResponse(Account account) {
-        String access = jwtService.generateAccessToken(account);
-        String refresh = jwtService.generateRefreshToken(account);
+        // Tim staffId tu account (chi co cho staff, patient tra ve null)
+        UUID staffId = staffRepo.findByProfile_Account_Username(account.getUsername())
+                .map(staff -> staff.getStaffId())
+                .orElse(null);
+
+        String access = jwtService.generateAccessToken(account, staffId);
+        String refresh = jwtService.generateRefreshToken(account, staffId);
         return new AuthResponse(
                 access,
                 refresh,

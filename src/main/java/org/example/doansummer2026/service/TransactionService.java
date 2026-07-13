@@ -53,8 +53,8 @@ public class TransactionService implements TransactionServiceInterface {
     public TransactionResponse create(TransactionCreateRequest req) {
         Invoice invoice = invoiceRepo.findById(req.invoiceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + req.invoiceId()));
-        if (invoice.getStatus() != InvoiceStatus.ISSUED && invoice.getStatus() != InvoiceStatus.PARTIALLY_PAID) {
-            throw new ConflictException("Chi tao giao dich cho hoa don ISSUED/PARTIALLY_PAID; hien tai: "
+        if (invoice.getStatus() != InvoiceStatus.PENDING) {
+            throw new ConflictException("Chi tao giao dich cho hoa don PENDING; hien tai: "
                     + invoice.getStatus());
         }
         StaffInfo receivedBy = null;
@@ -100,10 +100,7 @@ public class TransactionService implements TransactionServiceInterface {
         return update(id, new TransactionUpdateRequest(TransactionStatus.FAILED, null, null, null));
     }
 
-    public TransactionResponse refund(UUID id) {
-        return update(id, new TransactionUpdateRequest(TransactionStatus.REFUNDED, null, null, null));
-    }
-
+    
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
             throw new ResourceNotFoundException("Giao dich khong ton tai: " + id);
@@ -122,7 +119,6 @@ public class TransactionService implements TransactionServiceInterface {
         boolean ok = switch (from) {
             case PENDING -> to == TransactionStatus.SUCCESS || to == TransactionStatus.FAILED
                     || to == TransactionStatus.CANCELLED;
-            case SUCCESS -> to == TransactionStatus.REFUNDED;
             default -> false;
         };
         if (!ok) throw new BadRequestException("Khong the chuyen trang thai tu " + from + " sang " + to);

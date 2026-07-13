@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.util.Date;
+import java.util.UUID;
 
 /**
  * Sinh và xác thực JWT (access + refresh).
@@ -42,20 +43,29 @@ public class JwtService {
     }
 
     public String generateAccessToken(Account account) {
-        return buildToken(account, accessExpirationMs, "access");
+        return buildToken(account, accessExpirationMs, "access", null);
+    }
+
+    public String generateAccessToken(Account account, UUID staffId) {
+        return buildToken(account, accessExpirationMs, "access", staffId);
     }
 
     public String generateRefreshToken(Account account) {
-        return buildToken(account, refreshExpirationMs, "refresh");
+        return buildToken(account, refreshExpirationMs, "refresh", null);
     }
 
-    private String buildToken(Account account, long expirationMs, String type) {
+    public String generateRefreshToken(Account account, UUID staffId) {
+        return buildToken(account, refreshExpirationMs, "refresh", staffId);
+    }
+
+    private String buildToken(Account account, long expirationMs, String type, UUID staffId) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
         return Jwts.builder()
                 .subject(account.getUsername())
                 .claim("uid", account.getAccountId().toString())
                 .claim("role", account.getRole().name())
+                .claim("sid", staffId != null ? staffId.toString() : null)
                 .claim("type", type)
                 .issuedAt(now)
                 .expiration(expiry)
@@ -77,5 +87,11 @@ public class JwtService {
 
     public Role extractRole(Claims claims) {
         return Role.valueOf(claims.get("role", String.class));
+    }
+
+    /** Trích xuất staffId từ claims (null nếu không phải staff). */
+    public UUID extractStaffId(Claims claims) {
+        String sid = claims.get("sid", String.class);
+        return sid != null ? UUID.fromString(sid) : null;
     }
 }

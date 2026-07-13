@@ -2,6 +2,7 @@ package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
+import org.example.doansummer2026.dto.testRequest.TestRequestBatchCreateRequest;
 import org.example.doansummer2026.dto.testRequest.TestRequestCreateRequest;
 import org.example.doansummer2026.dto.testRequest.TestRequestResponse;
 import org.example.doansummer2026.dto.testRequest.TestRequestUpdateRequest;
@@ -30,6 +31,7 @@ import org.example.doansummer2026.service.interfaces.TestRequestServiceInterface
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -139,5 +141,36 @@ public class TestRequestService implements TestRequestServiceInterface {
         if (req.conclusion() != null) r.setConclusion(req.conclusion());
         TestResult saved = resultRepo.save(r);
         return TestResultResponse.from(saved);
+    }
+
+    /**
+     * Tao nhieu TestRequest cung luc - bac si chon nhieu dich vu xet nghiem.
+     */
+    public List<TestRequestResponse> createBatch(TestRequestBatchCreateRequest req) {
+        MedicalRecord record = recordRepo.findById(req.medicalRecordId())
+                .orElseThrow(() -> new ResourceNotFoundException("Ho so benh an khong ton tai"));
+        Department dept = departmentRepo.findById(req.performingDepartmentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Khoa khong ton tai"));
+        StaffInfo requestedBy = staffRepo.findById(req.requestedById())
+                .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai"));
+
+        List<TestRequest> toCreate = req.serviceIds().stream()
+                .map(serviceId -> {
+                    MedicalService service = serviceRepo.findById(serviceId)
+                            .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
+                    return TestRequest.builder()
+                            .medicalRecord(record)
+                            .service(service)
+                            .performingDepartment(dept)
+                            .description(req.description())
+                            .requestedBy(requestedBy)
+                            .status(TestRequestStatus.PENDING)
+                            .build();
+                })
+                .toList();
+
+        return repo.saveAll(toCreate).stream()
+                .map(TestRequestResponse::from)
+                .toList();
     }
 }

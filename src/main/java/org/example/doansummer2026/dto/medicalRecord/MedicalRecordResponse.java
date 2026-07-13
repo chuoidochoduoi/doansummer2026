@@ -2,6 +2,7 @@ package org.example.doansummer2026.dto.medicalRecord;
 
 import org.example.doansummer2026.model.MedicalRecord;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
+import org.example.doansummer2026.dto.vitalSigns.VitalSignsResponse;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,14 +22,14 @@ public record MedicalRecordResponse(
         MedicalRecordStatus status,
         LocalDateTime completedAt,
         LocalDateTime createdAt,
-        UUID vitalSignsId,
+        VitalSignsResponse vitalSigns,  // Thong tin chi tiet vital signs
         List<UUID> testRequestIds
 ) {
     public static MedicalRecordResponse from(MedicalRecord r, boolean includeNested) {
         UUID visitId = r.getVisit() != null ? r.getVisit().getVisitId() : null;
         UUID doctorId = r.getDoctor() != null ? r.getDoctor().getStaffId() : null;
         String doctorName = r.getDoctor() != null ? r.getDoctor().getStaffCode() : null;
-        UUID vitalId = r.getVitalSigns() != null ? r.getVitalSigns().getVitalId() : null;
+        VitalSignsResponse vitalSigns = r.getVitalSigns() != null ? VitalSignsResponse.from(r.getVitalSigns()) : null;
         List<UUID> testIds = includeNested
                 ? r.getTestRequests().stream().map(t -> t.getTestRequestId()).toList()
                 : List.of();
@@ -36,6 +37,6 @@ public record MedicalRecordResponse(
                 r.getChiefComplaint(), r.getClinicalFindings(), r.getDiagnosis(),
                 r.getPrescriptionNote(), r.getConclusion(), r.getPatientInstruction(),
                 r.getStatus(), r.getCompletedAt(), r.getCreatedAt(),
-                vitalId, testIds);
+                vitalSigns, testIds);
     }
 }

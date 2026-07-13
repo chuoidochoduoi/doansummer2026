@@ -18,8 +18,15 @@ public interface QueueTicketServiceInterface {
     QueueTicketResponse create(QueueTicketCreateRequest req);
     QueueTicketResponse update(UUID id, QueueTicketUpdateRequest req);
     QueueTicketResponse call(UUID id);
+    QueueTicketResponse startExam(UUID id);
     QueueTicketResponse complete(UUID id);
     QueueTicketResponse skip(UUID id);
     void delete(UUID id);
     QueueTicket findById(UUID id);
+
+    /** Lay phieu dang kham (IN_PROGRESS) cua phong - chi co 1 benh nhan/phong. */
+    QueueTicketResponse getInprogressByDepartment(UUID departmentId);
+
+    /** Lay tat ca phieu dang kham (IN_PROGRESS) - cho phong kham da khoa. */
+    PageResponse<QueueTicketResponse> getAllInprogress(Pageable pageable);
 }

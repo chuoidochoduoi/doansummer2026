@@ -32,7 +32,7 @@ import java.util.UUID;
  * Tao / cap nhat / xoa / truy van StaffInfo.
  * Quy trinh tao (1 transaction):
  *   1. validate unique (CCCD, license, phone, email, username)
- *   2. tao Account(role=STAFF) - password BCrypt
+ *   2. tao Account(role duoc chi dinh) - password BCrypt
  *   3. tao Profile lien ket Account
  *   4. tao StaffInfo lien ket Profile, Department, Specialization
  */

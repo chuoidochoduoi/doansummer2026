@@ -193,7 +193,7 @@ public class AppointmentService implements AppointmentServiceInterface {
         }
         CustomerVisit savedVisit = visitRepo.save(visit);
 
-        // Tao Invoice DRAFT thay vi QueueTicket
+        // Tao Invoice PENDING thay vi QueueTicket
         UUID customerId = savedVisit.getCustomer() != null ? savedVisit.getCustomer().getProfileId() : null;
         var invoiceResponse = invoiceService.create(new org.example.doansummer2026.dto.invoice.InvoiceCreateRequest(
                 customerId,
@@ -222,24 +222,16 @@ public class AppointmentService implements AppointmentServiceInterface {
     /**
      * Check-in truc tiep cho khach vang lai (khong co appointment).
      * - Tao CustomerVisit + Invoice, QueueTicket se duoc tao khi thanh toan.
+     * - serviceIds (optional): Neu null hoac rong se tao invoice rong.
      */
     public GuestCheckInResponse guestCheckIn(GuestCheckInRequest req) {
-        // Validate services
-        Set<MedicalService> services = new HashSet<>();
-        for (UUID serviceId : req.serviceIds()) {
-            MedicalService service = serviceRepo.findById(serviceId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
-            services.add(service);
-        }
-
-
         CustomerVisit visit = CustomerVisit.builder()
                 .checkInTime(LocalDateTime.now())
                 .status(VisitStatus.CHECKED_IN)
                 .build();
         CustomerVisit savedVisit = visitRepo.save(visit);
 
-        // Tao Invoice DRAFT thay vi QueueTicket
+        // Tao invoice rong cho guest check-in
         var invoiceResponse = invoiceService.create(new org.example.doansummer2026.dto.invoice.InvoiceCreateRequest(
                 null,
                 savedVisit.getVisitId(),

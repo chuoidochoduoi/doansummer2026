@@ -19,7 +19,6 @@ public interface TransactionServiceInterface {
     TransactionResponse update(UUID id, TransactionUpdateRequest req);
     TransactionResponse confirm(UUID id);
     TransactionResponse fail(UUID id);
-    TransactionResponse refund(UUID id);
     void delete(UUID id);
     Transaction findById(UUID id);
 }

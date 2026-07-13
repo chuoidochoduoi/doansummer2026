@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
 
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,6 +19,9 @@ import java.util.UUID;
 public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UUID>, JpaSpecificationExecutor<MedicalRecord> {
 
     Optional<MedicalRecord> findByVisit_VisitId(UUID visitId);
+
+    @Query("SELECT m FROM MedicalRecord m LEFT JOIN FETCH m.vitalSigns LEFT JOIN FETCH m.testRequests WHERE m.visit.visitId = :visitId")
+    Optional<MedicalRecord> findByVisit_VisitIdWithVitalSigns(@Param("visitId") UUID visitId);
 
     default Page<MedicalRecord> search(UUID doctorId, MedicalRecordStatus status,
                                         LocalDateTime from, LocalDateTime to, Pageable pageable) {

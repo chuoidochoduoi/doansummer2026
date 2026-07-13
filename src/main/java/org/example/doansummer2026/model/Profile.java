@@ -32,7 +32,7 @@ import org.example.doansummer2026.enums.BloodType;
 
 /**
  * Ho so ca nhan: thong tin lien lac, nhom mau, ngay sinh, ...
- * - Moi Account co 0..1 Profile (PATIENT khong bat buoc, STAFF bat buoc khi tao qua StaffService).
+ * - Moi Account co 0..1 Profile (PATIENT khong bat buoc, RECEPTIONIST/CASHIER/NURSE/DOCTOR bat buoc khi tao qua StaffService).
  * - BHQT/di ung se tach bang rieng o buoc sau.
  */
 @Entity
@@ -52,7 +52,7 @@ public class Profile extends BaseEntity {
     private UUID profileId;
 
     /** Owning side cua quan he 1-1 voi Account (nullable cho khach vang lai). */
-    @OneToOne(fetch = FetchType.LAZY)
+    @OneToOne(fetch = FetchType.LAZY, optional = true)
     @JoinColumn(name = "account_id")
     private Account account;
     @Size(max = 100)

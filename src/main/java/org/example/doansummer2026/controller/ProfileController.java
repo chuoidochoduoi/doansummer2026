@@ -50,16 +50,16 @@ public class ProfileController {
         return RestResponses.ok(profileService.update(current.profileId(), req));
     }
 
-    /** STAFF/ADMIN xem chi tiet profile bat ky. */
+    /** ADMIN xem chi tiet profile bat ky. */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','ADMIN')")
     public ResponseEntity<ProfileResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(profileService.get(id));
     }
 
-    /** STAFF/ADMIN tim kiem. */
+    /** ADMIN tim kiem. */
     @GetMapping
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PageResponse<ProfileResponse>> search(
             @RequestParam(required = false) String keyword,
             Pageable pageable) {
@@ -79,7 +79,7 @@ public class ProfileController {
 
     /** ADMIN cap nhat profile bat ky. */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ProfileResponse> update(@PathVariable UUID id,
                                                   @RequestBody ProfileUpdateRequest req) {
         return RestResponses.ok(profileService.update(id, req));

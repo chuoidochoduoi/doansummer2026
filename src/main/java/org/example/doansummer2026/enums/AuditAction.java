@@ -10,5 +10,5 @@ public enum AuditAction {
     EXPORT,
     IMPORT,
     VIEW,           // Truy cap du lieu nhay cam
-    STATUS_CHANGE   // Doi trang thai (VD: Invoice DRAFT -> ISSUED)
+    STATUS_CHANGE   // Doi trang thai (VD: Invoice PENDING -> PAID)
 }

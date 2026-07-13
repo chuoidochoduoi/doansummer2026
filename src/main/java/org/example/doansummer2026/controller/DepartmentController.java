@@ -7,6 +7,7 @@ import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.dto.department.DepartmentCreateRequest;
 import org.example.doansummer2026.dto.department.DepartmentResponse;
 import org.example.doansummer2026.dto.department.DepartmentUpdateRequest;
+import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.service.DepartmentService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -30,13 +32,15 @@ public class DepartmentController {
     private final DepartmentService service;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
-    public ResponseEntity<PageResponse<DepartmentResponse>> list(Pageable pageable) {
-        return RestResponses.ok(service.list(pageable));
+    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','ADMIN')")
+    public ResponseEntity<PageResponse<DepartmentResponse>> list(
+            @RequestParam(required = false) DepartmentType departmentType,
+            Pageable pageable) {
+        return RestResponses.ok(service.list(departmentType, pageable));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<DepartmentResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }

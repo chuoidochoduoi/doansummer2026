@@ -29,34 +29,34 @@ public class StaffScheduleTemplateController {
     private final StaffScheduleTemplateService service;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ScheduleTemplateResponse> create(@Valid @RequestBody ScheduleTemplateRequest req) {
         ScheduleTemplateResponse created = service.create(req);
         return RestResponses.created("/api/v1/schedule-templates/{id}", created.templateId(), created);
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ScheduleTemplateResponse> update(@PathVariable UUID id,
                                                             @RequestBody ScheduleTemplateRequest req) {
         return RestResponses.ok(service.update(id, req));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<ScheduleTemplateResponse>> listByStaff(@RequestParam UUID staffId) {
         return RestResponses.ok(service.listByStaff(staffId));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ScheduleTemplateResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }

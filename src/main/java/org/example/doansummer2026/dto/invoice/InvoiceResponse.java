@@ -30,7 +30,11 @@ public record InvoiceResponse(
         List<InvoiceItemResponse> items,
         List<UUID> transactionIds
 ) {
-    public static InvoiceResponse from(Invoice i, boolean includeItems) {
+    public static InvoiceResponse from(Invoice i) {
+        return from(i, List.of());
+    }
+
+    public static InvoiceResponse from(Invoice i, List<UUID> transactionIds) {
         UUID customerId = i.getCustomer() != null ? i.getCustomer().getProfileId() : null;
         String customerName = i.getCustomer() != null ? i.getCustomer().getFullName() : null;
         UUID visitId = i.getVisit() != null ? i.getVisit().getVisitId() : null;
@@ -38,15 +42,10 @@ public record InvoiceResponse(
         UUID issuedById = i.getIssuedBy() != null ? i.getIssuedBy().getStaffId() : null;
         String issuedByName = i.getIssuedBy() != null ? i.getIssuedBy().getStaffCode() : null;
         BigDecimal balance = i.getTotalAmount().subtract(i.getPaidAmount());
-        List<InvoiceItemResponse> items = includeItems
-                ? i.getItems().stream().map(InvoiceItemResponse::from).toList()
-                : List.of();
-        List<UUID> txIds = includeItems
-                ? i.getItems().stream().map(it -> it.getItemId()).toList()
-                : List.of();
+        List<InvoiceItemResponse> items = i.getItems().stream().map(InvoiceItemResponse::from).toList();
         return new InvoiceResponse(i.getInvoiceId(), i.getInvoiceCode(), customerId, customerName,
                 visitId, recordId, i.getIssueDate(), i.getDueDate(),
                 i.getSubtotal(), i.getDiscount(), i.getTax(), i.getTotalAmount(), i.getPaidAmount(),
-                balance, i.getStatus(), i.getNote(), issuedById, issuedByName, items, txIds);
+                balance, i.getStatus(), i.getNote(), issuedById, issuedByName, items, transactionIds);
     }
 }

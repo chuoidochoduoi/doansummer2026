@@ -8,6 +8,7 @@ import org.example.doansummer2026.dto.customerVisit.CustomerVisitCreateRequest;
 import org.example.doansummer2026.dto.customerVisit.CustomerVisitResponse;
 import org.example.doansummer2026.dto.customerVisit.CustomerVisitUpdateRequest;
 import org.example.doansummer2026.enums.VisitStatus;
+import org.example.doansummer2026.service.AuthService;
 import org.example.doansummer2026.service.CustomerVisitService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +32,7 @@ import java.util.UUID;
 public class CustomerVisitController {
 
     private final CustomerVisitService service;
+    private final AuthService authService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('RECEPTIONIST','ADMIN')")
@@ -52,7 +54,19 @@ public class CustomerVisitController {
     @PostMapping
     @PreAuthorize("hasAnyRole('RECEPTIONIST','ADMIN')")
     public ResponseEntity<CustomerVisitResponse> create(@Valid @RequestBody CustomerVisitCreateRequest req) {
-        CustomerVisitResponse created = service.create(req);
+        UUID issuedById = req.issuedById() != null ? req.issuedById() : authService.currentStaffId();
+        var updatedReq = new CustomerVisitCreateRequest(
+                req.customerId(),
+                req.appointmentId(),
+                req.serviceIds(),
+                issuedById,
+                req.guestFullName(),
+                req.guestPhone(),
+                req.guestAddress(),
+                req.guestDateOfBirth(),
+                req.guestGender()
+        );
+        CustomerVisitResponse created = service.create(updatedReq);
         return RestResponses.created("/api/v1/customer-visits/{id}", created.visitId(), created);
     }
 

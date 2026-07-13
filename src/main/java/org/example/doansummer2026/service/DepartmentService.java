@@ -5,6 +5,7 @@ import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.dto.department.DepartmentCreateRequest;
 import org.example.doansummer2026.dto.department.DepartmentResponse;
 import org.example.doansummer2026.dto.department.DepartmentUpdateRequest;
+import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Department;
@@ -31,6 +32,12 @@ public class DepartmentService implements DepartmentServiceInterface {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<DepartmentResponse> list(DepartmentType departmentType, Pageable pageable) {
+        Page<Department> page = repo.findAllByDepartmentType(departmentType, pageable);
+        return PageResponse.from(page, DepartmentResponse::from);
+    }
+
+    @Transactional(readOnly = true)
     public DepartmentResponse get(UUID id) {
         return DepartmentResponse.from(findById(id));
     }
@@ -42,6 +49,7 @@ public class DepartmentService implements DepartmentServiceInterface {
         Department d = Department.builder()
                 .name(req.name())
                 .description(req.description())
+                .departmentType(req.departmentType() != null ? req.departmentType() : DepartmentType.EXAMINATION)
                 .build();
         return DepartmentResponse.from(repo.save(d));
     }
@@ -55,6 +63,7 @@ public class DepartmentService implements DepartmentServiceInterface {
             d.setName(req.name());
         }
         if (req.description() != null) d.setDescription(req.description());
+        if (req.departmentType() != null) d.setDepartmentType(req.departmentType());
         return DepartmentResponse.from(repo.save(d));
     }
 
