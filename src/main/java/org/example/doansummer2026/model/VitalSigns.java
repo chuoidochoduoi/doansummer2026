@@ -75,3 +75,6 @@ public class VitalSigns extends BaseEntity {
     @JoinColumn(name = "recorded_by")
     private StaffInfo recordedBy;
 }
+
+
+

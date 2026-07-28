@@ -24,3 +24,6 @@ public record GuestCheckInRequest(
         Set<UUID> serviceIds,
         UUID issuedById
 ) {}
+
+
+

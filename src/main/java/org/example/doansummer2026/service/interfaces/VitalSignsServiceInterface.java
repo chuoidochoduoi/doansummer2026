@@ -15,3 +15,6 @@ public interface VitalSignsServiceInterface {
     void delete(UUID id);
     VitalSigns findById(UUID id);
 }
+
+
+

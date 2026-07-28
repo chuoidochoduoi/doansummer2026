@@ -31,6 +31,19 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
     @Query("SELECT COUNT(q) FROM QueueTicket q WHERE q.department.departmentId = :departmentId AND q.status IN (org.example.doansummer2026.enums.QueueStatus.WAITING, org.example.doansummer2026.enums.QueueStatus.CALLED)")
     long countWaitingByDepartment(@Param("departmentId") UUID departmentId);
 
+    /**
+     * Dem benh nhan cho xet nghiem (WAITING_FOR_TEST).
+     * Bay loi dau han cho bac si xet nghiem.
+     */
+    @Query("SELECT COUNT(q) FROM QueueTicket q WHERE q.department.departmentId = :departmentId AND q.status = org.example.doansummer2026.enums.QueueStatus.WAITING_FOR_TEST")
+    long countWaitingForTestByDepartment(@Param("departmentId") UUID departmentId);
+
+    /**
+     * Dem benh nhan da hoan thanh xet nghiem (TEST_DONE).
+     */
+    @Query("SELECT COUNT(q) FROM QueueTicket q WHERE q.department.departmentId = :departmentId AND q.status = org.example.doansummer2026.enums.QueueStatus.TEST_DONE")
+    long countTestDoneByDepartment(@Param("departmentId") UUID departmentId);
+
     Optional<QueueTicket> findTopByDepartment_DepartmentIdAndStatusOrderByCreatedAtAsc(
             @Param("departmentId") UUID departmentId,
             @Param("status") QueueStatus status);
@@ -60,8 +73,25 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
             @Param("status") QueueStatus status,
             Pageable pageable);
 
+    /**
+     * Lay danh sach cho phong, uu tien TEST_DONE/WAITING_FOR_TEST truoc WAITING/CALLED.
+     * Mac dinh lay ca 4 trang thai, sap xep TEST_DONE/WAITING_FOR_TEST len dau.
+     */
+    @Query("SELECT q FROM QueueTicket q WHERE q.department.departmentId = :departmentId " +
+           "AND q.workDate = :workDate " +
+           "AND q.status IN :statuses " +
+           "ORDER BY CASE WHEN q.status = org.example.doansummer2026.enums.QueueStatus.TEST_DONE THEN 0 " +
+                       "WHEN q.status = org.example.doansummer2026.enums.QueueStatus.WAITING_FOR_TEST THEN 1 " +
+                       "WHEN q.status = org.example.doansummer2026.enums.QueueStatus.WAITING THEN 2 " +
+                       "WHEN q.status = org.example.doansummer2026.enums.QueueStatus.CALLED THEN 3 " +
+                       "ELSE 4 END, q.createdAt ASC")
+    Page<QueueTicket> findWaitingPrioritized(@Param("departmentId") UUID departmentId,
+                                            @Param("workDate") LocalDate workDate,
+                                            @Param("statuses") List<QueueStatus> statuses,
+                                            Pageable pageable);
+
     default Page<QueueTicket> search(UUID departmentId, LocalDate workDate,
-                                      QueueStatus status, Pageable pageable) {
+                                     QueueStatus status, Pageable pageable) {
         Specification<QueueTicket> spec = (root, query, cb) -> cb.conjunction();
 
         if (departmentId != null) {
@@ -77,3 +107,6 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
         return findAll(spec, pageable);
     }
 }
+
+
+

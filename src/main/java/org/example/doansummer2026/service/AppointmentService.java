@@ -6,6 +6,7 @@ import org.example.doansummer2026.dto.appointment.AppointmentCheckInRequest;
 import org.example.doansummer2026.dto.appointment.AppointmentCheckInResponse;
 import org.example.doansummer2026.dto.appointment.GuestCheckInRequest;
 import org.example.doansummer2026.dto.appointment.GuestCheckInResponse;
+import org.example.doansummer2026.dto.appointment.GuestHistoryResponse;
 import org.example.doansummer2026.dto.appointment.AppointmentCreateRequest;
 import org.example.doansummer2026.dto.appointment.AppointmentGuestCreateRequest;
 import org.example.doansummer2026.dto.appointment.AppointmentResponse;
@@ -31,8 +32,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -68,8 +71,8 @@ public class AppointmentService implements AppointmentServiceInterface {
                 .orElseThrow(() -> new ResourceNotFoundException("Tai khoan khong ton tai: " + req.customerId()));
 
         // Kiem tra role co the dat lich kham
-        if (account.getRole() != Role.PATIENT && account.getRole() != Role.RECEPTIONIST) {
-            throw new BadRequestException("Only PATIENT and RECEPTIONIST can book appointments");
+        if (account.getRole() != Role.CUSTOMER && account.getRole() != Role.STAFF) {
+            throw new BadRequestException("Only CUSTOMER and STAFF can book appointments");
         }
 
         // Tim profile tu account
@@ -174,6 +177,8 @@ public class AppointmentService implements AppointmentServiceInterface {
             }
         }
 
+        repo.save(a); // Luu lai appointment voi services moi (neu co)
+
 
         // Tao CustomerVisit
         CustomerVisit visit;
@@ -193,7 +198,19 @@ public class AppointmentService implements AppointmentServiceInterface {
         }
         CustomerVisit savedVisit = visitRepo.save(visit);
 
-        // Tao Invoice PENDING thay vi QueueTicket
+        // Tao Invoice items tu cac services
+        var invoiceItems = services.stream()
+                .map(s -> new org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest(
+                        s.getServiceId(),
+                        s.getName(),           // serviceSnapshot
+                        s.getServiceCode(),     // serviceCodeSnapshot
+                        s.getPrice() != null ? s.getPrice() : BigDecimal.ZERO, // unitPrice
+                        1,                   // quantity
+                        null                   // note
+                ))
+                .toList();
+
+        // Tao Invoice
         UUID customerId = savedVisit.getCustomer() != null ? savedVisit.getCustomer().getProfileId() : null;
         var invoiceResponse = invoiceService.create(new org.example.doansummer2026.dto.invoice.InvoiceCreateRequest(
                 customerId,
@@ -204,7 +221,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                 null,
                 null,
                 req.issuedById(),
-                null
+                invoiceItems // Them items vao
         ));
 
         // Cap nhat appointment status
@@ -217,6 +234,20 @@ public class AppointmentService implements AppointmentServiceInterface {
     public Appointment findById(UUID id) {
         return repo.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Lich hen khong ton tai: " + id));
+    }
+
+    /**
+     * Kiem tra guest da tung den kham chua (theo phone).
+     * Tra ve danh sach cac appointment gan day cua guest.
+     */
+    @Transactional(readOnly = true)
+    public List<GuestHistoryResponse> getGuestHistoryByPhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return List.of();
+        }
+        return repo.findGuestAppointmentsByPhone(phone).stream()
+                .map(GuestHistoryResponse::from)
+                .toList();
     }
 
     /**
@@ -247,3 +278,6 @@ public class AppointmentService implements AppointmentServiceInterface {
         return GuestCheckInResponse.from(savedVisit, invoiceResponse.invoiceId(), req.guestFullName(), req.guestPhone());
     }
 }
+
+
+

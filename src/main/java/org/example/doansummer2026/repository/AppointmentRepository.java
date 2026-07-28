@@ -14,3 +14,6 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
     @EntityGraph("Appointment.withDetails")
     Optional<Appointment> findById(UUID id);
 }
+
+
+

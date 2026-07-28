@@ -19,3 +19,6 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
     Page<Account> findByRole(Role role, Pageable pageable);
 }
+
+
+

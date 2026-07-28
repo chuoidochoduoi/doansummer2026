@@ -59,7 +59,9 @@ public class AuthController {
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<AccountResponse> me() {
-        return RestResponses.ok(AccountResponse.from(authService.currentAccount()));
+        var account = authService.currentAccount();
+        var systemRole = authService.getCurrentSystemRole();
+        return RestResponses.ok(AccountResponse.from(account, systemRole));
     }
 
     /** Authenticated: doi mat khau -> 204 No Content. */
@@ -70,3 +72,6 @@ public class AuthController {
         return RestResponses.noContent();
     }
 }
+
+
+

@@ -21,4 +21,10 @@ public interface MedicalRecordServiceInterface {
     MedicalRecordResponse complete(UUID id, MedicalRecordUpdateRequest req);
     void delete(UUID id);
     MedicalRecord findById(UUID id);
+
+    /** Danh gia phong kham (1-5 sao). Chi ap dung cho EXAMINATION da hoan thanh. */
+    MedicalRecordResponse rate(UUID id, int ratingScore);
 }
+
+
+

@@ -23,6 +23,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
     List<Transaction> findByInvoice_InvoiceId(UUID invoiceId);
 
+    Optional<Transaction> findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(UUID invoiceId, TransactionStatus status);
+
     @Query(value = """
             SELECT t FROM Transaction t
             WHERE (:invoiceId IS NULL OR t.invoice.invoiceId = :invoiceId)
@@ -43,3 +45,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
                               @Param("to") LocalDateTime to,
                               Pageable pageable);
 }
+
+
+

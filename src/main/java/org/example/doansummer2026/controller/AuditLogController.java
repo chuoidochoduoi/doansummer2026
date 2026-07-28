@@ -31,7 +31,7 @@ public class AuditLogController {
     private final AuditLogService service;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<PageResponse<AuditLogResponse>> list(
             @RequestParam(required = false) UUID actorId,
             @RequestParam(required = false) AuditAction action,
@@ -43,7 +43,7 @@ public class AuditLogController {
     }
 
     @GetMapping("/by-entity")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<List<AuditLogResponse>> byEntity(
             @RequestParam String entityName,
             @RequestParam String entityId) {
@@ -57,3 +57,7 @@ public class AuditLogController {
         return RestResponses.created("/api/v1/audit-logs/{id}", created.auditId(), created);
     }
 }
+
+
+
+

@@ -17,3 +17,7 @@ public record NotificationCreateRequest(
         @Size(max = 50) String relatedEntity,
         UUID relatedEntityId
 ) {}
+
+
+
+

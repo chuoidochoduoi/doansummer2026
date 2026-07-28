@@ -7,6 +7,8 @@ public record StaffSummaryResponse(
         String staffCode,
         String fullName,
         String systemRole,
-        UUID departmentId,
         UUID specializationId
 ) {}
+
+
+

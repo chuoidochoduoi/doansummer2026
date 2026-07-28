@@ -33,7 +33,7 @@ public class QueueController {
     private final QueueTicketService service;
 
     @GetMapping("/queue")
-    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','RECEPTIONIST','ADMIN')")
     public ResponseEntity<PageResponse<QueueTicketResponse>> getQueue(
             @RequestParam(required = false) UUID departmentId,
             @RequestParam(required = false) String status,
@@ -52,10 +52,14 @@ public class QueueController {
     }
 
     @PutMapping("/v1/queue/{id}")
-    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','RECEPTIONIST','ADMIN')")
     public ResponseEntity<QueueTicketResponse> updateQueue(
             @PathVariable UUID id,
             @RequestBody QueueTicketUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
     }
 }
+
+
+
+

@@ -44,3 +44,6 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID>, JpaSp
         return findAll(spec, pageable);
     }
 }
+
+
+

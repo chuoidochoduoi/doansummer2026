@@ -9,6 +9,7 @@ import java.util.UUID;
 public record CustomerVisitResponse(
         UUID visitId,
         UUID customerId,
+        String patientCode,       // Ma benh nhan (phone)
         String customerName,
         UUID appointmentId,
         UUID invoiceId,
@@ -20,28 +21,35 @@ public record CustomerVisitResponse(
     public static CustomerVisitResponse from(CustomerVisit v) {
         UUID customerId = v.getCustomer() != null ? v.getCustomer().getProfileId() : null;
         String customerName = v.getCustomer() != null ? v.getCustomer().getFullName() : null;
+        String patientCode = v.getCustomer() != null ? v.getCustomer().getPhone() : null; // Phone lam ma benh nhan
 
         // Lay thong tin guest tu appointment neu la khach vang lai
         if (v.getAppointment() != null && Boolean.TRUE.equals(v.getAppointment().getIsGuest())) {
             customerName = v.getAppointment().getGuestFullName();
+            patientCode = v.getAppointment().getGuestPhone(); // Guest phone
         }
 
         UUID appointmentId = v.getAppointment() != null ? v.getAppointment().getAppointmentId() : null;
-        return new CustomerVisitResponse(v.getVisitId(), customerId, customerName, appointmentId,
+        return new CustomerVisitResponse(v.getVisitId(), customerId, patientCode, customerName, appointmentId,
                 null, v.getCheckInTime(), v.getCheckOutTime(), v.getStatus(), v.getCreatedAt());
     }
 
     public static CustomerVisitResponse from(CustomerVisit v, UUID invoiceId) {
         UUID customerId = v.getCustomer() != null ? v.getCustomer().getProfileId() : null;
         String customerName = v.getCustomer() != null ? v.getCustomer().getFullName() : null;
+        String patientCode = v.getCustomer() != null ? v.getCustomer().getPhone() : null; // Phone lam ma benh nhan
 
         // Lay thong tin guest tu appointment neu la khach vang lai
         if (v.getAppointment() != null && Boolean.TRUE.equals(v.getAppointment().getIsGuest())) {
             customerName = v.getAppointment().getGuestFullName();
+            patientCode = v.getAppointment().getGuestPhone(); // Guest phone
         }
 
         UUID appointmentId = v.getAppointment() != null ? v.getAppointment().getAppointmentId() : null;
-        return new CustomerVisitResponse(v.getVisitId(), customerId, customerName, appointmentId,
+        return new CustomerVisitResponse(v.getVisitId(), customerId, patientCode, customerName, appointmentId,
                 invoiceId, v.getCheckInTime(), v.getCheckOutTime(), v.getStatus(), v.getCreatedAt());
     }
 }
+
+
+

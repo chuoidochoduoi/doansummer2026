@@ -33,7 +33,7 @@ public class NotificationController {
     private final NotificationService service;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<PageResponse<NotificationResponse>> list(
             @RequestParam(required = false) UUID recipientId,
             @RequestParam(required = false) NotificationStatus status,
@@ -48,7 +48,7 @@ public class NotificationController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<NotificationResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
@@ -93,3 +93,7 @@ public class NotificationController {
         return RestResponses.noContent();
     }
 }
+
+
+
+

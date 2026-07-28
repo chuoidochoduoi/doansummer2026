@@ -14,3 +14,6 @@ public interface ServiceCategoryRepository extends JpaRepository<ServiceCategory
 
     Optional<ServiceCategory> findByName(String name);
 }
+
+
+

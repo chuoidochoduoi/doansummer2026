@@ -32,3 +32,6 @@ public record GuestCheckInResponse(
         );
     }
 }
+
+
+

@@ -16,3 +16,6 @@ public record ScheduleGenerateRequest(
         java.util.List<UUID> staffIds,
         Boolean overrideExisting
 ) {}
+
+
+

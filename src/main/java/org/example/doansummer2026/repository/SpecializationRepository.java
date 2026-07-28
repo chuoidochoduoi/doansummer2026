@@ -14,3 +14,6 @@ public interface SpecializationRepository extends JpaRepository<Specialization, 
 
     Optional<Specialization> findByName(String name);
 }
+
+
+

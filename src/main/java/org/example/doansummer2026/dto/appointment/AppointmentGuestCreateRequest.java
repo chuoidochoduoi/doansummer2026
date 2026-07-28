@@ -27,3 +27,6 @@ public record AppointmentGuestCreateRequest(
         TimeSlot timeSlot,
         Set<UUID> serviceIds
 ) {}
+
+
+

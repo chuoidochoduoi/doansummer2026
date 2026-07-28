@@ -14,3 +14,6 @@ public record AppointmentCheckInRequest(
         Set<UUID> serviceIds,
         UUID issuedById
 ) {}
+
+
+

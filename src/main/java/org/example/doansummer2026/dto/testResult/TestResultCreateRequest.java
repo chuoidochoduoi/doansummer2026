@@ -8,5 +8,10 @@ public record TestResultCreateRequest(
         @NotNull UUID testRequestId,
         String imageUrl,
         String conclusion,
+        String sampleId,
         @NotNull UUID performedById
 ) {}
+
+
+
+

@@ -20,3 +20,6 @@ public record InvoiceCreateRequest(
         UUID issuedById,
         List<InvoiceItemCreateRequest> items
 ) {}
+
+
+

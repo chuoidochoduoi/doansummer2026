@@ -89,3 +89,6 @@ public record QueueTicketResponse(
                 q.getWorkDate(), q.getQueueNumber(), q.getStatus(), q.getCalledAt(), q.getCompletedAt());
     }
 }
+
+
+

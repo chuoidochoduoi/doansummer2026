@@ -35,7 +35,7 @@ public class InvoiceController {
     private final InvoiceService service;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<PageResponse<InvoiceResponse>> list(
             @RequestParam(required = false) UUID customerId,
             @RequestParam(required = false) InvoiceStatus status,
@@ -46,39 +46,39 @@ public class InvoiceController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> create(@Valid @RequestBody InvoiceCreateRequest req) {
         InvoiceResponse created = service.create(req);
         return RestResponses.created("/api/v1/invoices/{id}", created.invoiceId(), created);
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> update(@PathVariable UUID id,
                                                     @Valid @RequestBody InvoiceUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
     }
 
     @PostMapping("/{id}/issue")
-    @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> issue(@PathVariable UUID id) {
         return RestResponses.ok(service.issue(id));
     }
 
     @PostMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> cancel(@PathVariable UUID id) {
         return RestResponses.ok(service.cancel(id));
     }
 
     @PostMapping("/{id}/pay")
-    @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> pay(@PathVariable UUID id) {
         return RestResponses.ok(service.pay(id));
     }
@@ -88,7 +88,7 @@ public class InvoiceController {
      * Trong môi trường thực tế sẽ gọi API PayOS SDK.
      */
     @PostMapping("/{id}/payos")
-    @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<?> payosMock(@PathVariable UUID id) {
         InvoiceResponse invoice = service.get(id);
         if (invoice.status() == InvoiceStatus.PAID) {
@@ -102,15 +102,19 @@ public class InvoiceController {
     }
 
     @GetMapping("/{id}/print")
-    @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> getPrintData(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
     }
 }
+
+
+
+

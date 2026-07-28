@@ -17,3 +17,6 @@ public record ProfileUpdateRequest(
         @Size(max = 255) String address,
         BloodType bloodType
 ) {}
+
+
+

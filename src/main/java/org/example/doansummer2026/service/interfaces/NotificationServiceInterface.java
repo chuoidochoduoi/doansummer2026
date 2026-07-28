@@ -22,3 +22,6 @@ public interface NotificationServiceInterface {
     NotificationResponse markRead(UUID id);
     NotificationResponse markFailed(UUID id, String reason);
 }
+
+
+

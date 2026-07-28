@@ -12,3 +12,6 @@ public interface VitalSignsRepository extends JpaRepository<VitalSigns, UUID> {
 
     Optional<VitalSigns> findByMedicalRecord_RecordId(UUID medicalRecordId);
 }
+
+
+

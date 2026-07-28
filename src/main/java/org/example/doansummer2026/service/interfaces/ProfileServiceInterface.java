@@ -19,3 +19,6 @@ public interface ProfileServiceInterface {
     PageResponse<ProfileResponse> search(String keyword, Pageable pageable);
     Profile findById(UUID id);
 }
+
+
+

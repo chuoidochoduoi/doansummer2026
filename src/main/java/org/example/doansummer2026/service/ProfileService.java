@@ -2,9 +2,21 @@ package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
-import org.example.doansummer2026.dto.profile.ProfileCreateRequest;
-import org.example.doansummer2026.dto.profile.ProfileResponse;
-import org.example.doansummer2026.dto.profile.ProfileUpdateRequest;
+import org.example.doansummer2026.dto.profile.*;
+import org.example.doansummer2026.exception.ConflictException;
+import org.example.doansummer2026.exception.ResourceNotFoundException;
+import org.example.doansummer2026.model.Account;
+import org.example.doansummer2026.enums.Gender;
+import org.example.doansummer2026.model.Appointment;
+import org.example.doansummer2026.model.Profile;
+import org.example.doansummer2026.repository.AccountRepository;
+import org.example.doansummer2026.repository.AppointmentRepository;
+import org.example.doansummer2026.repository.ProfileRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.example.doansummer2026.service.interfaces.ProfileServiceInterface;
+import org.springframework.transaction.annotation.Transactional;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Account;
@@ -18,7 +30,9 @@ import org.springframework.stereotype.Service;
 import org.example.doansummer2026.service.interfaces.ProfileServiceInterface;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.UUID;
+import java.util.*;
+
+import org.example.doansummer2026.model.TestRequest;
 
 @Service
 @Transactional
@@ -27,6 +41,8 @@ public class ProfileService implements ProfileServiceInterface {
 
     private final ProfileRepository profileRepository;
     private final AccountRepository accountRepository;
+    private final AppointmentRepository appointmentRepository;
+    private final TestRequestService testRequestService;
 
     @Transactional(readOnly = true)
     public ProfileResponse get(UUID id) {
@@ -39,6 +55,44 @@ public class ProfileService implements ProfileServiceInterface {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Khong co profile cho account id=" + accountId));
         return ProfileResponse.from(p);
+    }
+
+    @Transactional(readOnly = true)
+    public ProfileCustomerResponse getMyProfile(UUID accountId) {
+        Account account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account khong ton tai"));
+        Profile profile = profileRepository.findByAccount_AccountId(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Profile khong ton tai"));
+
+        // Lay appointments
+        List<Appointment> appointments = appointmentRepository.findByCustomerId(profile.getProfileId());
+        List<ProfileCustomerResponse.AppointmentSummary> appointmentSummaries = appointments.stream()
+                .map(a -> {
+                    String doctor = a.getCustomer() != null && a.getCustomer().getFullName() != null
+                            ? a.getCustomer().getFullName()
+                            : null;
+                    String specialty = a.getServices() != null && !a.getServices().isEmpty()
+                            ? a.getServices().stream().findFirst().map(s -> s.getName()).orElse(null)
+                            : null;
+                    return new ProfileCustomerResponse.AppointmentSummary(
+                            a.getScheduledAt().toLocalDate().toString(),
+                            doctor,
+                            specialty,
+                            a.getStatus().name()
+                    );
+                })
+                .toList();
+
+        // Lay test results
+        List<TestRequest> testRequests = testRequestService.findMyCompletedTests(profile.getProfileId());
+        List<ProfileCustomerResponse.TestResultSummary> testResultSummaries = testRequests.stream()
+                .map(t -> new ProfileCustomerResponse.TestResultSummary(
+                        t.getService().getName(),
+                        t.getCompletedAt() != null ? t.getCompletedAt().toLocalDate().toString() : null
+                ))
+                .collect(java.util.stream.Collectors.toList());
+
+        return ProfileCustomerResponse.from(profile, account, appointmentSummaries, testResultSummaries);
     }
 
     public ProfileResponse create(ProfileCreateRequest req) {
@@ -119,3 +173,6 @@ public class ProfileService implements ProfileServiceInterface {
         }
     }
 }
+
+
+

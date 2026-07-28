@@ -24,3 +24,6 @@ public record CustomerVisitCreateRequest(
         LocalDate guestDateOfBirth,
         Gender guestGender
 ) {}
+
+
+

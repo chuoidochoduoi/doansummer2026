@@ -7,3 +7,6 @@ public record ChangePasswordRequest(
         @NotBlank String oldPassword,
         @NotBlank @Size(min = 8, max = 64) String newPassword
 ) {}
+
+
+

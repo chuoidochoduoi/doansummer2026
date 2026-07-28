@@ -35,3 +35,6 @@ public abstract class BaseEntity {
     @Column(name = "deleted", nullable = false)
     private Boolean deleted = false;
 }
+
+
+

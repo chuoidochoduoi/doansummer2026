@@ -77,3 +77,6 @@ public class ServiceCategory extends BaseEntity {
     @Builder.Default
     private List<MedicalService> services = new ArrayList<>();
 }
+
+
+

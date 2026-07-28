@@ -7,8 +7,11 @@ import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.dto.department.DepartmentCreateRequest;
 import org.example.doansummer2026.dto.department.DepartmentResponse;
 import org.example.doansummer2026.dto.department.DepartmentUpdateRequest;
+import org.example.doansummer2026.dto.staff.StaffOptionResponse;
 import org.example.doansummer2026.enums.DepartmentType;
+import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.service.DepartmentService;
+import org.example.doansummer2026.service.StaffService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -30,17 +34,45 @@ import java.util.UUID;
 public class DepartmentController {
 
     private final DepartmentService service;
+    private final StaffService staffService;
+
+    /** API cho ADMIN - xem danh sach phong voi tat ca truong */
+    @GetMapping("/admin")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<PageResponse<DepartmentResponse>> listForAdmin(
+            @RequestParam(required = false) DepartmentType[] departmentTypes,
+            Pageable pageable) {
+        if (departmentTypes == null || departmentTypes.length == 0) {
+            return RestResponses.ok(service.listAll(pageable));
+        }
+        return RestResponses.ok(service.listMultiple(pageable, List.of(departmentTypes)));
+    }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<PageResponse<DepartmentResponse>> list(
-            @RequestParam(required = false) DepartmentType departmentType,
+            @RequestParam(required = false) DepartmentType[] departmentTypes,
             Pageable pageable) {
-        return RestResponses.ok(service.list(departmentType, pageable));
+        if (departmentTypes == null || departmentTypes.length == 0) {
+            return RestResponses.ok(service.listAll(pageable));
+        }
+        return RestResponses.ok(service.listMultiple(pageable, List.of(departmentTypes)));
+    }
+
+    /** Lấy các khoa khám bệnh, xét nghiệm, chẩn đoán hình ảnh cho bác sĩ. */
+    @GetMapping("/clinical")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
+    public ResponseEntity<PageResponse<DepartmentResponse>> listClinical(
+            Pageable pageable) {
+        return RestResponses.ok(service.listMultiple(pageable, List.of(
+                DepartmentType.EXAMINATION,
+                DepartmentType.LABORATORY,
+                DepartmentType.IMAGING
+        )));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<DepartmentResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
@@ -66,5 +98,19 @@ public class DepartmentController {
         return RestResponses.noContent();
     }
 
+    /**
+     * Lay danh sach bac si (GENERAL_DOCTOR, SPECIALIST_DOCTOR) de chon lam head doctor.
+     * Dung cho form tao/sua department.
+     */
+    @GetMapping("/doctors")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<StaffOptionResponse>> listDoctors() {
+        var doctors = staffService.findAllDoctors();
+        return RestResponses.ok(doctors);
+    }
+
 
 }
+
+
+

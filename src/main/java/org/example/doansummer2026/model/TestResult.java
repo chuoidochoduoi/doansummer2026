@@ -56,6 +56,10 @@ public class TestResult extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String conclusion;
 
+    /** Ma mau vat (tu may quet hoac thiet bi y te). */
+    @Column(name = "sample_id", length = 100)
+    private String sampleId;
+
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "performed_by", nullable = false)
@@ -66,3 +70,6 @@ public class TestResult extends BaseEntity {
     @Builder.Default
     private LocalDateTime performedAt = LocalDateTime.now();
 }
+
+
+

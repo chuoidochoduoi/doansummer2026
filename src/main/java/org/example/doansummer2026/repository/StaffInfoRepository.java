@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,17 +22,24 @@ public interface StaffInfoRepository extends JpaRepository<StaffInfo, UUID>, Jpa
 
     Optional<StaffInfo> findByProfile_Account_Username(String username);
 
+    Optional<StaffInfo> findByProfile_Account_AccountId(UUID accountId);
+
+    Page<StaffInfo> findBySystemRole(SystemRole systemRole, Pageable pageable);
+
     boolean existsByNationalId(String nationalId);
 
     boolean existsByLicenseNumber(String licenseNumber);
 
-    default Page<StaffInfo> search(UUID departmentId, UUID specializationId,
+    /** Tim tat ca staff theo danh sach systemRole (dung cho lay danh sach bac si). */
+    List<StaffInfo> findAllBySystemRoleIn(List<SystemRole> systemRoles);
+
+    /** Lay danh sach tat ca staff (cho Schedule). */
+    List<StaffInfo> findAll();
+
+    default Page<StaffInfo> search(UUID specializationId,
                                     SystemRole systemRole, Pageable pageable) {
         Specification<StaffInfo> spec = (root, query, cb) -> cb.conjunction();
 
-        if (departmentId != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("department").get("departmentId"), departmentId));
-        }
         if (specializationId != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("specialization").get("specializationId"), specializationId));
         }
@@ -42,3 +50,6 @@ public interface StaffInfoRepository extends JpaRepository<StaffInfo, UUID>, Jpa
         return findAll(spec, pageable);
     }
 }
+
+
+

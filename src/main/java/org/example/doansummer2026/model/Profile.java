@@ -82,4 +82,23 @@ public class Profile extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "blood_type", length = 15)
     private BloodType bloodType;
+
+    /** So the bao hiem y te. */
+    @Size(max = 50)
+    @Column(name = "insurance_id", length = 50)
+    private String insuranceId;
+
+    /** Chieu cao (cm). */
+    private Integer height;
+
+    /** Can nang (kg). */
+    private Integer weight;
+
+    /** Danh sach di ung (JSON array). */
+    @Column(columnDefinition = "TEXT")
+    private String allergies;
 }
+
+
+
+

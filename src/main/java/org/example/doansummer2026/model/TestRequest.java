@@ -81,7 +81,17 @@ public class TestRequest extends BaseEntity {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
+    @Column(name = "performed_at")
+    private LocalDateTime performedAt;
+
+    @Column(name = "cancel_reason", length = 500)
+    private String cancelReason;
+
     /** Quan he 1-1 voi TestResult - owning o TestResult. */
     @OneToOne(mappedBy = "testRequest", fetch = FetchType.LAZY)
     private TestResult testResult;
 }
+
+
+
+

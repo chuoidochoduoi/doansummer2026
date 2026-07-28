@@ -6,12 +6,16 @@ import org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest;
 import org.example.doansummer2026.dto.queueTicket.QueueTicketResponse;
 import org.example.doansummer2026.dto.queueTicket.QueueTicketUpdateRequest;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
+import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
+import org.example.doansummer2026.dto.icd.ICD10SelectionCreateRequest;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Department;
 import org.example.doansummer2026.model.MedicalRecord;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.StaffInfo;
+import org.example.doansummer2026.model.Icd10Selection;
+import org.example.doansummer2026.model.Icd10Code;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
 import org.example.doansummer2026.enums.QueueStatus;
 import org.example.doansummer2026.model.QueueTicket;
@@ -21,6 +25,7 @@ import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.example.doansummer2026.repository.MedicalRecordRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
+import org.example.doansummer2026.repository.Icd10CodeRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -45,6 +50,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     private final MedicalServiceRepository serviceRepo;
     private final MedicalRecordRepository recordRepo;
     private final StaffInfoRepository staffRepo;
+    private final Icd10CodeRepository icd10Repo;
 
     @Transactional(readOnly = true)
     public PageResponse<QueueTicketResponse> search(UUID departmentId, LocalDate workDate,
@@ -82,8 +88,8 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         QueueTicket q = findById(id);
         if (req.status() != null) {
             if (req.status() == QueueStatus.IN_PROGRESS) {
-                if (q.getStatus() != QueueStatus.CALLED) {
-                    throw new BadRequestException("Chi chuyen sang IN_PROGRESS tu CALLED, hien tai: " + q.getStatus());
+                if (q.getStatus() != QueueStatus.CALLED && q.getStatus() != QueueStatus.WAITING_FOR_TEST && q.getStatus() != QueueStatus.TEST_DONE) {
+                    throw new BadRequestException("Chi chuyen sang IN_PROGRESS tu CALLED, WAITING_FOR_TEST hoac TEST_DONE, hien tai: " + q.getStatus());
                 }
                 long inprogressCount = repo.countInprogressByDepartment(q.getDepartment().getDepartmentId());
                 if (inprogressCount >= 1) {
@@ -103,8 +109,9 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
     public QueueTicketResponse call(UUID id) {
         QueueTicket q = findById(id);
-        if (q.getStatus() != QueueStatus.WAITING) {
-            throw new BadRequestException("Chi goi duoc phieu dang cho (WAITING), hien tai: " + q.getStatus());
+        // Cho phep call tu WAITING, WAITING_FOR_TEST hoac TEST_DONE
+        if (q.getStatus() != QueueStatus.WAITING && q.getStatus() != QueueStatus.WAITING_FOR_TEST && q.getStatus() != QueueStatus.TEST_DONE) {
+            throw new BadRequestException("Chi goi duoc phieu dang cho (WAITING, WAITING_FOR_TEST hoac TEST_DONE), hien tai: " + q.getStatus());
         }
         q.setStatus(QueueStatus.CALLED);
         q.setCalledAt(LocalDateTime.now());
@@ -113,8 +120,8 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
     public QueueTicketResponse startExam(UUID id) {
         QueueTicket q = findById(id);
-        if (q.getStatus() != QueueStatus.CALLED) {
-            throw new BadRequestException("Chi bat dau kham duoc phieu dang CALL (CALLED), hien tai: " + q.getStatus());
+        if (q.getStatus() != QueueStatus.CALLED && q.getStatus() != QueueStatus.WAITING_FOR_TEST && q.getStatus() != QueueStatus.TEST_DONE) {
+            throw new BadRequestException("Chi bat dau kham duoc phieu dang CALL, RETURN (WAITING_FOR_TEST) hoac TEST_DONE, hien tai: " + q.getStatus());
         }
         long inprogressCount = repo.countInprogressByDepartment(q.getDepartment().getDepartmentId());
         if (inprogressCount >= 1) {
@@ -139,6 +146,10 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     }
 
     public MedicalRecordResponse completeAndReturnRecord(UUID id) {
+        return completeAndReturnRecord(id, null);
+    }
+
+    public MedicalRecordResponse completeAndReturnRecord(UUID id, MedicalRecordUpdateRequest req) {
         QueueTicket q = findById(id);
         if (q.getStatus() != QueueStatus.IN_PROGRESS) {
             throw new BadRequestException("Chi dong phieu dang kham (IN_PROGRESS), hien tai: " + q.getStatus());
@@ -153,13 +164,92 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         }
         var record = recordRepo.findByVisit_VisitId(q.getVisit().getVisitId())
                 .orElseThrow(() -> new ResourceNotFoundException("Chua co ho so benh an cho visit nay"));
+
+        // Cap nhat thong tin medical record neu co request (icd-10, prescription, vitals, ...)
+        if (req != null) {
+            updateMedicalRecordFields(record, req);
+            record = recordRepo.save(record);
+        }
+
         if (record.getStatus() != MedicalRecordStatus.COMPLETED) {
             record.setStatus(MedicalRecordStatus.COMPLETED);
             record.setCompletedAt(LocalDateTime.now());
             recordRepo.save(record);
         }
-        var fetched = recordRepo.findByVisit_VisitIdWithVitalSigns(q.getVisit().getVisitId()).orElse(record);
+        var fetched = recordRepo.getWithDetailsByVisitId(q.getVisit().getVisitId()).orElse(record);
         return MedicalRecordResponse.from(fetched, true);
+    }
+
+    private void updateMedicalRecordFields(MedicalRecord r, MedicalRecordUpdateRequest req) {
+        if (req.chiefComplaint() != null) r.setChiefComplaint(req.chiefComplaint());
+        if (req.clinicalFindings() != null) r.setClinicalFindings(req.clinicalFindings());
+        if (req.diagnosis() != null) r.setDiagnosis(req.diagnosis());
+        if (req.prescriptionNote() != null) r.setPrescriptionNote(req.prescriptionNote());
+        if (req.conclusion() != null) r.setConclusion(req.conclusion());
+        if (req.patientInstruction() != null) r.setPatientInstruction(req.patientInstruction());
+
+        // Cap nhat thuoc trong don
+        if (req.prescriptionItems() != null) {
+            r.getPrescriptionItems().clear();
+            req.prescriptionItems().forEach(p -> {
+                if (p.medicineName() != null && !p.medicineName().isBlank() && p.quantity() != null) {
+                    var item = org.example.doansummer2026.model.PrescriptionItem.builder()
+                            .medicalRecord(r)
+                            .medicineName(p.medicineName())
+                            .quantity(p.quantity())
+                            .unit(p.unit())
+                            .note(p.note())
+                            .frequencyPerDay(p.frequencyPerDay())
+                            .build();
+                    r.getPrescriptionItems().add(item);
+                }
+            });
+        }
+
+        // Cap nhat benh chuan doan ICD-10
+        if (req.icdSelections() != null) {
+            r.getIcdSelections().clear();
+            req.icdSelections().forEach(icd -> {
+                // Uu tien su dung codeName tu request, fallback sang lookup DB
+                String codeName = icd.codeName();
+                if (codeName == null || codeName.isBlank()) {
+                    Icd10Code icdCode = icd10Repo.findById(icd.code()).orElse(null);
+                    codeName = icdCode != null ? icdCode.getName() : null;
+                }
+                Icd10Selection selection = Icd10Selection.builder()
+                        .medicalRecord(r)
+                        .code(icd.code())
+                        .codeName(codeName)
+                        .note(icd.note())
+                        .build();
+                r.getIcdSelections().add(selection);
+            });
+        }
+
+        // Tao moi vital signs neu chua co va co du lieu
+        if (r.getVitalSigns() == null && hasVitalSignsUpdate(req)) {
+            var v = org.example.doansummer2026.model.VitalSigns.builder()
+                    .medicalRecord(r)
+                    .bloodPressure(req.bloodPressure())
+                    .heartRate(req.heartRate())
+                    .temperature(req.temperature())
+                    .weight(req.weight())
+                    .height(req.height())
+                    .build();
+            r.setVitalSigns(v);
+        } else if (r.getVitalSigns() != null && hasVitalSignsUpdate(req)) {
+            var v = r.getVitalSigns();
+            if (req.bloodPressure() != null) v.setBloodPressure(req.bloodPressure());
+            if (req.heartRate() != null) v.setHeartRate(req.heartRate());
+            if (req.temperature() != null) v.setTemperature(req.temperature());
+            if (req.weight() != null) v.setWeight(req.weight());
+            if (req.height() != null) v.setHeight(req.height());
+        }
+    }
+
+    private boolean hasVitalSignsUpdate(MedicalRecordUpdateRequest req) {
+        return req.bloodPressure() != null || req.heartRate() != null || req.temperature() != null ||
+               req.weight() != null || req.height() != null;
     }
 
     public QueueTicketResponse complete(UUID id) {
@@ -208,6 +298,9 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         return QueueTicketResponse.from(ticket, recordId, null, medicalRecord);
     }
 
+    /**
+     * Lay danh sach cho (WAITING/CALLED/WAITING_FOR_TEST/TEST_DONE) theo khoa, uu tien TEST_DONE/WAITING_FOR_TEST.
+     */
     @Transactional(readOnly = true)
     public PageResponse<QueueTicketResponse> getWaitingByDepartment(UUID departmentId, LocalDate workDate, QueueStatus status, Pageable pageable) {
         Page<QueueTicket> page;
@@ -218,9 +311,10 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 page = repo.findByDepartment_DepartmentIdAndStatus(departmentId, status, pageable);
             }
         } else {
-            List<QueueStatus> waitingStatuses = List.of(QueueStatus.WAITING, QueueStatus.CALLED);
+            // Uu tien: TEST_DONE, WAITING_FOR_TEST, WAITING, CALLED
+            List<QueueStatus> waitingStatuses = List.of(QueueStatus.TEST_DONE, QueueStatus.WAITING_FOR_TEST, QueueStatus.WAITING, QueueStatus.CALLED);
             if (workDate != null) {
-                page = repo.findByDepartment_DepartmentIdAndWorkDateAndStatusIn(departmentId, workDate, waitingStatuses, pageable);
+                page = repo.findWaitingPrioritized(departmentId, workDate, waitingStatuses, pageable);
             } else {
                 page = repo.findByDepartment_DepartmentIdAndStatusIn(departmentId, waitingStatuses, pageable);
             }
@@ -236,7 +330,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
     private MedicalRecordResponse getMedicalRecord(UUID visitId) {
         if (visitId == null) return null;
-        var record = recordRepo.findByVisit_VisitIdWithVitalSigns(visitId).orElse(null);
+        var record = recordRepo.getWithDetailsByVisitId(visitId).orElse(null);
         if (record == null) return null;
         return MedicalRecordResponse.from(record, false);
     }
@@ -259,7 +353,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             record = existingRecord;
         }
         // Fetch again with vital signs for response
-        var fetchedRecord = recordRepo.findByVisit_VisitIdWithVitalSigns(visitId).orElse(record);
+        var fetchedRecord = recordRepo.getWithDetailsByVisitId(visitId).orElse(record);
         return MedicalRecordResponse.from(fetchedRecord, false);
     }
 
@@ -273,4 +367,33 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         if (deptId == null) return null;
         return (int) repo.countWaitingByDepartment(deptId);
     }
+
+    /**
+     * Dem so benh nhan cho ket qua xet nghiem - bay loi dau han cho bac si.
+     */
+    @Transactional(readOnly = true)
+    public long countWaitingForTestByDepartment(UUID departmentId) {
+        return repo.countWaitingForTestByDepartment(departmentId);
+    }
+
+    public long countTestDoneByDepartment(UUID departmentId) {
+        return repo.countTestDoneByDepartment(departmentId);
+    }
+
+    /**
+     * Danh dau queue ticket da hoan thanh xet nghiem (WAITING_FOR_TEST -> TEST_DONE).
+     */
+    public QueueTicketResponse markTestDone(UUID id) {
+        QueueTicket q = repo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Queue ticket khong ton tai: " + id));
+        if (q.getStatus() != QueueStatus.WAITING_FOR_TEST) {
+            throw new BadRequestException("Chi co the danh dau TEST_DONE tu trang thai WAITING_FOR_TEST, hien tai: " + q.getStatus());
+        }
+        q.setStatus(QueueStatus.TEST_DONE);
+        repo.save(q);
+        return QueueTicketResponse.from(q);
+    }
 }
+
+
+

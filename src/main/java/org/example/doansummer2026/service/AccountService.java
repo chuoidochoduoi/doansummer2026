@@ -2,14 +2,18 @@ package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
+import org.example.doansummer2026.dto.account.AccountManagementResponse;
 import org.example.doansummer2026.dto.account.AccountUpdateRequest;
 import org.example.doansummer2026.dto.account.AccountResponse;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.enums.Role;
+import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.service.interfaces.AccountServiceInterface;
 import org.example.doansummer2026.repository.AccountRepository;
+import org.example.doansummer2026.repository.ProfileRepository;
+import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,6 +28,8 @@ import java.util.UUID;
 public class AccountService implements AccountServiceInterface {
 
     private final AccountRepository accountRepository;
+    private final StaffInfoRepository staffRepo;
+    private final ProfileRepository profileRepo;
     private final PasswordEncoder passwordEncoder;
 
     public Account create(String username, String rawPassword, Role role) {
@@ -88,6 +94,65 @@ public class AccountService implements AccountServiceInterface {
         Page<Account> page = (role != null)
                 ? accountRepository.findByRole(role, pageable)
                 : accountRepository.findAll(pageable);
-        return PageResponse.from(page, AccountResponse::from);
+        return PageResponse.from(page, a -> {
+            SystemRole sr = staffRepo.findByProfile_Account_Username(a.getUsername())
+                    .map(staff -> staff.getSystemRole())
+                    .orElse(null);
+            return AccountResponse.from(a, sr);
+        });
+    }
+
+    /**
+     * Danh sach tai khoan nhan su (STAFF) voi thong tin StaffInfo.
+     * NOTE: StaffInfo khong con department - department chi quan he voi head_doctor o Department.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<AccountManagementResponse> listStaff(SystemRole systemRole, Pageable pageable) {
+        Page<org.example.doansummer2026.model.StaffInfo> page = (systemRole != null)
+                ? staffRepo.findBySystemRole(systemRole, pageable)
+                : staffRepo.findAll(pageable);
+        return PageResponse.from(page, staff -> {
+            Account a = staff.getProfile().getAccount();
+            return AccountManagementResponse.forStaff(
+                    a,
+                    staff.getStaffCode(),
+                    staff.getProfile().getFullName(),
+                    null, // department da xoa khoi StaffInfo
+                    staff.getSystemRole()
+            );
+        });
+    }
+
+    /**
+     * Danh sach tai khoan khach hang (CUSTOMER).
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<AccountManagementResponse> listCustomers(Pageable pageable) {
+        Page<Account> page = accountRepository.findByRole(Role.CUSTOMER, pageable);
+        return PageResponse.from(page, a -> {
+            var profileOpt = profileRepo.findByAccount_AccountId(a.getAccountId());
+            String fullName = profileOpt.map(p -> p.getFullName()).orElse(a.getUsername());
+            return AccountManagementResponse.forCustomer(a, fullName);
+        });
+    }
+
+    /**
+     * Khoa tai khoan. KHONG cho phep khoa tai khoan ADMIN hoac CLINIC_MANAGER.
+     */
+    public Account lock(UUID id) {
+        Account a = findById(id);
+        // Kiem tra xem co phai admin/clinic_manager khong
+        var staffOpt = staffRepo.findByProfile_Account_Username(a.getUsername());
+        if (staffOpt.isPresent()) {
+            SystemRole sr = staffOpt.get().getSystemRole();
+            if (sr == SystemRole.ADMIN || sr == SystemRole.CLINIC_MANAGER) {
+                throw new ConflictException("Khong the khoa tai khoan ADMIN hoac CLINIC_MANAGER");
+            }
+        }
+        a.setIsActive(false);
+        return accountRepository.save(a);
     }
 }
+
+
+

@@ -8,5 +8,21 @@ public enum PaymentMethod {
     VNPAY,           // Cong thanh toan VNPay
     ZALOPAY,         // Vi ZaloPay
     INSURANCE,       // Bao hiem (chi mot phan)
-    OTHER
+    OTHER;           // Khac
+
+    public String getDisplayName() {
+        return switch (this) {
+            case CASH -> "Cash";
+            case CARD -> "Card";
+            case BANK_TRANSFER -> "Bank Transfer";
+            case MOMO -> "MoMo";
+            case VNPAY -> "VNPay";
+            case ZALOPAY -> "ZaloPay";
+            case INSURANCE -> "Insurance";
+            default -> "Other";
+        };
+    }
 }
+
+
+

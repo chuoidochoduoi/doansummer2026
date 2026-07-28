@@ -1,6 +1,5 @@
 package org.example.doansummer2026.dto.staff;
 
-import org.example.doansummer2026.dto.department.DepartmentResponse;
 import org.example.doansummer2026.dto.profile.ProfileResponse;
 import org.example.doansummer2026.dto.specialization.SpecializationResponse;
 import org.example.doansummer2026.model.StaffInfo;
@@ -14,15 +13,14 @@ public record StaffResponse(
         String licenseNumber,
         SystemRoleBrief systemRole,
         ProfileResponse profile,
-        DepartmentResponse department,
         SpecializationResponse specialization
 ) {
     public enum SystemRoleBrief {
-        GENERAL_DOCTOR, SPECIALIST_DOCTOR, NURSE, RECEPTIONIST, CASHIER, CLINIC_MANAGER
+        GENERAL_DOCTOR, SPECIALIST_DOCTOR, NURSE, RECEPTIONIST, CASHIER, CLINIC_MANAGER, ADMIN
     }
 
     public static StaffResponse from(StaffInfo s, ProfileResponse p,
-                                     DepartmentResponse d, SpecializationResponse sp) {
+                                     SpecializationResponse sp) {
         return new StaffResponse(
                 s.getStaffId(),
                 s.getStaffCode(),
@@ -30,8 +28,10 @@ public record StaffResponse(
                 s.getLicenseNumber(),
                 SystemRoleBrief.valueOf(s.getSystemRole().name()),
                 p,
-                d,
                 sp
         );
     }
 }
+
+
+

@@ -49,3 +49,7 @@ public record InvoiceResponse(
                 balance, i.getStatus(), i.getNote(), issuedById, issuedByName, items, transactionIds);
     }
 }
+
+
+
+

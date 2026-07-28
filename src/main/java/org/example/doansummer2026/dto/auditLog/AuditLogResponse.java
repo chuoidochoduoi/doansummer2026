@@ -25,3 +25,7 @@ public record AuditLogResponse(
                 a.getOldValueJson(), a.getNewValueJson(), a.getDescription(), a.getCreatedAt());
     }
 }
+
+
+
+

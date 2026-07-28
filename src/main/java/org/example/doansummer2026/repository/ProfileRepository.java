@@ -39,3 +39,6 @@ public interface ProfileRepository extends JpaRepository<Profile, UUID>, JpaSpec
         return findAll(spec, pageable);
     }
 }
+
+
+

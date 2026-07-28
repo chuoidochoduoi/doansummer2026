@@ -13,3 +13,6 @@ public record SpecializationResponse(
         return new SpecializationResponse(s.getSpecializationId(), s.getName(), s.getDescription());
     }
 }
+
+
+

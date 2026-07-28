@@ -17,3 +17,6 @@ public interface AuditLogServiceInterface {
     List<AuditLogResponse> findByEntity(String entityName, String entityId);
     AuditLogResponse create(AuditLogCreateRequest req);
 }
+
+
+

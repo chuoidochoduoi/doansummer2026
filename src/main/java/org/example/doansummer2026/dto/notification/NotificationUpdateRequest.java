@@ -6,3 +6,7 @@ public record NotificationUpdateRequest(
         NotificationStatus status,
         String failureReason
 ) {}
+
+
+
+

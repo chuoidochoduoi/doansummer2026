@@ -30,13 +30,13 @@ public class ServiceCategoryController {
     private final ServiceCategoryService service;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<PageResponse<ServiceCategoryResponse>> list(Pageable pageable) {
         return RestResponses.ok(service.list(pageable));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<ServiceCategoryResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
@@ -62,3 +62,7 @@ public class ServiceCategoryController {
         return RestResponses.noContent();
     }
 }
+
+
+
+

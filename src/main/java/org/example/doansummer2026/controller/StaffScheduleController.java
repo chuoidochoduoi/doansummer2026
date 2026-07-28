@@ -36,7 +36,7 @@ public class StaffScheduleController {
     private final StaffScheduleService service;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<PageResponse<ScheduleResponse>> search(
             @RequestParam(required = false) UUID staffId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
@@ -47,7 +47,7 @@ public class StaffScheduleController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<ScheduleResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
@@ -81,3 +81,6 @@ public class StaffScheduleController {
                 req.weekStart(), req.staffIds(), req.overrideExisting()));
     }
 }
+
+
+

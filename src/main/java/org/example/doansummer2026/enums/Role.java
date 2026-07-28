@@ -2,13 +2,12 @@ package org.example.doansummer2026.enums;
 
 /**
  * Authentication role for Account.
- * - PATIENT: patient self-registration
- * - RECEPTIONIST: front desk staff
- * - CASHIER: cashier
- * - NURSE: nurse
- * - DOCTOR: doctor
- * - ADMIN: administrator
+ * - CUSTOMER: customer self-registration
+ * - STAFF: all staff members (GENERAL_DOCTOR, SPECIALIST_DOCTOR, NURSE, RECEPTIONIST, CASHIER, CLINIC_MANAGER)
  */
 public enum Role {
-    PATIENT, RECEPTIONIST, CASHIER, NURSE, DOCTOR, ADMIN
+    CUSTOMER, STAFF
 }
+
+
+

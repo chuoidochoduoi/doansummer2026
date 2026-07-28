@@ -5,6 +5,7 @@ import org.example.doansummer2026.dto.auth.ChangePasswordRequest;
 import org.example.doansummer2026.dto.auth.LoginRequest;
 import org.example.doansummer2026.dto.auth.RefreshRequest;
 import org.example.doansummer2026.dto.auth.RegisterRequest;
+import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.model.Account;
 
 public interface AuthServiceInterface {
@@ -12,5 +13,9 @@ public interface AuthServiceInterface {
     AuthResponse login(LoginRequest req);
     AuthResponse refresh(RefreshRequest req);
     Account currentAccount();
+    SystemRole getCurrentSystemRole();
     void changeMyPassword(ChangePasswordRequest req);
 }
+
+
+

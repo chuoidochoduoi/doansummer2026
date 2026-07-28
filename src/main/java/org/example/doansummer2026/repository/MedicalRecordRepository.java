@@ -4,13 +4,15 @@ import org.example.doansummer2026.model.MedicalRecord;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,8 +22,12 @@ public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UU
 
     Optional<MedicalRecord> findByVisit_VisitId(UUID visitId);
 
-    @Query("SELECT m FROM MedicalRecord m LEFT JOIN FETCH m.vitalSigns LEFT JOIN FETCH m.testRequests WHERE m.visit.visitId = :visitId")
-    Optional<MedicalRecord> findByVisit_VisitIdWithVitalSigns(@Param("visitId") UUID visitId);
+    @EntityGraph("MedicalRecord.withDetails")
+    @Query("SELECT m FROM MedicalRecord m WHERE m.visit.visitId = :visitId")
+    Optional<MedicalRecord> getWithDetailsByVisitId(@Param("visitId") UUID visitId);
+
+    @Query("SELECT m.recordCode FROM MedicalRecord m WHERE m.recordCode LIKE :prefix ORDER BY m.recordCode DESC LIMIT 1")
+    String findTopByRecordCodeStartingWithOrderByRecordCodeDesc(@Param("prefix") String prefix);
 
     default Page<MedicalRecord> search(UUID doctorId, MedicalRecordStatus status,
                                         LocalDateTime from, LocalDateTime to, Pageable pageable) {

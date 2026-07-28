@@ -8,12 +8,15 @@ import java.util.UUID;
 
 /**
  * Tao nhieu TestRequest cung luc tu medical record.
- * Bac si chon nhieu dich vu xet nghiem.
+ * performingDepartmentId la optional - neu null thi lay tu tung MedicalService.
  */
 public record TestRequestBatchCreateRequest(
         @NotNull UUID medicalRecordId,
-        @NotNull UUID performingDepartmentId,
+        UUID performingDepartmentId,
         @NotNull UUID requestedById,
         @NotEmpty List<UUID> serviceIds,
-        String description
+        String notes
 ) {}
+
+
+

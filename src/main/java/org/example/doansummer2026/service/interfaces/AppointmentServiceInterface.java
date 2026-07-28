@@ -32,3 +32,6 @@ public interface AppointmentServiceInterface {
     void delete(UUID id);
     Appointment findById(UUID id);
 }
+
+
+

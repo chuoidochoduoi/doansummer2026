@@ -86,4 +86,11 @@ public class InvoiceItem extends BaseEntity {
 
     @Column(columnDefinition = "TEXT")
     private String note;
+
+    /** So tien duoc BHYT chi tra (VND). */
+    @Column(name = "bhyt_fund", precision = 18, scale = 2)
+    private BigDecimal bhytFund;
 }
+
+
+

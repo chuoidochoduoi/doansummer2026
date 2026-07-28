@@ -17,3 +17,6 @@ public record MedicalRecordCreateRequest(
         BigDecimal height,
         UUID recordedById
 ) {}
+
+
+

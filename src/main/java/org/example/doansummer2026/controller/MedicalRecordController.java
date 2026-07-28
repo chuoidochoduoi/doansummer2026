@@ -33,7 +33,7 @@ public class MedicalRecordController {
     private final MedicalRecordService service;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<PageResponse<MedicalRecordResponse>> list(
             @RequestParam(required = false) UUID doctorId,
             @RequestParam(required = false) MedicalRecordStatus status,
@@ -44,19 +44,19 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<MedicalRecordResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<MedicalRecordResponse> create(@Valid @RequestBody MedicalRecordCreateRequest req) {
         MedicalRecordResponse created = service.create(req);
         return RestResponses.created("/api/v1/medical-records/{id}", created.recordId(), created);
     }
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<MedicalRecordResponse> update(@PathVariable UUID id,
                                                           @Valid @RequestBody MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
@@ -65,21 +65,35 @@ public class MedicalRecordController {
      * Lục nháp - lưu tạm các thay đổi (chưa thay đổi status).
      */
     @PostMapping("/{id}/draft")
-    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<MedicalRecordResponse> saveDraft(@PathVariable UUID id,
                                                            @Valid @RequestBody MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.saveDraft(id, req));
     }
     @PostMapping("/{id}/complete")
-    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<MedicalRecordResponse> complete(@PathVariable UUID id,
                                                           @Valid @RequestBody(required = false) MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.complete(id, req));
     }
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
     }
+
+    /**
+     * API danh gia phong kham (1-5 sao). Chi ap dung cho EXAMINATION da hoan thanh (COMPLETED).
+     */
+    @PostMapping("/{id}/rate")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    public ResponseEntity<MedicalRecordResponse> rate(@PathVariable UUID id,
+                                                     @RequestParam int ratingScore) {
+        return RestResponses.ok(service.rate(id, ratingScore));
+    }
 }
+
+
+
+

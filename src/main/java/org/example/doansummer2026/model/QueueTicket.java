@@ -86,3 +86,7 @@ public class QueueTicket extends BaseEntity {
     @JoinColumn(name = "service_id")
     private MedicalService service;
 }
+
+
+
+

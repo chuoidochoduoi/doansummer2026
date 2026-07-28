@@ -2,23 +2,41 @@ package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
+import org.example.doansummer2026.dto.icd.ICD10SelectionCreateRequest;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
+import org.example.doansummer2026.dto.medicalRecord.ReceptionistRecordResponse;
+import org.example.doansummer2026.dto.medicalRecord.ReceptionistCustomerResponse;
+import org.example.doansummer2026.dto.medicalRecord.ReceptionistAllCustomerResponse;
+import org.example.doansummer2026.dto.medicalHistory.MedicalHistoryResponse;
+import org.example.doansummer2026.enums.BloodType;
+import org.example.doansummer2026.enums.Gender;
+import org.example.doansummer2026.dto.medicalRecord.PrescriptionItemCreateRequest;
+import org.example.doansummer2026.enums.TestRequestStatus;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.MedicalRecord;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
 import org.example.doansummer2026.enums.QueueStatus;
+import org.springframework.data.jpa.domain.Specification;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.model.VitalSigns;
+import org.example.doansummer2026.model.PrescriptionItem;
+import org.example.doansummer2026.model.Icd10Selection;
+import org.example.doansummer2026.model.Icd10Code;
+import org.example.doansummer2026.model.Profile;
 import org.example.doansummer2026.repository.MedicalRecordRepository;
+import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.repository.VitalSignsRepository;
 import org.example.doansummer2026.repository.QueueTicketRepository;
+import org.example.doansummer2026.repository.Icd10CodeRepository;
+import org.example.doansummer2026.repository.TestRequestRepository;
+import org.example.doansummer2026.repository.ProfileRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -26,7 +44,9 @@ import org.example.doansummer2026.service.interfaces.MedicalRecordServiceInterfa
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 
 @Service
@@ -35,10 +55,14 @@ import java.util.UUID;
 public class MedicalRecordService implements MedicalRecordServiceInterface {
 
     private final MedicalRecordRepository repo;
+    private final AppointmentRepository appointmentRepo;
     private final CustomerVisitRepository visitRepo;
     private final StaffInfoRepository staffRepo;
     private final VitalSignsRepository vitalRepo;
     private final QueueTicketRepository queueTicketRepo;
+    private final Icd10CodeRepository icd10Repo;
+    private final TestRequestRepository testRequestRepo;
+    private final ProfileRepository profileRepo;
 
     @Transactional(readOnly = true)
     public PageResponse<MedicalRecordResponse> search(UUID doctorId, MedicalRecordStatus status,
@@ -46,6 +70,229 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                                                        Pageable pageable) {
         Page<MedicalRecord> page = repo.search(doctorId, status, from, to, pageable);
         return PageResponse.from(page, r -> MedicalRecordResponse.from(r, false));
+    }
+
+    /**
+     * API cho le tan tim kiem ho so benh an voi cac filter.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<ReceptionistRecordResponse> searchForReceptionist(String search, String gender,
+                                                                        String age, BloodType bloodType,
+                                                                        Pageable pageable) {
+        Page<MedicalRecord> page = repo.findAll(
+                searchForReceptionistSpec(search, gender, age, bloodType),
+                pageable
+        );
+        // Eager fetch visit, customer, appointment de tranh LazyInitializationException
+        page.getContent().forEach(r -> {
+            if (r.getVisit() != null) {
+                r.getVisit().getCustomer();
+                r.getVisit().getAppointment();
+            }
+        });
+        return PageResponse.from(page, ReceptionistRecordResponse::from);
+    }
+
+    /**
+     * API cho le tan lay danh sach customer (benh nhan) khong lap lai.
+     * Moi customer chi xuat hien 1 lan trong danh sach (chi lay CUSTOMER, khong lay STAFF).
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<ReceptionistCustomerResponse> searchUniqueCustomers(String search, String gender,
+                                                                         String age, BloodType bloodType,
+                                                                         Pageable pageable) {
+        Page<Profile> page = profileRepo.findAll(
+                searchUniqueCustomerSpec(search, gender, age, bloodType),
+                pageable
+        );
+        return PageResponse.from(page, ReceptionistCustomerResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.List<ReceptionistAllCustomerResponse> searchByPhone(String phone) {
+        var result = new java.util.ArrayList<ReceptionistAllCustomerResponse>();
+
+        // Tim trong Profile (chi lay CUSTOMER, khong lay STAFF)
+        profileRepo.findByPhone(phone).ifPresent(p -> {
+            // Chi them neu account role la CUSTOMER
+            if (p.getAccount() != null) {
+                var role = p.getAccount().getRole();
+                if (role == org.example.doansummer2026.enums.Role.CUSTOMER) {
+                    result.add(ReceptionistAllCustomerResponse.forRegistered(
+                            p.getProfileId(), p.getPhone(), p.getFullName(), p.getGender(),
+                            p.getDateOfBirth(), p.getBloodType(), p.getEmail(), p.getAddress()
+                    ));
+                }
+            } else {
+                // Guest profile khong co account - them vao
+                result.add(ReceptionistAllCustomerResponse.forGuest(
+                        p.getPhone(), p.getFullName(), p.getGender(), p.getAddress()
+                ));
+            }
+        });
+
+        // Neu chua tim thay profile, tim trong Appointment (guest vang lai)
+        if (result.isEmpty()) {
+            var guestAppointments = appointmentRepo.findGuestAppointmentsByPhone(phone);
+            var seenGuestInfo = new java.util.HashSet<String>();
+            for (var a : guestAppointments) {
+                var key = a.getGuestPhone() + "_" + a.getGuestFullName();
+                if (!seenGuestInfo.contains(key)) {
+                    result.add(ReceptionistAllCustomerResponse.forGuest(
+                            a.getGuestPhone(),
+                            a.getGuestFullName(),
+                            a.getGuestGender(),
+                            a.getGuestAddress()
+                    ));
+                    seenGuestInfo.add(key);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private org.springframework.data.jpa.domain.Specification<Profile> searchUniqueCustomerSpec(
+            String search, String gender, String age, BloodType bloodType) {
+        return (root, query, cb) -> {
+            var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+
+            // Chi lay CUSTOMER (account.role = CUSTOMER)
+            var account = root.get("account");
+            predicates.add(cb.equal(account.get("role"), org.example.doansummer2026.enums.Role.CUSTOMER));
+
+            // Search theo ten, phone
+            if (search != null && !search.isEmpty()) {
+                String searchLower = "%" + search.toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("fullName")), searchLower),
+                        cb.like(cb.lower(root.get("phone")), searchLower)
+                ));
+            }
+
+            // Filter theo gioi tinh
+            if (gender != null && !gender.isEmpty()) {
+                predicates.add(cb.equal(root.get("gender"),
+                        "Nam".equalsIgnoreCase(gender) ? Gender.MALE : Gender.FEMALE));
+            }
+
+            // Filter theo muc tuoi
+            if (age != null && !age.isEmpty()) {
+                LocalDate today = LocalDate.now();
+                LocalDate fromDate = null;
+                LocalDate toDate = null;
+
+                switch (age) {
+                    case "0-18":
+                        toDate = today.minusYears(18);
+                        break;
+                    case "19-40":
+                        fromDate = today.minusYears(40);
+                        toDate = today.minusYears(19);
+                        break;
+                    case "41-60":
+                        fromDate = today.minusYears(60);
+                        toDate = today.minusYears(41);
+                        break;
+                    case "60+":
+                        fromDate = today.minusYears(150);
+                        toDate = today.minusYears(60);
+                        break;
+                }
+
+                if (fromDate != null && toDate != null) {
+                    predicates.add(cb.between(root.get("dateOfBirth"), fromDate, toDate));
+                } else if (toDate != null) {
+                    predicates.add(cb.greaterThanOrEqualTo(root.get("dateOfBirth"), toDate));
+                } else if (fromDate != null) {
+                    predicates.add(cb.lessThanOrEqualTo(root.get("dateOfBirth"), fromDate));
+                }
+            }
+
+            // Filter theo nhom mau
+            if (bloodType != null) {
+                predicates.add(cb.equal(root.get("bloodType"), bloodType));
+            }
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+    }
+
+    private org.springframework.data.jpa.domain.Specification<MedicalRecord> searchForReceptionistSpec(
+            String search, String gender, String age, BloodType bloodType) {
+        return (root, query, cb) -> {
+            var visit = root.get("visit");
+            var customer = visit.get("customer");
+            var appointment = visit.get("appointment");
+
+            var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+
+            // Search theo ma ho so, ten benh nhan, so dien thoai (bao gom guest)
+            if (search != null && !search.isEmpty()) {
+                String searchLower = "%" + search.toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("recordCode")), searchLower),
+                        cb.like(cb.lower(customer.get("fullName")), searchLower),
+                        cb.like(cb.lower(customer.get("phone")), searchLower),
+                        cb.like(cb.lower(appointment.get("guestFullName")), searchLower),
+                        cb.like(cb.lower(appointment.get("guestPhone")), searchLower)
+                ));
+            }
+
+            // Filter theo gioi tinh
+            if (gender != null && !gender.isEmpty()) {
+                var genderPredicate = cb.or(
+                        cb.and(
+                                cb.equal(appointment.get("isGuest"), true),
+                                cb.equal(appointment.get("guestGender"),
+                                        "Nam".equalsIgnoreCase(gender) ? Gender.MALE : Gender.FEMALE)
+                        ),
+                        cb.equal(customer.get("gender"),
+                                "Nam".equalsIgnoreCase(gender) ? Gender.MALE : Gender.FEMALE)
+                );
+                predicates.add(genderPredicate);
+            }
+
+            // Filter theo muc tuoi
+            if (age != null && !age.isEmpty()) {
+                LocalDate today = LocalDate.now();
+                LocalDate fromDate = null;
+                LocalDate toDate = null;
+
+                switch (age) {
+                    case "0-18":
+                        toDate = today.minusYears(18); // < 18 tuoi
+                        break;
+                    case "19-40":
+                        fromDate = today.minusYears(40);
+                        toDate = today.minusYears(19);
+                        break;
+                    case "41-60":
+                        fromDate = today.minusYears(60);
+                        toDate = today.minusYears(41);
+                        break;
+                    case "60+":
+                        fromDate = today.minusYears(150); // > 60 tuoi
+                        toDate = today.minusYears(60);
+                        break;
+                }
+
+                if (fromDate != null && toDate != null) {
+                    predicates.add(cb.between(customer.get("dateOfBirth"), fromDate, toDate));
+                } else if (toDate != null) {
+                    predicates.add(cb.greaterThanOrEqualTo(customer.get("dateOfBirth"), toDate));
+                } else if (fromDate != null) {
+                    predicates.add(cb.lessThanOrEqualTo(customer.get("dateOfBirth"), fromDate));
+                }
+            }
+
+            // Filter theo nhom mau - chi ap dung cho khach khong phai guest
+            if (bloodType != null) {
+                predicates.add(cb.equal(customer.get("bloodType"), bloodType));
+            }
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
     }
 
     @Transactional(readOnly = true)
@@ -66,6 +313,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 .doctor(doctor)
                 .chiefComplaint(req.chiefComplaint())
                 .status(MedicalRecordStatus.IN_PROGRESS)
+                .recordCode(generateRecordCode())
                 .build();
 
         // Tao vital signs neu co du lieu
@@ -84,7 +332,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             r.setVitalSigns(v);
         }
 
-        return MedicalRecordResponse.from(repo.save(r), false);
+        return MedicalRecordResponse.from(repo.save(r), true);
     }
 
     private boolean hasVitalSigns(MedicalRecordCreateRequest req) {
@@ -97,46 +345,70 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
             throw new BadRequestException("Ho so da dong, khong the sua");
         }
-        if (req.chiefComplaint() != null) r.setChiefComplaint(req.chiefComplaint());
-        if (req.clinicalFindings() != null) r.setClinicalFindings(req.clinicalFindings());
-        if (req.diagnosis() != null) r.setDiagnosis(req.diagnosis());
-        if (req.prescriptionNote() != null) r.setPrescriptionNote(req.prescriptionNote());
-        if (req.conclusion() != null) r.setConclusion(req.conclusion());
-        if (req.patientInstruction() != null) r.setPatientInstruction(req.patientInstruction());
-
-        // Cap nhat vital signs neu co du lieu
-        if (r.getVitalSigns() != null && hasVitalSignsUpdate(req)) {
-            VitalSigns v = r.getVitalSigns();
-            if (req.bloodPressure() != null) v.setBloodPressure(req.bloodPressure());
-            if (req.heartRate() != null) v.setHeartRate(req.heartRate());
-            if (req.temperature() != null) v.setTemperature(req.temperature());
-            if (req.weight() != null) v.setWeight(req.weight());
-            if (req.height() != null) v.setHeight(req.height());
-        }
-
-        return MedicalRecordResponse.from(repo.save(r), false);
-    }
-
-    private boolean hasVitalSignsUpdate(MedicalRecordUpdateRequest req) {
-        return req.bloodPressure() != null || req.heartRate() != null || req.temperature() != null ||
-               req.weight() != null || req.height() != null;
+        updateMedicalRecordFields(r, req);
+        return MedicalRecordResponse.from(repo.save(r), true);
     }
 
     /**
-     * Lục nháp - chỉ cập nhật dữ liệu, không đổi status.
-     * Dùng khi bác sĩ đang nhập thông tin, chưa kết luận.
+     * Lục nháp - cập nhật dữ liệu và đồi status sang DRAFT.
+     * Dùng khi bác sĩ đang nhập thông tin, chưa kết lục.
      */
     public MedicalRecordResponse saveDraft(UUID id, MedicalRecordUpdateRequest req) {
         MedicalRecord r = findById(id);
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
             throw new BadRequestException("Ho so da dong, khong the luu nham");
         }
+        updateMedicalRecordFields(r, req);
+        r.setStatus(MedicalRecordStatus.DRAFT);
+        return MedicalRecordResponse.from(repo.save(r), true);
+    }
+
+    private void updateMedicalRecordFields(MedicalRecord r, MedicalRecordUpdateRequest req) {
         if (req.chiefComplaint() != null) r.setChiefComplaint(req.chiefComplaint());
         if (req.clinicalFindings() != null) r.setClinicalFindings(req.clinicalFindings());
         if (req.diagnosis() != null) r.setDiagnosis(req.diagnosis());
         if (req.prescriptionNote() != null) r.setPrescriptionNote(req.prescriptionNote());
         if (req.conclusion() != null) r.setConclusion(req.conclusion());
         if (req.patientInstruction() != null) r.setPatientInstruction(req.patientInstruction());
+
+        // Cap nhat thuoc trong don
+        if (req.prescriptionItems() != null) {
+            r.getPrescriptionItems().clear();
+            req.prescriptionItems().forEach(p -> {
+                // Chi them vao neu co du lieu hop le (tranh validation error)
+                if (p.medicineName() != null && !p.medicineName().isBlank() && p.quantity() != null) {
+                    PrescriptionItem item = PrescriptionItem.builder()
+                            .medicalRecord(r)
+                            .medicineName(p.medicineName())
+                            .quantity(p.quantity())
+                            .unit(p.unit())
+                            .note(p.note())
+                            .frequencyPerDay(p.frequencyPerDay())
+                            .build();
+                    r.getPrescriptionItems().add(item);
+                }
+            });
+        }
+
+        // Cap nhat benh chuan doan ICD-10
+        if (req.icdSelections() != null) {
+            r.getIcdSelections().clear();
+            req.icdSelections().forEach(icd -> {
+                // Uu tien su dung codeName tu request, fallback sang lookup DB
+                String codeName = icd.codeName();
+                if (codeName == null || codeName.isBlank()) {
+                    Icd10Code icdCode = icd10Repo.findById(icd.code()).orElse(null);
+                    codeName = icdCode != null ? icdCode.getName() : null;
+                }
+                Icd10Selection selection = Icd10Selection.builder()
+                        .medicalRecord(r)
+                        .code(icd.code())
+                        .codeName(codeName)
+                        .note(icd.note())
+                        .build();
+                r.getIcdSelections().add(selection);
+            });
+        }
 
         // Tao moi vital signs neu chua co va co du lieu
         if (r.getVitalSigns() == null && hasVitalSignsUpdate(req)) {
@@ -157,8 +429,22 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             if (req.weight() != null) v.setWeight(req.weight());
             if (req.height() != null) v.setHeight(req.height());
         }
+    }
 
-        return MedicalRecordResponse.from(repo.save(r), false);
+    private boolean hasVitalSignsUpdate(MedicalRecordUpdateRequest req) {
+        return req.bloodPressure() != null || req.heartRate() != null || req.temperature() != null ||
+               req.weight() != null || req.height() != null;
+    }
+
+    /** Kiem tra co TestRequest chua COMPLETED khong */
+    private boolean checkTestRequestsCompletion(MedicalRecord record) {
+        if (record.getVisit() == null) {
+            return false;
+        }
+        long incompleteCount = testRequestRepo.countByMedicalRecordAndStatusIn(
+                record.getRecordId(),
+                java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS));
+        return incompleteCount > 0;
     }
 
     public MedicalRecordResponse complete(UUID id, MedicalRecordUpdateRequest req) {
@@ -167,24 +453,16 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             throw new BadRequestException("Ho so da duoc dong truoc do");
         }
 
-        // Luu thong tin truoc khi dong (gan nhu saveDraft)
-        if (req != null) {
-            if (req.chiefComplaint() != null) r.setChiefComplaint(req.chiefComplaint());
-            if (req.clinicalFindings() != null) r.setClinicalFindings(req.clinicalFindings());
-            if (req.diagnosis() != null) r.setDiagnosis(req.diagnosis());
-            if (req.prescriptionNote() != null) r.setPrescriptionNote(req.prescriptionNote());
-            if (req.conclusion() != null) r.setConclusion(req.conclusion());
-            if (req.patientInstruction() != null) r.setPatientInstruction(req.patientInstruction());
+        // Kiem tra tat ca TestRequest deu phai COMPLETED (neu co)
+        // Neu co TestRequest chua COMPLETED -> tra loi loi
+        boolean hasIncompleteTestRequests = checkTestRequestsCompletion(r);
+        if (hasIncompleteTestRequests) {
+            throw new BadRequestException("Con yeu cau xet nghiem chua hoan thanh");
+        }
 
-            // Cap nhat vital signs
-            if (r.getVitalSigns() != null && hasVitalSignsUpdate(req)) {
-                VitalSigns v = r.getVitalSigns();
-                if (req.bloodPressure() != null) v.setBloodPressure(req.bloodPressure());
-                if (req.heartRate() != null) v.setHeartRate(req.heartRate());
-                if (req.temperature() != null) v.setTemperature(req.temperature());
-                if (req.weight() != null) v.setWeight(req.weight());
-                if (req.height() != null) v.setHeight(req.height());
-            }
+        // Cap nhat thong tin medical record (icd-10, prescription, vitals, ...)
+        if (req != null) {
+            updateMedicalRecordFields(r, req);
         }
 
         r.setStatus(MedicalRecordStatus.COMPLETED);
@@ -203,7 +481,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             });
         }
 
-        var fetched = repo.findByVisit_VisitIdWithVitalSigns(visit.getVisitId()).orElse(saved);
+        var fetched = repo.getWithDetailsByVisitId(visit.getVisitId()).orElse(saved);
         return MedicalRecordResponse.from(fetched, true);
     }
 
@@ -222,4 +500,114 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return repo.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Ho so khong ton tai: " + id));
     }
+
+    /**
+     * Sinh ma so benh an tu dong: MR-YYYY-XXXXX (MR-nam-so thu tu).
+     */
+    private String generateRecordCode() {
+        String year = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy"));
+        String prefix = "MR-" + year + "-";
+
+        // Tim ma so cuoi cung trong nam
+        String lastCode = repo.findTopByRecordCodeStartingWithOrderByRecordCodeDesc(prefix);
+        int nextNum = 1;
+        if (lastCode != null) {
+            String numStr = lastCode.substring(prefix.length());
+            nextNum = Integer.parseInt(numStr) + 1;
+        }
+
+        return prefix + String.format("%05d", nextNum);
+    }
+
+    /**
+     * Lich su kham benh cua benh nhan.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<MedicalHistoryResponse> getMedicalHistoryForPatient(UUID profileId, String search, Pageable pageable) {
+        var spec = searchMedicalHistorySpec(profileId, search);
+        var page = repo.findAll(spec, pageable);
+
+        return PageResponse.from(page, MedicalHistoryResponse::from);
+    }
+
+    private org.springframework.data.jpa.domain.Specification<MedicalRecord> searchMedicalHistorySpec(
+            UUID profileId, String search) {
+        return (root, query, cb) -> {
+            var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+
+            var visit = root.get("visit");
+            var customer = visit.get("customer");
+
+            if (profileId != null) {
+                predicates.add(cb.equal(customer.get("profileId"), profileId));
+            }
+
+            // Chi lay nhung record da hoan thanh
+            predicates.add(cb.equal(root.get("status"), MedicalRecordStatus.COMPLETED));
+
+            if (search != null && !search.isBlank()) {
+                String searchLower = "%" + search.toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("recordCode")), searchLower),
+                        cb.like(cb.lower(root.get("diagnosis")), searchLower),
+                        cb.like(cb.lower(visit.get("checkInTime")), searchLower)
+                ));
+            }
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+    }
+
+    /**
+     * Chi tiet luot kham cua benh nhan (theo visitId).
+     */
+    @Transactional(readOnly = true)
+    public org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse getVisitDetail(UUID visitId, UUID profileId) {
+        org.example.doansummer2026.model.MedicalRecord record = repo.getWithDetailsByVisitId(visitId)
+                .orElseThrow(() -> new ResourceNotFoundException("Ho so khong ton tai: " + visitId));
+
+        // Kiem tra quyen so huu
+        if (record.getVisit() == null || record.getVisit().getCustomer() == null
+                || !record.getVisit().getCustomer().getProfileId().equals(profileId)) {
+            throw new ResourceNotFoundException("Khong tim thay ho so");
+        }
+
+        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(record);
+    }
+
+    /**
+     * Chi tiet luot kham cua benh nhan (theo recordId).
+     */
+    @Transactional(readOnly = true)
+    public org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse getVisitDetailByRecordId(UUID recordId, UUID profileId) {
+        org.example.doansummer2026.model.MedicalRecord record = repo.findById(recordId)
+                .orElseThrow(() -> new ResourceNotFoundException("Ho so khong ton tai: " + recordId));
+
+        // Kiem tra quyen so huu
+        if (record.getVisit() == null || record.getVisit().getCustomer() == null
+                || !record.getVisit().getCustomer().getProfileId().equals(profileId)) {
+            throw new ResourceNotFoundException("Khong tim thay ho so");
+        }
+
+        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(record);
+    }
+
+    /**
+     * Danh gia phong kham (1-5 sao). Chi ap dung cho EXAMINATION da hoan thanh (COMPLETED).
+     */
+    public MedicalRecordResponse rate(UUID id, int ratingScore) {
+        if (ratingScore < 1 || ratingScore > 5) {
+            throw new BadRequestException("Diem danh gia phai tu 1-5 sao");
+        }
+        MedicalRecord r = findById(id);
+        if (r.getStatus() != MedicalRecordStatus.COMPLETED) {
+            throw new BadRequestException("Chi co the danh gia phieu da hoan thanh (COMPLETED), hien tai: " + r.getStatus());
+        }
+        r.setRatingScore(ratingScore);
+        r.setRatedAt(LocalDateTime.now());
+        return MedicalRecordResponse.from(repo.save(r), true);
+    }
 }
+
+
+

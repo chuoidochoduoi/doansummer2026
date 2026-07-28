@@ -5,3 +5,6 @@ public enum InvoiceStatus {
     PAID,            // Da thanh toan du
     CANCELLED,       // Huy (do sai thong tin, benh nhan khong den...)
 }
+
+
+

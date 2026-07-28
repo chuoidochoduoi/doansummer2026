@@ -31,6 +31,8 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+
+import org.example.doansummer2026.enums.ServiceStatus;
 import org.example.doansummer2026.enums.ServiceType;
 
 /**
@@ -45,9 +47,10 @@ import org.example.doansummer2026.enums.ServiceType;
 @SQLDelete(sql = "UPDATE medical_service SET deleted = true WHERE service_id = ?")
 @SQLRestriction("deleted = false")
 @NamedEntityGraph(
-    name = "MedicalService.withDepartment",
+    name = "MedicalService.withDepartmentAndSpecialization",
     attributeNodes = {
-        @NamedAttributeNode("department")
+        @NamedAttributeNode("department"),
+        @NamedAttributeNode("requiredSpecialization")
     }
 )
 @Getter
@@ -85,9 +88,11 @@ public class MedicalService extends BaseEntity {
     @Column(nullable = false, precision = 18, scale = 2)
     private BigDecimal price;
 
-    @Column(name = "is_active", nullable = false)
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
     @Builder.Default
-    private Boolean isActive = true;
+    private ServiceStatus status = ServiceStatus.DRAFT;
 
     /** Chi ap dung cho LAB_TEST. true = xet nghiem tai cho (nhanh), false = gui lab tap trung. */
     @Column(name = "is_point_of_care", nullable = false)
@@ -104,7 +109,18 @@ public class MedicalService extends BaseEntity {
     @JoinColumn(name = "department_id")
     private Department department;
 
-//    @ManyToOne(fetch = FetchType.LAZY)
-//    @JoinColumn(name = "required_specialization_id")
-//    private Specialization requiredSpecialization;
+    /** Chuyen khoa hien thi can thiet de thuc hien dich vu (null neu khong yeu cau). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "required_specialization_id")
+    private Specialization requiredSpecialization;
+
+    /** Ma dich vu (duy nhat, dung cho hoa don snapshot). */
+    @NotBlank
+    @Size(max = 20)
+    @Column(name = "service_code", nullable = false, unique = true, length = 20)
+    private String serviceCode;
 }
+
+
+
+

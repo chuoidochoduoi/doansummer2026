@@ -38,3 +38,6 @@ public interface CustomerVisitRepository extends JpaRepository<CustomerVisit, UU
         return findAll(spec, pageable);
     }
 }
+
+
+

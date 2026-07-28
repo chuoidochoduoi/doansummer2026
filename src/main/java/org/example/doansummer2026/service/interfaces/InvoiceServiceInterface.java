@@ -24,3 +24,6 @@ public interface InvoiceServiceInterface {
     Invoice findById(UUID id);
     void recalculatePaidAmount(UUID id);
 }
+
+
+

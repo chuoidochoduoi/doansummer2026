@@ -30,13 +30,13 @@ public class SpecializationController {
     private final SpecializationService service;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR')")
     public ResponseEntity<PageResponse<SpecializationResponse>> list(Pageable pageable) {
         return RestResponses.ok(service.list(pageable));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR')")
     public ResponseEntity<SpecializationResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
@@ -62,3 +62,6 @@ public class SpecializationController {
         return RestResponses.noContent();
     }
 }
+
+
+

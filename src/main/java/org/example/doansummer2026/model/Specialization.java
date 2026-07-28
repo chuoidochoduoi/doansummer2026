@@ -44,3 +44,6 @@ public class Specialization extends BaseEntity {
     @Column(length = 500)
     private String description;
 }
+
+
+

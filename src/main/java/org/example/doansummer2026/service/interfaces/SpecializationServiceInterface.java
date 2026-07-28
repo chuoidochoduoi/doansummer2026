@@ -18,3 +18,6 @@ public interface SpecializationServiceInterface {
     void delete(UUID id);
     Specialization findById(UUID id);
 }
+
+
+

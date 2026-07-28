@@ -2,6 +2,7 @@ package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
+import org.example.doansummer2026.dto.schedule.ScheduleAssignRequest;
 import org.example.doansummer2026.dto.schedule.ScheduleCreateRequest;
 import org.example.doansummer2026.dto.schedule.ScheduleResponse;
 import org.example.doansummer2026.dto.schedule.ScheduleUpdateRequest;
@@ -21,9 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Lich lam viec cu the theo ngay cua nhan vien.
@@ -142,4 +141,97 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         int diff = dow.getValue() - DayOfWeek.MONDAY.getValue();
         return weekStart.plusDays(diff);
     }
+
+    /**
+     * Tim kiem schedule trong 1 tuan.
+     */
+    @Transactional(readOnly = true)
+    public List<StaffSchedule> findByWeek(LocalDate from, LocalDate to) {
+        return scheduleRepo.findAllByWorkDateBetween(from, to);
+    }
+
+    /**
+     * Tim kiem schedule cua 1 nhan su trong 1 tuan.
+     */
+    @Transactional(readOnly = true)
+    public List<StaffSchedule> findByStaffAndWeek(UUID staffId, LocalDate from, LocalDate to) {
+        StaffInfo staff = staffService.findById(staffId);
+        return scheduleRepo.findByStaffAndWorkDateBetween(staff, from, to);
+    }
+
+    /**
+     * Gan nhan su vao ca truc theo ngay.
+     */
+    public void assignStaff(ScheduleAssignRequest req) {
+        LocalDate date = parseDateFromDayOfWeek(req.week(), req.dayKey());
+        Shift shift = Shift.valueOf(req.shiftId().toUpperCase());
+
+        StaffInfo staff = staffService.findById(req.staffId());
+
+        if ("remove".equalsIgnoreCase(req.action())) {
+            // Xoa schedule
+            scheduleRepo.deleteByStaffAndWorkDateAndShift(staff, date, shift);
+        } else {
+            // Them schedule - kiem tra neu da ton tai thi bo qua
+            if (scheduleRepo.findByStaffAndWorkDateAndShift(staff, date, shift).isEmpty()) {
+                StaffSchedule schedule = StaffSchedule.builder()
+                        .staff(staff)
+                        .workDate(date)
+                        .shift(shift)
+                        .status(org.example.doansummer2026.enums.ScheduleStatus.SCHEDULED)
+                        .isCustom(true)
+                        .build();
+                scheduleRepo.save(schedule);
+            }
+        }
+    }
+
+    /**
+     * Sao chep lich tu tuan cu sang tuan moi.
+     */
+    public List<StaffSchedule> copyWeek(LocalDate fromWeek, LocalDate toWeek) {
+        List<StaffSchedule> oldSchedules = scheduleRepo.findAllByWorkDateBetween(fromWeek, fromWeek.plusDays(6));
+        List<StaffSchedule> toCreate = new ArrayList<>();
+
+        for (StaffSchedule old : oldSchedules) {
+            LocalDate newDate = toWeek.plusDays(old.getWorkDate().getDayOfWeek().getValue() - DayOfWeek.MONDAY.getValue());
+            Optional<StaffSchedule> existing = scheduleRepo.findByStaffAndWorkDateAndShift(
+                    old.getStaff(), newDate, old.getShift());
+
+            if (existing.isEmpty()) {
+                StaffSchedule newSchedule = StaffSchedule.builder()
+                        .staff(old.getStaff())
+                        .workDate(newDate)
+                        .shift(old.getShift())
+                        .status(old.getStatus())
+                        .isCustom(true)
+                        .note(old.getNote())
+                        .build();
+                toCreate.add(newSchedule);
+            }
+        }
+        return scheduleRepo.saveAll(toCreate).stream().map(s -> {
+            return s;
+        }).toList();
+    }
+
+    private LocalDate parseDateFromDayOfWeek(LocalDate weekStart, String dayKey) {
+        Map<String, DayOfWeek> dayMap = Map.of(
+                "mon", DayOfWeek.MONDAY,
+                "tue", DayOfWeek.TUESDAY,
+                "wed", DayOfWeek.WEDNESDAY,
+                "thu", DayOfWeek.THURSDAY,
+                "fri", DayOfWeek.FRIDAY,
+                "sat", DayOfWeek.SATURDAY,
+                "sun", DayOfWeek.SUNDAY
+        );
+        DayOfWeek dow = dayMap.get(dayKey.toLowerCase());
+        if (dow == null) {
+            throw new IllegalArgumentException("Invalid dayKey: " + dayKey);
+        }
+        return weekStart.with(dow);
+    }
 }
+
+
+

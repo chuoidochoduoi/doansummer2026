@@ -4,10 +4,16 @@ import jakarta.validation.constraints.NotNull;
 
 import java.util.UUID;
 
+/**
+ * Tao TestRequest - performingDepartment tu dong lay tu MedicalService.department.
+ */
 public record TestRequestCreateRequest(
         @NotNull UUID medicalRecordId,
         @NotNull UUID serviceId,
-        @NotNull UUID performingDepartmentId,
         @NotNull UUID requestedById,
-        String description
+        String notes
 ) {}
+
+
+
+

@@ -93,3 +93,7 @@ public class Transaction extends BaseEntity {
     @JoinColumn(name = "received_by")
     private StaffInfo receivedBy;
 }
+
+
+
+

@@ -12,6 +12,7 @@ import org.example.doansummer2026.dto.appointment.AppointmentCreateRequest;
 import org.example.doansummer2026.dto.appointment.AppointmentGuestCreateRequest;
 import org.example.doansummer2026.dto.appointment.AppointmentResponse;
 import org.example.doansummer2026.dto.appointment.AppointmentUpdateRequest;
+import org.example.doansummer2026.dto.appointment.GuestHistoryResponse;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.service.AppointmentService;
 import org.example.doansummer2026.service.AuthService;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -40,7 +42,7 @@ public class AppointmentController {
     private final AuthService authService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<PageResponse<AppointmentResponse>> list(
             @RequestParam(required = false) UUID customerId,
             @RequestParam(required = false) AppointmentStatus status,
@@ -51,7 +53,7 @@ public class AppointmentController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<AppointmentResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
@@ -71,7 +73,7 @@ public class AppointmentController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<AppointmentResponse> update(@PathVariable UUID id,
                                                       @Valid @RequestBody AppointmentUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
@@ -90,7 +92,7 @@ public class AppointmentController {
      * - issuedById se tu dong lay tu staff dang dang nhap neu khong truyen.
      */
     @PostMapping("/{id}/check-in")
-    @PreAuthorize("hasAnyRole('RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST', 'ROLE_STAFF')")
     public ResponseEntity<AppointmentCheckInResponse> checkIn(
             @PathVariable UUID id,
             @Valid @RequestBody AppointmentCheckInRequest req) {
@@ -103,9 +105,24 @@ public class AppointmentController {
      * - Tao CustomerVisit + Invoice, QueueTicket se duoc tao khi thanh toan.
      */
     @PostMapping("/guest-check-in")
-    @PreAuthorize("hasAnyRole('RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST')")
     public ResponseEntity<GuestCheckInResponse> guestCheckIn(
             @Valid @RequestBody GuestCheckInRequest req) {
         return RestResponses.ok(service.guestCheckIn(req));
     }
+
+    /**
+     * Kiem tra guest da tung den kham chua (theo phone).
+     * - Dung de hien thi thong tin guest cu khi dang ky/ check-in lan 2.
+     */
+    @GetMapping("/guest-history")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST')")
+    public ResponseEntity<List<GuestHistoryResponse>> getGuestHistory(
+            @RequestParam String phone) {
+        List<GuestHistoryResponse> history = service.getGuestHistoryByPhone(phone);
+        return RestResponses.ok(history);
+    }
 }
+
+
+

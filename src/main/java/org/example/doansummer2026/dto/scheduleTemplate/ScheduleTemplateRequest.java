@@ -12,3 +12,6 @@ public record ScheduleTemplateRequest(
         @NotNull Shift shift,
         Boolean isActive
 ) {}
+
+
+

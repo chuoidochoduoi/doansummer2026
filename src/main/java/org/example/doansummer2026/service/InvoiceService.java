@@ -6,6 +6,9 @@ import org.example.doansummer2026.dto.invoice.InvoiceCreateRequest;
 import org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest;
 import org.example.doansummer2026.dto.invoice.InvoiceResponse;
 import org.example.doansummer2026.dto.invoice.InvoiceUpdateRequest;
+import org.example.doansummer2026.dto.invoice.PaymentHistoryResponse;
+import org.example.doansummer2026.dto.invoice.ReceiptDetailResponse;
+import org.example.doansummer2026.enums.PaymentMethod;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
@@ -17,6 +20,7 @@ import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.Profile;
 import org.example.doansummer2026.model.StaffInfo;
+import org.example.doansummer2026.enums.ServiceType;
 import org.example.doansummer2026.enums.TransactionStatus;
 import org.example.doansummer2026.repository.InvoiceItemRepository;
 import org.example.doansummer2026.repository.InvoiceRepository;
@@ -57,6 +61,7 @@ public class InvoiceService implements InvoiceServiceInterface {
     private final MedicalServiceRepository serviceRepo;
     private final AccountRepository accountRepo;
     private final QueueTicketService queueTicketService;
+    private final TestRequestService testRequestService;
 
     @Transactional(readOnly = true)
     public PageResponse<InvoiceResponse> search(UUID customerId, InvoiceStatus status,
@@ -81,8 +86,11 @@ public class InvoiceService implements InvoiceServiceInterface {
     }
 
     public InvoiceResponse create(InvoiceCreateRequest req) {
-        Profile customer = profileRepo.findById(req.customerId())
-                .orElseThrow(() -> new ResourceNotFoundException("Khach hang khong ton tai: " + req.customerId()));
+        // Customer co the null cho guest vang lai check-in
+        Profile customer = null;
+        if (req.customerId() != null) {
+            customer = profileRepo.findById(req.customerId()).orElse(null);
+        }
         CustomerVisit visit = null;
         if (req.visitId() != null) {
             visit = visitRepo.findById(req.visitId())
@@ -100,7 +108,7 @@ public class InvoiceService implements InvoiceServiceInterface {
         }
         Invoice invoice = Invoice.builder()
                 .invoiceCode(generateInvoiceCode())
-                .customer(customer)
+                .customer(customer) // Co the null cho guest
                 .visit(visit)
                 .medicalRecord(record)
                 .issueDate(LocalDate.now())
@@ -181,7 +189,12 @@ public class InvoiceService implements InvoiceServiceInterface {
         }
         i.setPaidAmount(i.getTotalAmount());
         i.setStatus(InvoiceStatus.PAID);
-        return InvoiceResponse.from(repo.save(i));
+        Invoice saved = repo.save(i);
+        // Tao QueueTicket sau khi thanh toan
+        if (saved.getVisit() != null) {
+            createQueueTicketsFromInvoiceItems(saved);
+        }
+        return InvoiceResponse.from(saved);
     }
 
     public void delete(UUID id) {
@@ -220,18 +233,47 @@ public class InvoiceService implements InvoiceServiceInterface {
         }
     }
 
-    /** Tao QueueTicket cho moi InvoiceItem (phai co service va service.department). */
+    /**
+     * Tao QueueTicket hoac TestRequest tu cac InvoiceItem sau khi thanh toan.
+     * - CLINICAL_EXAM: tao QueueTicket (xep hang cho bac si kham).
+     * - LAB_TEST, IMAGING, PROCEDURE: tao TestRequest (gui vao phong xet nghiem/CDHA/thu thuat tuong ung).
+     */
     private void createQueueTicketsFromInvoiceItems(Invoice invoice) {
-        for (InvoiceItem item : invoice.getItems()) {
-            if (item.getService() == null) continue;
+        // Load invoice voi items, service, visit, medicalRecord, issuedBy
+        Invoice loaded = repo.getWithDetailsByInvoiceId(invoice.getInvoiceId())
+                .orElse(invoice);
+
+        UUID visitId = loaded.getVisit() != null ? loaded.getVisit().getVisitId() : null;
+        UUID medicalRecordId = loaded.getMedicalRecord() != null ? loaded.getMedicalRecord().getRecordId() : null;
+        UUID requestedById = loaded.getIssuedBy() != null ? loaded.getIssuedBy().getStaffId() : null;
+
+        for (InvoiceItem item : loaded.getItems()) {
             MedicalService service = item.getService();
-            if (service.getDepartment() == null) continue;
-            queueTicketService.create(new org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest(
-                    invoice.getVisit().getVisitId(),
-                    service.getDepartment().getDepartmentId(),
-                    service.getServiceId(),
-                    null
-            ));
+            // Neu service la null (lazy load hoac da xoa), bo qua
+            if (service == null || service.getDepartment() == null) continue;
+
+            ServiceType serviceType = service.getServiceType();
+            if (serviceType == ServiceType.CLINICAL_EXAM) {
+                // CLINICAL_EXAM: tao QueueTicket cho bac si kham
+                queueTicketService.create(new org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest(
+                        visitId,
+                        service.getDepartment().getDepartmentId(),
+                        service.getServiceId(),
+                        null
+                ));
+            } else if (serviceType == ServiceType.LAB_TEST
+                    || serviceType == ServiceType.IMAGING
+                    || serviceType == ServiceType.PROCEDURE) {
+                // LAB_TEST, IMAGING, PROCEDURE: tao TestRequest cho phong tuong ung
+                // Can co medicalRecord va requestedBy (issuedBy) moi tao duoc test request
+                if (medicalRecordId == null || requestedById == null) continue;
+                testRequestService.create(new org.example.doansummer2026.dto.testRequest.TestRequestCreateRequest(
+                        medicalRecordId,
+                        service.getServiceId(),
+                        requestedById,
+                        item.getNote() != null ? item.getNote() : service.getName()
+                ));
+            }
         }
     }
 
@@ -277,4 +319,78 @@ public class InvoiceService implements InvoiceServiceInterface {
         }
         throw new ConflictException("Khong the sinh invoice code sau 3 lan thu");
     }
+
+    /**
+     * Lich su thanh toan cho benh nhan.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<PaymentHistoryResponse> getPaymentHistoryForPatient(UUID customerId,
+                                                                        LocalDate from, LocalDate to,
+                                                                        PaymentMethod paymentMethod,
+                                                                        Pageable pageable) {
+        var page = repo.findAll(searchForPatientSpec(customerId, from, to), pageable);
+        // Eager fetch customer, items de tranh LazyInitializationException
+        page.getContent().forEach(invoice -> {
+            if (invoice.getCustomer() != null) {
+                invoice.getCustomer().getFullName();
+            }
+            invoice.getItems().size();
+        });
+
+        // Filter paymentMethod neu co
+        var filteredContent = page.getContent().stream()
+                .filter(invoice -> {
+                    if (paymentMethod == null) return true;
+                    var txs = transactionRepo.findByInvoice_InvoiceId(invoice.getInvoiceId());
+                    return txs.stream().anyMatch(t -> t.getPaymentMethod() == paymentMethod);
+                })
+                .toList();
+
+        // Tao page moi voi du lieu da filter
+        var filteredPage = new org.springframework.data.domain.PageImpl<>(
+                filteredContent, pageable, filteredContent.size());
+
+        return PageResponse.from(filteredPage, invoice -> {
+            var latestTx = transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                    invoice.getInvoiceId(), org.example.doansummer2026.enums.TransactionStatus.SUCCESS);
+            return PaymentHistoryResponse.from(invoice, latestTx.orElse(null));
+        });
+    }
+
+    private org.springframework.data.jpa.domain.Specification<Invoice> searchForPatientSpec(
+            UUID customerId, LocalDate from, LocalDate to) {
+        return (root, query, cb) -> {
+            var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+
+            if (customerId != null) {
+                predicates.add(cb.equal(root.get("customer").get("profileId"), customerId));
+            }
+            if (from != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("issueDate"), from));
+            }
+            if (to != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("issueDate"), to));
+            }
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+    }
+
+    /**
+     * Chi tiet phieu thu cho benh nhan.
+     */
+    @Transactional(readOnly = true)
+    public ReceiptDetailResponse getReceiptDetail(UUID invoiceId, UUID customerId) {
+        Invoice invoice = repo.findById(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + invoiceId));
+        // Kiem tra quyen: invoice phai thuoc ve khach hang nay
+        if (invoice.getCustomer() == null || !invoice.getCustomer().getProfileId().equals(customerId)) {
+            throw new ResourceNotFoundException("Khong tim thay hoa don");
+        }
+        return ReceiptDetailResponse.from(invoice);
+    }
 }
+
+
+
+

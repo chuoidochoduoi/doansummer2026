@@ -50,14 +50,17 @@ public class StaffScheduleTemplateController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<List<ScheduleTemplateResponse>> listByStaff(@RequestParam UUID staffId) {
         return RestResponses.ok(service.listByStaff(staffId));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<ScheduleTemplateResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 }
+
+
+

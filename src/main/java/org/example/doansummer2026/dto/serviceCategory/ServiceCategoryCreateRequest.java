@@ -10,3 +10,7 @@ public record ServiceCategoryCreateRequest(
         @Size(max = 500) String description,
         UUID parentId
 ) {}
+
+
+
+

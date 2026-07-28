@@ -9,3 +9,6 @@ public record CustomerVisitUpdateRequest(
         VisitStatus status,
         LocalDateTime checkOutTime
 ) {}
+
+
+

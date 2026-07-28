@@ -18,3 +18,6 @@ public interface ServiceCategoryServiceInterface {
     void delete(UUID id);
     ServiceCategory findById(UUID id);
 }
+
+
+

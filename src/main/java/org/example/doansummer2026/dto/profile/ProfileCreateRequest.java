@@ -19,3 +19,6 @@ public record ProfileCreateRequest(
         @NotBlank @Email String email,
         @Size(max = 255) String address
 ) {}
+
+
+

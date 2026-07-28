@@ -30,3 +30,6 @@ public interface QueueTicketServiceInterface {
     /** Lay tat ca phieu dang kham (IN_PROGRESS) - cho phong kham da khoa. */
     PageResponse<QueueTicketResponse> getAllInprogress(Pageable pageable);
 }
+
+
+

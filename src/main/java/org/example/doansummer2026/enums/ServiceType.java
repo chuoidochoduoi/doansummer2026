@@ -9,5 +9,8 @@ package org.example.doansummer2026.enums;
  * - OTHER: khac (vaccine, kham suc khoe dinh ky, ...)
  */
 public enum ServiceType {
-    CLINICAL_EXAM, LAB_TEST, IMAGING, PROCEDURE, OTHER
+    CLINICAL_EXAM, LAB_TEST, IMAGING, PROCEDURE
 }
+
+
+

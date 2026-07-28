@@ -12,3 +12,6 @@ public interface TestResultRepository extends JpaRepository<TestResult, UUID> {
 
     Optional<TestResult> findByTestRequest_TestRequestId(UUID testRequestId);
 }
+
+
+

@@ -73,4 +73,23 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
 
         return new PageImpl<>(content, pageable, total);
     }
+
+    @Override
+    public List<Appointment> findByCustomerId(UUID customerId) {
+        String jpql = "SELECT a FROM Appointment a LEFT JOIN FETCH a.customer LEFT JOIN FETCH a.services WHERE a.customer.profileId = :customerId AND a.deleted = false";
+        return em.createQuery(jpql, Appointment.class)
+                .setParameter("customerId", customerId)
+                .getResultList();
+    }
+
+    @Override
+    public List<Appointment> findGuestAppointmentsByPhone(String phone) {
+        String jpql = "SELECT a FROM Appointment a LEFT JOIN FETCH a.services WHERE a.isGuest = true AND a.guestPhone = :phone AND a.deleted = false ORDER BY a.scheduledAt DESC";
+        return em.createQuery(jpql, Appointment.class)
+                .setParameter("phone", phone)
+                .getResultList();
+    }
 }
+
+
+

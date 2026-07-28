@@ -7,6 +7,7 @@ import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.dto.medicalService.MedicalServiceCreateRequest;
 import org.example.doansummer2026.dto.medicalService.MedicalServiceResponse;
 import org.example.doansummer2026.dto.medicalService.MedicalServiceUpdateRequest;
+import org.example.doansummer2026.enums.ServiceStatus;
 import org.example.doansummer2026.enums.ServiceType;
 import org.example.doansummer2026.service.MedicalServiceService;
 import org.springframework.data.domain.Pageable;
@@ -14,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -32,19 +34,19 @@ public class MedicalServiceController {
     private final MedicalServiceService service;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR')")
     public ResponseEntity<PageResponse<MedicalServiceResponse>> list(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) ServiceType serviceType,
-            @RequestParam(required = false) Boolean isActive,
+            @RequestParam(required = false) ServiceStatus status,
             Pageable pageable) {
-        return RestResponses.ok(service.search(keyword, categoryId, serviceType, isActive, pageable));
+        return RestResponses.ok(service.search(keyword, categoryId, serviceType, status, pageable));
     }
 
     /**
      * API cho khach hang/benh nhan xem dich vu dang hoat dong.
-     * Chi tra ve cac dich vu co isActive = true.
+     * Chi tra ve cac dich vu co status = ACTIVE.
      */
     @GetMapping("/available")
     public ResponseEntity<PageResponse<MedicalServiceResponse>> listAvailable(
@@ -56,7 +58,7 @@ public class MedicalServiceController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<MedicalServiceResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
@@ -81,4 +83,22 @@ public class MedicalServiceController {
         service.delete(id);
         return RestResponses.noContent();
     }
+
+    /** Ngung hoat dong dich vu - chi dich vu ACTIVE moi duoc ngung. */
+    @PatchMapping("/{id}/deactivate")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<MedicalServiceResponse> deactivate(@PathVariable UUID id) {
+        return RestResponses.ok(service.deactivate(id));
+    }
+
+    /** Phat hanh dich vu - chi dich vu DRAFT moi duoc phat hanh. */
+    @PatchMapping("/{id}/publish")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<MedicalServiceResponse> publish(@PathVariable UUID id) {
+        return RestResponses.ok(service.publish(id));
+    }
 }
+
+
+
+

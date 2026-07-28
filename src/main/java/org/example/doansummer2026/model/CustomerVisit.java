@@ -79,3 +79,6 @@ public class CustomerVisit extends BaseEntity {
     @Builder.Default
     private List<QueueTicket> queueTickets = new ArrayList<>();
 }
+
+
+

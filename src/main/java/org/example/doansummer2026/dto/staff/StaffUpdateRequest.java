@@ -6,7 +6,8 @@ import org.example.doansummer2026.enums.SystemRole;
 import java.util.UUID;
 
 public record StaffUpdateRequest(
-        UUID departmentId,
+        // NOTE: departmentId da duoc xoa - chi dung head_doctor_id o Department
+        // specializationId: can thiet cho SPECIALIST_DOCTOR
         UUID specializationId,
         SystemRole systemRole,
         @Size(max = 20) String nationalId,
@@ -15,3 +16,6 @@ public record StaffUpdateRequest(
         @Size(max = 200) String university,
         @Size(max = 50) String licenseNumber
 ) {}
+
+
+

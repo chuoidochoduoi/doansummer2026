@@ -30,3 +30,6 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 
     long countByRecipient_ProfileIdAndStatus(UUID recipientId, NotificationStatus status);
 }
+
+
+

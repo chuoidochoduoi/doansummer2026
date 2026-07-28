@@ -20,6 +20,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -68,11 +69,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 principal.put("staffId", sid);
             }
 
+            // Extract authorities from JWT claims (based on SystemRole)
+            Collection<String> authorities = claims.get("authorities", Collection.class);
+            List<SimpleGrantedAuthority> grantedAuthorities;
+            if (authorities != null && !authorities.isEmpty()) {
+                grantedAuthorities = authorities.stream()
+                        .map(a -> {
+                            String authStr = (String) a;
+                            // Already has ROLE_ prefix
+                            return new SimpleGrantedAuthority(authStr);
+                        })
+                        .toList();
+            } else {
+                // Fallback: use ROLE_<ROLE> for backward compatibility
+                grantedAuthorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
+            }
+
             UsernamePasswordAuthenticationToken auth =
                     new UsernamePasswordAuthenticationToken(
                             principal,
                             null,
-                            List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+                            grantedAuthorities);
             SecurityContextHolder.getContext().setAuthentication(auth);
             chain.doFilter(request, response);
         } catch (JwtException | IllegalArgumentException ex) {
@@ -89,3 +106,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         response.getWriter().write(objectMapper.writeValueAsString(body));
     }
 }
+
+
+

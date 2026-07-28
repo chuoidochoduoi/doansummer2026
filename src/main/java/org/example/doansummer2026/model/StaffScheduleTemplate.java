@@ -67,3 +67,7 @@ public class StaffScheduleTemplate extends BaseEntity {
     @Builder.Default
     private Boolean isActive = true;
 }
+
+
+
+

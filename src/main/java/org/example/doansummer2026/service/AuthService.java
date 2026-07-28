@@ -9,10 +9,11 @@ import org.example.doansummer2026.dto.auth.ChangePasswordRequest;
 import org.example.doansummer2026.dto.auth.LoginRequest;
 import org.example.doansummer2026.dto.auth.RefreshRequest;
 import org.example.doansummer2026.dto.auth.RegisterRequest;
+import org.example.doansummer2026.enums.Role;
+import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.model.Profile;
-import org.example.doansummer2026.enums.Role;
 import org.example.doansummer2026.repository.ProfileRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.service.interfaces.AuthServiceInterface;
@@ -45,8 +46,8 @@ public class AuthService implements AuthServiceInterface {
             throw new BadRequestException("OTP khong hop le hoac da het han");
         }
 
-        // Tao account voi role PATIENT
-        Account account = accountService.create(req.phone(), req.password(), Role.PATIENT);
+        // Tao account voi role CUSTOMER
+        Account account = accountService.create(req.phone(), req.password(), Role.CUSTOMER);
 
         // Tao profile lien ket
         Profile profile = Profile.builder()
@@ -117,6 +118,16 @@ public class AuthService implements AuthServiceInterface {
         accountService.changePassword(me.getAccountId(), req.oldPassword(), req.newPassword());
     }
 
+    /** Lay profileId cua user dang dang nhap (chi cho CUSTOMER). */
+    @Transactional(readOnly = true)
+    public UUID currentProfileId() {
+        Account account = currentAccount();
+        if (account != null) {
+            return profileRepository.findByAccount_AccountId(account.getAccountId()).map(p -> p.getProfileId()).orElse(null);
+        }
+        return null;
+    }
+
     /** Lay staffId cua user dang dang nhap (null neu khong phai staff). */
     @Transactional(readOnly = true)
     public UUID currentStaffId() {
@@ -132,14 +143,29 @@ public class AuthService implements AuthServiceInterface {
         return null;
     }
 
-    private AuthResponse buildAuthResponse(Account account) {
-        // Tim staffId tu account (chi co cho staff, patient tra ve null)
-        UUID staffId = staffRepo.findByProfile_Account_Username(account.getUsername())
-                .map(staff -> staff.getStaffId())
-                .orElse(null);
+    /** Lay systemRole cua user dang dang nhap (null neu khong phai staff). */
+    @Transactional(readOnly = true)
+    public SystemRole getCurrentSystemRole() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getPrincipal() == null) {
+            return null;
+        }
+        Object principal = auth.getPrincipal();
+        if (principal instanceof Map<?, ?> map) {
+            String sr = (String) map.get("systemRole");
+            return sr != null ? SystemRole.valueOf(sr) : null;
+        }
+        return null;
+    }
 
-        String access = jwtService.generateAccessToken(account, staffId);
-        String refresh = jwtService.generateRefreshToken(account, staffId);
+    private AuthResponse buildAuthResponse(Account account) {
+        // Tim staffId va systemRole tu account (chi co cho staff, customer tra ve null)
+        var staffOpt = staffRepo.findByProfile_Account_Username(account.getUsername());
+        UUID staffId = staffOpt.map(staff -> staff.getStaffId()).orElse(null);
+        SystemRole systemRole = staffOpt.map(staff -> staff.getSystemRole()).orElse(null);
+
+        String access = jwtService.generateAccessToken(account, staffId, systemRole);
+        String refresh = jwtService.generateRefreshToken(account, staffId, systemRole);
         return new AuthResponse(
                 access,
                 refresh,
@@ -148,7 +174,11 @@ public class AuthService implements AuthServiceInterface {
                 new AuthResponse.AccountInfo(
                         account.getAccountId(),
                         account.getUsername(),
-                        account.getRole().name())
+                        account.getRole().name(),
+                        systemRole != null ? systemRole.name() : null)
         );
     }
 }
+
+
+

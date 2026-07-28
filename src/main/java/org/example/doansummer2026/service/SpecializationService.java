@@ -70,3 +70,6 @@ public class SpecializationService implements SpecializationServiceInterface {
                 .orElseThrow(() -> new ResourceNotFoundException("Chuyen khoa khong ton tai: " + id));
     }
 }
+
+
+

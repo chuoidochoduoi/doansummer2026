@@ -130,3 +130,6 @@ public class Appointment extends BaseEntity {
     @Builder.Default
     private Set<MedicalService> services = new HashSet<>();
 }
+
+
+

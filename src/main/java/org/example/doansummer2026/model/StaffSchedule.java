@@ -72,3 +72,7 @@ public class StaffSchedule extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String note;
 }
+
+
+
+

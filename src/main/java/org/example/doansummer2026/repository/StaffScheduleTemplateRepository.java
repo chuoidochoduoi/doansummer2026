@@ -17,3 +17,6 @@ public interface StaffScheduleTemplateRepository extends JpaRepository<StaffSche
 
     Optional<StaffScheduleTemplate> findByStaffAndDayOfWeek(StaffInfo staff, DayOfWeek dayOfWeek);
 }
+
+
+

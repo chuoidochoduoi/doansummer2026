@@ -59,10 +59,6 @@ public class StaffInfo extends BaseEntity {
     @JoinColumn(name = "profile_id", nullable = false, unique = true)
     private Profile profile;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "department_id")
-    private Department department;
-
     @Column(name = "staff_code", unique = true, length = 30)
     private String staffCode;
 
@@ -108,3 +104,7 @@ public class StaffInfo extends BaseEntity {
         return sb.toString();
     }
 }
+
+
+
+

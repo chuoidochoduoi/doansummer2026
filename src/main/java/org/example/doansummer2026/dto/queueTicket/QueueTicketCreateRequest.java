@@ -11,3 +11,7 @@ public record QueueTicketCreateRequest(
         @NotNull UUID serviceId,
         LocalDate workDate
 ) {}
+
+
+
+

@@ -14,3 +14,6 @@ public record AppointmentCreateRequest(
         TimeSlot timeSlot,
         Set<UUID> serviceIds
 ) {}
+
+
+

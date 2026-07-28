@@ -7,6 +7,7 @@ package org.example.doansummer2026.enums;
  * - RECEPTIONIST: le tan
  * - CASHIER: thu ngan
  * - CLINIC_MANAGER: quan ly phong kham
+ * - ADMIN: quan tri vien he thong
  */
 public enum SystemRole {
     GENERAL_DOCTOR,
@@ -14,5 +15,9 @@ public enum SystemRole {
     NURSE,
     RECEPTIONIST,
     CASHIER,
-    CLINIC_MANAGER
+    CLINIC_MANAGER,
+    ADMIN
 }
+
+
+

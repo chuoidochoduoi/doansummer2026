@@ -2,6 +2,8 @@ package org.example.doansummer2026.repository;
 
 import org.example.doansummer2026.model.InvoiceItem;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -11,4 +13,19 @@ import java.util.UUID;
 public interface InvoiceItemRepository extends JpaRepository<InvoiceItem, UUID> {
 
     List<InvoiceItem> findByInvoice_InvoiceId(UUID invoiceId);
+
+    /** Tính tong BHYT theo serviceId (cho ServiceStat). */
+    @Query("SELECT SUM(ii.bhytFund) FROM InvoiceItem ii WHERE ii.service.serviceId = :serviceId")
+    java.math.BigDecimal sumBhytFundByServiceId(@Param("serviceId") UUID serviceId);
+
+    /** Dem so lan goi dich vu (cho totalOrders). */
+    @Query("SELECT COUNT(ii) FROM InvoiceItem ii WHERE ii.service.serviceId = :serviceId")
+    long countByServiceId(@Param("serviceId") UUID serviceId);
+
+    /** Dem so lan BHYT duoc su dung (bhytQty). */
+    @Query("SELECT COUNT(ii) FROM InvoiceItem ii WHERE ii.service.serviceId = :serviceId AND ii.bhytFund > 0")
+    long countBhytUsageByServiceId(@Param("serviceId") UUID serviceId);
 }
+
+
+

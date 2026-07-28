@@ -3,9 +3,27 @@ package org.example.doansummer2026.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.common.RestResponses;
-import org.example.doansummer2026.dto.profile.ProfileCreateRequest;
-import org.example.doansummer2026.dto.profile.ProfileResponse;
-import org.example.doansummer2026.dto.profile.ProfileUpdateRequest;
+import org.example.doansummer2026.dto.profile.*;
+import org.example.doansummer2026.dto.profile.ProfileCustomerResponse.AppointmentSummary;
+import org.example.doansummer2026.dto.profile.ProfileCustomerResponse.TestResultSummary;
+import org.example.doansummer2026.exception.BadRequestException;
+import org.example.doansummer2026.model.Account;
+import org.example.doansummer2026.service.*;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
+import java.util.UUID;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.service.AuthService;
@@ -31,14 +49,17 @@ import java.util.UUID;
 public class ProfileController {
 
     private final ProfileService profileService;
+    private final AppointmentService appointmentService;
+    private final TestRequestService testRequestService;
     private final AuthService authService;
 
-    /** Lay profile cua tai khoan dang nhap. */
+    /** Lay profile cua tai khoan dang nhap (cho CUSTOMER). */
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<ProfileResponse> me() {
+    public ResponseEntity<ProfileCustomerResponse> me() {
         Account me = authService.currentAccount();
-        return RestResponses.ok(profileService.getByAccount(me.getAccountId()));
+        ProfileCustomerResponse response = profileService.getMyProfile(me.getAccountId());
+        return RestResponses.ok(response);
     }
 
     /** Update profile cua tai khoan dang nhap (benh nhan tu sua). */
@@ -52,14 +73,14 @@ public class ProfileController {
 
     /** ADMIN xem chi tiet profile bat ky. */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<ProfileResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(profileService.get(id));
     }
 
     /** ADMIN tim kiem. */
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<PageResponse<ProfileResponse>> search(
             @RequestParam(required = false) String keyword,
             Pageable pageable) {
@@ -68,7 +89,7 @@ public class ProfileController {
 
     /** ADMIN tao profile (thuong di kem StaffService.create). */
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<ProfileResponse> create(@RequestBody ProfileCreateRequest req) {
         if (req.accountId() == null) {
             throw new BadRequestException("accountId bat buoc");
@@ -79,16 +100,20 @@ public class ProfileController {
 
     /** ADMIN cap nhat profile bat ky. */
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<ProfileResponse> update(@PathVariable UUID id,
                                                   @RequestBody ProfileUpdateRequest req) {
         return RestResponses.ok(profileService.update(id, req));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         profileService.delete(id);
         return RestResponses.noContent();
     }
 }
+
+
+
+

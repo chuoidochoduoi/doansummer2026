@@ -83,3 +83,7 @@ public class VitalSignsService implements VitalSignsServiceInterface {
                 .orElseThrow(() -> new ResourceNotFoundException("Chi so khong ton tai: " + id));
     }
 }
+
+
+
+
