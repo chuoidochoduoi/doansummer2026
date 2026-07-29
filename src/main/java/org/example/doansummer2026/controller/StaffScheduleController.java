@@ -27,6 +27,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.example.doansummer2026.aop.Auditable;
+import org.example.doansummer2026.enums.AuditAction;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -60,6 +62,7 @@ public class StaffScheduleController {
 
     @PostMapping("/api/v1/schedules")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule")
     public ResponseEntity<ScheduleResponse> create(@Valid @RequestBody ScheduleCreateRequest req) {
         ScheduleResponse created = service.create(req);
         return RestResponses.created("/api/v1/schedules/{id}", created.scheduleId(), created);
@@ -67,6 +70,7 @@ public class StaffScheduleController {
 
     @PutMapping("/api/v1/schedules/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "StaffSchedule", idParamName = "id")
     public ResponseEntity<ScheduleResponse> update(@PathVariable UUID id,
                                                    @RequestBody ScheduleUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
@@ -74,6 +78,7 @@ public class StaffScheduleController {
 
     @DeleteMapping("/api/v1/schedules/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.DELETE, entityName = "StaffSchedule", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
@@ -82,6 +87,7 @@ public class StaffScheduleController {
     /** POST tac vu batch - sinh nhieu lich, khong co Location don le -> 200 OK. */
     @PostMapping("/api/v1/schedules/generate")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule")
     public ResponseEntity<List<ScheduleResponse>> generate(@RequestBody ScheduleGenerateRequest req) {
         return RestResponses.ok(service.generateFromTemplates(
                 req.weekStart(), req.staffIds(), req.overrideExisting()));
@@ -111,6 +117,7 @@ public class StaffScheduleController {
      */
     @PostMapping("/api/v1/clinic-manager/schedules/assign")
     @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "StaffSchedule")
     public ResponseEntity<Void> assign(@Valid @RequestBody ScheduleAssignRequest req) {
         service.assignStaff(req);
         return RestResponses.noContent();
@@ -121,6 +128,7 @@ public class StaffScheduleController {
      */
     @PostMapping("/api/v1/clinic-manager/schedules/copy")
     @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule")
     public ResponseEntity<ClinicManagerScheduleResponse> copy(@Valid @RequestBody ScheduleCopyRequest req) {
         LocalDate weekStart = req.week().with(DayOfWeek.MONDAY);
         LocalDate prevWeekStart = weekStart.minusDays(7);

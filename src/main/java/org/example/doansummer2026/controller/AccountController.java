@@ -22,6 +22,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.example.doansummer2026.aop.Auditable;
+import org.example.doansummer2026.enums.AuditAction;
 
 import java.util.UUID;
 
@@ -74,6 +76,7 @@ public class AccountController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "Account", idParamName = "id")
     public ResponseEntity<AccountResponse> update(@PathVariable UUID id,
                                                   @RequestBody AccountUpdateRequest req) {
         var account = accountService.update(id, req);
@@ -89,6 +92,7 @@ public class AccountController {
      */
     @PatchMapping("/{id}/lock")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Account", idParamName = "id")
     public ResponseEntity<AccountResponse> lock(@PathVariable UUID id) {
         var account = accountService.lock(id);
         SystemRole systemRole = staffRepo.findByProfile_Account_Username(account.getUsername())
@@ -99,6 +103,7 @@ public class AccountController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.DELETE, entityName = "Account", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         accountService.softDelete(id);
         return RestResponses.noContent();

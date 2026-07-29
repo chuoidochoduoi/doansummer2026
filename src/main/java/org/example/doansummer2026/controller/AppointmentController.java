@@ -28,6 +28,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.example.doansummer2026.aop.Auditable;
+import org.example.doansummer2026.enums.AuditAction;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -60,6 +62,7 @@ public class AppointmentController {
 
     @PostMapping
     @PreAuthorize("isAuthenticated()")
+    @Auditable(action = AuditAction.CREATE, entityName = "Appointment")
     public ResponseEntity<AppointmentResponse> create(@Valid @RequestBody AppointmentCreateRequest req) {
         AppointmentResponse created = service.create(req);
         return RestResponses.created("/api/v1/appointments/{id}", created.appointmentId(), created);
@@ -67,6 +70,7 @@ public class AppointmentController {
 
     /** Endpoint public cho phep dat lich cua khach khong dang nhap. */
     @PostMapping("/guest")
+    @Auditable(action = AuditAction.CREATE, entityName = "Appointment")
     public ResponseEntity<AppointmentResponse> createForGuest(@Valid @RequestBody AppointmentGuestCreateRequest req) {
         AppointmentResponse created = service.createForGuest(req);
         return RestResponses.created("/api/v1/appointments/{id}", created.appointmentId(), created);
@@ -74,6 +78,7 @@ public class AppointmentController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "Appointment", idParamName = "id")
     public ResponseEntity<AppointmentResponse> update(@PathVariable UUID id,
                                                       @Valid @RequestBody AppointmentUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
@@ -81,6 +86,7 @@ public class AppointmentController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.DELETE, entityName = "Appointment", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
@@ -93,6 +99,7 @@ public class AppointmentController {
      */
     @PostMapping("/{id}/check-in")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST', 'ROLE_STAFF')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Appointment", idParamName = "id")
     public ResponseEntity<AppointmentCheckInResponse> checkIn(
             @PathVariable UUID id,
             @Valid @RequestBody AppointmentCheckInRequest req) {
@@ -106,6 +113,7 @@ public class AppointmentController {
      */
     @PostMapping("/guest-check-in")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Appointment")
     public ResponseEntity<GuestCheckInResponse> guestCheckIn(
             @Valid @RequestBody GuestCheckInRequest req) {
         return RestResponses.ok(service.guestCheckIn(req));

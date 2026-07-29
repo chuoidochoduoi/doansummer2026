@@ -29,6 +29,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.example.doansummer2026.aop.Auditable;
+import org.example.doansummer2026.enums.AuditAction;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -61,6 +63,7 @@ public class MedicalRecordController {
 
     @PostMapping("/api/v1/medical-records")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "MedicalRecord")
     public ResponseEntity<MedicalRecordResponse> create(@Valid @RequestBody MedicalRecordCreateRequest req) {
         MedicalRecordResponse created = service.create(req);
         return RestResponses.created("/api/v1/medical-records/{id}", created.recordId(), created);
@@ -68,6 +71,7 @@ public class MedicalRecordController {
 
     @PutMapping("/api/v1/medical-records/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "id")
     public ResponseEntity<MedicalRecordResponse> update(@PathVariable UUID id,
                                                           @Valid @RequestBody MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
@@ -75,6 +79,7 @@ public class MedicalRecordController {
 
     @PostMapping("/api/v1/medical-records/{id}/draft")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "MedicalRecord", idParamName = "id")
     public ResponseEntity<MedicalRecordResponse> saveDraft(@PathVariable UUID id,
                                                            @Valid @RequestBody MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.saveDraft(id, req));
@@ -82,6 +87,7 @@ public class MedicalRecordController {
 
     @PostMapping("/api/v1/medical-records/{id}/complete")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "MedicalRecord", idParamName = "id")
     public ResponseEntity<MedicalRecordResponse> complete(@PathVariable UUID id,
                                                           @Valid @RequestBody(required = false) MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.complete(id, req));
@@ -89,6 +95,7 @@ public class MedicalRecordController {
 
     @DeleteMapping("/api/v1/medical-records/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @Auditable(action = AuditAction.DELETE, entityName = "MedicalRecord", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();

@@ -28,6 +28,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.example.doansummer2026.aop.Auditable;
+import org.example.doansummer2026.enums.AuditAction;
 
 import java.time.LocalDate;
 import java.util.UUID;
@@ -60,6 +62,7 @@ public class InvoiceController {
 
     @PostMapping("/api/v1/invoices")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "Invoice")
     public ResponseEntity<InvoiceResponse> create(@Valid @RequestBody InvoiceCreateRequest req) {
         InvoiceResponse created = service.create(req);
         return RestResponses.created("/api/v1/invoices/{id}", created.invoiceId(), created);
@@ -67,6 +70,7 @@ public class InvoiceController {
 
     @PutMapping("/api/v1/invoices/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "Invoice", idParamName = "id")
     public ResponseEntity<InvoiceResponse> update(@PathVariable UUID id,
                                                     @Valid @RequestBody InvoiceUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
@@ -74,18 +78,21 @@ public class InvoiceController {
 
     @PostMapping("/api/v1/invoices/{id}/issue")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Invoice", idParamName = "id")
     public ResponseEntity<InvoiceResponse> issue(@PathVariable UUID id) {
         return RestResponses.ok(service.issue(id));
     }
 
     @PostMapping("/api/v1/invoices/{id}/cancel")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Invoice", idParamName = "id")
     public ResponseEntity<InvoiceResponse> cancel(@PathVariable UUID id) {
         return RestResponses.ok(service.cancel(id));
     }
 
     @PostMapping("/api/v1/invoices/{id}/pay")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Invoice", idParamName = "id")
     public ResponseEntity<InvoiceResponse> pay(@PathVariable UUID id) {
         return RestResponses.ok(service.pay(id));
     }
@@ -116,6 +123,7 @@ public class InvoiceController {
 
     @DeleteMapping("/api/v1/invoices/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @Auditable(action = AuditAction.DELETE, entityName = "Invoice", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
