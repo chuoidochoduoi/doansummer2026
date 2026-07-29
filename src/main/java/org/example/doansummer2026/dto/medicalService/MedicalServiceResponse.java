@@ -2,7 +2,7 @@ package org.example.doansummer2026.dto.medicalService;
 
 import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.enums.ServiceStatus;
-import org.example.doansummer2026.enums.ServiceType;
+import org.example.doansummer2026.enums.DepartmentType;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -16,21 +16,17 @@ public record MedicalServiceResponse(
         String serviceCode,
         String name,
         String description,
-        ServiceType serviceType,
-        Integer durationMinutes,
+        DepartmentType departmentType,
         BigDecimal price,
         ServiceStatus status,               // DRAFT, ACTIVE, INACTIVE
         Boolean isPointOfCare,
-        UUID categoryId,
-        String categoryName,
         UUID departmentId,
         String departmentName,
         UUID requiredSpecializationId,
         String requiredSpecializationName
 ) {
     public static MedicalServiceResponse from(MedicalService s) {
-        UUID categoryId = s.getCategory() != null ? s.getCategory().getCategoryId() : null;
-        String categoryName = s.getCategory() != null ? s.getCategory().getName() : null;
+
         UUID deptId = s.getDepartment() != null ? s.getDepartment().getDepartmentId() : null;
         String deptName = s.getDepartment() != null ? s.getDepartment().getName() : null;
         UUID specId = s.getRequiredSpecialization() != null ? s.getRequiredSpecialization().getSpecializationId() : null;
@@ -41,13 +37,10 @@ public record MedicalServiceResponse(
                 s.getServiceCode(),
                 s.getName(),
                 s.getDescription(),
-                s.getServiceType(),
-                s.getDurationMinutes(),
+                s.getDepartmentType(),
                 s.getPrice(),
                 s.getStatus(),
                 s.getIsPointOfCare(),
-                categoryId,
-                categoryName,
                 deptId,
                 deptName,
                 specId,

@@ -36,7 +36,7 @@ public record MedicalHistoryResponse(
             // Lấy specialty từ dịch vụ đầu tiên
             if (appt.getServices() != null && !appt.getServices().isEmpty()) {
                 specialty = appt.getServices().stream().findFirst()
-                        .map(s -> s.getCategory() != null ? s.getCategory().getName() : "Khám bệnh")
+                        .map(s -> s.getDepartmentType() != null ? s.getDepartmentType().name() : "Khám bệnh")
                         .orElse("Khám bệnh");
             }
             // Doctor từ medicalRecord

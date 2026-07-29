@@ -83,6 +83,12 @@ public class AccountService implements AccountServiceInterface {
         accountRepository.save(a);
     }
 
+    public void adminResetPassword(UUID id, String newRaw) {
+        Account a = findById(id);
+        a.setPasswordHash(passwordEncoder.encode(newRaw));
+        accountRepository.save(a);
+    }
+
     public void softDelete(UUID id) {
         Account a = findById(id);
         a.setIsActive(false);

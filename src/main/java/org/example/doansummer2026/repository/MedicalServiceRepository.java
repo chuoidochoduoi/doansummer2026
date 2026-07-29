@@ -2,7 +2,7 @@ package org.example.doansummer2026.repository;
 
 import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.enums.ServiceStatus;
-import org.example.doansummer2026.enums.ServiceType;
+import org.example.doansummer2026.enums.DepartmentType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -24,8 +24,8 @@ public interface MedicalServiceRepository extends JpaRepository<MedicalService, 
     @EntityGraph("MedicalService.withDepartmentAndSpecialization")
     Optional<MedicalService> findById(UUID id);
 
-    default Page<MedicalService> search(String keyword, UUID categoryId,
-                                         ServiceType serviceType, ServiceStatus status,
+    default Page<MedicalService> search(String keyword, DepartmentType departmentType,
+                                         ServiceStatus status,
                                          Pageable pageable) {
         Specification<MedicalService> spec = (root, query, cb) -> cb.conjunction();
 
@@ -36,11 +36,8 @@ public interface MedicalServiceRepository extends JpaRepository<MedicalService, 
                     cb.like(cb.lower(root.get("description")), "%" + keyword.toLowerCase() + "%")
                 ));
         }
-        if (categoryId != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("category").get("categoryId"), categoryId));
-        }
-        if (serviceType != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("serviceType"), serviceType));
+        if (departmentType != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("departmentType"), departmentType));
         }
         if (status != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));

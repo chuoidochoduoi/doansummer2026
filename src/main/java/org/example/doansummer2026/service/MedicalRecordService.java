@@ -608,6 +608,55 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         r.setRatedAt(LocalDateTime.now());
         return MedicalRecordResponse.from(repo.save(r), true);
     }
+
+    /** Lấy danh sách yêu cầu tái khám (follow-up) chưa đặt lịch cho lễ tân */
+    public PageResponse<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> getPendingFollowUps(Pageable pageable) {
+        Page<MedicalRecord> page = repo.findPendingFollowUps(pageable);
+        return PageResponse.from(page, org.example.doansummer2026.dto.medicalRecord.FollowUpResponse::from);
+    }
+
+    /** Tạo lịch hẹn từ yêu cầu tái khám và cập nhật vào hồ sơ bệnh án */
+    public org.example.doansummer2026.dto.medicalRecord.FollowUpResponse scheduleFollowUp(UUID recordId, org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {
+        MedicalRecord record = findById(recordId);
+        if (record.getFollowUpDate() == null && (record.getFollowUpNote() == null || record.getFollowUpNote().trim().isEmpty())) {
+            throw new BadRequestException("Hồ sơ này không có yêu cầu tái khám");
+        }
+        if (record.getFollowUpAppointment() != null) {
+            throw new ConflictException("Yêu cầu tái khám này đã được đặt lịch hẹn");
+        }
+
+        // Tạo Appointment trực tiếp thay vì qua AppointmentService.create để hỗ trợ cả Guest và Profile không có Account
+        var originalVisit = record.getVisit();
+        var customer = originalVisit.getCustomer();
+        var oldAppt = originalVisit.getAppointment();
+
+        org.example.doansummer2026.model.Appointment appointment = org.example.doansummer2026.model.Appointment.builder()
+                .scheduledAt(req.scheduledAt())
+                .timeSlot(req.timeSlot())
+                .status(org.example.doansummer2026.enums.AppointmentStatus.PENDING)
+                .build();
+
+        if (customer != null) {
+            appointment.setCustomer(customer);
+        } else if (oldAppt != null && Boolean.TRUE.equals(oldAppt.getIsGuest())) {
+            appointment.setIsGuest(true);
+            appointment.setGuestFullName(oldAppt.getGuestFullName());
+            appointment.setGuestPhone(oldAppt.getGuestPhone());
+            appointment.setGuestAge(oldAppt.getGuestAge());
+            appointment.setGuestGender(oldAppt.getGuestGender());
+            appointment.setGuestAddress(oldAppt.getGuestAddress());
+        } else {
+            appointment.setIsGuest(true);
+            appointment.setGuestFullName("Khách vãng lai");
+        }
+
+        appointment = appointmentRepo.save(appointment);
+        
+        // Cập nhật MedicalRecord với ID của lịch hẹn vừa tạo
+        record.setFollowUpAppointment(appointment);
+        
+        return org.example.doansummer2026.dto.medicalRecord.FollowUpResponse.from(repo.save(record));
+    }
 }
 
 

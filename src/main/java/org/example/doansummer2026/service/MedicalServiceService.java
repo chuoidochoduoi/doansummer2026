@@ -12,7 +12,7 @@ import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.ServiceCategory;
 import org.example.doansummer2026.model.Specialization;
 import org.example.doansummer2026.enums.ServiceStatus;
-import org.example.doansummer2026.enums.ServiceType;
+import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.repository.DepartmentRepository;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.ServiceCategoryRepository;
@@ -24,7 +24,9 @@ import org.example.doansummer2026.service.interfaces.MedicalServiceServiceInterf
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Map;
 import java.util.UUID;
+import java.util.HashMap;
 
 @Service
 @Transactional
@@ -37,10 +39,10 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
     private final SpecializationRepository specializationRepo;
 
     @Transactional(readOnly = true)
-    public PageResponse<MedicalServiceResponse> search(String keyword, UUID categoryId,
-                                                        ServiceType serviceType, ServiceStatus status,
+    public PageResponse<MedicalServiceResponse> search(String keyword, DepartmentType departmentType,
+                                                        ServiceStatus status,
                                                         Pageable pageable) {
-        Page<MedicalService> page = repo.search(keyword, categoryId, serviceType, status, pageable);
+        Page<MedicalService> page = repo.search(keyword, departmentType, status, pageable);
         return PageResponse.from(page, s -> MedicalServiceResponse.from(s));
     }
 
@@ -49,16 +51,25 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
      * Chi tra ve cac dich vu co status = ACTIVE.
      */
     @Transactional(readOnly = true)
-    public PageResponse<MedicalServiceResponse> listAvailable(String keyword, UUID categoryId,
-                                                               ServiceType serviceType,
+    public PageResponse<MedicalServiceResponse> listAvailable(String keyword, DepartmentType departmentType,
                                                                Pageable pageable) {
-        Page<MedicalService> page = repo.search(keyword, categoryId, serviceType, ServiceStatus.ACTIVE, pageable);
+        Page<MedicalService> page = repo.search(keyword, departmentType, ServiceStatus.ACTIVE, pageable);
         return PageResponse.from(page, s -> MedicalServiceResponse.from(s));
     }
 
     @Transactional(readOnly = true)
     public MedicalServiceResponse get(UUID id) {
         return MedicalServiceResponse.from(findById(id));
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Long> getStats() {
+        Map<String, Long> stats = new HashMap<>();
+        stats.put("total", repo.count());
+        stats.put("active", repo.count((root, query, cb) -> cb.equal(root.get("status"), ServiceStatus.ACTIVE)));
+        stats.put("suspended", repo.count((root, query, cb) -> cb.equal(root.get("status"), ServiceStatus.INACTIVE)));
+        stats.put("draft", repo.count((root, query, cb) -> cb.equal(root.get("status"), ServiceStatus.DRAFT)));
+        return stats;
     }
 
     /**
@@ -71,9 +82,7 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
         if (repo.existsByServiceCode(req.serviceCode())) {
             throw new ConflictException("Ma dich vu da ton tai: " + req.serviceCode());
         }
-        ServiceCategory category = categoryRepo.findById(req.categoryId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Danh muc khong ton tai: " + req.categoryId()));
+
         Department dept = null;
         if (req.departmentId() != null) {
             dept = departmentRepo.findById(req.departmentId())
@@ -90,12 +99,10 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
                 .serviceCode(req.serviceCode())
                 .name(req.name())
                 .description(req.description())
-                .serviceType(req.serviceType())
-                .durationMinutes(req.durationMinutes())
+                .departmentType(req.departmentType())
                 .price(req.price() != null ? req.price() : BigDecimal.ZERO)
                 .status(req.status() != null ? req.status() : ServiceStatus.DRAFT)
                 .isPointOfCare(req.isPointOfCare() != null ? req.isPointOfCare() : false)
-                .category(category)
                 .department(dept)
                 .requiredSpecialization(spec)
                 .build();
@@ -117,16 +124,10 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
             s.setName(req.name());
         }
         if (req.description() != null) s.setDescription(req.description());
-        if (req.serviceType() != null) s.setServiceType(req.serviceType());
-        if (req.durationMinutes() != null) s.setDurationMinutes(req.durationMinutes());
+        if (req.departmentType() != null) s.setDepartmentType(req.departmentType());
         if (req.price() != null) s.setPrice(req.price());
         if (req.status() != null) s.setStatus(req.status());
         if (req.isPointOfCare() != null) s.setIsPointOfCare(req.isPointOfCare());
-        if (req.categoryId() != null) {
-            s.setCategory(categoryRepo.findById(req.categoryId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Danh muc khong ton tai: " + req.categoryId())));
-        }
         if (req.departmentId() != null) {
             s.setDepartment(departmentRepo.findById(req.departmentId())
                     .orElseThrow(() -> new ResourceNotFoundException(

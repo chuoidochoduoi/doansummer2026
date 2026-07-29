@@ -32,8 +32,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.enums.ServiceStatus;
-import org.example.doansummer2026.enums.ServiceType;
 
 /**
  * Dich vu y te (kham benh, xet nghiem, CDHA, ...).
@@ -76,12 +76,8 @@ public class MedicalService extends BaseEntity {
 
     @NotNull
     @Enumerated(EnumType.STRING)
-    @Column(name = "service_type", nullable = false, length = 30)
-    private ServiceType serviceType;
-
-    @PositiveOrZero
-    @Column(name = "duration_minutes")
-    private Integer durationMinutes;
+    @Column(name = "department_type", nullable = false, length = 30)
+    private DepartmentType departmentType;
 
     @NotNull
     @PositiveOrZero
@@ -99,10 +95,6 @@ public class MedicalService extends BaseEntity {
     @Builder.Default
     private Boolean isPointOfCare = false;
 
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "category_id", nullable = false)
-    private ServiceCategory category;
 
     /** Khoa thuc hien mac dinh (nullable - mot so dich vu khong gan khoa cu the). */
     @ManyToOne(fetch = FetchType.LAZY)

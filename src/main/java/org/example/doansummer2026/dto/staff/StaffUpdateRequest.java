@@ -7,7 +7,15 @@ import java.util.UUID;
 
 public record StaffUpdateRequest(
         // NOTE: departmentId da duoc xoa - chi dung head_doctor_id o Department
-        // specializationId: can thiet cho SPECIALIST_DOCTOR
+        // Account & Profile
+        @Size(max = 50) String username,
+        @Size(max = 100) String fullName,
+        String phone,
+        String email,
+        String gender,
+        @Size(max = 255) String address,
+
+        // StaffInfo
         UUID specializationId,
         SystemRole systemRole,
         @Size(max = 20) String nationalId,

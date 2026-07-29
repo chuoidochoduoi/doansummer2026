@@ -121,8 +121,28 @@ public class StaffService implements StaffServiceInterface {
         return toResponse(findById(staffId));
     }
 
+    public StaffResponse getByAccountId(UUID accountId) {
+        StaffInfo s = staffRepo.findByProfile_Account_AccountId(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nhan vien"));
+        return toResponse(s);
+    }
+
     public StaffResponse update(UUID staffId, StaffUpdateRequest req) {
         StaffInfo s = findById(staffId);
+        
+        // Update Account
+        if (req.username() != null && !req.username().isBlank()) {
+            s.getProfile().getAccount().setUsername(req.username());
+        }
+
+        // Update Profile
+        if (req.fullName() != null) s.getProfile().setFullName(req.fullName());
+        if (req.phone() != null) s.getProfile().setPhone(req.phone());
+        if (req.email() != null) s.getProfile().setEmail(req.email());
+        if (req.gender() != null) s.getProfile().setGender(parseGender(req.gender()));
+        if (req.address() != null) s.getProfile().setAddress(req.address());
+
+        // Update StaffInfo
         if (req.nationalId() != null && !req.nationalId().equals(s.getNationalId())) {
             if (staffRepo.existsByNationalId(req.nationalId())) {
                 throw new ConflictException("CCCD/CMND da ton tai");

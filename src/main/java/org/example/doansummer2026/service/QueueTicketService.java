@@ -219,6 +219,16 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         if (req.conclusion() != null) r.setConclusion(req.conclusion());
         if (req.patientInstruction() != null) r.setPatientInstruction(req.patientInstruction());
 
+        // Cap nhat thong tin tai kham (follow-up)
+        if (req.followUp() != null) {
+            String note = req.followUp().note();
+            if ((note == null || note.trim().isEmpty()) && req.followUp().preferredDate() == null) {
+                note = "Cần tái khám";
+            }
+            r.setFollowUpNote(note);
+            r.setFollowUpDate(req.followUp().preferredDate());
+        }
+
         // Cap nhat thuoc trong don
         if (req.prescriptionItems() != null) {
             r.getPrescriptionItems().clear();

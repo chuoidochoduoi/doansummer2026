@@ -8,7 +8,7 @@ import org.example.doansummer2026.dto.medicalService.MedicalServiceCreateRequest
 import org.example.doansummer2026.dto.medicalService.MedicalServiceResponse;
 import org.example.doansummer2026.dto.medicalService.MedicalServiceUpdateRequest;
 import org.example.doansummer2026.enums.ServiceStatus;
-import org.example.doansummer2026.enums.ServiceType;
+import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.service.MedicalServiceService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -37,11 +38,10 @@ public class MedicalServiceController {
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR')")
     public ResponseEntity<PageResponse<MedicalServiceResponse>> list(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) UUID categoryId,
-            @RequestParam(required = false) ServiceType serviceType,
+            @RequestParam(required = false) DepartmentType departmentType,
             @RequestParam(required = false) ServiceStatus status,
             Pageable pageable) {
-        return RestResponses.ok(service.search(keyword, categoryId, serviceType, status, pageable));
+        return RestResponses.ok(service.search(keyword, departmentType, status, pageable));
     }
 
     /**
@@ -51,16 +51,21 @@ public class MedicalServiceController {
     @GetMapping("/available")
     public ResponseEntity<PageResponse<MedicalServiceResponse>> listAvailable(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) UUID categoryId,
-            @RequestParam(required = false) ServiceType serviceType,
+            @RequestParam(required = false) DepartmentType departmentType,
             Pageable pageable) {
-        return RestResponses.ok(service.listAvailable(keyword, categoryId, serviceType, pageable));
+        return RestResponses.ok(service.listAvailable(keyword, departmentType, pageable));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<MedicalServiceResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
+    }
+
+    @GetMapping("/stats")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR')")
+    public ResponseEntity<Map<String, Long>> getStats() {
+        return RestResponses.ok(service.getStats());
     }
 
     @PostMapping

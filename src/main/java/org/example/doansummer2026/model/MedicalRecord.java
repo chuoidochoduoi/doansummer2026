@@ -140,9 +140,21 @@ public class MedicalRecord extends BaseEntity {
     @Column(name = "rating_score")
     private Integer ratingScore;
 
-    /** Thoi gian danh gia. */
     @Column(name = "rated_at")
     private LocalDateTime ratedAt;
+
+    /** Ghi chu tai kham */
+    @Column(name = "follow_up_note", columnDefinition = "TEXT")
+    private String followUpNote;
+
+    /** Ngay tai kham du kien */
+    @Column(name = "follow_up_date")
+    private java.time.LocalDate followUpDate;
+
+    /** Lien ket voi lich hen da duoc tao tu yeu cau tai kham nay */
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "follow_up_appointment_id")
+    private Appointment followUpAppointment;
 }
 
 

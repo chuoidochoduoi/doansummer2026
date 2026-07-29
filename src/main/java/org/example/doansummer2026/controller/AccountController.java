@@ -26,6 +26,7 @@ import org.example.doansummer2026.aop.Auditable;
 import org.example.doansummer2026.enums.AuditAction;
 
 import java.util.UUID;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/accounts")
@@ -84,6 +85,16 @@ public class AccountController {
                 .map(staff -> staff.getSystemRole())
                 .orElse(null);
         return RestResponses.ok(AccountResponse.from(account, systemRole));
+    }
+
+    @PutMapping("/{id}/password-reset")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "Account", idParamName = "id")
+    public ResponseEntity<Void> adminResetPassword(@PathVariable UUID id,
+                                                  @RequestBody Map<String, String> payload) {
+        String newPassword = payload.get("newPassword");
+        accountService.adminResetPassword(id, newPassword);
+        return RestResponses.noContent();
     }
 
     /**

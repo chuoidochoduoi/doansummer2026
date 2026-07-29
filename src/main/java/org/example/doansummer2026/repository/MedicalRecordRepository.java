@@ -29,6 +29,9 @@ public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UU
     @Query("SELECT m.recordCode FROM MedicalRecord m WHERE m.recordCode LIKE :prefix ORDER BY m.recordCode DESC LIMIT 1")
     String findTopByRecordCodeStartingWithOrderByRecordCodeDesc(@Param("prefix") String prefix);
 
+    @Query("SELECT m FROM MedicalRecord m WHERE (m.followUpDate IS NOT NULL OR (m.followUpNote IS NOT NULL AND TRIM(m.followUpNote) <> '')) AND m.followUpAppointment IS NULL ORDER BY m.followUpDate ASC")
+    Page<MedicalRecord> findPendingFollowUps(Pageable pageable);
+
     default Page<MedicalRecord> search(UUID doctorId, MedicalRecordStatus status,
                                         LocalDateTime from, LocalDateTime to, Pageable pageable) {
         Specification<MedicalRecord> spec = (root, query, cb) -> cb.conjunction();

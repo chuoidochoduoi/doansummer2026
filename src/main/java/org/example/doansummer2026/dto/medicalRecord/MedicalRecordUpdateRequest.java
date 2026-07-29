@@ -27,7 +27,9 @@ public record MedicalRecordUpdateRequest(
         // Danh sach yeu cau xet nghiem tao cung luc khi ket luuan
         // Neu co -> tao TestRequest, queue ticket chuyen sang WAITING_FOR_TEST
         // Neu khong co -> queue ticket chuyen sang DONE
-        List<TestRequestInExaminationRequest> testRequests
+        List<TestRequestInExaminationRequest> testRequests,
+        // Yeu cau tai kham (follow-up)
+        FollowUpRequest followUp
 ) {}
 
 

@@ -11,6 +11,8 @@ public record StaffResponse(
         String staffCode,
         String nationalId,
         String licenseNumber,
+        String highestDegree,
+        String university,
         SystemRoleBrief systemRole,
         ProfileResponse profile,
         SpecializationResponse specialization
@@ -26,6 +28,8 @@ public record StaffResponse(
                 s.getStaffCode(),
                 s.getNationalId(),
                 s.getLicenseNumber(),
+                s.getHighestDegree(),
+                s.getUniversity(),
                 SystemRoleBrief.valueOf(s.getSystemRole().name()),
                 p,
                 sp

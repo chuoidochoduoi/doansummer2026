@@ -156,15 +156,15 @@ public class ReportService {
     private List<ServiceReportResponse.BreakdownItem> getServiceBreakdown() {
         return serviceRepo.findAll().stream()
                 .collect(Collectors.groupingBy(
-                        s -> s.getCategory().getName(),
-                        Collectors.summingLong(s -> s.getPrice().longValue())
+                        s -> s.getDepartmentType() != null ? s.getDepartmentType().name() : "Khác",
+                        Collectors.summingLong(s -> s.getPrice() != null ? s.getPrice().longValue() : 0L)
                 ))
                 .entrySet().stream()
                 .map(e -> {
                     double pct = (e.getValue() / 10_000_000.0); // Tính % tạm thời
                     return new ServiceReportResponse.BreakdownItem(e.getKey(), pct, e.getValue());
                 })
-                .toList();
+                .collect(Collectors.toList());
     }
 
     private List<ServiceReportResponse.ServiceStat> getServiceStats(LocalDate from, LocalDate to) {
@@ -177,7 +177,7 @@ public class ReportService {
                             ? invoiceItemRepo.sumBhytFundByServiceId(s.getServiceId()).longValue() : 0L;
 
                     return new ServiceReportResponse.ServiceStat(
-                            s.getCategory().getName(),
+                            s.getDepartmentType() != null ? s.getDepartmentType().name() : "Khác",
                             s.getName(),
                             s.getDescription() != null ? s.getDescription() : "",
                             totalOrders,

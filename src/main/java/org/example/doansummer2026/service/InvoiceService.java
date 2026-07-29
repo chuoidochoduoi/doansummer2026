@@ -20,7 +20,7 @@ import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.Profile;
 import org.example.doansummer2026.model.StaffInfo;
-import org.example.doansummer2026.enums.ServiceType;
+import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.enums.TransactionStatus;
 import org.example.doansummer2026.repository.InvoiceItemRepository;
 import org.example.doansummer2026.repository.InvoiceRepository;
@@ -255,8 +255,8 @@ public class InvoiceService implements InvoiceServiceInterface {
             // Neu service la null (lazy load hoac da xoa), bo qua
             if (service == null || service.getDepartment() == null) continue;
 
-            ServiceType serviceType = service.getServiceType();
-            if (serviceType == ServiceType.CLINICAL_EXAM) {
+            DepartmentType departmentType = service.getDepartmentType();
+            if (departmentType == DepartmentType.EXAMINATION) {
                 // CLINICAL_EXAM: tao QueueTicket cho bac si kham
                 queueTicketService.create(new org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest(
                         visitId,
@@ -264,9 +264,8 @@ public class InvoiceService implements InvoiceServiceInterface {
                         service.getServiceId(),
                         null
                 ));
-            } else if (serviceType == ServiceType.LAB_TEST
-                    || serviceType == ServiceType.IMAGING
-                    || serviceType == ServiceType.PROCEDURE) {
+            } else if (departmentType == DepartmentType.LABORATORY
+                    || departmentType == DepartmentType.IMAGING) {
                 // LAB_TEST, IMAGING, PROCEDURE: tao TestRequest cho phong tuong ung
                 // Can co medicalRecord va requestedBy (issuedBy) moi tao duoc test request
                 if (medicalRecordId == null || requestedById == null) continue;

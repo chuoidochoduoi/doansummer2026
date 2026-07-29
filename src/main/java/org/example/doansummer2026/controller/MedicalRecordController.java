@@ -41,6 +41,7 @@ public class MedicalRecordController {
 
     private final MedicalRecordService service;
     private final AuthService authService;
+    private final org.example.doansummer2026.service.AppointmentService appointmentService;
 
     // --- MAIN ENDPOINTS ---
 
@@ -168,6 +169,21 @@ public class MedicalRecordController {
             @RequestParam String phone) {
         var result = service.searchByPhone(phone);
         return RestResponses.ok(result);
+    }
+
+    @GetMapping("/api/receptionist/follow-ups")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    public ResponseEntity<PageResponse<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse>> getPendingFollowUps(
+            Pageable pageable) {
+        return RestResponses.ok(service.getPendingFollowUps(pageable));
+    }
+
+    @PostMapping("/api/receptionist/follow-ups/{recordId}/schedule")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> scheduleFollowUp(
+            @PathVariable UUID recordId,
+            @Valid @RequestBody org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {
+        return RestResponses.ok(service.scheduleFollowUp(recordId, req));
     }
 }
 

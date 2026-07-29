@@ -2,7 +2,7 @@ package org.example.doansummer2026.dto.testRequest;
 
 import org.example.doansummer2026.model.TestRequest;
 import org.example.doansummer2026.enums.TestRequestStatus;
-import org.example.doansummer2026.enums.ServiceType;
+import org.example.doansummer2026.enums.DepartmentType;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -16,7 +16,7 @@ public record TestRequestResponse(
         UUID medicalRecordId,
         UUID serviceId,
         String serviceName,
-        ServiceType serviceType,
+        DepartmentType serviceType,
         UUID performingDepartmentId,
         String performingDepartmentName,
         String description,
@@ -36,7 +36,7 @@ public record TestRequestResponse(
         UUID recordId = t.getMedicalRecord() != null ? t.getMedicalRecord().getRecordId() : null;
         UUID serviceId = t.getService() != null ? t.getService().getServiceId() : null;
         String serviceName = t.getService() != null ? t.getService().getName() : null;
-        ServiceType serviceType = t.getService() != null ? t.getService().getServiceType() : null;
+        DepartmentType serviceType = t.getService() != null ? t.getService().getDepartmentType() : null;
         UUID deptId = t.getPerformingDepartment() != null ? t.getPerformingDepartment().getDepartmentId() : null;
         String deptName = t.getPerformingDepartment() != null ? t.getPerformingDepartment().getName() : null;
         UUID reqById = t.getRequestedBy() != null ? t.getRequestedBy().getStaffId() : null;

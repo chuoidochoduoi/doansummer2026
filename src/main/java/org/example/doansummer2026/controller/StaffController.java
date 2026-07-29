@@ -88,6 +88,12 @@ public class StaffController {
         return RestResponses.ok(staffService.get(id));
     }
 
+    @GetMapping("/account/{accountId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<StaffResponse> getByAccount(@PathVariable UUID accountId) {
+        return RestResponses.ok(staffService.getByAccountId(accountId));
+    }
+
     /** CHI ADMIN tao nhan vien moi (kem account + profile). */
     @PostMapping
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
