@@ -17,6 +17,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.example.doansummer2026.service.interfaces.DepartmentServiceInterface;
+import org.example.doansummer2026.service.AuthService;
+import org.example.doansummer2026.model.Account;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -29,6 +31,7 @@ public class DepartmentService implements DepartmentServiceInterface {
 
     private final DepartmentRepository repo;
     private final StaffInfoRepository staffRepo;
+    private final AuthService authService;
 
     @Transactional(readOnly = true)
     public PageResponse<DepartmentResponse> listAll(Pageable pageable) {
@@ -126,6 +129,16 @@ public class DepartmentService implements DepartmentServiceInterface {
     public Department findByIdWithHeadDoctor(UUID id) {
         return repo.findWithHeadDoctorById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Khoa khong ton tai: " + id));
+    }
+
+    @Transactional(readOnly = true)
+    public DepartmentResponse getMyDepartment() {
+        Account acc = authService.currentAccount();
+        StaffInfo staff = staffRepo.findByProfile_Account_Username(acc.getUsername())
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nhan vien"));
+        Department dept = repo.findByHeadDoctor_StaffId(staff.getStaffId())
+                .orElseThrow(() -> new ResourceNotFoundException("Bac si chua duoc chi dinh phong"));
+        return DepartmentResponse.from(dept);
     }
 }
 

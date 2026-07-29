@@ -109,6 +109,13 @@ public class DepartmentController {
         return RestResponses.ok(doctors);
     }
 
+    /** Lay phong kham duoc chi dinh cho bac si hien tai */
+    @GetMapping("/my-department")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<DepartmentResponse> getMyDepartment() {
+        return RestResponses.ok(service.getMyDepartment());
+    }
+
 
 }
 

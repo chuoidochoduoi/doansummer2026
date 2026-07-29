@@ -40,6 +40,8 @@ public interface DepartmentRepository extends JpaRepository<Department, UUID> {
     @Query("SELECT CASE WHEN COUNT(d) > 0 THEN true ELSE false END FROM Department d WHERE d.headDoctor.staffId = :headDoctorId AND d.departmentId != :departmentId")
     boolean existsByHeadDoctor_StaffIdAndDepartmentIdNot(@Param("headDoctorId") UUID headDoctorId,
                                                           @Param("departmentId") UUID departmentId);
+
+    Optional<Department> findByHeadDoctor_StaffId(UUID staffId);
 }
 
 
