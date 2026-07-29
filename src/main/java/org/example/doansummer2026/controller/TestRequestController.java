@@ -98,6 +98,24 @@ public class TestRequestController {
         return RestResponses.ok(service.cancel(id, req));
     }
 
+    /**
+     * Tim TestRequest theo InvoiceItem (traceability: Invoice -> InvoiceItem -> TestRequest).
+     */
+    @GetMapping("/by-invoice-item/{itemId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    public ResponseEntity<List<TestRequestResponse>> findByInvoiceItem(@PathVariable UUID itemId) {
+        return RestResponses.ok(service.findByInvoiceItem(itemId));
+    }
+
+    /**
+     * Tim TestRequest theo Invoice (traceability: Invoice -> InvoiceItem -> TestRequest).
+     */
+    @GetMapping("/by-invoice/{invoiceId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    public ResponseEntity<List<TestRequestResponse>> findByInvoice(@PathVariable UUID invoiceId) {
+        return RestResponses.ok(service.findByInvoice(invoiceId));
+    }
+
     // --- TestResult sub-resource ---
 
     @GetMapping("/{id}/result")

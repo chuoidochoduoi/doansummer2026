@@ -472,13 +472,14 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         // Tu dong cap nhat queue ticket sang DONE
         CustomerVisit visit = saved.getVisit();
         if (visit != null) {
-            queueTicketRepo.findByVisit_VisitId(visit.getVisitId()).ifPresent(ticket -> {
-                if (ticket.getStatus() == QueueStatus.IN_PROGRESS) {
-                    ticket.setStatus(QueueStatus.DONE);
-                    ticket.setCompletedAt(LocalDateTime.now());
-                    queueTicketRepo.save(ticket);
-                }
-            });
+            queueTicketRepo.findAllByVisit_VisitId(visit.getVisitId()).stream()
+                    .filter(ticket -> ticket.getStatus() == QueueStatus.IN_PROGRESS)
+                    .findFirst()
+                    .ifPresent(ticket -> {
+                        ticket.setStatus(QueueStatus.DONE);
+                        ticket.setCompletedAt(LocalDateTime.now());
+                        queueTicketRepo.save(ticket);
+                    });
         }
 
         var fetched = repo.getWithDetailsByVisitId(visit.getVisitId()).orElse(saved);

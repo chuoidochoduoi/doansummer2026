@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.data.domain.Pageable;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.UUID;
 
 /** Service interface for TestRequest management. */
@@ -34,4 +35,10 @@ public interface TestRequestServiceInterface {
 
     /** Huy yeu cau xet nghiem - chi cho PENDING hoac IN_PROGRESS. */
     TestRequestResponse cancel(UUID id, TestRequestCancelRequest req);
+
+    /** Tim TestRequest theo InvoiceItem (traceability: Invoice -> InvoiceItem -> TestRequest). */
+    List<TestRequestResponse> findByInvoiceItem(UUID itemId);
+
+    /** Tim TestRequest theo Invoice (traceability: Invoice -> InvoiceItem -> TestRequest). */
+    List<TestRequestResponse> findByInvoice(UUID invoiceId);
 }

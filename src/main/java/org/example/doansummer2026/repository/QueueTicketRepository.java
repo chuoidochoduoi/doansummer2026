@@ -21,6 +21,18 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
 
     Optional<QueueTicket> findByVisit_VisitId(UUID visitId);
 
+    /**
+     * Tim queue ticket theo visit + department (1 visit co the co nhieu ticket cho cac khoa khac nhau).
+     * Dung khi biet ro department can cap nhat (vi du: performingDepartment cua TestRequest).
+     */
+    Optional<QueueTicket> findByVisit_VisitIdAndDepartment_DepartmentId(UUID visitId, UUID departmentId);
+
+    /**
+     * Lay tat ca queue ticket cua 1 visit (1 visit co the co nhieu ticket cho cac khoa khac nhau).
+     * Dung khi can duyet de tim ticket dung (vi du: ticket dang IN_PROGRESS).
+     */
+    List<QueueTicket> findAllByVisit_VisitId(UUID visitId);
+
     @Query("SELECT MAX(q.queueNumber) FROM QueueTicket q WHERE q.department.departmentId = :departmentId AND q.workDate = :workDate")
     Optional<Integer> findMaxQueueNumberForDay(@Param("departmentId") UUID departmentId,
                                                 @Param("workDate") LocalDate workDate);

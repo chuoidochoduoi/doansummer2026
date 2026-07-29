@@ -7,7 +7,9 @@ import org.example.doansummer2026.dto.queueTicket.QueueTicketResponse;
 import org.example.doansummer2026.dto.queueTicket.QueueTicketUpdateRequest;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
+import org.example.doansummer2026.dto.medicalRecord.TestRequestInExaminationRequest;
 import org.example.doansummer2026.dto.icd.ICD10SelectionCreateRequest;
+import org.example.doansummer2026.dto.testRequest.TestRequestCreateRequest;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Department;
@@ -51,6 +53,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     private final MedicalRecordRepository recordRepo;
     private final StaffInfoRepository staffRepo;
     private final Icd10CodeRepository icd10Repo;
+    private final TestRequestService testRequestService;
 
     @Transactional(readOnly = true)
     public PageResponse<QueueTicketResponse> search(UUID departmentId, LocalDate workDate,
@@ -154,9 +157,6 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         if (q.getStatus() != QueueStatus.IN_PROGRESS) {
             throw new BadRequestException("Chi dong phieu dang kham (IN_PROGRESS), hien tai: " + q.getStatus());
         }
-        q.setStatus(QueueStatus.DONE);
-        q.setCompletedAt(LocalDateTime.now());
-        repo.save(q);
 
         // Complete medical record
         if (q.getVisit() == null) {
@@ -176,6 +176,37 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             record.setCompletedAt(LocalDateTime.now());
             recordRepo.save(record);
         }
+
+        // Tao TestRequest neu co trong payload (gop voi API hoan thien de tranh goi 2 lan)
+        boolean hasTestRequests = req != null && req.testRequests() != null && !req.testRequests().isEmpty();
+        if (hasTestRequests) {
+            UUID doctorId = record.getDoctor() != null ? record.getDoctor().getStaffId() : null;
+            if (doctorId == null) {
+                throw new BadRequestException("Khong the tao test request: khong xac dinh duoc bac si");
+            }
+            for (TestRequestInExaminationRequest testReq : req.testRequests()) {
+                testRequestService.create(new TestRequestCreateRequest(
+                        record.getRecordId(),
+                        testReq.serviceId(),
+                        doctorId,
+                        testReq.notes(),
+                        null // invoiceItemId = null (khong qua invoice)
+                ));
+            }
+        }
+
+        // Dat status queue ticket:
+        // - Co test request -> WAITING_FOR_TEST (cho ket qua xet nghiem)
+        // - Khong co -> DONE (hoan thien hoan toan)
+        if (hasTestRequests) {
+            q.setStatus(QueueStatus.WAITING_FOR_TEST);
+            q.setCalledAt(null);
+        } else {
+            q.setStatus(QueueStatus.DONE);
+            q.setCompletedAt(LocalDateTime.now());
+        }
+        repo.save(q);
+
         var fetched = recordRepo.getWithDetailsByVisitId(q.getVisit().getVisitId()).orElse(record);
         return MedicalRecordResponse.from(fetched, true);
     }

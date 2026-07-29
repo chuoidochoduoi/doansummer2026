@@ -9,13 +9,15 @@ import java.util.UUID;
 /**
  * Tao nhieu TestRequest cung luc tu medical record.
  * performingDepartmentId la optional - neu null thi lay tu tung MedicalService.
+ * invoiceItemId: lien ket voi InvoiceItem tu hoa don (de trace luong Invoice -> TestRequest).
  */
 public record TestRequestBatchCreateRequest(
         @NotNull UUID medicalRecordId,
         UUID performingDepartmentId,
         @NotNull UUID requestedById,
         @NotEmpty List<UUID> serviceIds,
-        String notes
+        String notes,
+        UUID invoiceItemId
 ) {}
 
 

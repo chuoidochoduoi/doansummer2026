@@ -237,6 +237,9 @@ public class InvoiceService implements InvoiceServiceInterface {
      * Tao QueueTicket hoac TestRequest tu cac InvoiceItem sau khi thanh toan.
      * - CLINICAL_EXAM: tao QueueTicket (xep hang cho bac si kham).
      * - LAB_TEST, IMAGING, PROCEDURE: tao TestRequest (gui vao phong xet nghiem/CDHA/thu thuat tuong ung).
+     *
+     * Luong: Invoice(paid) -> TestRequest(PENDING = hang cho) -> TestResult -> TestRequest(COMPLETED).
+     * Moi TestRequest duoc lien ket voi InvoiceItem tuong ung de trace.
      */
     private void createQueueTicketsFromInvoiceItems(Invoice invoice) {
         // Load invoice voi items, service, visit, medicalRecord, issuedBy
@@ -271,7 +274,8 @@ public class InvoiceService implements InvoiceServiceInterface {
                         medicalRecordId,
                         service.getServiceId(),
                         requestedById,
-                        item.getNote() != null ? item.getNote() : service.getName()
+                        item.getNote() != null ? item.getNote() : service.getName(),
+                        item.getItemId()
                 ));
             }
         }

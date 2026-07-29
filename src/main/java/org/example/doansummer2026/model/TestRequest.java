@@ -32,6 +32,9 @@ import org.example.doansummer2026.enums.TestRequestStatus;
  * - performingDepartment: khoa thuc hien (LAB, CDHA, ...)
  * - status: PENDING -> IN_PROGRESS -> COMPLETED
  * - testResult: 0..1 (1-1 voi TestResult)
+ * - invoiceItem: lien ket voi InvoiceItem tu hoa don da thanh toan (traceability).
+ *
+ * Luong: Invoice(paid) -> TestRequest(PENDING = hang cho) -> TestResult -> TestRequest(COMPLETED).
  */
 @Entity
 @Table(name = "test_request")
@@ -90,6 +93,14 @@ public class TestRequest extends BaseEntity {
     /** Quan he 1-1 voi TestResult - owning o TestResult. */
     @OneToOne(mappedBy = "testRequest", fetch = FetchType.LAZY)
     private TestResult testResult;
+
+    /**
+     * InvoiceItem tu hoa don da thanh toan tao ra TestRequest nay.
+     * Co the null neu TestRequest duoc tao thu cong (khong qua invoice).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "invoice_item_id")
+    private InvoiceItem invoiceItem;
 }
 
 

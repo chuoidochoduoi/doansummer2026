@@ -23,7 +23,7 @@ public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UU
     Optional<MedicalRecord> findByVisit_VisitId(UUID visitId);
 
     @EntityGraph("MedicalRecord.withDetails")
-    @Query("SELECT m FROM MedicalRecord m WHERE m.visit.visitId = :visitId")
+    @Query("SELECT DISTINCT m FROM MedicalRecord m WHERE m.visit.visitId = :visitId")
     Optional<MedicalRecord> getWithDetailsByVisitId(@Param("visitId") UUID visitId);
 
     @Query("SELECT m.recordCode FROM MedicalRecord m WHERE m.recordCode LIKE :prefix ORDER BY m.recordCode DESC LIMIT 1")

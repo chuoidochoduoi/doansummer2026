@@ -27,6 +27,7 @@ public record TestRequestResponse(
         String cancelReason,
         LocalDateTime createdAt,
         UUID testResultId,
+        UUID invoiceItemId,
         // Thong tin benh nhan cho danh sach
         String patientCode,
         String patientName
@@ -41,6 +42,7 @@ public record TestRequestResponse(
         UUID reqById = t.getRequestedBy() != null ? t.getRequestedBy().getStaffId() : null;
         String reqByName = t.getRequestedBy() != null ? t.getRequestedBy().getStaffCode() : null;
         UUID resultId = t.getTestResult() != null ? t.getTestResult().getResultId() : null;
+        UUID invoiceItemId = t.getInvoiceItem() != null ? t.getInvoiceItem().getItemId() : null;
 
         // Lay thong tin benh nhan
         String patientCode = null;
@@ -55,7 +57,8 @@ public record TestRequestResponse(
 
         return new TestRequestResponse(t.getTestRequestId(), recordId, serviceId, serviceName,
                 serviceType, deptId, deptName, t.getDescription(), t.getStatus(), reqById, reqByName,
-                t.getCompletedAt(), t.getCancelReason(), t.getCreatedAt(), resultId, patientCode, patientName);
+                t.getCompletedAt(), t.getCancelReason(), t.getCreatedAt(), resultId, invoiceItemId,
+                patientCode, patientName);
     }
 }
 

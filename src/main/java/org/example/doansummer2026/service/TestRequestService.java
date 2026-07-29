@@ -19,6 +19,7 @@ import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.QueueTicket;
 import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.model.TestRequest;
+import org.example.doansummer2026.model.InvoiceItem;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
 import org.example.doansummer2026.enums.QueueStatus;
 import org.example.doansummer2026.enums.TestRequestStatus;
@@ -51,6 +52,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     private final MedicalServiceRepository serviceRepo;
     private final StaffInfoRepository staffRepo;
     private final QueueTicketRepository queueTicketRepo;
+    private final org.example.doansummer2026.repository.InvoiceItemRepository invoiceItemRepo;
 
     @Transactional(readOnly = true)
     public PageResponse<TestRequestResponse> search(UUID recordId, UUID departmentId,
@@ -77,6 +79,15 @@ public class TestRequestService implements TestRequestServiceInterface {
         }
         StaffInfo requestedBy = staffRepo.findById(req.requestedById())
                 .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai: " + req.requestedById()));
+
+        // Link voi InvoiceItem neu co (traceability: Invoice -> TestRequest)
+        InvoiceItem invoiceItem = null;
+        if (req.invoiceItemId() != null) {
+            invoiceItem = invoiceItemRepo.findById(req.invoiceItemId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "InvoiceItem khong ton tai: " + req.invoiceItemId()));
+        }
+
         TestRequest t = TestRequest.builder()
                 .medicalRecord(record)
                 .service(service)
@@ -84,6 +95,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                 .description(req.notes())
                 .requestedBy(requestedBy)
                 .status(TestRequestStatus.PENDING)
+                .invoiceItem(invoiceItem)
                 .build();
         return TestRequestResponse.from(repo.save(t));
     }
@@ -103,7 +115,8 @@ public class TestRequestService implements TestRequestServiceInterface {
                         t.getMedicalRecord().getRecordId(),
                         java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS));
 
-                QueueTicket queueTicket = queueTicketRepo.findByVisit_VisitId(visitId).orElse(null);
+                QueueTicket queueTicket = queueTicketRepo.findByVisit_VisitIdAndDepartment_DepartmentId(
+                        visitId, t.getPerformingDepartment().getDepartmentId()).orElse(null);
                 if (queueTicket != null) {
                     if (totalTestRequests > 0 && incompleteCount == 0) {
                         // Tat ca test da xong
@@ -196,7 +209,8 @@ public class TestRequestService implements TestRequestServiceInterface {
                         t.getMedicalRecord().getRecordId(),
                         java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS));
 
-                QueueTicket queueTicket = queueTicketRepo.findByVisit_VisitId(visitId).orElse(null);
+                QueueTicket queueTicket = queueTicketRepo.findByVisit_VisitIdAndDepartment_DepartmentId(
+                        visitId, t.getPerformingDepartment().getDepartmentId()).orElse(null);
                 if (queueTicket != null) {
                     if (totalTestRequests > 0 && incompleteCount == 0) {
                         queueTicket.setStatus(QueueStatus.TEST_DONE);
@@ -257,7 +271,9 @@ public class TestRequestService implements TestRequestServiceInterface {
 
         // Kiem tra tat ca TestRequest trong medical record de set status TEST_DONE hoac WAITING_FOR_TEST
         if (t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null) {
-            QueueTicket queueTicket = queueTicketRepo.findByVisit_VisitId(t.getMedicalRecord().getVisit().getVisitId()).orElse(null);
+            QueueTicket queueTicket = queueTicketRepo.findByVisit_VisitIdAndDepartment_DepartmentId(
+                    t.getMedicalRecord().getVisit().getVisitId(),
+                    t.getPerformingDepartment().getDepartmentId()).orElse(null);
             if (queueTicket != null) {
                 long totalTestRequests = repo.countByMedicalRecord_MedicalRecordId(t.getMedicalRecord().getRecordId());
                 long incompleteCount = repo.countByMedicalRecordAndStatusIn(
@@ -322,6 +338,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     /**
      * Tao nhieu TestRequest cung luc - bac si chon nhieu dich vu xet nghiem.
      * - Bo qua cac dich vu da ton tai trong medical record.
+     * - invoiceItemId: lien ket voi InvoiceItem tu hoa don (de trace luong Invoice -> TestRequest).
      */
     public List<TestRequestResponse> createBatch(TestRequestBatchCreateRequest req) {
         MedicalRecord record = recordRepo.findById(req.medicalRecordId())
@@ -329,11 +346,20 @@ public class TestRequestService implements TestRequestServiceInterface {
         StaffInfo requestedBy = staffRepo.findById(req.requestedById())
                 .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai"));
 
+        // Link voi InvoiceItem neu co
+        InvoiceItem invoiceItem = null;
+        if (req.invoiceItemId() != null) {
+            invoiceItem = invoiceItemRepo.findById(req.invoiceItemId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "InvoiceItem khong ton tai: " + req.invoiceItemId()));
+        }
+
         // Lay cac service da ton tai de loai bo
         Set<UUID> existingServiceIds = record.getTestRequests().stream()
                 .map(t -> t.getService().getServiceId())
                 .collect(java.util.stream.Collectors.toSet());
 
+        InvoiceItem finalInvoiceItem = invoiceItem;
         java.util.List<TestRequest> toCreate = req.serviceIds().stream()
                 .filter(serviceId -> !existingServiceIds.contains(serviceId))
                 .map((java.util.function.Function<java.util.UUID, TestRequest>) serviceId -> {
@@ -350,6 +376,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                             .description(req.notes())
                             .requestedBy(requestedBy)
                             .status(TestRequestStatus.PENDING)
+                            .invoiceItem(finalInvoiceItem)
                             .build();
                 })
                 .toList();
@@ -363,6 +390,22 @@ public class TestRequestService implements TestRequestServiceInterface {
     @Transactional(readOnly = true)
     public List<TestRequest> findMyCompletedTests(UUID profileId) {
         return repo.findByProfileIdAndStatusCompleted(profileId);
+    }
+
+    /** Tim TestRequest theo InvoiceItem (traceability: Invoice -> InvoiceItem -> TestRequest). */
+    @Transactional(readOnly = true)
+    public List<TestRequestResponse> findByInvoiceItem(UUID itemId) {
+        return repo.findByInvoiceItem_ItemId(itemId).stream()
+                .map(TestRequestResponse::from)
+                .toList();
+    }
+
+    /** Tim TestRequest theo Invoice (traceability: Invoice -> InvoiceItem -> TestRequest). */
+    @Transactional(readOnly = true)
+    public List<TestRequestResponse> findByInvoice(UUID invoiceId) {
+        return repo.findByInvoiceId(invoiceId).stream()
+                .map(TestRequestResponse::from)
+                .toList();
     }
 }
 

@@ -23,7 +23,11 @@ public record MedicalRecordUpdateRequest(
         // Danh sach thuoc trong don thuoc (thay the ca danh sach cu khi cap nhat)
         List<PrescriptionItemCreateRequest> prescriptionItems,
         // Danh sach benh chuan doan ICD-10 (thay the ca danh sach cu khi cap nhat)
-        List<ICD10SelectionCreateRequest> icdSelections
+        List<ICD10SelectionCreateRequest> icdSelections,
+        // Danh sach yeu cau xet nghiem tao cung luc khi ket luuan
+        // Neu co -> tao TestRequest, queue ticket chuyen sang WAITING_FOR_TEST
+        // Neu khong co -> queue ticket chuyen sang DONE
+        List<TestRequestInExaminationRequest> testRequests
 ) {}
 
 

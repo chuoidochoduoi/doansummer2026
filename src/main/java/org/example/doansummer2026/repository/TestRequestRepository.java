@@ -65,4 +65,15 @@ public interface TestRequestRepository extends JpaRepository<TestRequest, UUID> 
            "LEFT JOIN FETCH mr.visit v " +
            "WHERE v.customer.profileId = :profileId AND t.status = 'COMPLETED'")
     List<TestRequest> findByProfileIdAndStatusCompleted(@Param("profileId") UUID profileId);
+
+    /** Tim TestRequest theo InvoiceItem (traceability: Invoice -> InvoiceItem -> TestRequest). */
+    List<TestRequest> findByInvoiceItem_ItemId(UUID itemId);
+
+    /** Tim TestRequest theo Invoice (qua InvoiceItem). */
+    @Query("SELECT t FROM TestRequest t " +
+           "LEFT JOIN FETCH t.service " +
+           "LEFT JOIN FETCH t.invoiceItem ii " +
+           "LEFT JOIN FETCH ii.invoice i " +
+           "WHERE i.invoiceId = :invoiceId")
+    List<TestRequest> findByInvoiceId(@Param("invoiceId") UUID invoiceId);
 }
