@@ -3,12 +3,17 @@ package org.example.doansummer2026.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
+import org.example.doansummer2026.common.ReceptionistRecordPageResponse;
 import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.dto.invoice.InvoiceCreateRequest;
 import org.example.doansummer2026.dto.invoice.InvoiceResponse;
 import org.example.doansummer2026.dto.invoice.InvoiceUpdateRequest;
+import org.example.doansummer2026.dto.invoice.PaymentHistoryResponse;
+import org.example.doansummer2026.dto.invoice.ReceiptDetailResponse;
 import org.example.doansummer2026.dto.payment.PayOSPaymentResponse;
 import org.example.doansummer2026.enums.InvoiceStatus;
+import org.example.doansummer2026.enums.PaymentMethod;
+import org.example.doansummer2026.service.AuthService;
 import org.example.doansummer2026.service.InvoiceService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -28,13 +33,15 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/invoices")
 @RequiredArgsConstructor
 public class InvoiceController {
 
     private final InvoiceService service;
+    private final AuthService authService;
 
-    @GetMapping
+    // --- MAIN ENDPOINTS ---
+
+    @GetMapping("/api/v1/invoices")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<PageResponse<InvoiceResponse>> list(
             @RequestParam(required = false) UUID customerId,
@@ -45,39 +52,39 @@ public class InvoiceController {
         return RestResponses.ok(service.search(customerId, status, from, to, pageable));
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/api/v1/invoices/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
-    @PostMapping
+    @PostMapping("/api/v1/invoices")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> create(@Valid @RequestBody InvoiceCreateRequest req) {
         InvoiceResponse created = service.create(req);
         return RestResponses.created("/api/v1/invoices/{id}", created.invoiceId(), created);
     }
 
-    @PutMapping("/{id}")
+    @PutMapping("/api/v1/invoices/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> update(@PathVariable UUID id,
                                                     @Valid @RequestBody InvoiceUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
     }
 
-    @PostMapping("/{id}/issue")
+    @PostMapping("/api/v1/invoices/{id}/issue")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> issue(@PathVariable UUID id) {
         return RestResponses.ok(service.issue(id));
     }
 
-    @PostMapping("/{id}/cancel")
+    @PostMapping("/api/v1/invoices/{id}/cancel")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> cancel(@PathVariable UUID id) {
         return RestResponses.ok(service.cancel(id));
     }
 
-    @PostMapping("/{id}/pay")
+    @PostMapping("/api/v1/invoices/{id}/pay")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> pay(@PathVariable UUID id) {
         return RestResponses.ok(service.pay(id));
@@ -87,7 +94,7 @@ public class InvoiceController {
      * Mock PayOS payment - tạo link thanh toán giả lập.
      * Trong môi trường thực tế sẽ gọi API PayOS SDK.
      */
-    @PostMapping("/{id}/payos")
+    @PostMapping("/api/v1/invoices/{id}/payos")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<?> payosMock(@PathVariable UUID id) {
         InvoiceResponse invoice = service.get(id);
@@ -97,21 +104,68 @@ public class InvoiceController {
             ));
         }
         return RestResponses.ok(PayOSPaymentResponse.pending(
-                invoice.invoiceId(), invoice.invoiceCode(), invoice.totalAmount()
+                    invoice.invoiceId(), invoice.invoiceCode(), invoice.totalAmount()
         ));
     }
 
-    @GetMapping("/{id}/print")
+    @GetMapping("/api/v1/invoices/{id}/print")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<InvoiceResponse> getPrintData(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/api/v1/invoices/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
+    }
+
+    // --- PATIENT ENDPOINTS ---
+
+    /**
+     * API lich su thanh toan cua benh nhan.
+     */
+    @GetMapping("/api/patient/payments")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ADMIN')")
+    public ResponseEntity<ReceptionistRecordPageResponse<PaymentHistoryResponse>> getPaymentHistory(
+            @RequestParam(required = false) String fromDate,
+            @RequestParam(required = false) String toDate,
+            @RequestParam(required = false) String method,
+            Pageable pageable) {
+        UUID profileId = authService.currentProfileId();
+        if (profileId == null) {
+            return RestResponses.ok(new ReceptionistRecordPageResponse<>(java.util.Collections.emptyList(), 0L, 0));
+        }
+        LocalDate from = (fromDate != null && !fromDate.isBlank()) ? LocalDate.parse(fromDate) : null;
+        LocalDate to = (toDate != null && !toDate.isBlank()) ? LocalDate.parse(toDate) : null;
+        PaymentMethod paymentMethod = (method != null && !method.isBlank()) ? parsePaymentMethod(method) : null;
+
+        var pageResponse = service.getPaymentHistoryForPatient(
+                profileId, from, to, paymentMethod, pageable
+        );
+
+        return RestResponses.ok(ReceptionistRecordPageResponse.from(pageResponse));
+    }
+
+    /**
+     * API chi tiet phieu thu.
+     */
+    @GetMapping("/api/patient/payments/{invoiceId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ADMIN')")
+    public ResponseEntity<ReceiptDetailResponse> getReceiptDetail(
+            @PathVariable UUID invoiceId) {
+        ReceiptDetailResponse response = service.getReceiptDetail(invoiceId, authService.currentProfileId());
+        return RestResponses.ok(response);
+    }
+
+    private PaymentMethod parsePaymentMethod(String method) {
+        return switch (method.toLowerCase()) {
+            case "appbanking", "banking", "bank_transfer" -> PaymentMethod.BANK_TRANSFER;
+            case "cash" -> PaymentMethod.CASH;
+            case "card" -> PaymentMethod.CARD;
+            default -> null;
+        };
     }
 }
 

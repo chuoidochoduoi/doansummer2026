@@ -3,11 +3,19 @@ package org.example.doansummer2026.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
+import org.example.doansummer2026.common.ReceptionistRecordPageResponse;
 import org.example.doansummer2026.common.RestResponses;
+import org.example.doansummer2026.dto.medicalHistory.MedicalHistoryResponse;
+import org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
+import org.example.doansummer2026.dto.medicalRecord.ReceptionistAllCustomerResponse;
+import org.example.doansummer2026.dto.medicalRecord.ReceptionistCustomerResponse;
+import org.example.doansummer2026.dto.medicalRecord.ReceptionistRecordResponse;
+import org.example.doansummer2026.enums.BloodType;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
+import org.example.doansummer2026.service.AuthService;
 import org.example.doansummer2026.service.MedicalRecordService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -26,13 +34,15 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/medical-records")
 @RequiredArgsConstructor
 public class MedicalRecordController {
 
     private final MedicalRecordService service;
+    private final AuthService authService;
 
-    @GetMapping
+    // --- MAIN ENDPOINTS ---
+
+    @GetMapping("/api/v1/medical-records")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<PageResponse<MedicalRecordResponse>> list(
             @RequestParam(required = false) UUID doctorId,
@@ -43,54 +53,114 @@ public class MedicalRecordController {
         return RestResponses.ok(service.search(doctorId, status, from, to, pageable));
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/api/v1/medical-records/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<MedicalRecordResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
-    @PostMapping
+    @PostMapping("/api/v1/medical-records")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<MedicalRecordResponse> create(@Valid @RequestBody MedicalRecordCreateRequest req) {
         MedicalRecordResponse created = service.create(req);
         return RestResponses.created("/api/v1/medical-records/{id}", created.recordId(), created);
     }
-    @PutMapping("/{id}")
+
+    @PutMapping("/api/v1/medical-records/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<MedicalRecordResponse> update(@PathVariable UUID id,
                                                           @Valid @RequestBody MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
     }
-    /**
-     * Lục nháp - lưu tạm các thay đổi (chưa thay đổi status).
-     */
-    @PostMapping("/{id}/draft")
+
+    @PostMapping("/api/v1/medical-records/{id}/draft")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<MedicalRecordResponse> saveDraft(@PathVariable UUID id,
                                                            @Valid @RequestBody MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.saveDraft(id, req));
     }
-    @PostMapping("/{id}/complete")
+
+    @PostMapping("/api/v1/medical-records/{id}/complete")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<MedicalRecordResponse> complete(@PathVariable UUID id,
                                                           @Valid @RequestBody(required = false) MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.complete(id, req));
     }
-    @DeleteMapping("/{id}")
+
+    @DeleteMapping("/api/v1/medical-records/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
     }
 
-    /**
-     * API danh gia phong kham (1-5 sao). Chi ap dung cho EXAMINATION da hoan thanh (COMPLETED).
-     */
-    @PostMapping("/{id}/rate")
+    @PostMapping("/api/v1/medical-records/{id}/rate")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<MedicalRecordResponse> rate(@PathVariable UUID id,
                                                      @RequestParam int ratingScore) {
         return RestResponses.ok(service.rate(id, ratingScore));
+    }
+
+    // --- PATIENT ENDPOINTS ---
+
+    @GetMapping("/api/patient/medical-history")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ADMIN')")
+    public ResponseEntity<ReceptionistRecordPageResponse<MedicalHistoryResponse>> getMedicalHistory(
+            @RequestParam(required = false) String search,
+            Pageable pageable) {
+        UUID profileId = authService.currentProfileId();
+        if (profileId == null) {
+            return RestResponses.ok(new ReceptionistRecordPageResponse<>(java.util.Collections.emptyList(), 0L, 0));
+        }
+        var pageResponse = service.getMedicalHistoryForPatient(profileId, search, pageable);
+        return RestResponses.ok(ReceptionistRecordPageResponse.from(pageResponse));
+    }
+
+    @GetMapping("/api/patient/medical-history/{recordId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ADMIN')")
+    public ResponseEntity<VisitDetailResponse> getVisitDetail(@PathVariable UUID recordId) {
+        UUID profileId = authService.currentProfileId();
+        if (profileId == null) {
+            throw new org.example.doansummer2026.exception.ResourceNotFoundException("Khong tim thay profile");
+        }
+        VisitDetailResponse response = service.getVisitDetailByRecordId(recordId, profileId);
+        return RestResponses.ok(response);
+    }
+
+    // --- RECEPTIONIST ENDPOINTS ---
+
+    @GetMapping("/api/receptionist/records")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    public ResponseEntity<ReceptionistRecordPageResponse<ReceptionistRecordResponse>> listRecordsForReceptionist(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String gender,
+            @RequestParam(required = false) String age,
+            @RequestParam(required = false) BloodType bloodType,
+            Pageable pageable) {
+        PageResponse<ReceptionistRecordResponse> pageResponse =
+                service.searchForReceptionist(search, gender, age, bloodType, pageable);
+        return RestResponses.ok(ReceptionistRecordPageResponse.from(pageResponse));
+    }
+
+    @GetMapping("/api/receptionist/records/customers")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    public ResponseEntity<PageResponse<ReceptionistCustomerResponse>> listCustomersForReceptionist(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String gender,
+            @RequestParam(required = false) String age,
+            @RequestParam(required = false) BloodType bloodType,
+            Pageable pageable) {
+        PageResponse<ReceptionistCustomerResponse> pageResponse =
+                service.searchUniqueCustomers(search, gender, age, bloodType, pageable);
+        return RestResponses.ok(pageResponse);
+    }
+
+    @GetMapping("/api/receptionist/records/search-by-phone")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    public ResponseEntity<java.util.List<ReceptionistAllCustomerResponse>> searchByPhoneForReceptionist(
+            @RequestParam String phone) {
+        var result = service.searchByPhone(phone);
+        return RestResponses.ok(result);
     }
 }
 
