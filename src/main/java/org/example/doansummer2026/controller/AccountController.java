@@ -51,9 +51,10 @@ public class AccountController {
     @GetMapping("/staff")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<AccountManagementResponse>> listStaff(
+            @RequestParam(required = false) String search,
             @RequestParam(required = false) SystemRole systemRole,
             Pageable pageable) {
-        return RestResponses.ok(accountService.listStaff(systemRole, pageable));
+        return RestResponses.ok(accountService.listStaff(search, systemRole, pageable));
     }
 
     /**
@@ -61,8 +62,11 @@ public class AccountController {
      */
     @GetMapping("/customers")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
-    public ResponseEntity<PageResponse<AccountManagementResponse>> listCustomers(Pageable pageable) {
-        return RestResponses.ok(accountService.listCustomers(pageable));
+    public ResponseEntity<PageResponse<AccountManagementResponse>> listCustomers(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String status,
+            Pageable pageable) {
+        return RestResponses.ok(accountService.listCustomers(search, status, pageable));
     }
 
     @GetMapping("/{id}")

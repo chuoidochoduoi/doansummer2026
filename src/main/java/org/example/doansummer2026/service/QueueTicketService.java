@@ -2,6 +2,7 @@ package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
+import org.example.doansummer2026.enums.DepartmentStatus;
 import org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest;
 import org.example.doansummer2026.dto.queueTicket.QueueTicketResponse;
 import org.example.doansummer2026.dto.queueTicket.QueueTicketUpdateRequest;
@@ -84,7 +85,9 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 .queueNumber(max + 1)
                 .status(QueueStatus.WAITING)
                 .build();
-        return QueueTicketResponse.from(repo.save(q));
+        QueueTicket saved = repo.save(q);
+        updateDepartmentStatus(dept.getDepartmentId());
+        return QueueTicketResponse.from(saved);
     }
 
     public QueueTicketResponse update(UUID id, QueueTicketUpdateRequest req) {
@@ -107,7 +110,9 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 q.setCompletedAt(LocalDateTime.now());
             }
         }
-        return QueueTicketResponse.from(repo.save(q));
+        QueueTicket saved = repo.save(q);
+        updateDepartmentStatus(q.getDepartment().getDepartmentId());
+        return QueueTicketResponse.from(saved);
     }
 
     public QueueTicketResponse call(UUID id) {
@@ -118,7 +123,9 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         }
         q.setStatus(QueueStatus.CALLED);
         q.setCalledAt(LocalDateTime.now());
-        return QueueTicketResponse.from(repo.save(q));
+        QueueTicket saved = repo.save(q);
+        updateDepartmentStatus(q.getDepartment().getDepartmentId());
+        return QueueTicketResponse.from(saved);
     }
 
     public QueueTicketResponse startExam(UUID id) {
@@ -145,7 +152,9 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         }
 
         q.setStatus(QueueStatus.IN_PROGRESS);
-        return QueueTicketResponse.from(repo.save(q), recordId, getWaitingCount(q), medicalRecord);
+        QueueTicket saved = repo.save(q);
+        updateDepartmentStatus(q.getDepartment().getDepartmentId());
+        return QueueTicketResponse.from(saved, recordId, getWaitingCount(q), medicalRecord);
     }
 
     public MedicalRecordResponse completeAndReturnRecord(UUID id) {
@@ -206,6 +215,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             q.setCompletedAt(LocalDateTime.now());
         }
         repo.save(q);
+        updateDepartmentStatus(q.getDepartment().getDepartmentId());
 
         var fetched = recordRepo.getWithDetailsByVisitId(q.getVisit().getVisitId()).orElse(record);
         return MedicalRecordResponse.from(fetched, true);
@@ -297,20 +307,29 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         QueueTicket q = findById(id);
         q.setStatus(QueueStatus.DONE);
         q.setCompletedAt(LocalDateTime.now());
-        return QueueTicketResponse.from(repo.save(q));
+        QueueTicket saved = repo.save(q);
+        updateDepartmentStatus(q.getDepartment().getDepartmentId());
+        return QueueTicketResponse.from(saved);
     }
 
     public QueueTicketResponse skip(UUID id) {
         QueueTicket q = findById(id);
         q.setStatus(QueueStatus.SKIPPED);
-        return QueueTicketResponse.from(repo.save(q));
+        QueueTicket saved = repo.save(q);
+        updateDepartmentStatus(q.getDepartment().getDepartmentId());
+        return QueueTicketResponse.from(saved);
     }
 
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
             throw new ResourceNotFoundException("Phieu xep hang khong ton tai: " + id);
         }
+        QueueTicket q = findById(id);
+        UUID deptId = q.getDepartment() != null ? q.getDepartment().getDepartmentId() : null;
         repo.deleteById(id);
+        if (deptId != null) {
+            updateDepartmentStatus(deptId);
+        }
     }
 
     public QueueTicket findById(UUID id) {
@@ -432,7 +451,27 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         }
         q.setStatus(QueueStatus.TEST_DONE);
         repo.save(q);
+        updateDepartmentStatus(q.getDepartment().getDepartmentId());
         return QueueTicketResponse.from(q);
+    }
+    private void updateDepartmentStatus(UUID departmentId) {
+        if (departmentId == null) return;
+        Department dept = departmentRepo.findById(departmentId).orElse(null);
+        if (dept == null) return;
+        
+        // Neu phong dang o trang thai MAINTENANCE thi khong doi sang AVAILABLE / IN_SESSION
+        if (dept.getStatus() == DepartmentStatus.MAINTENANCE) {
+            return;
+        }
+
+        long activeTickets = repo.countActiveTicketsByDepartment(departmentId);
+        
+        if (activeTickets > 0) {
+            dept.setStatus(DepartmentStatus.IN_SESSION);
+        } else {
+            dept.setStatus(DepartmentStatus.AVAILABLE);
+        }
+        departmentRepo.save(dept);
     }
 }
 

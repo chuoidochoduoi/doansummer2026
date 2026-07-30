@@ -21,8 +21,8 @@ public interface AccountServiceInterface {
     void changePassword(UUID id, String oldRaw, String newRaw);
     void softDelete(UUID id);
     PageResponse<AccountResponse> list(Role role, Pageable pageable);
-    PageResponse<AccountManagementResponse> listStaff(SystemRole systemRole, Pageable pageable);
-    PageResponse<AccountManagementResponse> listCustomers(Pageable pageable);
+    PageResponse<AccountManagementResponse> listStaff(String search, SystemRole systemRole, Pageable pageable);
+    PageResponse<AccountManagementResponse> listCustomers(String search, String status, Pageable pageable);
 }
 
 

@@ -72,10 +72,6 @@ public class ServiceCategory extends BaseEntity {
     @Builder.Default
     private List<ServiceCategory> subCategories = new ArrayList<>();
 
-    /** Danh sach dich vu thuoc category. */
-    @OneToMany(mappedBy = "category", fetch = FetchType.LAZY)
-    @Builder.Default
-    private List<MedicalService> services = new ArrayList<>();
 }
 
 

@@ -83,6 +83,12 @@ public class AccountService implements AccountServiceInterface {
         accountRepository.save(a);
     }
 
+    public void forceChangePassword(UUID id, String newRaw) {
+        Account a = findById(id);
+        a.setPasswordHash(passwordEncoder.encode(newRaw));
+        accountRepository.save(a);
+    }
+
     public void adminResetPassword(UUID id, String newRaw) {
         Account a = findById(id);
         a.setPasswordHash(passwordEncoder.encode(newRaw));
@@ -113,10 +119,8 @@ public class AccountService implements AccountServiceInterface {
      * NOTE: StaffInfo khong con department - department chi quan he voi head_doctor o Department.
      */
     @Transactional(readOnly = true)
-    public PageResponse<AccountManagementResponse> listStaff(SystemRole systemRole, Pageable pageable) {
-        Page<org.example.doansummer2026.model.StaffInfo> page = (systemRole != null)
-                ? staffRepo.findBySystemRole(systemRole, pageable)
-                : staffRepo.findAll(pageable);
+    public PageResponse<AccountManagementResponse> listStaff(String search, SystemRole systemRole, Pageable pageable) {
+        Page<org.example.doansummer2026.model.StaffInfo> page = staffRepo.search(search, null, systemRole, pageable);
         return PageResponse.from(page, staff -> {
             Account a = staff.getProfile().getAccount();
             return AccountManagementResponse.forStaff(
@@ -133,8 +137,15 @@ public class AccountService implements AccountServiceInterface {
      * Danh sach tai khoan khach hang (CUSTOMER).
      */
     @Transactional(readOnly = true)
-    public PageResponse<AccountManagementResponse> listCustomers(Pageable pageable) {
-        Page<Account> page = accountRepository.findByRole(Role.CUSTOMER, pageable);
+    public PageResponse<AccountManagementResponse> listCustomers(String search, String status, Pageable pageable) {
+        Boolean isActive = null;
+        if ("active".equalsIgnoreCase(status)) {
+            isActive = true;
+        } else if ("locked".equalsIgnoreCase(status)) {
+            isActive = false;
+        }
+        
+        Page<Account> page = accountRepository.searchCustomers(search, isActive, pageable);
         return PageResponse.from(page, a -> {
             var profileOpt = profileRepo.findByAccount_AccountId(a.getAccountId());
             String fullName = profileOpt.map(p -> p.getFullName()).orElse(a.getUsername());

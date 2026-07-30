@@ -36,9 +36,22 @@ public interface StaffInfoRepository extends JpaRepository<StaffInfo, UUID>, Jpa
     /** Lay danh sach tat ca staff (cho Schedule). */
     List<StaffInfo> findAll();
 
-    default Page<StaffInfo> search(UUID specializationId,
+    default Page<StaffInfo> search(String keyword, UUID specializationId,
                                     SystemRole systemRole, Pageable pageable) {
         Specification<StaffInfo> spec = (root, query, cb) -> cb.conjunction();
+
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            String likeKeyword = "%" + keyword.trim().toLowerCase() + "%";
+            spec = spec.and((r, q, cb) -> {
+                var profileJoin = r.join("profile", jakarta.persistence.criteria.JoinType.LEFT);
+                var accountJoin = profileJoin.join("account", jakarta.persistence.criteria.JoinType.LEFT);
+                return cb.or(
+                        cb.like(cb.lower(profileJoin.get("fullName")), likeKeyword),
+                        cb.like(cb.lower(accountJoin.get("username")), likeKeyword),
+                        cb.like(cb.lower(r.get("staffCode")), likeKeyword)
+                );
+            });
+        }
 
         if (specializationId != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("specialization").get("specializationId"), specializationId));

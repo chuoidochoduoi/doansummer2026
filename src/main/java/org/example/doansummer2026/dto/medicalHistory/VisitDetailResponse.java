@@ -21,7 +21,11 @@ public record VisitDetailResponse(
         String treatmentPlan,
         String followUpNote,
         String prescription,
-        List<TestResponse> tests
+        List<TestResponse> tests,
+        String status,
+        Integer ratingScore,
+        String doctorName,
+        List<String> labDoctors
 ) {
     public static VisitDetailResponse from(MedicalRecord record) {
         String appointmentDate = record.getVisit() != null && record.getVisit().getCheckInTime() != null
@@ -57,6 +61,19 @@ public record VisitDetailResponse(
         // Tests chưa có trong mô hình - trả về rỗng
         List<TestResponse> tests = List.of();
 
+        String status = record.getStatus() != null ? record.getStatus().name() : null;
+        Integer ratingScore = record.getRatingScore();
+        String doctorName = record.getDoctor() != null && record.getDoctor().getProfile() != null 
+                ? record.getDoctor().getProfile().getFullName() : null;
+        
+        List<String> labDoctors = record.getTestRequests() != null
+                ? record.getTestRequests().stream()
+                        .filter(tr -> tr.getTestResult() != null && tr.getTestResult().getPerformedBy() != null && tr.getTestResult().getPerformedBy().getProfile() != null)
+                        .map(tr -> tr.getTestResult().getPerformedBy().getProfile().getFullName())
+                        .distinct()
+                        .toList()
+                : List.of();
+
         return new VisitDetailResponse(
                 record.getRecordId(),
                 record.getRecordCode(),
@@ -67,7 +84,11 @@ public record VisitDetailResponse(
                 treatmentPlan,
                 followUpNote,
                 prescription,
-                tests
+                tests,
+                status,
+                ratingScore,
+                doctorName,
+                labDoctors
         );
     }
 }

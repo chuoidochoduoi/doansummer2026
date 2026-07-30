@@ -8,6 +8,7 @@ import org.example.doansummer2026.dto.auth.ChangePasswordRequest;
 import org.example.doansummer2026.dto.auth.LoginRequest;
 import org.example.doansummer2026.dto.auth.RefreshRequest;
 import org.example.doansummer2026.dto.auth.RegisterRequest;
+import org.example.doansummer2026.dto.auth.ResetPasswordRequest;
 import org.example.doansummer2026.dto.auth.SendOtpRequest;
 import org.example.doansummer2026.dto.account.AccountResponse;
 import org.example.doansummer2026.service.AuthService;
@@ -40,6 +41,13 @@ public class AuthController {
     @PostMapping("/send-otp")
     public ResponseEntity<Void> sendOtp(@Valid @RequestBody SendOtpRequest req) {
         otpService.sendOtp(req.phone());
+        return RestResponses.ok(null);
+    }
+
+    /** Public: reset mat khau bang OTP -> 200 OK. */
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest req) {
+        authService.resetPassword(req);
         return RestResponses.ok(null);
     }
 

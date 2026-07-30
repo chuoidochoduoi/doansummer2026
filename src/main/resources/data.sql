@@ -13,16 +13,6 @@ INSERT INTO department (department_id, created_at, updated_at, deleted, room_cod
 ('55555555-5555-5555-5555-555555555555', NOW(), NOW(), false, 'IMG-301', 'Khoa Chẩn Đoán Hình Ảnh', 'AVAILABLE', 'IMAGING', 'X-quang, CT, MRI');
 
 -- ============================
--- ServiceCategory (5 bản ghi)
--- ============================
-INSERT INTO service_category (category_id, created_at, updated_at, deleted, name, description) VALUES
-('aaaaaaaa-1111-1111-1111-111111111111', NOW(), NOW(), false, 'Khám bệnh', 'Các gói khám bệnh'),
-('bbbbbbbb-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Xét nghiệm', 'Xét nghiệm cơ bản'),
-('cccccccc-3333-3333-3333-333333333333', NOW(), NOW(), false, 'Chẩn đoán hình ảnh', 'X-quang, CT, MRI'),
-('dddddddd-4444-4444-4444-444444444444', NOW(), NOW(), false, 'Tim mạch', 'Dịch vụ tim mạch'),
-('eeeeeeee-5555-5555-5555-555555555555', NOW(), NOW(), false, 'Hô hấp', 'Dịch vụ hô hấp');
-
--- ============================
 -- Specialization (5 bản ghi)
 -- ============================
 INSERT INTO specialization (specialization_id, created_at, updated_at, deleted, name, description) VALUES
@@ -83,26 +73,55 @@ UPDATE profile SET account_id = '30000010-0000-0000-0000-000000000001' WHERE pro
 UPDATE profile SET account_id = '30000011-1111-1111-1111-111111111111' WHERE profile_id = '20000008-8888-8888-8888-888888888888';
 
 -- ============================
--- MedicalService (10 bản ghi)
+-- MedicalService (39 bản ghi)
 -- ============================
 -- Lab tests
-INSERT INTO medical_service (service_id, service_code, category_id, created_at, updated_at, deleted, description, duration_minutes, status, is_point_of_care, name, price, service_type, department_id, required_specialization_id) VALUES
-('40000001-1111-1111-1111-111111111111', 'XN001', 'bbbbbbbb-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Xét nghiệm công thức máu (CBC)', 15, 'ACTIVE', false, 'Xét nghiệm công thức máu', 120000, 'LAB_TEST', '44444444-4444-4444-4444-444444444444', NULL),
-('40000002-2222-2222-2222-222222222222', 'XN002', 'bbbbbbbb-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Xét nghiệm sinh hóa máu', 15, 'ACTIVE', false, 'Xét nghiệm sinh hóa máu', 150000, 'LAB_TEST', '44444444-4444-4444-4444-444444444444', NULL),
-('40000003-3333-3333-3333-333333333333', 'XN003', 'bbbbbbbb-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Xét nghiệm chức năng gan', 15, 'ACTIVE', false, 'Xét nghiệm gan', 130000, 'LAB_TEST', '44444444-4444-4444-4444-444444444444', NULL);
+INSERT INTO medical_service (service_id, service_code, created_at, updated_at, deleted, description, status, is_point_of_care, name, price, department_type, department_id, required_specialization_id) VALUES
+('40000001-1111-1111-1111-111111111111', 'XN001', NOW(), NOW(), false, 'Xét nghiệm công thức máu (CBC)', 'ACTIVE', false, 'Xét nghiệm công thức máu', 120000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL),
+('40000002-2222-2222-2222-222222222222', 'XN002', NOW(), NOW(), false, 'Xét nghiệm sinh hóa máu', 'ACTIVE', false, 'Xét nghiệm sinh hóa máu', 150000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL),
+('40000003-3333-3333-3333-333333333333', 'XN003', NOW(), NOW(), false, 'Xét nghiệm chức năng gan', 'ACTIVE', false, 'Xét nghiệm gan', 130000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL),
+('40000011-1111-1111-1111-111111111111', 'XN004', NOW(), NOW(), false, 'Xét nghiệm đường huyết', 'ACTIVE', false, 'Xét nghiệm đường huyết', 80000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL),
+('40000012-1111-1111-1111-111111111111', 'XN005', NOW(), NOW(), false, 'Xét nghiệm mỡ máu', 'ACTIVE', false, 'Xét nghiệm mỡ máu', 100000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL),
+('40000013-1111-1111-1111-111111111111', 'XN006', NOW(), NOW(), false, 'Xét nghiệm chức năng thận', 'ACTIVE', false, 'Xét nghiệm thận', 110000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL),
+('40000014-1111-1111-1111-111111111111', 'XN007', NOW(), NOW(), false, 'Xét nghiệm Hba1c', 'ACTIVE', false, 'Xét nghiệm Hba1c', 90000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL),
+('40000015-1111-1111-1111-111111111111', 'XN008', NOW(), NOW(), false, 'Xét nghiệm nước tiểu', 'ACTIVE', false, 'Xét nghiệm nước tiểu', 50000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL),
+('40000016-1111-1111-1111-111111111111', 'XN009', NOW(), NOW(), false, 'Xét nghiệm đông máu', 'ACTIVE', false, 'Xét nghiệm đông máu', 120000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL),
+('40000017-1111-1111-1111-111111111111', 'XN010', NOW(), NOW(), false, 'Xét nghiệm viêm gan B', 'ACTIVE', false, 'Xét nghiệm viêm gan B', 150000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL),
+('40000018-1111-1111-1111-111111111111', 'XN011', NOW(), NOW(), false, 'Xét nghiệm viêm gan C', 'ACTIVE', false, 'Xét nghiệm viêm gan C', 150000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL),
+('40000019-1111-1111-1111-111111111111', 'XN012', NOW(), NOW(), false, 'Xét nghiệm HIV', 'ACTIVE', false, 'Xét nghiệm HIV', 200000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL),
+('40000020-1111-1111-1111-111111111111', 'XN013', NOW(), NOW(), false, 'Xét nghiệm sốt xuất huyết', 'ACTIVE', false, 'Xét nghiệm sốt xuất huyết', 180000, 'LABORATORY', '44444444-4444-4444-4444-444444444444', NULL);
 
 -- Imaging services
-INSERT INTO medical_service (service_id, service_code, category_id, created_at, updated_at, deleted, description, duration_minutes, status, is_point_of_care, name, price, service_type, department_id, required_specialization_id) VALUES
-('40000004-4444-4444-4444-444444444444', 'CDHA001', 'cccccccc-3333-3333-3333-333333333333', NOW(), NOW(), false, 'Siêu âm ổ bụng', 30, 'ACTIVE', false, 'Siêu âm ổ bụng', 250000, 'IMAGING', '55555555-5555-5555-5555-555555555555', NULL),
-('40000005-5555-5555-5555-555555555555', 'CDHA002', 'cccccccc-3333-3333-3333-333333333333', NOW(), NOW(), false, 'Siêu âm tim', 30, 'ACTIVE', false, 'Siêu âm tim', 300000, 'IMAGING', '55555555-5555-5555-5555-555555555555', '00000001-1111-1111-1111-111111111111'),
-('40000006-6666-6666-6666-666666666666', 'XQ001', 'cccccccc-3333-3333-3333-333333333333', NOW(), NOW(), false, 'X-quang ngực', 20, 'ACTIVE', false, 'X-quang ngực', 180000, 'IMAGING', '33333333-3333-3333-3333-333333333333', NULL),
-('40000007-7777-7777-7777-777777777777', 'XQ002', 'cccccccc-3333-3333-3333-333333333333', NOW(), NOW(), false, 'X-quang cột sống', 20, 'ACTIVE', false, 'X-quang cột sống', 250000, 'IMAGING', '33333333-3333-3333-3333-333333333333', NULL);
+INSERT INTO medical_service (service_id, service_code, created_at, updated_at, deleted, description, status, is_point_of_care, name, price, department_type, department_id, required_specialization_id) VALUES
+('40000004-4444-4444-4444-444444444444', 'CDHA001', NOW(), NOW(), false, 'Siêu âm ổ bụng', 'ACTIVE', false, 'Siêu âm ổ bụng', 250000, 'IMAGING', '55555555-5555-5555-5555-555555555555', NULL),
+('40000005-5555-5555-5555-555555555555', 'CDHA002', NOW(), NOW(), false, 'Siêu âm tim', 'ACTIVE', false, 'Siêu âm tim', 300000, 'IMAGING', '55555555-5555-5555-5555-555555555555', '00000001-1111-1111-1111-111111111111'),
+('40000006-6666-6666-6666-666666666666', 'XQ001', NOW(), NOW(), false, 'X-quang ngực', 'ACTIVE', false, 'X-quang ngực', 180000, 'IMAGING', '33333333-3333-3333-3333-333333333333', NULL),
+('40000007-7777-7777-7777-777777777777', 'XQ002', NOW(), NOW(), false, 'X-quang cột sống', 'ACTIVE', false, 'X-quang cột sống', 250000, 'IMAGING', '33333333-3333-3333-3333-333333333333', NULL),
+('40000021-1111-1111-1111-111111111111', 'CDHA003', NOW(), NOW(), false, 'Siêu âm tuyến giáp', 'ACTIVE', false, 'Siêu âm tuyến giáp', 200000, 'IMAGING', '55555555-5555-5555-5555-555555555555', NULL),
+('40000022-1111-1111-1111-111111111111', 'CDHA004', NOW(), NOW(), false, 'Siêu âm phần mềm', 'ACTIVE', false, 'Siêu âm phần mềm', 200000, 'IMAGING', '55555555-5555-5555-5555-555555555555', NULL),
+('40000023-1111-1111-1111-111111111111', 'XQ003', NOW(), NOW(), false, 'X-quang sọ não', 'ACTIVE', false, 'X-quang sọ não', 220000, 'IMAGING', '55555555-5555-5555-5555-555555555555', NULL),
+('40000024-1111-1111-1111-111111111111', 'XQ004', NOW(), NOW(), false, 'X-quang xương khớp', 'ACTIVE', false, 'X-quang xương khớp', 200000, 'IMAGING', '55555555-5555-5555-5555-555555555555', NULL),
+('40000025-1111-1111-1111-111111111111', 'MRI001', NOW(), NOW(), false, 'Chụp MRI sọ não', 'ACTIVE', false, 'Chụp MRI sọ não', 1500000, 'IMAGING', '55555555-5555-5555-5555-555555555555', NULL),
+('40000026-1111-1111-1111-111111111111', 'MRI002', NOW(), NOW(), false, 'Chụp MRI cột sống', 'ACTIVE', false, 'Chụp MRI cột sống', 1800000, 'IMAGING', '55555555-5555-5555-5555-555555555555', NULL),
+('40000027-1111-1111-1111-111111111111', 'CT001', NOW(), NOW(), false, 'Chụp CT scan đầu', 'ACTIVE', false, 'Chụp CT scan đầu', 1000000, 'IMAGING', '55555555-5555-5555-5555-555555555555', NULL),
+('40000028-1111-1111-1111-111111111111', 'CT002', NOW(), NOW(), false, 'Chụp CT scan bụng', 'ACTIVE', false, 'Chụp CT scan bụng', 1200000, 'IMAGING', '55555555-5555-5555-5555-555555555555', NULL),
+('40000029-1111-1111-1111-111111111111', 'CDHA005', NOW(), NOW(), false, 'Siêu âm thai', 'ACTIVE', false, 'Siêu âm thai', 350000, 'IMAGING', '55555555-5555-5555-5555-555555555555', NULL);
 
 -- Clinical exam services
-INSERT INTO medical_service (service_id, service_code, category_id, created_at, updated_at, deleted, description, duration_minutes, status, is_point_of_care, name, price, service_type, department_id, required_specialization_id) VALUES
-('40000008-8888-8888-8888-888888888888', 'KHB001', 'aaaaaaaa-1111-1111-1111-111111111111', NOW(), NOW(), false, 'Khám bệnh tổng quát', 30, 'ACTIVE', false, 'Khám bệnh tổng quát', 200000, 'CLINICAL_EXAM', '33333333-3333-3333-3333-333333333333', NULL),
-('40000009-9999-9999-9999-999999999999', 'ECG001', 'dddddddd-4444-4444-4444-444444444444', NOW(), NOW(), false, 'Điện tâm đồ (ECG)', 20, 'ACTIVE', false, 'Điện tâm đồ', 150000, 'CLINICAL_EXAM', '33333333-3333-3333-3333-333333333333', '00000004-4444-4444-4444-444444444444'),
-('40000010-0000-0000-0000-000000000001', 'HH001', 'eeeeeeee-5555-5555-5555-555555555555', NOW(), NOW(), false, 'Đo chức năng hô hấp', 30, 'ACTIVE', false, 'Đo chức năng hô hấp', 400000, 'CLINICAL_EXAM', '33333333-3333-3333-3333-333333333333', '00000004-4444-4444-4444-444444444444');
+INSERT INTO medical_service (service_id, service_code, created_at, updated_at, deleted, description, status, is_point_of_care, name, price, department_type, department_id, required_specialization_id) VALUES
+('40000008-8888-8888-8888-888888888888', 'KHB001', NOW(), NOW(), false, 'Khám bệnh tổng quát', 'ACTIVE', false, 'Khám bệnh tổng quát', 200000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', NULL),
+('40000009-9999-9999-9999-999999999999', 'ECG001', NOW(), NOW(), false, 'Điện tâm đồ (ECG)', 'ACTIVE', false, 'Điện tâm đồ', 150000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', '00000004-4444-4444-4444-444444444444'),
+('40000010-0000-0000-0000-000000000001', 'HH001', NOW(), NOW(), false, 'Đo chức năng hô hấp', 'ACTIVE', false, 'Đo chức năng hô hấp', 400000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', '00000004-4444-4444-4444-444444444444'),
+('40000030-1111-1111-1111-111111111111', 'KHB002', NOW(), NOW(), false, 'Khám chuyên khoa nội', 'ACTIVE', false, 'Khám nội', 250000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', '00000001-1111-1111-1111-111111111111'),
+('40000031-1111-1111-1111-111111111111', 'KHB003', NOW(), NOW(), false, 'Khám tim mạch', 'ACTIVE', false, 'Khám tim mạch', 300000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', '00000003-3333-3333-3333-333333333333'),
+('40000032-1111-1111-1111-111111111111', 'KHB004', NOW(), NOW(), false, 'Khám hô hấp', 'ACTIVE', false, 'Khám hô hấp', 300000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', '00000004-4444-4444-4444-444444444444'),
+('40000033-1111-1111-1111-111111111111', 'KHB005', NOW(), NOW(), false, 'Khám nội soi dạ dày', 'ACTIVE', false, 'Khám nội soi', 400000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', '00000005-5555-5555-5555-555555555555'),
+('40000034-1111-1111-1111-111111111111', 'KHB006', NOW(), NOW(), false, 'Khám nhi khoa', 'ACTIVE', false, 'Khám nhi', 250000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', NULL),
+('40000035-1111-1111-1111-111111111111', 'KHB007', NOW(), NOW(), false, 'Khám tai mũi họng', 'ACTIVE', false, 'Khám tai mũi họng', 250000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', NULL),
+('40000036-1111-1111-1111-111111111111', 'KHB008', NOW(), NOW(), false, 'Khám mắt', 'ACTIVE', false, 'Khám mắt', 250000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', NULL),
+('40000037-1111-1111-1111-111111111111', 'KHB009', NOW(), NOW(), false, 'Khám da liễu', 'ACTIVE', false, 'Khám da liễu', 250000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', NULL),
+('40000038-1111-1111-1111-111111111111', 'KHB010', NOW(), NOW(), false, 'Khám răng hàm mặt', 'ACTIVE', false, 'Khám răng', 250000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', NULL),
+('40000039-1111-1111-1111-111111111111', 'KHB011', NOW(), NOW(), false, 'Khám sức khỏe tổng quát', 'ACTIVE', false, 'Khám sức khỏe', 500000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', NULL);
 
 -- ============================
 -- Appointment (5 bản ghi)

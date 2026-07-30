@@ -17,6 +17,8 @@ public record DashboardReportResponse(
             String code,
             String dept,
             long revenue,
-            int sessions
+            int sessions,
+            int occupancy,
+            double csat
     ) {}
 }

@@ -135,6 +135,13 @@ public class MedicalRecordController {
         return RestResponses.ok(response);
     }
 
+    @PostMapping("/api/patient/medical-history/{recordId}/rate")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ADMIN')")
+    public ResponseEntity<MedicalRecordResponse> rateVisit(@PathVariable UUID recordId,
+                                                          @RequestParam int ratingScore) {
+        return RestResponses.ok(service.rate(recordId, ratingScore));
+    }
+
     // --- RECEPTIONIST ENDPOINTS ---
 
     @GetMapping("/api/receptionist/records")

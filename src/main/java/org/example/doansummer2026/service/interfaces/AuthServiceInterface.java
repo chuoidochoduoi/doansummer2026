@@ -15,6 +15,7 @@ public interface AuthServiceInterface {
     Account currentAccount();
     SystemRole getCurrentSystemRole();
     void changeMyPassword(ChangePasswordRequest req);
+    void resetPassword(org.example.doansummer2026.dto.auth.ResetPasswordRequest req);
 }
 
 

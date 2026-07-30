@@ -9,6 +9,7 @@ import org.example.doansummer2026.dto.auth.ChangePasswordRequest;
 import org.example.doansummer2026.dto.auth.LoginRequest;
 import org.example.doansummer2026.dto.auth.RefreshRequest;
 import org.example.doansummer2026.dto.auth.RegisterRequest;
+import org.example.doansummer2026.dto.auth.ResetPasswordRequest;
 import org.example.doansummer2026.enums.Role;
 import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.exception.BadRequestException;
@@ -70,9 +71,6 @@ public class AuthService implements AuthServiceInterface {
             throw new BadRequestException("Tai khoan da bi khoa");
         }
 
-        if (!account.getIsActive()) {
-            throw new BadRequestException("Tai khoan da bi khoa");
-        }
         return buildAuthResponse(account);
     }
 
@@ -177,6 +175,19 @@ public class AuthService implements AuthServiceInterface {
                         account.getRole().name(),
                         systemRole != null ? systemRole.name() : null)
         );
+    }
+
+    public void resetPassword(org.example.doansummer2026.dto.auth.ResetPasswordRequest req) {
+        // Xac thuc OTP
+        if (!otpService.verifyOtp(req.phone(), req.otp())) {
+            throw new BadRequestException("OTP khong hop le hoac da het han");
+        }
+        // Tim tai khoan
+        Account account = accountService.findByUsername(req.phone());
+        if (account == null) {
+            throw new BadRequestException("Tai khoan khong ton tai");
+        }
+        accountService.adminResetPassword(account.getAccountId(), req.newPassword());
     }
 }
 

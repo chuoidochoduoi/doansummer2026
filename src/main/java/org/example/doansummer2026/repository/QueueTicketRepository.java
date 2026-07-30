@@ -43,6 +43,10 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
     @Query("SELECT COUNT(q) FROM QueueTicket q WHERE q.department.departmentId = :departmentId AND q.status IN (org.example.doansummer2026.enums.QueueStatus.WAITING, org.example.doansummer2026.enums.QueueStatus.CALLED)")
     long countWaitingByDepartment(@Param("departmentId") UUID departmentId);
 
+    @Query("SELECT COUNT(q) FROM QueueTicket q WHERE q.department.departmentId = :departmentId AND q.status NOT IN (org.example.doansummer2026.enums.QueueStatus.DONE, org.example.doansummer2026.enums.QueueStatus.SKIPPED)")
+    long countActiveTicketsByDepartment(@Param("departmentId") UUID departmentId);
+
+
     /**
      * Dem benh nhan cho xet nghiem (WAITING_FOR_TEST).
      * Bay loi dau han cho bac si xet nghiem.
