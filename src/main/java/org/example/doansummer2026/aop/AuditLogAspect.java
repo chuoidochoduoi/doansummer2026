@@ -57,7 +57,7 @@ public class AuditLogAspect {
                     userAgent != null && userAgent.length() > 500 ? userAgent.substring(0, 500) : userAgent,
                     null,
                     null,
-                    "Auto Log: " + auditable.action() + " on " + auditable.entityName()
+                    getVietnameseAction(auditable.action()) + " dữ liệu " + getVietnameseEntity(auditable.entityName())
             );
             
             CompletableFuture.runAsync(() -> {
@@ -78,6 +78,32 @@ public class AuditLogAspect {
     private HttpServletRequest getRequest() {
         ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         return attrs != null ? attrs.getRequest() : null;
+    }
+
+    private String getVietnameseAction(org.example.doansummer2026.enums.AuditAction action) {
+        if (action == null) return "Thao tác";
+        return switch (action) {
+            case CREATE -> "Tạo mới";
+            case UPDATE -> "Cập nhật";
+            case DELETE -> "Xóa";
+            case LOGIN -> "Đăng nhập";
+            case LOGOUT -> "Đăng xuất";
+            default -> action.name();
+        };
+    }
+
+    private String getVietnameseEntity(String entityName) {
+        if (entityName == null) return "Dữ liệu";
+        return switch (entityName) {
+            case "Account" -> "Tài khoản";
+            case "StaffInfo" -> "Nhân sự";
+            case "PatientProfile" -> "Bệnh nhân";
+            case "Department" -> "Phòng/Khoa";
+            case "ServiceItem" -> "Dịch vụ";
+            case "Appointment" -> "Lịch hẹn";
+            case "System" -> "Hệ thống";
+            default -> entityName;
+        };
     }
 
     private String extractEntityId(ProceedingJoinPoint joinPoint, Auditable auditable, Object result) {

@@ -10,6 +10,8 @@ import org.example.doansummer2026.dto.medicalService.MedicalServiceUpdateRequest
 import org.example.doansummer2026.enums.ServiceStatus;
 import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.service.MedicalServiceService;
+import org.example.doansummer2026.aop.Auditable;
+import org.example.doansummer2026.enums.AuditAction;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -70,6 +72,7 @@ public class MedicalServiceController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "ServiceItem")
     public ResponseEntity<MedicalServiceResponse> create(@Valid @RequestBody MedicalServiceCreateRequest req) {
         MedicalServiceResponse created = service.create(req);
         return RestResponses.created("/api/v1/medical-services/{id}", created.serviceId(), created);
@@ -77,6 +80,7 @@ public class MedicalServiceController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "ServiceItem", idParamName = "id")
     public ResponseEntity<MedicalServiceResponse> update(@PathVariable UUID id,
                                                           @Valid @RequestBody MedicalServiceUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
@@ -84,6 +88,7 @@ public class MedicalServiceController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.DELETE, entityName = "ServiceItem", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
@@ -92,6 +97,7 @@ public class MedicalServiceController {
     /** Ngung hoat dong dich vu - chi dich vu ACTIVE moi duoc ngung. */
     @PatchMapping("/{id}/deactivate")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "ServiceItem", idParamName = "id")
     public ResponseEntity<MedicalServiceResponse> deactivate(@PathVariable UUID id) {
         return RestResponses.ok(service.deactivate(id));
     }
@@ -99,6 +105,7 @@ public class MedicalServiceController {
     /** Phat hanh dich vu - chi dich vu DRAFT moi duoc phat hanh. */
     @PatchMapping("/{id}/publish")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "ServiceItem", idParamName = "id")
     public ResponseEntity<MedicalServiceResponse> publish(@PathVariable UUID id) {
         return RestResponses.ok(service.publish(id));
     }

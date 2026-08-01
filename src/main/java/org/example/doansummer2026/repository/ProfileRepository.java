@@ -14,11 +14,11 @@ import java.util.UUID;
 @Repository
 public interface ProfileRepository extends JpaRepository<Profile, UUID>, JpaSpecificationExecutor<Profile> {
 
-    Optional<Profile> findByAccount_AccountId(UUID accountId);
+    Optional<Profile> findFirstByAccount_AccountId(UUID accountId);
 
-    Optional<Profile> findByPhone(String phone);
+    Optional<Profile> findFirstByPhone(String phone);
 
-    Optional<Profile> findByEmail(String email);
+    Optional<Profile> findFirstByEmail(String email);
 
     boolean existsByPhone(String phone);
 

@@ -72,13 +72,29 @@ public class InvoiceItem extends BaseEntity {
     @NotNull
     @PositiveOrZero
     @Column(name = "unit_price", nullable = false, precision = 18, scale = 2)
-    private BigDecimal unitPrice;
+    @Builder.Default
+    private BigDecimal unitPrice = BigDecimal.ZERO;
 
     @NotNull
     @Positive
     @Column(nullable = false)
     @Builder.Default
     private Integer quantity = 1;
+
+    @PositiveOrZero
+    @Column(name = "discount_percent", precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal discountPercent = BigDecimal.ZERO;
+
+    @PositiveOrZero
+    @Column(name = "discount_amount", precision = 18, scale = 2)
+    @Builder.Default
+    private BigDecimal discountAmount = BigDecimal.ZERO;
+
+    @PositiveOrZero
+    @Column(name = "final_price", precision = 18, scale = 2)
+    @Builder.Default
+    private BigDecimal finalPrice = BigDecimal.ZERO;
 
     @NotNull
     @Column(name = "line_total", nullable = false, precision = 18, scale = 2)

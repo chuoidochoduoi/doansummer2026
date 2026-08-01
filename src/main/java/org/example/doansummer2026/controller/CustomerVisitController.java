@@ -64,7 +64,8 @@ public class CustomerVisitController {
                 req.guestPhone(),
                 req.guestAddress(),
                 req.guestDateOfBirth(),
-                req.guestGender()
+                req.guestGender(),
+                req.insuranceId()
         );
         CustomerVisitResponse created = service.create(updatedReq);
         return RestResponses.created("/api/v1/customer-visits/{id}", created.visitId(), created);

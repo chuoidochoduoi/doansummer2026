@@ -13,6 +13,8 @@ import org.example.doansummer2026.dto.appointment.AppointmentGuestCreateRequest;
 import org.example.doansummer2026.dto.appointment.AppointmentResponse;
 import org.example.doansummer2026.dto.appointment.AppointmentUpdateRequest;
 import org.example.doansummer2026.dto.appointment.GuestHistoryResponse;
+import org.example.doansummer2026.dto.appointment.CustomerAppointmentResponse;
+import org.example.doansummer2026.dto.appointment.CustomerAppointmentDetailResponse;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.service.AppointmentService;
 import org.example.doansummer2026.service.AuthService;
@@ -77,7 +79,7 @@ public class AppointmentController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST')")
     @Auditable(action = AuditAction.UPDATE, entityName = "Appointment", idParamName = "id")
     public ResponseEntity<AppointmentResponse> update(@PathVariable UUID id,
                                                       @Valid @RequestBody AppointmentUpdateRequest req) {
@@ -104,7 +106,7 @@ public class AppointmentController {
             @PathVariable UUID id,
             @Valid @RequestBody AppointmentCheckInRequest req) {
         UUID issuedById = req.issuedById() != null ? req.issuedById() : authService.currentStaffId();
-        return RestResponses.ok(service.checkIn(new AppointmentCheckInRequest(id, req.serviceIds(), issuedById)));
+        return RestResponses.ok(service.checkIn(new AppointmentCheckInRequest(id, req.serviceIds(), issuedById, req.insuranceId())));
     }
 
     /**
@@ -129,6 +131,38 @@ public class AppointmentController {
             @RequestParam String phone) {
         List<GuestHistoryResponse> history = service.getGuestHistoryByPhone(phone);
         return RestResponses.ok(history);
+    }
+
+    @GetMapping("/my")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<PageResponse<CustomerAppointmentResponse>> getMyAppointments(
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String specialty,
+            @RequestParam(required = false) String status,
+            Pageable pageable) {
+        return RestResponses.ok(service.getMyAppointments(authService.currentAccount().getAccountId(), code, specialty, status, pageable));
+    }
+
+    @GetMapping("/my/{id}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<CustomerAppointmentDetailResponse> getMyAppointmentDetail(@PathVariable UUID id) {
+        return RestResponses.ok(service.getMyAppointmentDetail(authService.currentAccount().getAccountId(), id));
+    }
+
+    @PutMapping("/my/{id}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "Appointment", idParamName = "id")
+    public ResponseEntity<CustomerAppointmentDetailResponse> updateMyAppointment(@PathVariable UUID id,
+                                                                                 @Valid @RequestBody AppointmentUpdateRequest req) {
+        return RestResponses.ok(service.updateMyAppointment(authService.currentAccount().getAccountId(), id, req));
+    }
+
+    @PostMapping("/my/{id}/cancel")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Appointment", idParamName = "id")
+    public ResponseEntity<Void> cancelMyAppointment(@PathVariable UUID id) {
+        service.cancelMyAppointment(authService.currentAccount().getAccountId(), id);
+        return RestResponses.noContent();
     }
 }
 

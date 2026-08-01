@@ -20,7 +20,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
     @Override
     public Page<Appointment> search(UUID customerId, String status,
                                    LocalDateTime from, LocalDateTime to, Pageable pageable) {
-        // Query chính để lấy dữ liệu
+        // Query chĂ­nh Ä‘á»ƒ láº¥y dá»¯ liá»‡u
         StringBuilder jpql = new StringBuilder(
             "SELECT DISTINCT a FROM Appointment a LEFT JOIN FETCH a.customer LEFT JOIN FETCH a.services WHERE a.deleted = false"
         );
@@ -63,6 +63,80 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
         if (to != null) {
             query.setParameter("to", to);
             countQuery.setParameter("to", to);
+        }
+
+        query.setFirstResult((int) pageable.getOffset());
+        query.setMaxResults(pageable.getPageSize());
+
+        List<Appointment> content = query.getResultList();
+        Long total = countQuery.getSingleResult();
+
+        return new PageImpl<>(content, pageable, total);
+    }
+
+    @Override
+    public Page<Appointment> searchForCustomer(UUID customerId, String code, String specialty, String status, Pageable pageable) {
+        StringBuilder jpql = new StringBuilder(
+            "SELECT DISTINCT a FROM Appointment a LEFT JOIN FETCH a.customer LEFT JOIN FETCH a.services s LEFT JOIN FETCH s.department d WHERE a.deleted = false AND a.customer.profileId = :customerId"
+        );
+        StringBuilder countJpql = new StringBuilder(
+            "SELECT COUNT(DISTINCT a) FROM Appointment a WHERE a.deleted = false AND a.customer.profileId = :customerId"
+        );
+
+        if (code != null && !code.isEmpty()) {
+            jpql.append(" AND CAST(a.appointmentId AS string) LIKE :code");
+            countJpql.append(" AND CAST(a.appointmentId AS string) LIKE :code");
+        }
+        if (specialty != null && !specialty.isEmpty()) {
+            jpql.append(" AND EXISTS (SELECT 1 FROM a.services s2 JOIN s2.department d2 WHERE d2.name = :specialty)");
+            countJpql.append(" AND EXISTS (SELECT 1 FROM a.services s2 JOIN s2.department d2 WHERE d2.name = :specialty)");
+        }
+        if (status != null && !status.isEmpty()) {
+            if ("upcoming".equalsIgnoreCase(status)) {
+                jpql.append(" AND a.status IN (:statusList)");
+                countJpql.append(" AND a.status IN (:statusList)");
+            } else if ("completed".equalsIgnoreCase(status)) {
+                jpql.append(" AND a.visit.status = :visitStatus");
+                countJpql.append(" AND a.visit.status = :visitStatus");
+            } else if ("cancelled".equalsIgnoreCase(status)) {
+                jpql.append(" AND a.status = :appStatus");
+                countJpql.append(" AND a.status = :appStatus");
+            }
+        }
+
+        jpql.append(" ORDER BY a.scheduledAt DESC");
+
+        TypedQuery<Appointment> query = em.createQuery(jpql.toString(), Appointment.class);
+        TypedQuery<Long> countQuery = em.createQuery(countJpql.toString(), Long.class);
+
+        query.setParameter("customerId", customerId);
+        countQuery.setParameter("customerId", customerId);
+
+        if (code != null && !code.isEmpty()) {
+            // Frontend sends APPT-XXXX, but UUID is lowercase with hyphens, we just search wildcard
+            String searchCode = "%" + code.replace("APPT-", "").toLowerCase() + "%";
+            query.setParameter("code", searchCode);
+            countQuery.setParameter("code", searchCode);
+        }
+        if (specialty != null && !specialty.isEmpty()) {
+            query.setParameter("specialty", specialty);
+            countQuery.setParameter("specialty", specialty);
+        }
+        if (status != null && !status.isEmpty()) {
+            if ("upcoming".equalsIgnoreCase(status)) {
+                java.util.List<org.example.doansummer2026.enums.AppointmentStatus> statusList = java.util.List.of(
+                    org.example.doansummer2026.enums.AppointmentStatus.PENDING,
+                    org.example.doansummer2026.enums.AppointmentStatus.CHECKED_IN
+                );
+                query.setParameter("statusList", statusList);
+                countQuery.setParameter("statusList", statusList);
+            } else if ("completed".equalsIgnoreCase(status)) {
+                query.setParameter("visitStatus", org.example.doansummer2026.enums.VisitStatus.COMPLETED);
+                countQuery.setParameter("visitStatus", org.example.doansummer2026.enums.VisitStatus.COMPLETED);
+            } else if ("cancelled".equalsIgnoreCase(status)) {
+                query.setParameter("appStatus", org.example.doansummer2026.enums.AppointmentStatus.CANCELLED);
+                countQuery.setParameter("appStatus", org.example.doansummer2026.enums.AppointmentStatus.CANCELLED);
+            }
         }
 
         query.setFirstResult((int) pageable.getOffset());

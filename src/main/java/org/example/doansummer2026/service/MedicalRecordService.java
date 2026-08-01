@@ -113,7 +113,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         var result = new java.util.ArrayList<ReceptionistAllCustomerResponse>();
 
         // Tim trong Profile (chi lay CUSTOMER, khong lay STAFF)
-        profileRepo.findByPhone(phone).ifPresent(p -> {
+        profileRepo.findFirstByPhone(phone).ifPresent(p -> {
             // Chi them neu account role la CUSTOMER
             if (p.getAccount() != null) {
                 var role = p.getAccount().getRole();

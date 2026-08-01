@@ -51,7 +51,7 @@ public class ProfileService implements ProfileServiceInterface {
 
     @Transactional(readOnly = true)
     public ProfileResponse getByAccount(UUID accountId) {
-        Profile p = profileRepository.findByAccount_AccountId(accountId)
+        Profile p = profileRepository.findFirstByAccount_AccountId(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Khong co profile cho account id=" + accountId));
         return ProfileResponse.from(p);
@@ -61,7 +61,7 @@ public class ProfileService implements ProfileServiceInterface {
     public ProfileCustomerResponse getMyProfile(UUID accountId) {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account khong ton tai"));
-        Profile profile = profileRepository.findByAccount_AccountId(accountId)
+        Profile profile = profileRepository.findFirstByAccount_AccountId(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Profile khong ton tai"));
 
         // Lay appointments
@@ -99,7 +99,7 @@ public class ProfileService implements ProfileServiceInterface {
         Account account = accountRepository.findById(req.accountId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Account khong ton tai: " + req.accountId()));
-        if (profileRepository.findByAccount_AccountId(account.getAccountId()).isPresent()) {
+        if (profileRepository.findFirstByAccount_AccountId(account.getAccountId()).isPresent()) {
             throw new ConflictException("Account da co profile");
         }
         validateUnique(req.phone(), req.email(), null, null);
@@ -152,16 +152,20 @@ public class ProfileService implements ProfileServiceInterface {
     }
 
     private void validateUnique(String phone, String email, UUID ignoreProfileId, UUID ignoreAccountId) {
-        profileRepository.findByPhone(phone).ifPresent(p -> {
-            if (ignoreProfileId == null || !p.getProfileId().equals(ignoreProfileId)) {
-                throw new ConflictException("So dien thoai da duoc su dung");
-            }
-        });
-        profileRepository.findByEmail(email).ifPresent(p -> {
-            if (ignoreProfileId == null || !p.getProfileId().equals(ignoreProfileId)) {
-                throw new ConflictException("Email da duoc su dung");
-            }
-        });
+        if (phone != null && !phone.isBlank()) {
+            profileRepository.findFirstByPhone(phone).ifPresent(p -> {
+                if (ignoreProfileId == null || !p.getProfileId().equals(ignoreProfileId)) {
+                    throw new ConflictException("So dien thoai da duoc su dung");
+                }
+            });
+        }
+        if (email != null && !email.isBlank()) {
+            profileRepository.findFirstByEmail(email).ifPresent(p -> {
+                if (ignoreProfileId == null || !p.getProfileId().equals(ignoreProfileId)) {
+                    throw new ConflictException("Email da duoc su dung");
+                }
+            });
+        }
     }
 
     private Gender parseGender(String raw) {

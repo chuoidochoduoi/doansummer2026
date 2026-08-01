@@ -22,7 +22,9 @@ public record CustomerVisitCreateRequest(
         String guestPhone,
         String guestAddress,
         LocalDate guestDateOfBirth,
-        Gender guestGender
+        Gender guestGender,
+        // Bao hiem y te
+        UUID insuranceId
 ) {}
 
 

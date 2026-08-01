@@ -6,7 +6,11 @@ import org.example.doansummer2026.dto.auditLog.AuditLogCreateRequest;
 import org.example.doansummer2026.dto.auditLog.AuditLogResponse;
 import org.example.doansummer2026.enums.AuditAction;
 import org.example.doansummer2026.model.AuditLog;
+import org.example.doansummer2026.model.Account;
+import org.example.doansummer2026.model.Profile;
 import org.example.doansummer2026.repository.AuditLogRepository;
+import org.example.doansummer2026.repository.AccountRepository;
+import org.example.doansummer2026.repository.ProfileRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -23,18 +27,29 @@ import java.util.UUID;
 public class AuditLogService implements AuditLogServiceInterface {
 
     private final AuditLogRepository repo;
+    private final AccountRepository accountRepo;
+    private final ProfileRepository profileRepo;
+
+    private String getActorName(UUID accountId) {
+        if (accountId == null) return null;
+        return profileRepo.findFirstByAccount_AccountId(accountId)
+                .map(Profile::getFullName)
+                .orElseGet(() -> accountRepo.findById(accountId)
+                        .map(Account::getUsername)
+                        .orElse(null));
+    }
 
     @Transactional(readOnly = true)
     public PageResponse<AuditLogResponse> search(UUID actorId, AuditAction action, String entityName,
                                                    LocalDateTime from, LocalDateTime to, Pageable pageable) {
         Page<AuditLog> page = repo.search(actorId, action, entityName, from, to, pageable);
-        return PageResponse.from(page, AuditLogResponse::from);
+        return PageResponse.from(page, a -> AuditLogResponse.from(a, getActorName(a.getActorAccountId())));
     }
 
     @Transactional(readOnly = true)
     public List<AuditLogResponse> findByEntity(String entityName, String entityId) {
         return repo.findByEntityNameAndEntityIdOrderByCreatedAtDesc(entityName, entityId)
-                .stream().map(AuditLogResponse::from).toList();
+                .stream().map(a -> AuditLogResponse.from(a, getActorName(a.getActorAccountId()))).toList();
     }
 
     public AuditLogResponse create(AuditLogCreateRequest req) {

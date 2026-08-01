@@ -8,6 +8,8 @@ import org.example.doansummer2026.dto.specialization.SpecializationCreateRequest
 import org.example.doansummer2026.dto.specialization.SpecializationResponse;
 import org.example.doansummer2026.dto.specialization.SpecializationUpdateRequest;
 import org.example.doansummer2026.service.SpecializationService;
+import org.example.doansummer2026.aop.Auditable;
+import org.example.doansummer2026.enums.AuditAction;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -43,6 +45,7 @@ public class SpecializationController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "Specialization")
     public ResponseEntity<SpecializationResponse> create(@Valid @RequestBody SpecializationCreateRequest req) {
         SpecializationResponse created = service.create(req);
         return RestResponses.created("/api/v1/specializations/{id}", created.specializationId(), created);
@@ -50,6 +53,7 @@ public class SpecializationController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "Specialization", idParamName = "id")
     public ResponseEntity<SpecializationResponse> update(@PathVariable UUID id,
                                                           @Valid @RequestBody SpecializationUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
@@ -57,6 +61,7 @@ public class SpecializationController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.DELETE, entityName = "Specialization", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();

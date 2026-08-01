@@ -11,6 +11,9 @@ import java.util.UUID;
 public interface AppointmentRepositoryCustom {
     Page<Appointment> search(UUID customerId, String status,
                             LocalDateTime from, LocalDateTime to, Pageable pageable);
+    
+    Page<Appointment> searchForCustomer(UUID customerId, String code, String specialty, String status, Pageable pageable);
+
     List<Appointment> findByCustomerId(UUID customerId);
 
     /**

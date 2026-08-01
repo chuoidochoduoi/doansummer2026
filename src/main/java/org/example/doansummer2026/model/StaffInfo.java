@@ -67,8 +67,7 @@ public class StaffInfo extends BaseEntity {
     @Column(name = "system_role", nullable = false, length = 30)
     private SystemRole systemRole;
 
-    @NotBlank
-    @Column(name = "national_id", nullable = false, unique = true, length = 20)
+    @Column(name = "national_id", unique = true, length = 20)
     private String nationalId;
 
     @Column(name = "bank_account", length = 30)
@@ -86,6 +85,10 @@ public class StaffInfo extends BaseEntity {
 
     @Column(name = "license_number", unique = true, length = 50)
     private String licenseNumber;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
+    private Department department;
 
     @PrePersist
     void generateStaffCode() {

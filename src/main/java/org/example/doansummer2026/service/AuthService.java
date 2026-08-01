@@ -53,7 +53,6 @@ public class AuthService implements AuthServiceInterface {
         // Tao profile lien ket
         Profile profile = Profile.builder()
                 .account(account)
-                .fullName("User " + UUID.randomUUID().toString().substring(0, 8))
                 .phone(req.phone())
                 .build();
         profileRepository.save(profile);
@@ -121,7 +120,7 @@ public class AuthService implements AuthServiceInterface {
     public UUID currentProfileId() {
         Account account = currentAccount();
         if (account != null) {
-            return profileRepository.findByAccount_AccountId(account.getAccountId()).map(p -> p.getProfileId()).orElse(null);
+            return profileRepository.findFirstByAccount_AccountId(account.getAccountId()).map(p -> p.getProfileId()).orElse(null);
         }
         return null;
     }
@@ -158,7 +157,7 @@ public class AuthService implements AuthServiceInterface {
 
     private AuthResponse buildAuthResponse(Account account) {
         // Tim staffId va systemRole tu account (chi co cho staff, customer tra ve null)
-        var staffOpt = staffRepo.findByProfile_Account_Username(account.getUsername());
+        var staffOpt = staffRepo.findFirstByProfile_Account_Username(account.getUsername());
         UUID staffId = staffOpt.map(staff -> staff.getStaffId()).orElse(null);
         SystemRole systemRole = staffOpt.map(staff -> staff.getSystemRole()).orElse(null);
 

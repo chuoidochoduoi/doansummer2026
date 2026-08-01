@@ -42,7 +42,10 @@ public interface DepartmentRepository extends JpaRepository<Department, UUID> {
                                                           @Param("departmentId") UUID departmentId);
 
     Optional<Department> findByHeadDoctor_StaffId(UUID staffId);
+
+    /** Tim danh sach phong theo y ta. */
+    List<Department> findByNurses_StaffId(UUID staffId);
+
+    /** Tim phong theo y ta. */
+    Optional<Department> findFirstByNurses_StaffId(UUID staffId);
 }
-
-
-

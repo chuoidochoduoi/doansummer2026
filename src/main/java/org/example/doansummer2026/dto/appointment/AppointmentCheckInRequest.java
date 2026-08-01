@@ -12,7 +12,8 @@ import java.util.UUID;
 public record AppointmentCheckInRequest(
         java.util.UUID appointmentId,
         Set<UUID> serviceIds,
-        UUID issuedById
+        UUID issuedById,
+        UUID insuranceId
 ) {}
 
 

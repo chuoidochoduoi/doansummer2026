@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -21,7 +22,8 @@ import lombok.Setter;
 import org.example.doansummer2026.common.BaseEntity;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
-
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.example.doansummer2026.enums.DepartmentStatus;
 import org.example.doansummer2026.enums.DepartmentType;
@@ -74,6 +76,10 @@ public class Department extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "head_doctor_id")
     private StaffInfo headDoctor;
+
+    @OneToMany(mappedBy = "department")
+    @Builder.Default
+    private List<StaffInfo> nurses = new ArrayList<>();
 }
 
 

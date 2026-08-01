@@ -73,7 +73,7 @@ public class AccountController {
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
     public ResponseEntity<AccountResponse> get(@PathVariable UUID id) {
         var account = accountService.findById(id);
-        SystemRole systemRole = staffRepo.findByProfile_Account_Username(account.getUsername())
+        SystemRole systemRole = staffRepo.findFirstByProfile_Account_Username(account.getUsername())
                 .map(staff -> staff.getSystemRole())
                 .orElse(null);
         return RestResponses.ok(AccountResponse.from(account, systemRole));
@@ -85,7 +85,7 @@ public class AccountController {
     public ResponseEntity<AccountResponse> update(@PathVariable UUID id,
                                                   @RequestBody AccountUpdateRequest req) {
         var account = accountService.update(id, req);
-        SystemRole systemRole = staffRepo.findByProfile_Account_Username(account.getUsername())
+        SystemRole systemRole = staffRepo.findFirstByProfile_Account_Username(account.getUsername())
                 .map(staff -> staff.getSystemRole())
                 .orElse(null);
         return RestResponses.ok(AccountResponse.from(account, systemRole));
@@ -110,7 +110,7 @@ public class AccountController {
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Account", idParamName = "id")
     public ResponseEntity<AccountResponse> lock(@PathVariable UUID id) {
         var account = accountService.lock(id);
-        SystemRole systemRole = staffRepo.findByProfile_Account_Username(account.getUsername())
+        SystemRole systemRole = staffRepo.findFirstByProfile_Account_Username(account.getUsername())
                 .map(staff -> staff.getSystemRole())
                 .orElse(null);
         return RestResponses.ok(AccountResponse.from(account, systemRole));

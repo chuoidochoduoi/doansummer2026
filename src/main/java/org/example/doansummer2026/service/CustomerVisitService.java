@@ -15,12 +15,16 @@ import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
+import org.example.doansummer2026.repository.InsuranceRuleRepository;
+import org.example.doansummer2026.model.InsuranceRule;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.example.doansummer2026.service.interfaces.CustomerVisitServiceInterface;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -38,6 +42,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
     private final AppointmentRepository appointmentRepo;
     private final MedicalServiceRepository serviceRepo;
     private final InvoiceService invoiceService;
+    private final InsuranceRuleRepository insuranceRuleRepo;
 
     @Transactional(readOnly = true)
     public PageResponse<CustomerVisitResponse> search(UUID customerId, VisitStatus status,
@@ -90,28 +95,49 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
         // Tao InvoiceItem cho moi service (gia mac dinh tu MedicalService) - optional
         List<org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest> items = new ArrayList<>();
         List<UUID> serviceIds = req.serviceIds();
+        BigDecimal totalDiscount = BigDecimal.ZERO;
+        
         if (serviceIds != null && !serviceIds.isEmpty()) {
             for (UUID serviceId : serviceIds) {
                 MedicalService service = serviceRepo.findById(serviceId)
                         .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
+                        
+                BigDecimal unitPrice = service.getPrice();
+                BigDecimal discountPercent = BigDecimal.ZERO;
+                
+                // Fetch insurance rule if insuranceId is provided
+                if (req.insuranceId() != null) {
+                    var ruleOpt = insuranceRuleRepo.findByInsurance_InsuranceIdAndDepartmentType(
+                            req.insuranceId(), service.getDepartmentType());
+                    if (ruleOpt.isPresent()) {
+                        discountPercent = ruleOpt.get().getDiscountPercent();
+                    }
+                }
+                
+                BigDecimal discountAmount = unitPrice.multiply(discountPercent).divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+                BigDecimal finalPrice = unitPrice.subtract(discountAmount);
+                totalDiscount = totalDiscount.add(discountAmount);
+                
                 items.add(new org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest(
                         serviceId,
                         service.getName(),
-                        null, // serviceCodeSnapshot
-                        service.getPrice(),
+                        service.getServiceCode(),
+                        unitPrice,
                         1,
+                        discountPercent,
+                        discountAmount,
+                        finalPrice,
                         null
                 ));
             }
         }
 
-        // Tao Invoice PENDING khi tao CustomerVisit (co items)
         var invoiceResponse = invoiceService.create(new org.example.doansummer2026.dto.invoice.InvoiceCreateRequest(
                 customer.getProfileId(),
                 saved.getVisitId(),
                 null,
                 null,
-                null,
+                totalDiscount,
                 null,
                 null,
                 req.issuedById(),

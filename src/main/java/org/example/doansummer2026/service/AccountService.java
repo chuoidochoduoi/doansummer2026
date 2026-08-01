@@ -53,7 +53,7 @@ public class AccountService implements AccountServiceInterface {
 
     @Transactional(readOnly = true)
     public Account findByUsername(String username) {
-        return accountRepository.findByUsername(username)
+        return accountRepository.findFirstByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay username=" + username));
     }
 
@@ -107,7 +107,7 @@ public class AccountService implements AccountServiceInterface {
                 ? accountRepository.findByRole(role, pageable)
                 : accountRepository.findAll(pageable);
         return PageResponse.from(page, a -> {
-            SystemRole sr = staffRepo.findByProfile_Account_Username(a.getUsername())
+            SystemRole sr = staffRepo.findFirstByProfile_Account_Username(a.getUsername())
                     .map(staff -> staff.getSystemRole())
                     .orElse(null);
             return AccountResponse.from(a, sr);
@@ -147,7 +147,7 @@ public class AccountService implements AccountServiceInterface {
         
         Page<Account> page = accountRepository.searchCustomers(search, isActive, pageable);
         return PageResponse.from(page, a -> {
-            var profileOpt = profileRepo.findByAccount_AccountId(a.getAccountId());
+            var profileOpt = profileRepo.findFirstByAccount_AccountId(a.getAccountId());
             String fullName = profileOpt.map(p -> p.getFullName()).orElse(a.getUsername());
             return AccountManagementResponse.forCustomer(a, fullName);
         });
@@ -159,7 +159,7 @@ public class AccountService implements AccountServiceInterface {
     public Account lock(UUID id) {
         Account a = findById(id);
         // Kiem tra xem co phai admin/clinic_manager khong
-        var staffOpt = staffRepo.findByProfile_Account_Username(a.getUsername());
+        var staffOpt = staffRepo.findFirstByProfile_Account_Username(a.getUsername());
         if (staffOpt.isPresent()) {
             SystemRole sr = staffOpt.get().getSystemRole();
             if (sr == SystemRole.ADMIN || sr == SystemRole.CLINIC_MANAGER) {

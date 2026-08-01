@@ -11,6 +11,8 @@ import org.example.doansummer2026.dto.appointment.AppointmentCreateRequest;
 import org.example.doansummer2026.dto.appointment.AppointmentGuestCreateRequest;
 import org.example.doansummer2026.dto.appointment.AppointmentResponse;
 import org.example.doansummer2026.dto.appointment.AppointmentUpdateRequest;
+import org.example.doansummer2026.dto.appointment.CustomerAppointmentResponse;
+import org.example.doansummer2026.dto.appointment.CustomerAppointmentDetailResponse;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.enums.Role;
 import org.example.doansummer2026.enums.VisitStatus;
@@ -21,11 +23,14 @@ import org.example.doansummer2026.model.Appointment;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.Profile;
+import org.example.doansummer2026.model.Insurance;
 import org.example.doansummer2026.repository.AccountRepository;
 import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
+import org.example.doansummer2026.repository.InsuranceRepository;
+import org.example.doansummer2026.repository.InsuranceRuleRepository;
 import org.example.doansummer2026.service.interfaces.AppointmentServiceInterface;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -50,6 +55,8 @@ public class AppointmentService implements AppointmentServiceInterface {
     private final CustomerVisitRepository visitRepo;
     private final MedicalServiceRepository serviceRepo;
     private final InvoiceService invoiceService;
+    private final InsuranceRepository insuranceRepository;
+    private final InsuranceRuleRepository insuranceRuleRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<AppointmentResponse> search(UUID customerId,
@@ -75,9 +82,15 @@ public class AppointmentService implements AppointmentServiceInterface {
             throw new BadRequestException("Only CUSTOMER and STAFF can book appointments");
         }
 
-        // Tim profile tu account
-        Profile customer = profileRepo.findByAccount_AccountId(req.customerId())
-                .orElseThrow(() -> new ResourceNotFoundException("Profile khong ton tai cho tai khoan nay"));
+        Profile customer = profileRepo.findFirstByAccount_AccountId(req.customerId())
+                .orElseThrow(() -> new ResourceNotFoundException("Benh nhan khong ton tai (Customer ID)"));
+
+        // Kiem tra da co cuoc hen nao dang hoat dong chua (1 customer 1 appointment at a time)
+        boolean hasActive = repo.existsByCustomer_ProfileIdAndStatusIn(customer.getProfileId(), 
+                java.util.List.of(AppointmentStatus.PENDING));
+        if (hasActive) {
+            throw new BadRequestException("Bạn đã có hẹn nhé");
+        }
 
         Appointment a = Appointment.builder()
                 .customer(customer)
@@ -128,6 +141,14 @@ public class AppointmentService implements AppointmentServiceInterface {
         if (req.status() != null) a.setStatus(req.status());
         if (req.cancelReason() != null) a.setCancelReason(req.cancelReason());
         if (req.timeSlot() != null) a.setTimeSlot(req.timeSlot());
+        
+        // Cập nhật thông tin khách (cho phép ghi đè kể cả khách vãng lai hay khách có tk)
+        if (req.guestFullName() != null) a.setGuestFullName(req.guestFullName());
+        if (req.guestPhone() != null) a.setGuestPhone(req.guestPhone());
+        if (req.guestAddress() != null) a.setGuestAddress(req.guestAddress());
+        if (req.guestAge() != null) a.setGuestAge(req.guestAge());
+        if (req.guestGender() != null) a.setGuestGender(req.guestGender());
+
         if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
             Set<MedicalService> services = new HashSet<>();
             for (UUID serviceId : req.serviceIds()) {
@@ -180,34 +201,68 @@ public class AppointmentService implements AppointmentServiceInterface {
         repo.save(a); // Luu lai appointment voi services moi (neu co)
 
 
-        // Tao CustomerVisit
-        CustomerVisit visit;
-        if (Boolean.TRUE.equals(a.getIsGuest())) {
-            visit = CustomerVisit.builder()
-                    .appointment(a)
-                    .checkInTime(LocalDateTime.now())
-                    .status(VisitStatus.CHECKED_IN)
-                    .build();
-        } else {
-            visit = CustomerVisit.builder()
-                    .customer(a.getCustomer())
-                    .appointment(a)
-                    .checkInTime(LocalDateTime.now())
-                    .status(VisitStatus.CHECKED_IN)
-                    .build();
+        // Lay bao hiem neu co
+        Insurance insurance = null;
+        List<org.example.doansummer2026.model.InsuranceRule> insuranceRules = List.of();
+        if (req.insuranceId() != null) {
+            insurance = insuranceRepository.findById(req.insuranceId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Bao hiem khong ton tai: " + req.insuranceId()));
+            insuranceRules = insuranceRuleRepository.findByInsurance_InsuranceId(req.insuranceId());
         }
-        CustomerVisit savedVisit = visitRepo.save(visit);
 
-        // Tao Invoice items tu cac services
+        // Tao hoac lay CustomerVisit hien co
+        CustomerVisit visit = visitRepo.findByAppointment_AppointmentId(a.getAppointmentId())
+            .orElseGet(() -> {
+                CustomerVisit newVisit;
+                if (Boolean.TRUE.equals(a.getIsGuest())) {
+                    newVisit = CustomerVisit.builder()
+                            .appointment(a)
+                            .checkInTime(LocalDateTime.now())
+                            .status(VisitStatus.CHECKED_IN)
+                            .build();
+                } else {
+                    newVisit = CustomerVisit.builder()
+                            .customer(a.getCustomer())
+                            .appointment(a)
+                            .checkInTime(LocalDateTime.now())
+                            .status(VisitStatus.CHECKED_IN)
+                            .build();
+                }
+                return visitRepo.save(newVisit);
+            });
+        CustomerVisit savedVisit = visit;
+
+        final List<org.example.doansummer2026.model.InsuranceRule> finalRules = insuranceRules;
+
         var invoiceItems = services.stream()
-                .map(s -> new org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest(
-                        s.getServiceId(),
-                        s.getName(),           // serviceSnapshot
-                        s.getServiceCode(),     // serviceCodeSnapshot
-                        s.getPrice() != null ? s.getPrice() : BigDecimal.ZERO, // unitPrice
-                        1,                   // quantity
-                        null                   // note
-                ))
+                .map(s -> {
+                    BigDecimal price = s.getPrice() != null ? s.getPrice() : BigDecimal.ZERO;
+                    BigDecimal discountPercent = BigDecimal.ZERO;
+                    
+                    if (!finalRules.isEmpty() && s.getDepartment() != null) {
+                        for (org.example.doansummer2026.model.InsuranceRule rule : finalRules) {
+                            if (rule.getDepartmentType() == s.getDepartment().getDepartmentType()) {
+                                discountPercent = rule.getDiscountPercent();
+                                break;
+                            }
+                        }
+                    }
+                    
+                    BigDecimal discountAmount = price.multiply(discountPercent).divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP);
+                    BigDecimal finalPrice = price.subtract(discountAmount);
+                    
+                    return new org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest(
+                            s.getServiceId(),
+                            s.getName(),
+                            s.getServiceCode(),
+                            price,
+                            1,
+                            discountPercent,
+                            discountAmount,
+                            finalPrice,
+                            null
+                    );
+                })
                 .toList();
 
         // Tao Invoice
@@ -276,6 +331,79 @@ public class AppointmentService implements AppointmentServiceInterface {
         ));
 
         return GuestCheckInResponse.from(savedVisit, invoiceResponse.invoiceId(), req.guestFullName(), req.guestPhone());
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<CustomerAppointmentResponse> getMyAppointments(UUID customerId, String code, String specialty, String status, Pageable pageable) {
+        // Tim profile tu account
+        Profile customer = profileRepo.findFirstByAccount_AccountId(customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Benh nhan khong ton tai"));
+
+        Page<Appointment> page = repo.searchForCustomer(customer.getProfileId(), code, specialty, status, pageable);
+        return PageResponse.from(page, CustomerAppointmentResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public CustomerAppointmentDetailResponse getMyAppointmentDetail(UUID customerId, UUID appointmentId) {
+        Profile customer = profileRepo.findFirstByAccount_AccountId(customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Benh nhan khong ton tai"));
+
+        Appointment appointment = repo.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Lich hen khong ton tai"));
+
+        if (appointment.getCustomer() == null || !appointment.getCustomer().getProfileId().equals(customer.getProfileId())) {
+            throw new BadRequestException("Khong co quyen truy cap lich hen nay");
+        }
+
+        return CustomerAppointmentDetailResponse.from(appointment);
+    }
+
+    public CustomerAppointmentDetailResponse updateMyAppointment(UUID customerId, UUID appointmentId, AppointmentUpdateRequest req) {
+        Profile customer = profileRepo.findFirstByAccount_AccountId(customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Benh nhan khong ton tai"));
+
+        Appointment a = repo.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Lich hen khong ton tai"));
+
+        if (a.getCustomer() == null || !a.getCustomer().getProfileId().equals(customer.getProfileId())) {
+            throw new BadRequestException("Khong co quyen truy cap lich hen nay");
+        }
+
+        if (a.getStatus() != AppointmentStatus.PENDING) {
+            throw new BadRequestException("Chi co the cap nhat lich hen khi chua check-in");
+        }
+
+        if (req.scheduledAt() != null) a.setScheduledAt(req.scheduledAt());
+        if (req.timeSlot() != null) a.setTimeSlot(req.timeSlot());
+        if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
+            Set<MedicalService> services = new HashSet<>();
+            for (UUID serviceId : req.serviceIds()) {
+                MedicalService service = serviceRepo.findById(serviceId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
+                services.add(service);
+            }
+            a.setServices(services);
+        }
+        return CustomerAppointmentDetailResponse.from(repo.save(a));
+    }
+
+    public void cancelMyAppointment(UUID customerId, UUID appointmentId) {
+        Profile customer = profileRepo.findFirstByAccount_AccountId(customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Benh nhan khong ton tai"));
+
+        Appointment appointment = repo.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Lich hen khong ton tai"));
+
+        if (appointment.getCustomer() == null || !appointment.getCustomer().getProfileId().equals(customer.getProfileId())) {
+            throw new BadRequestException("Khong co quyen truy cap lich hen nay");
+        }
+
+        if (appointment.getStatus() != AppointmentStatus.PENDING) {
+            throw new BadRequestException("Chi co the huy lich hen dang cho xac nhan hoac chua check-in");
+        }
+
+        appointment.setStatus(AppointmentStatus.CANCELLED);
+        repo.save(appointment);
     }
 }
 

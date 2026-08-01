@@ -35,6 +35,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.example.doansummer2026.service.interfaces.QueueTicketServiceInterface;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+import org.example.doansummer2026.service.interfaces.InvoiceServiceInterface;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -55,6 +58,10 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     private final StaffInfoRepository staffRepo;
     private final Icd10CodeRepository icd10Repo;
     private final TestRequestService testRequestService;
+
+    @Autowired
+    @Lazy
+    private InvoiceServiceInterface invoiceService;
 
     @Transactional(readOnly = true)
     public PageResponse<QueueTicketResponse> search(UUID departmentId, LocalDate workDate,
@@ -193,13 +200,36 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             if (doctorId == null) {
                 throw new BadRequestException("Khong the tao test request: khong xac dinh duoc bac si");
             }
-            for (TestRequestInExaminationRequest testReq : req.testRequests()) {
-                testRequestService.create(new TestRequestCreateRequest(
+            
+            // Thay vi tao truc tiep TestRequest -> Tao Invoice (hoa don) truoc
+            java.util.List<org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest> invoiceItems = new java.util.ArrayList<>();
+            for (org.example.doansummer2026.dto.medicalRecord.TestRequestInExaminationRequest testReq : req.testRequests()) {
+                org.example.doansummer2026.model.MedicalService svc = serviceRepo.findById(testReq.serviceId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + testReq.serviceId()));
+                invoiceItems.add(new org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest(
+                        svc.getServiceId(),
+                        svc.getName(),
+                        svc.getServiceCode(),
+                        svc.getPrice() != null ? svc.getPrice() : java.math.BigDecimal.ZERO,
+                        1,
+                        java.math.BigDecimal.ZERO, // discountPercent
+                        java.math.BigDecimal.ZERO, // discountAmount
+                        svc.getPrice() != null ? svc.getPrice() : java.math.BigDecimal.ZERO, // finalPrice
+                        testReq.notes()
+                ));
+            }
+            
+            if (!invoiceItems.isEmpty()) {
+                invoiceService.create(new org.example.doansummer2026.dto.invoice.InvoiceCreateRequest(
+                        q.getVisit().getCustomer() != null ? q.getVisit().getCustomer().getProfileId() : null,
+                        q.getVisit().getVisitId(),
                         record.getRecordId(),
-                        testReq.serviceId(),
+                        LocalDate.now(),
+                        java.math.BigDecimal.ZERO,
+                        java.math.BigDecimal.ZERO,
+                        "Hóa đơn xét nghiệm / CĐHA chỉ định từ phòng khám",
                         doctorId,
-                        testReq.notes(),
-                        null // invoiceItemId = null (khong qua invoice)
+                        invoiceItems
                 ));
             }
         }

@@ -9,6 +9,8 @@ import org.example.doansummer2026.dto.appointment.AppointmentResponse;
 import org.example.doansummer2026.dto.appointment.AppointmentCreateRequest;
 import org.example.doansummer2026.dto.appointment.AppointmentGuestCreateRequest;
 import org.example.doansummer2026.dto.appointment.AppointmentUpdateRequest;
+import org.example.doansummer2026.dto.appointment.CustomerAppointmentResponse;
+import org.example.doansummer2026.dto.appointment.CustomerAppointmentDetailResponse;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.model.Appointment;
 
@@ -31,6 +33,11 @@ public interface AppointmentServiceInterface {
     GuestCheckInResponse guestCheckIn(GuestCheckInRequest req);
     void delete(UUID id);
     Appointment findById(UUID id);
+
+    PageResponse<CustomerAppointmentResponse> getMyAppointments(UUID customerId, String code, String specialty, String status, Pageable pageable);
+    CustomerAppointmentDetailResponse getMyAppointmentDetail(UUID customerId, UUID appointmentId);
+    CustomerAppointmentDetailResponse updateMyAppointment(UUID customerId, UUID appointmentId, AppointmentUpdateRequest req);
+    void cancelMyAppointment(UUID customerId, UUID appointmentId);
 }
 
 

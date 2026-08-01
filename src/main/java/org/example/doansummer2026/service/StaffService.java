@@ -30,6 +30,11 @@ import java.util.List;
 
 import java.util.UUID;
 
+import org.example.doansummer2026.repository.DepartmentRepository;
+import org.example.doansummer2026.model.Department;
+import java.util.stream.Collectors;
+import java.util.Map;
+
 /**
  * Tao / cap nhat / xoa / truy van StaffInfo.
  * Quy trinh tao (1 transaction):
@@ -47,6 +52,7 @@ public class StaffService implements StaffServiceInterface {
     private final StaffInfoRepository staffRepo;
     private final ProfileRepository profileRepo;
     private final AccountRepository accountRepo;
+    private final DepartmentRepository departmentRepo;
     private final SpecializationService specializationService;
     private final PasswordEncoder passwordEncoder;
 
@@ -55,17 +61,17 @@ public class StaffService implements StaffServiceInterface {
         if (accountRepo.existsByUsername(req.username())) {
             throw new ConflictException("Username da ton tai: " + req.username());
         }
-        if (staffRepo.existsByNationalId(req.nationalId())) {
+        if (req.nationalId() != null && !req.nationalId().isBlank() && staffRepo.existsByNationalId(req.nationalId())) {
             throw new ConflictException("CCCD/CMND da ton tai: " + req.nationalId());
         }
         if (req.licenseNumber() != null && !req.licenseNumber().isBlank()
                 && staffRepo.existsByLicenseNumber(req.licenseNumber())) {
             throw new ConflictException("So giay phep hanh nghe da ton tai");
         }
-        if (profileRepo.findByPhone(req.phone()).isPresent()) {
+        if (profileRepo.findFirstByPhone(req.phone()).isPresent()) {
             throw new ConflictException("So dien thoai da duoc su dung");
         }
-        if (profileRepo.findByEmail(req.email()).isPresent()) {
+        if (profileRepo.findFirstByEmail(req.email()).isPresent()) {
             throw new ConflictException("Email da duoc su dung");
         }
 
@@ -122,8 +128,8 @@ public class StaffService implements StaffServiceInterface {
     }
 
     public StaffResponse getByAccountId(UUID accountId) {
-        StaffInfo s = staffRepo.findByProfile_Account_AccountId(accountId)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nhan vien"));
+        StaffInfo s = staffRepo.findFirstByProfile_Account_AccountId(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nhan su voi accountId=" + accountId));
         return toResponse(s);
     }
 
@@ -144,7 +150,7 @@ public class StaffService implements StaffServiceInterface {
 
         // Update StaffInfo
         if (req.nationalId() != null && !req.nationalId().equals(s.getNationalId())) {
-            if (staffRepo.existsByNationalId(req.nationalId())) {
+            if (!req.nationalId().isBlank() && staffRepo.existsByNationalId(req.nationalId())) {
                 throw new ConflictException("CCCD/CMND da ton tai");
             }
             s.setNationalId(req.nationalId());
@@ -220,7 +226,20 @@ public class StaffService implements StaffServiceInterface {
     public List<StaffOptionResponse> findAllDoctors() {
         List<StaffInfo> doctors = staffRepo.findAllBySystemRoleIn(
                 List.of(SystemRole.GENERAL_DOCTOR, SystemRole.SPECIALIST_DOCTOR));
-        return doctors.stream().map(StaffOptionResponse::from).toList();
+                
+        List<Department> allDepts = departmentRepo.findAll();
+        Map<UUID, UUID> doctorToDeptMap = allDepts.stream()
+            .filter(d -> d.getHeadDoctor() != null)
+            .collect(Collectors.toMap(d -> d.getHeadDoctor().getStaffId(), Department::getDepartmentId, (a, b) -> a));
+
+        return doctors.stream().map(d -> StaffOptionResponse.from(d, doctorToDeptMap.get(d.getStaffId()))).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<StaffOptionResponse> findAllNurses() {
+        List<StaffInfo> nurses = staffRepo.findAllBySystemRoleIn(
+                List.of(SystemRole.NURSE));
+        return nurses.stream().map(n -> StaffOptionResponse.from(n, n.getDepartment() != null ? n.getDepartment().getDepartmentId() : null)).toList();
     }
 
     private StaffResponse toResponse(StaffInfo s) {

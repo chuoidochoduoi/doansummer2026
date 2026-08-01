@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Size;
 import org.example.doansummer2026.enums.DepartmentStatus;
 import org.example.doansummer2026.enums.DepartmentType;
 
+import java.util.List;
 import java.util.UUID;
 
 public record DepartmentCreateRequest(
@@ -13,7 +14,8 @@ public record DepartmentCreateRequest(
         DepartmentStatus status,
         DepartmentType departmentType,
         @Size(max = 500) String description,
-        UUID headDoctorId
+        UUID headDoctorId,
+        List<UUID> nurseIds
 ) {}
 
 

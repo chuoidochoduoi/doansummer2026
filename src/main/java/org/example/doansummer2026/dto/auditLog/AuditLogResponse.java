@@ -12,6 +12,7 @@ public record AuditLogResponse(
         String entityName,
         String entityId,
         UUID actorAccountId,
+        String actorName,
         String ipAddress,
         String userAgent,
         String oldValueJson,
@@ -21,7 +22,13 @@ public record AuditLogResponse(
 ) {
     public static AuditLogResponse from(AuditLog a) {
         return new AuditLogResponse(a.getAuditId(), a.getAction(), a.getEntityName(),
-                a.getEntityId(), a.getActorAccountId(), a.getIpAddress(), a.getUserAgent(),
+                a.getEntityId(), a.getActorAccountId(), null, a.getIpAddress(), a.getUserAgent(),
+                a.getOldValueJson(), a.getNewValueJson(), a.getDescription(), a.getCreatedAt());
+    }
+
+    public static AuditLogResponse from(AuditLog a, String actorName) {
+        return new AuditLogResponse(a.getAuditId(), a.getAction(), a.getEntityName(),
+                a.getEntityId(), a.getActorAccountId(), actorName, a.getIpAddress(), a.getUserAgent(),
                 a.getOldValueJson(), a.getNewValueJson(), a.getDescription(), a.getCreatedAt());
     }
 }

@@ -16,15 +16,17 @@ import java.util.UUID;
 @Repository
 public interface StaffInfoRepository extends JpaRepository<StaffInfo, UUID>, JpaSpecificationExecutor<StaffInfo> {
 
-    Optional<StaffInfo> findByProfile_ProfileId(UUID profileId);
+    Optional<StaffInfo> findFirstByProfile_ProfileId(UUID profileId);
 
-    Optional<StaffInfo> findByStaffCode(String staffCode);
+    Optional<StaffInfo> findFirstByStaffCode(String staffCode);
 
-    Optional<StaffInfo> findByProfile_Account_Username(String username);
+    Optional<StaffInfo> findFirstByProfile_Account_Username(String username);
 
-    Optional<StaffInfo> findByProfile_Account_AccountId(UUID accountId);
+    Optional<StaffInfo> findFirstByProfile_Account_AccountId(UUID accountId);
 
     Page<StaffInfo> findBySystemRole(SystemRole systemRole, Pageable pageable);
+
+    List<StaffInfo> findByDepartment_DepartmentId(UUID departmentId);
 
     boolean existsByNationalId(String nationalId);
 

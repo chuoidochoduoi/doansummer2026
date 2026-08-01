@@ -15,7 +15,7 @@ import java.util.UUID;
 @Repository
 public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpecificationExecutor<Account> {
 
-    Optional<Account> findByUsername(String username);
+    Optional<Account> findFirstByUsername(String username);
 
     boolean existsByUsername(String username);
 

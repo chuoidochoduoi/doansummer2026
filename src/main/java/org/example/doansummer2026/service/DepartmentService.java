@@ -22,6 +22,7 @@ import org.example.doansummer2026.model.Account;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -80,7 +81,22 @@ public class DepartmentService implements DepartmentServiceInterface {
             builder.headDoctor(headDoctor);
         }
 
-        return DepartmentResponse.from(repo.save(builder.build()));
+        Department saved = repo.save(builder.build());
+
+        if (req.nurseIds() != null && !req.nurseIds().isEmpty()) {
+            for (UUID nurseId : req.nurseIds()) {
+                StaffInfo nurse = staffRepo.findById(nurseId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Y ta khong ton tai: " + nurseId));
+                if (nurse.getDepartment() != null) {
+                    throw new ConflictException("Y ta nay da duoc chi dinh cho phong khac: " + nurseId);
+                }
+                nurse.setDepartment(saved);
+                staffRepo.save(nurse);
+            }
+        }
+
+        // Fetch again to ensure nurses are loaded in response
+        return DepartmentResponse.from(repo.findById(saved.getDepartmentId()).get());
     }
 
     public DepartmentResponse update(UUID id, DepartmentUpdateRequest req) {
@@ -110,6 +126,39 @@ public class DepartmentService implements DepartmentServiceInterface {
                     .orElseThrow(() -> new ResourceNotFoundException("Staff khong ton tai: " + req.headDoctorId()));
             d.setHeadDoctor(headDoctor);
         }
+
+        if (req.nurseIds() != null) {
+            // Clear old nurses
+            List<StaffInfo> currentNurses = staffRepo.findByDepartment_DepartmentId(d.getDepartmentId());
+            for (StaffInfo oldNurse : currentNurses) {
+                if (!req.nurseIds().contains(oldNurse.getStaffId())) {
+                    oldNurse.setDepartment(null);
+                    staffRepo.save(oldNurse);
+                }
+            }
+
+            // Set new nurses
+            for (UUID nurseId : req.nurseIds()) {
+                StaffInfo nurse = staffRepo.findById(nurseId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Y ta khong ton tai: " + nurseId));
+                if (nurse.getDepartment() != null && !nurse.getDepartment().getDepartmentId().equals(d.getDepartmentId())) {
+                    throw new ConflictException("Y ta nay da duoc chi dinh cho phong khac: " + nurseId);
+                }
+                nurse.setDepartment(d);
+                staffRepo.save(nurse);
+            }
+        }
+        
+        Department saved = repo.save(d);
+        // Ensure nurses collection is up to date for the response mapping
+        return DepartmentResponse.from(repo.findById(saved.getDepartmentId()).get());
+    }
+
+    public DepartmentResponse updateStatus(UUID id, DepartmentStatus status) {
+        Department d = findById(id);
+        if (status != null) {
+            d.setStatus(status);
+        }
         return DepartmentResponse.from(repo.save(d));
     }
 
@@ -134,13 +183,16 @@ public class DepartmentService implements DepartmentServiceInterface {
     @Transactional(readOnly = true)
     public DepartmentResponse getMyDepartment() {
         Account acc = authService.currentAccount();
-        StaffInfo staff = staffRepo.findByProfile_Account_Username(acc.getUsername())
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nhan vien"));
-        Department dept = repo.findByHeadDoctor_StaffId(staff.getStaffId())
-                .orElseThrow(() -> new ResourceNotFoundException("Bac si chua duoc chi dinh phong"));
-        return DepartmentResponse.from(dept);
+        StaffInfo staff = staffRepo.findFirstByProfile_Account_Username(acc.getUsername())
+                .orElseThrow(() -> new ResourceNotFoundException("Ban khong phai la nhan vien"));
+        // Tim phong theo bac si phu trach truoc
+        Optional<Department> dept = repo.findByHeadDoctor_StaffId(staff.getStaffId());
+        if (dept.isEmpty()) {
+            // Neu la y ta, tim phong duoc phan cong
+            dept = repo.findFirstByNurses_StaffId(staff.getStaffId());
+        }
+        return DepartmentResponse.from(
+            dept.orElseThrow(() -> new ResourceNotFoundException("Chua duoc chi dinh phong"))
+        );
     }
 }
-
-
-

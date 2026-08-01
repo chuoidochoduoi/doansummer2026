@@ -209,8 +209,10 @@ public class TestRequestService implements TestRequestServiceInterface {
                         t.getMedicalRecord().getRecordId(),
                         java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS));
 
-                QueueTicket queueTicket = queueTicketRepo.findByVisit_VisitIdAndDepartment_DepartmentId(
-                        visitId, t.getPerformingDepartment().getDepartmentId()).orElse(null);
+                QueueTicket queueTicket = queueTicketRepo.findAllByVisit_VisitId(visitId).stream()
+                        .filter(qt -> qt.getStatus() == QueueStatus.WAITING_FOR_TEST || qt.getStatus() == QueueStatus.TEST_DONE)
+                        .findFirst()
+                        .orElse(null);
                 if (queueTicket != null) {
                     if (totalTestRequests > 0 && incompleteCount == 0) {
                         queueTicket.setStatus(QueueStatus.TEST_DONE);
@@ -271,9 +273,10 @@ public class TestRequestService implements TestRequestServiceInterface {
 
         // Kiem tra tat ca TestRequest trong medical record de set status TEST_DONE hoac WAITING_FOR_TEST
         if (t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null) {
-            QueueTicket queueTicket = queueTicketRepo.findByVisit_VisitIdAndDepartment_DepartmentId(
-                    t.getMedicalRecord().getVisit().getVisitId(),
-                    t.getPerformingDepartment().getDepartmentId()).orElse(null);
+            QueueTicket queueTicket = queueTicketRepo.findAllByVisit_VisitId(t.getMedicalRecord().getVisit().getVisitId()).stream()
+                    .filter(qt -> qt.getStatus() == QueueStatus.WAITING_FOR_TEST || qt.getStatus() == QueueStatus.TEST_DONE)
+                    .findFirst()
+                    .orElse(null);
             if (queueTicket != null) {
                 long totalTestRequests = repo.countByMedicalRecord_MedicalRecordId(t.getMedicalRecord().getRecordId());
                 long incompleteCount = repo.countByMedicalRecordAndStatusIn(

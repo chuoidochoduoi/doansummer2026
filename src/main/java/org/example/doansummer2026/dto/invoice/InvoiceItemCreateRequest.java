@@ -15,6 +15,9 @@ public record InvoiceItemCreateRequest(
         @Size(max = 50) String serviceCodeSnapshot,
         @NotNull @PositiveOrZero BigDecimal unitPrice,
         @NotNull @Positive Integer quantity,
+        BigDecimal discountPercent,
+        BigDecimal discountAmount,
+        BigDecimal finalPrice,
         String note
 ) {}
 

@@ -26,7 +26,7 @@ public record StaffCreateRequest(
         // specializationId: bat buoc cho SPECIALIST_DOCTOR
         UUID specializationId,
         @NotNull SystemRole systemRole,
-        @NotBlank @Size(max = 20) String nationalId,
+        @Size(max = 20) String nationalId,
         @Size(max = 30) String bankAccount,
         @Size(max = 100) String highestDegree,
         @Size(max = 200) String university,

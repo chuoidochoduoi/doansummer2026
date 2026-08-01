@@ -11,13 +11,18 @@ public record StaffOptionResponse(
         String staffCode,
         String fullName,
         SystemRoleBrief systemRole,
-        String specializationName
+        String specializationName,
+        UUID assignedDepartmentId
 ) {
     public enum SystemRoleBrief {
         GENERAL_DOCTOR, SPECIALIST_DOCTOR, NURSE, RECEPTIONIST, CASHIER, CLINIC_MANAGER, ADMIN
     }
 
     public static StaffOptionResponse from(org.example.doansummer2026.model.StaffInfo s) {
+        return from(s, null);
+    }
+
+    public static StaffOptionResponse from(org.example.doansummer2026.model.StaffInfo s, UUID assignedDepartmentId) {
         String specName = s.getSpecialization() != null ? s.getSpecialization().getName() : null;
         String fullName = s.getProfile() != null ? s.getProfile().getFullName() : null;
         return new StaffOptionResponse(
@@ -25,7 +30,8 @@ public record StaffOptionResponse(
                 s.getStaffCode(),
                 fullName,
                 SystemRoleBrief.valueOf(s.getSystemRole().name()),
-                specName
+                specName,
+                assignedDepartmentId
         );
     }
 }

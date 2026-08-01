@@ -8,6 +8,8 @@ import org.example.doansummer2026.dto.serviceCategory.ServiceCategoryCreateReque
 import org.example.doansummer2026.dto.serviceCategory.ServiceCategoryResponse;
 import org.example.doansummer2026.dto.serviceCategory.ServiceCategoryUpdateRequest;
 import org.example.doansummer2026.service.ServiceCategoryService;
+import org.example.doansummer2026.aop.Auditable;
+import org.example.doansummer2026.enums.AuditAction;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -43,6 +45,7 @@ public class ServiceCategoryController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "ServiceCategory")
     public ResponseEntity<ServiceCategoryResponse> create(@Valid @RequestBody ServiceCategoryCreateRequest req) {
         ServiceCategoryResponse created = service.create(req);
         return RestResponses.created("/api/v1/service-categories/{id}", created.categoryId(), created);
@@ -50,6 +53,7 @@ public class ServiceCategoryController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "ServiceCategory", idParamName = "id")
     public ResponseEntity<ServiceCategoryResponse> update(@PathVariable UUID id,
                                                           @Valid @RequestBody ServiceCategoryUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
@@ -57,6 +61,7 @@ public class ServiceCategoryController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.DELETE, entityName = "ServiceCategory", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();

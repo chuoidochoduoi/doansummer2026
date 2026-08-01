@@ -295,6 +295,9 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .serviceCodeSnapshot(req.serviceCodeSnapshot())
                 .unitPrice(req.unitPrice())
                 .quantity(req.quantity())
+                .discountPercent(req.discountPercent() != null ? req.discountPercent() : BigDecimal.ZERO)
+                .discountAmount(req.discountAmount() != null ? req.discountAmount() : BigDecimal.ZERO)
+                .finalPrice(req.finalPrice() != null ? req.finalPrice() : lineTotal)
                 .lineTotal(lineTotal)
                 .note(req.note())
                 .build();

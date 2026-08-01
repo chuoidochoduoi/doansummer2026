@@ -56,7 +56,7 @@ public class Profile extends BaseEntity {
     @JoinColumn(name = "account_id")
     private Account account;
     @Size(max = 100)
-    @Column(name = "full_name", nullable = false, length = 100)
+    @Column(name = "full_name", nullable = true, length = 100)
     private String fullName;
 
     @Past

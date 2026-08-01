@@ -12,6 +12,8 @@ import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.service.DepartmentService;
 import org.example.doansummer2026.service.StaffService;
+import org.example.doansummer2026.aop.Auditable;
+import org.example.doansummer2026.enums.AuditAction;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -79,6 +82,7 @@ public class DepartmentController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "Department")
     public ResponseEntity<DepartmentResponse> create(@Valid @RequestBody DepartmentCreateRequest req) {
         DepartmentResponse created = service.create(req);
         return RestResponses.created("/api/v1/departments/{id}", created.departmentId(), created);
@@ -86,6 +90,7 @@ public class DepartmentController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "Department", idParamName = "id")
     public ResponseEntity<DepartmentResponse> update(@PathVariable UUID id,
                                                      @Valid @RequestBody DepartmentUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
@@ -93,9 +98,22 @@ public class DepartmentController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.DELETE, entityName = "Department", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
+    }
+
+    @PatchMapping("/{id}/status")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Department", idParamName = "id")
+    public ResponseEntity<DepartmentResponse> updateStatus(@PathVariable UUID id, @RequestBody java.util.Map<String, String> payload) {
+        String statusStr = payload.get("status");
+        if (statusStr != null) {
+            org.example.doansummer2026.enums.DepartmentStatus status = org.example.doansummer2026.enums.DepartmentStatus.valueOf(statusStr);
+            return RestResponses.ok(service.updateStatus(id, status));
+        }
+        return RestResponses.ok(service.get(id));
     }
 
     /**
@@ -109,9 +127,16 @@ public class DepartmentController {
         return RestResponses.ok(doctors);
     }
 
-    /** Lay phong kham duoc chi dinh cho bac si hien tai */
+    @GetMapping("/nurses")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<StaffOptionResponse>> listNurses() {
+        var nurses = staffService.findAllNurses();
+        return RestResponses.ok(nurses);
+    }
+
+    /** Lay phong kham duoc chi dinh cho bac si/y ta hien tai */
     @GetMapping("/my-department")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','GENERAL_DOCTOR','SPECIALIST_DOCTOR')")
     public ResponseEntity<DepartmentResponse> getMyDepartment() {
         return RestResponses.ok(service.getMyDepartment());
     }
