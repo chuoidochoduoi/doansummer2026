@@ -18,7 +18,7 @@ public record StaffResponse(
         SpecializationResponse specialization
 ) {
     public enum SystemRoleBrief {
-        GENERAL_DOCTOR, SPECIALIST_DOCTOR, NURSE, RECEPTIONIST, CASHIER, CLINIC_MANAGER, ADMIN
+        DOCTOR, NURSE, RECEPTIONIST, CASHIER, CLINIC_MANAGER, ADMIN
     }
 
     public static StaffResponse from(StaffInfo s, ProfileResponse p,
@@ -30,12 +30,11 @@ public record StaffResponse(
                 s.getLicenseNumber(),
                 s.getHighestDegree(),
                 s.getUniversity(),
-                SystemRoleBrief.valueOf(s.getSystemRole().name()),
+                SystemRoleBrief.valueOf(s.getSystemRole().normalized().name()),
                 p,
                 sp
         );
     }
 }
-
 
 

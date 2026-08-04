@@ -101,6 +101,9 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
             } else if ("cancelled".equalsIgnoreCase(status)) {
                 jpql.append(" AND a.status = :appStatus");
                 countJpql.append(" AND a.status = :appStatus");
+            } else if ("checked_in".equalsIgnoreCase(status)) {
+                jpql.append(" AND a.status = :appStatus");
+                countJpql.append(" AND a.status = :appStatus");
             }
         }
 
@@ -125,9 +128,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
         if (status != null && !status.isEmpty()) {
             if ("upcoming".equalsIgnoreCase(status)) {
                 java.util.List<org.example.doansummer2026.enums.AppointmentStatus> statusList = java.util.List.of(
-                    org.example.doansummer2026.enums.AppointmentStatus.PENDING,
-                    org.example.doansummer2026.enums.AppointmentStatus.CHECKED_IN
-                );
+                    org.example.doansummer2026.enums.AppointmentStatus.PENDING);
                 query.setParameter("statusList", statusList);
                 countQuery.setParameter("statusList", statusList);
             } else if ("completed".equalsIgnoreCase(status)) {
@@ -136,6 +137,9 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
             } else if ("cancelled".equalsIgnoreCase(status)) {
                 query.setParameter("appStatus", org.example.doansummer2026.enums.AppointmentStatus.CANCELLED);
                 countQuery.setParameter("appStatus", org.example.doansummer2026.enums.AppointmentStatus.CANCELLED);
+            } else if ("checked_in".equalsIgnoreCase(status)) {
+                query.setParameter("appStatus", org.example.doansummer2026.enums.AppointmentStatus.CHECKED_IN);
+                countQuery.setParameter("appStatus", org.example.doansummer2026.enums.AppointmentStatus.CHECKED_IN);
             }
         }
 
@@ -164,6 +168,5 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
                 .getResultList();
     }
 }
-
 
 

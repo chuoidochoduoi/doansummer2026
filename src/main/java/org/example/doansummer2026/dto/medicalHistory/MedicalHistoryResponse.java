@@ -13,6 +13,7 @@ import java.util.UUID;
  */
 public record MedicalHistoryResponse(
         UUID id,
+        UUID visitId,
         String date,
         String time,
         String specialty,
@@ -54,6 +55,7 @@ public record MedicalHistoryResponse(
 
         return new MedicalHistoryResponse(
                 record.getRecordId(),
+                record.getVisit() != null ? record.getVisit().getVisitId() : null,
                 date,
                 time,
                 specialty,

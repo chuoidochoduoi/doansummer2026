@@ -50,6 +50,8 @@ public record CustomerAppointmentDetailResponse(
                 statusStr = "cancelled";
             } else if (a.getVisit() != null && a.getVisit().getStatus() == org.example.doansummer2026.enums.VisitStatus.COMPLETED) {
                 statusStr = "completed";
+            } else if (a.getStatus() == org.example.doansummer2026.enums.AppointmentStatus.CHECKED_IN) {
+                statusStr = "checked_in";
             } else {
                 statusStr = "upcoming";
             }

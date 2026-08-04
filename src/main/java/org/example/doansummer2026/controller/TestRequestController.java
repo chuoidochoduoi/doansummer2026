@@ -14,6 +14,7 @@ import org.example.doansummer2026.dto.testResult.TestResultResponse;
 import org.example.doansummer2026.dto.testResult.TestResultUpdateRequest;
 import org.example.doansummer2026.enums.TestRequestStatus;
 import org.example.doansummer2026.service.TestRequestService;
+import org.example.doansummer2026.service.AuthService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -39,6 +40,7 @@ import java.util.UUID;
 public class TestRequestController {
 
     private final TestRequestService service;
+    private final AuthService authService;
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
@@ -46,14 +48,21 @@ public class TestRequestController {
             @RequestParam(required = false) UUID recordId,
             @RequestParam(required = false) UUID departmentId,
             @RequestParam(required = false) TestRequestStatus status,
+            @RequestParam(required = false) String search,
             Pageable pageable) {
-        return RestResponses.ok(service.search(recordId, departmentId, status, pageable));
+        return RestResponses.ok(service.search(recordId, departmentId, status, search, pageable));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
     public ResponseEntity<TestRequestResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
+    }
+
+    @GetMapping("/queue/{ticketId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    public ResponseEntity<List<TestRequestResponse>> listByQueue(@PathVariable UUID ticketId) {
+        return RestResponses.ok(service.listByQueueTicket(ticketId));
     }
 
     @PostMapping
@@ -92,7 +101,7 @@ public class TestRequestController {
      * Huy yeu cau xet nghiem - chi cho PENDING hoac IN_PROGRESS.
      */
     @PostMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
     public ResponseEntity<TestRequestResponse> cancel(@PathVariable UUID id,
                                                       @Valid @RequestBody TestRequestCancelRequest req) {
         return RestResponses.ok(service.cancel(id, req));
@@ -144,10 +153,10 @@ public class TestRequestController {
      * Neu chua co ket qua thi tao moi, neu co roi thi cap nhat.
      */
     @PostMapping("/{id}/result/complete")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
     public ResponseEntity<TestResultResponse> completeResult(@PathVariable UUID id,
                                                                 @Valid @RequestBody TestResultCreateRequest req) {
-        return RestResponses.ok(service.completeResult(id, req));
+        return RestResponses.ok(service.completeResult(id, req, authService.currentStaffId()));
     }
 
     // --- Upload file ket qua ---
@@ -166,8 +175,4 @@ public class TestRequestController {
         return RestResponses.ok(Map.of("imageUrl", imageUrl, "fileName", fileName));
     }
 }
-
-
-
-
 

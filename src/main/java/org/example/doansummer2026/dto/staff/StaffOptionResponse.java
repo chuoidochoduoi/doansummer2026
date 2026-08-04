@@ -15,7 +15,7 @@ public record StaffOptionResponse(
         UUID assignedDepartmentId
 ) {
     public enum SystemRoleBrief {
-        GENERAL_DOCTOR, SPECIALIST_DOCTOR, NURSE, RECEPTIONIST, CASHIER, CLINIC_MANAGER, ADMIN
+        DOCTOR, NURSE, RECEPTIONIST, CASHIER, CLINIC_MANAGER, ADMIN
     }
 
     public static StaffOptionResponse from(org.example.doansummer2026.model.StaffInfo s) {
@@ -29,7 +29,7 @@ public record StaffOptionResponse(
                 s.getStaffId(),
                 s.getStaffCode(),
                 fullName,
-                SystemRoleBrief.valueOf(s.getSystemRole().name()),
+                SystemRoleBrief.valueOf(s.getSystemRole().normalized().name()),
                 specName,
                 assignedDepartmentId
         );

@@ -17,6 +17,9 @@ import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.model.Profile;
 import org.example.doansummer2026.repository.ProfileRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
+import org.example.doansummer2026.repository.AppointmentRepository;
+import org.example.doansummer2026.repository.CustomerVisitRepository;
+import org.example.doansummer2026.repository.InvoiceRepository;
 import org.example.doansummer2026.service.interfaces.AuthServiceInterface;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -29,6 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Service
 @Transactional
@@ -41,6 +46,9 @@ public class AuthService implements AuthServiceInterface {
     private final OtpService otpService;
     private final PasswordEncoder passwordEncoder;
     private final StaffInfoRepository staffRepo;
+    private final AppointmentRepository appointmentRepository;
+    private final CustomerVisitRepository visitRepository;
+    private final InvoiceRepository invoiceRepository;
     public AuthResponse register(RegisterRequest req) {
         // Xac thuc OTP truoc khi dang ky
         if (!otpService.verifyOtp(req.phone(), req.otp())) {
@@ -50,13 +58,54 @@ public class AuthService implements AuthServiceInterface {
         // Tao account voi role CUSTOMER
         Account account = accountService.create(req.phone(), req.password(), Role.CUSTOMER);
 
-        // Tao profile lien ket
-        Profile profile = Profile.builder()
-                .account(account)
-                .phone(req.phone())
-                .build();
-        profileRepository.save(profile);
+        Set<String> phoneVariants = phoneVariants(req.phone());
+        Profile profile = profileRepository.findFirstByPhoneIn(phoneVariants).orElse(null);
+        if (profile != null && profile.getAccount() != null) {
+            throw new BadRequestException("So dien thoai da duoc lien ket voi tai khoan khac");
+        }
+        if (profile == null) {
+            profile = Profile.builder().account(account).phone(normalizePhone(req.phone())).build();
+        } else {
+            profile.setAccount(account);
+            profile.setPhone(normalizePhone(req.phone()));
+        }
+        profile = profileRepository.save(profile);
+        linkGuestHistory(profile, phoneVariants);
         return buildAuthResponse(account);
+    }
+
+    private void linkGuestHistory(Profile profile, Set<String> phones) {
+        var appointments = appointmentRepository.findAllByIsGuestTrueAndGuestPhoneIn(phones);
+        for (var appointment : appointments) {
+            appointment.setCustomer(profile);
+            appointment.setIsGuest(false);
+            appointmentRepository.save(appointment);
+            visitRepository.findByAppointment_AppointmentId(appointment.getAppointmentId()).ifPresent(visit -> {
+                visit.setCustomer(profile);
+                visitRepository.save(visit);
+                var invoices = invoiceRepository.findAllByVisit_VisitId(visit.getVisitId());
+                invoices.forEach(invoice -> invoice.setCustomer(profile));
+                invoiceRepository.saveAll(invoices);
+            });
+        }
+    }
+
+    private String normalizePhone(String phone) {
+        String digits = phone == null ? "" : phone.replaceAll("\\D", "");
+        if (digits.startsWith("84") && digits.length() >= 11) digits = "0" + digits.substring(2);
+        return digits;
+    }
+
+    private Set<String> phoneVariants(String phone) {
+        String normalized = normalizePhone(phone);
+        Set<String> variants = new LinkedHashSet<>();
+        variants.add(phone);
+        variants.add(normalized);
+        if (normalized.startsWith("0")) {
+            variants.add("84" + normalized.substring(1));
+            variants.add("+84" + normalized.substring(1));
+        }
+        return variants;
     }
 
     public AuthResponse login(LoginRequest req) {
@@ -150,8 +199,17 @@ public class AuthService implements AuthServiceInterface {
         Object principal = auth.getPrincipal();
         if (principal instanceof Map<?, ?> map) {
             String sr = (String) map.get("systemRole");
-            return sr != null ? SystemRole.valueOf(sr) : null;
+            if (sr != null) return SystemRole.valueOf(sr);
         }
+        // JWT luu danh sach authorities thay vi claim systemRole. Suy ra vai tro
+        // tu authority de cac API quan ly khong bi nham thanh bac si thuong.
+        var authorities = auth.getAuthorities().stream().map(item -> item.getAuthority()).collect(java.util.stream.Collectors.toSet());
+        if (authorities.contains("ROLE_CLINIC_MANAGER")) return SystemRole.CLINIC_MANAGER;
+        if (authorities.contains("ROLE_ADMIN")) return SystemRole.ADMIN;
+        if (authorities.contains("ROLE_NURSE")) return SystemRole.NURSE;
+        if (authorities.contains("ROLE_RECEPTIONIST")) return SystemRole.RECEPTIONIST;
+        if (authorities.contains("ROLE_CASHIER")) return SystemRole.CASHIER;
+        if (authorities.contains("ROLE_DOCTOR")) return SystemRole.DOCTOR;
         return null;
     }
 
@@ -189,6 +247,4 @@ public class AuthService implements AuthServiceInterface {
         accountService.adminResetPassword(account.getAccountId(), req.newPassword());
     }
 }
-
-
 

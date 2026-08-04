@@ -93,7 +93,7 @@ public class JwtService {
         }
         if (systemRole != null) {
             return switch (systemRole) {
-                case GENERAL_DOCTOR, SPECIALIST_DOCTOR -> List.of("ROLE_DOCTOR", "ROLE_STAFF");
+                case DOCTOR, GENERAL_DOCTOR, SPECIALIST_DOCTOR -> List.of("ROLE_DOCTOR", "ROLE_STAFF");
                 case NURSE -> List.of("ROLE_NURSE", "ROLE_STAFF");
                 case RECEPTIONIST -> List.of("ROLE_RECEPTIONIST", "ROLE_STAFF");
                 case CASHIER -> List.of("ROLE_CASHIER", "ROLE_STAFF");

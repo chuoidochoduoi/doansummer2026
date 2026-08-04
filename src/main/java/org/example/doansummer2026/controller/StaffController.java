@@ -8,6 +8,9 @@ import org.example.doansummer2026.dto.staff.StaffCreateRequest;
 import org.example.doansummer2026.dto.staff.StaffOptionResponse;
 import org.example.doansummer2026.dto.staff.StaffResponse;
 import org.example.doansummer2026.dto.staff.StaffUpdateRequest;
+import org.example.doansummer2026.dto.staff.StaffProfessionalUpdateRequest;
+import org.example.doansummer2026.dto.staff.StaffCapabilityRequest;
+import org.example.doansummer2026.dto.staff.StaffCapabilityResponse;
 import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.service.StaffScheduleService;
 import org.example.doansummer2026.service.StaffService;
@@ -40,6 +43,19 @@ public class StaffController {
 
     private final StaffService staffService;
     private final StaffScheduleService staffScheduleService;
+
+    @GetMapping("/{staffId}/capabilities")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER','ROLE_STAFF')")
+    public List<StaffCapabilityResponse> listCapabilities(@PathVariable UUID staffId) {
+        return staffService.listCapabilities(staffId);
+    }
+
+    @PutMapping("/{staffId}/capabilities")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    public List<StaffCapabilityResponse> replaceCapabilities(@PathVariable UUID staffId,
+            @RequestBody List<StaffCapabilityRequest> requests) {
+        return staffService.replaceCapabilities(staffId, requests);
+    }
 
     /** ADMIN vaf CLINIC_MANAGER xem danh sach. */
     @GetMapping
@@ -92,9 +108,22 @@ public class StaffController {
     }
 
     @GetMapping("/account/{accountId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_GENERAL_DOCTOR', 'ROLE_SPECIALIST_DOCTOR', 'ROLE_NURSE', 'ROLE_RECEPTIONIST', 'ROLE_CASHIER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR', 'ROLE_NURSE', 'ROLE_RECEPTIONIST', 'ROLE_CASHIER')")
     public ResponseEntity<StaffResponse> getByAccount(@PathVariable UUID accountId) {
         return RestResponses.ok(staffService.getByAccountId(accountId));
+    }
+
+    /** Nhan vien tu cap nhat hoc vi va truong dao tao; chuyen khoa khong nam trong request. */
+    @PutMapping("/me/professional")
+    @PreAuthorize("hasAnyAuthority('ROLE_STAFF', 'ROLE_DOCTOR', 'ROLE_NURSE', 'ROLE_RECEPTIONIST', 'ROLE_CASHIER')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "StaffInfo")
+    public ResponseEntity<StaffResponse> updateOwnProfessionalInfo(
+            @Valid @RequestBody StaffProfessionalUpdateRequest req) {
+        UUID staffId = getCurrentStaffId();
+        if (staffId == null) {
+            throw new org.example.doansummer2026.exception.BadRequestException("Khong xac dinh duoc nhan vien hien tai");
+        }
+        return RestResponses.ok(staffService.updateOwnProfessionalInfo(staffId, req));
     }
 
     /** CHI ADMIN tao nhan vien moi (kem account + profile). */
@@ -131,6 +160,3 @@ public class StaffController {
         return RestResponses.ok(locked);
     }
 }
-
-
-

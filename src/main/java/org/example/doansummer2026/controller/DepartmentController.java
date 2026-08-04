@@ -69,6 +69,7 @@ public class DepartmentController {
             Pageable pageable) {
         return RestResponses.ok(service.listMultiple(pageable, List.of(
                 DepartmentType.EXAMINATION,
+                DepartmentType.PARACLINICAL,
                 DepartmentType.LABORATORY,
                 DepartmentType.IMAGING
         )));
@@ -117,7 +118,7 @@ public class DepartmentController {
     }
 
     /**
-     * Lay danh sach bac si (GENERAL_DOCTOR, SPECIALIST_DOCTOR) de chon lam head doctor.
+     * Lay danh sach bac si de chon lam head doctor.
      * Dung cho form tao/sua department.
      */
     @GetMapping("/doctors")
@@ -136,13 +137,11 @@ public class DepartmentController {
 
     /** Lay phong kham duoc chi dinh cho bac si/y ta hien tai */
     @GetMapping("/my-department")
-    @PreAuthorize("hasAnyRole('DOCTOR','NURSE','GENERAL_DOCTOR','SPECIALIST_DOCTOR')")
+    @PreAuthorize("hasAnyRole('DOCTOR','NURSE')")
     public ResponseEntity<DepartmentResponse> getMyDepartment() {
         return RestResponses.ok(service.getMyDepartment());
     }
 
 
 }
-
-
 

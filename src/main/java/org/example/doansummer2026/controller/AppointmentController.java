@@ -118,7 +118,9 @@ public class AppointmentController {
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Appointment")
     public ResponseEntity<GuestCheckInResponse> guestCheckIn(
             @Valid @RequestBody GuestCheckInRequest req) {
-        return RestResponses.ok(service.guestCheckIn(req));
+        UUID staffId = req.issuedById() != null ? req.issuedById() : authService.currentStaffId();
+        return RestResponses.ok(service.guestCheckIn(new GuestCheckInRequest(req.guestFullName(), req.guestPhone(),
+                req.guestAddress(), req.guestAge(), req.guestGender(), req.serviceIds(), staffId)));
     }
 
     /**
@@ -165,6 +167,5 @@ public class AppointmentController {
         return RestResponses.noContent();
     }
 }
-
 
 

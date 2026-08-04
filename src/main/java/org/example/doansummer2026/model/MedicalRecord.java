@@ -45,7 +45,7 @@ import org.example.doansummer2026.enums.MedicalRecordStatus;
  */
 @Entity
 @Table(name = "medical_record")
-@SQLDelete(sql = "UPDATE medical_record SET deleted = true WHERE record_id = ?")
+@SQLDelete(sql = "UPDATE medical_record SET deleted = true WHERE record_id = ? AND record_version = ?")
 @SQLRestriction("deleted = false")
 @NamedEntityGraph(
     name = "MedicalRecord.withDetails",
@@ -64,6 +64,11 @@ import org.example.doansummer2026.enums.MedicalRecordStatus;
 @Builder
 public class MedicalRecord extends BaseEntity {
 
+    @jakarta.persistence.Version
+    @Column(name = "record_version", nullable = false, columnDefinition = "bigint default 0")
+    @Builder.Default
+    private Long version = 0L;
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "record_id")
@@ -75,9 +80,14 @@ public class MedicalRecord extends BaseEntity {
     private String recordCode;
 
     /** Owning side 1-1 voi CustomerVisit. */
-    @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "visit_id", nullable = false, unique = true)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "visit_id", nullable = false)
     private CustomerVisit visit;
+
+    /** Moi lan kham/chuyen khoa co mot ho so rieng. */
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "queue_ticket_id", unique = true)
+    private QueueTicket queueTicket;
 
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -143,6 +153,27 @@ public class MedicalRecord extends BaseEntity {
     @Column(name = "rated_at")
     private LocalDateTime ratedAt;
 
+    @Column(name = "rating_comment", length = 500) private String ratingComment;
+    @Column(name = "doctor_rating") private Integer doctorRating;
+    @Column(name = "waiting_rating") private Integer waitingRating;
+    @Column(name = "staff_rating") private Integer staffRating;
+    @Column(name = "contact_requested") @Builder.Default private Boolean contactRequested = false;
+    @Column(name = "feedback_status", length = 20) private String feedbackStatus;
+    @Column(name = "manager_response", length = 1000) private String managerResponse;
+    @Column(name = "internal_note", length = 1000) private String internalNote;
+    @Column(name = "doctor_explanation", length = 1000) private String doctorExplanation;
+    @Column(name = "responded_at") private LocalDateTime respondedAt;
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "responded_by") private StaffInfo respondedBy;
+
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "nursing_updated_by") private StaffInfo nursingUpdatedBy;
+    @Column(name = "nursing_updated_at") private LocalDateTime nursingUpdatedAt;
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "doctor_confirmed_by") private StaffInfo doctorConfirmedBy;
+    @Column(name = "doctor_confirmed_at") private LocalDateTime doctorConfirmedAt;
+
+    @OneToMany(mappedBy = "medicalRecord", cascade = jakarta.persistence.CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private Set<FeedbackTarget> feedbackTargets = new LinkedHashSet<>();
+
     /** Ghi chu tai kham */
     @Column(name = "follow_up_note", columnDefinition = "TEXT")
     private String followUpNote;
@@ -156,7 +187,3 @@ public class MedicalRecord extends BaseEntity {
     @JoinColumn(name = "follow_up_appointment_id")
     private Appointment followUpAppointment;
 }
-
-
-
-

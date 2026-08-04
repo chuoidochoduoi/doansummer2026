@@ -29,9 +29,9 @@ public record MedicalRecordUpdateRequest(
         // Neu khong co -> queue ticket chuyen sang DONE
         List<TestRequestInExaminationRequest> testRequests,
         // Yeu cau tai kham (follow-up)
-        FollowUpRequest followUp
+        FollowUpRequest followUp,
+        Long version
 ) {}
-
 
 
 

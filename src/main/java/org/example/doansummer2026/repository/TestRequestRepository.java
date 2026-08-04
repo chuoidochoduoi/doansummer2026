@@ -16,6 +16,7 @@ import java.util.UUID;
 
 @Repository
 public interface TestRequestRepository extends JpaRepository<TestRequest, UUID> {
+    List<TestRequest> findAllByMedicalRecord_Visit_VisitId(UUID visitId);
 
     @Query(value = """
             SELECT DISTINCT t FROM TestRequest t
@@ -27,16 +28,23 @@ public interface TestRequestRepository extends JpaRepository<TestRequest, UUID> 
             WHERE (:recordId IS NULL OR mr.recordId = :recordId)
               AND (:departmentId IS NULL OR d.departmentId = :departmentId)
               AND (:status IS NULL OR t.status = :status)
+              AND (:search = '' OR LOWER(c.fullName) LIKE CONCAT('%', :search, '%')
+                   OR LOWER(c.phone) LIKE CONCAT('%', :search, '%')
+                   OR LOWER(s.name) LIKE CONCAT('%', :search, '%'))
             """,
             countQuery = """
             SELECT COUNT(t) FROM TestRequest t
             WHERE (:recordId IS NULL OR t.medicalRecord.recordId = :recordId)
               AND (:departmentId IS NULL OR t.performingDepartment.departmentId = :departmentId)
               AND (:status IS NULL OR t.status = :status)
+              AND (:search = '' OR LOWER(t.medicalRecord.visit.customer.fullName) LIKE CONCAT('%', :search, '%')
+                   OR LOWER(t.medicalRecord.visit.customer.phone) LIKE CONCAT('%', :search, '%')
+                   OR LOWER(t.service.name) LIKE CONCAT('%', :search, '%'))
             """)
     Page<TestRequest> search(@Param("recordId") UUID recordId,
                               @Param("departmentId") UUID departmentId,
                               @Param("status") TestRequestStatus status,
+                              @Param("search") String search,
                               Pageable pageable);
 
     /** Tim TestRequest kem theo TestResult va MedicalRecord/Visit - dung cho truong hop completeResult */
@@ -57,6 +65,12 @@ public interface TestRequestRepository extends JpaRepository<TestRequest, UUID> 
 
     @Query("SELECT COUNT(t) FROM TestRequest t WHERE t.medicalRecord.recordId = :recordId")
     long countByMedicalRecord_MedicalRecordId(@Param("recordId") UUID recordId);
+
+    long countByPerformingDepartment_DepartmentIdAndStatusIn(UUID departmentId, List<TestRequestStatus> statuses);
+
+    long countByQueueTicket_TicketIdAndStatusIn(UUID ticketId, List<TestRequestStatus> statuses);
+    long countByQueueTicket_TicketId(UUID ticketId);
+    List<TestRequest> findAllByQueueTicket_TicketId(UUID ticketId);
 
     /** Tim TestRequest da hoan thanh cua Profile qua Visit -> MedicalRecord */
     @Query("SELECT t FROM TestRequest t " +

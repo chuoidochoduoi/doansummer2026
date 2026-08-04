@@ -12,11 +12,15 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
 
 @Repository
 public interface CustomerVisitRepository extends JpaRepository<CustomerVisit, UUID>, JpaSpecificationExecutor<CustomerVisit> {
 
     Optional<CustomerVisit> findByAppointment_AppointmentId(UUID appointmentId);
+    List<CustomerVisit> findAllByCustomer_ProfileIdOrderByCheckInTimeDesc(UUID profileId);
+    Optional<CustomerVisit> findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
+            UUID profileId, List<VisitStatus> statuses);
 
     default Page<CustomerVisit> search(UUID customerId, VisitStatus status,
                                         LocalDateTime from, LocalDateTime to, Pageable pageable) {

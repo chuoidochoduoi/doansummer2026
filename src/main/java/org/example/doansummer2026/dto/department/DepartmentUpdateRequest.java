@@ -12,10 +12,10 @@ public record DepartmentUpdateRequest(
         @Size(max = 150) String name,
         DepartmentStatus status,
         DepartmentType departmentType,
+        UUID specializationId,
+        List<UUID> capabilityIds,
         @Size(max = 500) String description,
         UUID headDoctorId,
         List<UUID> nurseIds
 ) {}
-
-
 

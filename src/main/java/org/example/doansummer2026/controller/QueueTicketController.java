@@ -74,13 +74,13 @@ public class QueueTicketController {
     }
 
     @PostMapping("/api/v1/queue-tickets/{id}/start-exam")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
     public ResponseEntity<QueueTicketResponse> startExam(@PathVariable UUID id) {
         return RestResponses.ok(service.startExam(id));
     }
 
     @PostMapping("/api/v1/queue-tickets/{id}/complete")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ADMIN')")
     public ResponseEntity<MedicalRecordResponse> complete(@PathVariable UUID id,
                                                          @RequestBody(required = false) MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.completeAndReturnRecord(id, req));
@@ -206,8 +206,6 @@ public class QueueTicketController {
         return RestResponses.ok(service.update(id, req));
     }
 }
-
-
 
 
 

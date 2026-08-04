@@ -51,7 +51,7 @@ public class TransactionService implements TransactionServiceInterface {
     }
 
     public TransactionResponse create(TransactionCreateRequest req) {
-        Invoice invoice = invoiceRepo.findById(req.invoiceId())
+        Invoice invoice = invoiceRepo.findByIdForUpdate(req.invoiceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + req.invoiceId()));
         if (invoice.getStatus() != InvoiceStatus.PENDING) {
             throw new ConflictException("Chi tao giao dich cho hoa don PENDING; hien tai: "
@@ -76,7 +76,8 @@ public class TransactionService implements TransactionServiceInterface {
     }
 
     public TransactionResponse update(UUID id, TransactionUpdateRequest req) {
-        Transaction t = findById(id);
+        Transaction t = repo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Giao dich khong ton tai: " + id));
         if (req.status() != null) {
             validateStatusTransition(t.getStatus(), req.status());
             t.setStatus(req.status());

@@ -23,7 +23,7 @@ public record StaffCreateRequest(
         @Size(max = 255) String address,
         // StaffInfo
         // NOTE: departmentId da duoc xoa - chi dung head_doctor_id o Department
-        // specializationId: bat buoc cho SPECIALIST_DOCTOR
+        // specializationId: bat buoc cho DOCTOR; Kham tong quat cung la mot chuyen khoa phuc vu
         UUID specializationId,
         @NotNull SystemRole systemRole,
         @Size(max = 20) String nationalId,
@@ -32,6 +32,5 @@ public record StaffCreateRequest(
         @Size(max = 200) String university,
         @Size(max = 50) String licenseNumber
 ) {}
-
 
 

@@ -46,9 +46,9 @@ public interface StaffScheduleRepository extends JpaRepository<StaffSchedule, UU
     List<StaffSchedule> findAllByWorkDateBetween(LocalDate from, LocalDate to);
 
     Optional<StaffSchedule> findByStaffAndWorkDateAndShift(StaffInfo staff, LocalDate workDate, Shift shift);
+    List<StaffSchedule> findAllByStaff_StaffIdAndWorkDate(UUID staffId, LocalDate workDate);
 
     void deleteByStaffAndWorkDateAndShift(StaffInfo staff, LocalDate workDate, Shift shift);
 }
-
 
 

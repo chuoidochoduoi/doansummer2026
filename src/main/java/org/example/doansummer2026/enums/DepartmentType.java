@@ -7,8 +7,18 @@ package org.example.doansummer2026.enums;
  * - IMAGING: Chan doan hinh anh (XQ, SA, MRI)
  */
 public enum DepartmentType {
-    EXAMINATION, LABORATORY, IMAGING
-}
+    EXAMINATION,
+    PARACLINICAL,
+    @Deprecated LABORATORY,
+    @Deprecated IMAGING;
 
+    public boolean isParaclinical() {
+        return this == PARACLINICAL || this == LABORATORY || this == IMAGING;
+    }
+
+    public DepartmentType normalized() {
+        return isParaclinical() ? PARACLINICAL : this;
+    }
+}
 
 

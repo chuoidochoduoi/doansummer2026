@@ -19,7 +19,8 @@ import java.util.UUID;
 /** Service interface for TestRequest management. */
 public interface TestRequestServiceInterface {
     PageResponse<TestRequestResponse> search(UUID recordId, UUID departmentId,
-                                            org.example.doansummer2026.enums.TestRequestStatus status, Pageable pageable);
+                                            org.example.doansummer2026.enums.TestRequestStatus status,
+                                            String search, Pageable pageable);
     TestRequestResponse get(UUID id);
     TestRequestResponse create(TestRequestCreateRequest req);
     TestRequestResponse update(UUID id, TestRequestUpdateRequest req);
@@ -28,7 +29,7 @@ public interface TestRequestServiceInterface {
     TestResultResponse getResult(UUID testRequestId);
     TestResultResponse createResult(UUID testRequestId, TestResultCreateRequest req);
     TestResultResponse updateResult(UUID testRequestId, TestResultUpdateRequest req);
-    TestResultResponse completeResult(UUID testRequestId, TestResultCreateRequest req);
+    TestResultResponse completeResult(UUID testRequestId, TestResultCreateRequest req, UUID verifiedById);
 
     /** Upload ket qua xet nghiem, luu file va tra ve URL. */
     String uploadResultFile(UUID testRequestId, MultipartFile file) throws IOException;

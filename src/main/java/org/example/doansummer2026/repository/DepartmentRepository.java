@@ -15,6 +15,9 @@ import java.util.UUID;
 
 @Repository
 public interface DepartmentRepository extends JpaRepository<Department, UUID> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT d FROM Department d WHERE d.departmentId = :id")
+    Optional<Department> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") UUID id);
 
     boolean existsByRoomCode(String roomCode);
 
@@ -31,6 +34,9 @@ public interface DepartmentRepository extends JpaRepository<Department, UUID> {
     Page<Department> findAllByDepartmentType(DepartmentType departmentType, Pageable pageable);
 
     Page<Department> findAllByDepartmentTypeIn(List<DepartmentType> departmentTypes, Pageable pageable);
+
+    @Query("SELECT DISTINCT d FROM Department d JOIN d.capabilities c WHERE c.capabilityId = :capabilityId AND d.status <> org.example.doansummer2026.enums.DepartmentStatus.MAINTENANCE")
+    List<Department> findEligibleByCapability(@Param("capabilityId") UUID capabilityId);
 
     /** Kiem tra bac si da duoc gianh cho phong nao khong. */
     @Query("SELECT CASE WHEN COUNT(d) > 0 THEN true ELSE false END FROM Department d WHERE d.headDoctor.staffId = :staffId")

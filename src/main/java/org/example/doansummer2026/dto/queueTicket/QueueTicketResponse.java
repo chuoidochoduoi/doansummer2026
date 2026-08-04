@@ -73,6 +73,11 @@ public record QueueTicketResponse(
             lastVisit = q.getVisit().getCheckInTime() != null ?
                     q.getVisit().getCheckInTime().toLocalDate().toString() : null;
             // TODO: dem so luong visit - can query them
+        } else if (q.getVisit() != null && q.getVisit().getAppointment() != null) {
+            var appointment = q.getVisit().getAppointment();
+            patientName = appointment.getGuestFullName();
+            patientPhone = appointment.getGuestPhone();
+            patientCode = appointment.getGuestPhone();
         }
 
         UUID deptId = q.getDepartment() != null ? q.getDepartment().getDepartmentId() : null;
@@ -89,6 +94,5 @@ public record QueueTicketResponse(
                 q.getWorkDate(), q.getQueueNumber(), q.getStatus(), q.getCalledAt(), q.getCompletedAt());
     }
 }
-
 
 

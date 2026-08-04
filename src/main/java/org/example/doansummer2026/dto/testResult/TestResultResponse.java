@@ -14,15 +14,22 @@ public record TestResultResponse(
         String sampleId,
         UUID performedById,
         String performedByName,
-        LocalDateTime performedAt
+        LocalDateTime performedAt,
+        UUID verifiedById,
+        String verifiedByName,
+        LocalDateTime verifiedAt
 ) {
     public static TestResultResponse from(TestResult r) {
         UUID reqId = r.getTestRequest() != null ? r.getTestRequest().getTestRequestId() : null;
         UUID performedById = r.getPerformedBy() != null ? r.getPerformedBy().getStaffId() : null;
         String performedByName = r.getPerformedBy() != null ? r.getPerformedBy().getStaffCode() : null;
         String fileName = r.getImageUrl() != null ? extractFileName(r.getImageUrl()) : null;
+        UUID verifiedById = r.getVerifiedBy() != null ? r.getVerifiedBy().getStaffId() : null;
+        String verifiedByName = r.getVerifiedBy() != null && r.getVerifiedBy().getProfile() != null
+                ? r.getVerifiedBy().getProfile().getFullName() : null;
         return new TestResultResponse(r.getResultId(), reqId, r.getImageUrl(), fileName,
-                r.getConclusion(), r.getSampleId(), performedById, performedByName, r.getPerformedAt());
+                r.getConclusion(), r.getSampleId(), performedById, performedByName, r.getPerformedAt(),
+                verifiedById, verifiedByName, r.getVerifiedAt());
     }
 
     private static String extractFileName(String imageUrl) {
@@ -31,7 +38,6 @@ public record TestResultResponse(
         return idx >= 0 ? imageUrl.substring(idx + 1) : imageUrl;
     }
 }
-
 
 
 

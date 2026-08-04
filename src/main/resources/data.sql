@@ -2,18 +2,25 @@
 -- Phù hợp với model entity (UUID chuẩn, các trường required, enums đúng)
 
 -- Xóa dữ liệu cũ
-TRUNCATE TABLE icd_10_selections, prescription_item, payment_transaction, invoice_item, queue_ticket, customer_visit, appointment_services, appointment, staff_info, profile, medical_service, service_category, department, specialization RESTART IDENTITY CASCADE;
+TRUNCATE TABLE
+    test_result, test_request, vital_signs, icd_10_selections, prescription_item, medical_record,
+    payment_transaction, invoice_item, invoice, queue_ticket, customer_visit,
+    appointment_services, appointment, staff_schedule, staff_schedule_template,
+    notification, audit_log, staff_info, profile, account,
+    medical_service, service_category, department, specialization,
+    insurance_rule, insurance, mock_bhyt_card, icd_10_codes
+RESTART IDENTITY CASCADE;
 
 -- ============================
--- Department (3 bản ghi)
+-- Department (3 bản ghi lõi; phòng khám Nhi được bổ sung sau danh mục chuyên khoa)
 -- ============================
 INSERT INTO department (department_id, created_at, updated_at, deleted, room_code, name, status, department_type, description) VALUES
 ('33333333-3333-3333-3333-333333333333', NOW(), NOW(), false, 'EX-101', 'Khoa Khám Bệnh', 'AVAILABLE', 'EXAMINATION', 'Khám bệnh tổng quát'),
-('44444444-4444-4444-4444-444444444444', NOW(), NOW(), false, 'LAB-201', 'Khoa Xét Nghiệm', 'AVAILABLE', 'LABORATORY', 'Xét nghiệm máu, siêu âm'),
-('55555555-5555-5555-5555-555555555555', NOW(), NOW(), false, 'IMG-301', 'Khoa Chẩn Đoán Hình Ảnh', 'AVAILABLE', 'IMAGING', 'X-quang, CT, MRI');
+('44444444-4444-4444-4444-444444444444', NOW(), NOW(), false, 'LAB-201', 'Phòng Xét nghiệm 1', 'AVAILABLE', 'PARACLINICAL', 'Thực hiện các xét nghiệm mẫu bệnh phẩm'),
+('55555555-5555-5555-5555-555555555555', NOW(), NOW(), false, 'IMG-301', 'Phòng Chẩn đoán hình ảnh 1', 'AVAILABLE', 'PARACLINICAL', 'Siêu âm, X-quang, CT, MRI');
 
 -- ============================
--- Specialization (5 bản ghi)
+-- Specialization - danh mục do Admin quản lý, dùng chung cho phòng/dịch vụ/nhân viên
 -- ============================
 INSERT INTO specialization (specialization_id, created_at, updated_at, deleted, name, description) VALUES
 ('00000001-1111-1111-1111-111111111111', NOW(), NOW(), false, 'Bác sĩ Nội tổng quát', 'Chẩn đoán và điều trị bệnh nội'),
@@ -21,6 +28,29 @@ INSERT INTO specialization (specialization_id, created_at, updated_at, deleted, 
 ('00000003-3333-3333-3333-333333333333', NOW(), NOW(), false, 'Bác sĩ Tim mạch', 'Chẩn đoán và điều trị bệnh tim mạch'),
 ('00000004-4444-4444-4444-444444444444', NOW(), NOW(), false, 'Bác sĩ Hô hấp', 'Chẩn đoán và điều trị bệnh hô hấp'),
 ('00000005-5555-5555-5555-555555555555', NOW(), NOW(), false, 'Bác sĩ Nội soi', 'Thăm khám nội soi');
+
+INSERT INTO specialization (specialization_id, created_at, updated_at, deleted, name, description) VALUES
+('00000006-6666-6666-6666-666666666666', NOW(), NOW(), false, 'Khám tổng quát', 'Khám ban đầu và điều phối đa khoa'),
+('00000007-7777-7777-7777-777777777777', NOW(), NOW(), false, 'Nhi khoa', 'Khám và điều trị cho trẻ em'),
+('00000008-8888-8888-8888-888888888888', NOW(), NOW(), false, 'Tai Mũi Họng', 'Khám tai, mũi và họng'),
+('00000009-9999-9999-9999-999999999999', NOW(), NOW(), false, 'Nhãn khoa', 'Khám và điều trị các bệnh về mắt'),
+('00000010-aaaa-aaaa-aaaa-aaaaaaaaaaaa', NOW(), NOW(), false, 'Da liễu', 'Khám và điều trị các bệnh da liễu'),
+('00000011-bbbb-bbbb-bbbb-bbbbbbbbbbbb', NOW(), NOW(), false, 'Răng Hàm Mặt', 'Khám và điều trị răng hàm mặt'),
+('00000012-cccc-cccc-cccc-cccccccccccc', NOW(), NOW(), false, 'Sản phụ khoa', 'Khám và chăm sóc sức khỏe nữ giới');
+
+UPDATE specialization SET name = 'Nội khoa' WHERE specialization_id = '00000001-1111-1111-1111-111111111111';
+UPDATE specialization SET name = 'Chẩn đoán hình ảnh' WHERE specialization_id = '00000002-2222-2222-2222-222222222222';
+UPDATE specialization SET name = 'Tim mạch' WHERE specialization_id = '00000003-3333-3333-3333-333333333333';
+UPDATE specialization SET name = 'Hô hấp' WHERE specialization_id = '00000004-4444-4444-4444-444444444444';
+UPDATE specialization SET name = 'Nội soi' WHERE specialization_id = '00000005-5555-5555-5555-555555555555';
+
+-- Phòng vật lý và chuyên khoa phục vụ là hai khái niệm độc lập.
+UPDATE department
+SET specialization_id = '00000001-1111-1111-1111-111111111111', name = 'Phòng Nội 1', description = 'Phòng khám Nội dành cho người lớn'
+WHERE department_id = '33333333-3333-3333-3333-333333333333';
+
+INSERT INTO department (department_id, created_at, updated_at, deleted, room_code, name, status, department_type, specialization_id, description) VALUES
+('66666666-6666-6666-6666-666666666666', NOW(), NOW(), false, 'PED-102', 'Phòng Nhi 1', 'AVAILABLE', 'EXAMINATION', '00000007-7777-7777-7777-777777777777', 'Phòng khám dành cho trẻ em');
 
 -- ============================
 -- Profile - Bệnh nhân (3 bản ghi)
@@ -47,17 +77,17 @@ INSERT INTO profile (profile_id, created_at, updated_at, deleted, full_name, dat
 -- Account (10 bản ghi) - 3 bệnh nhân + 7 nhân viên
 -- ============================
 INSERT INTO account (account_id, created_at, is_active, password_hash, role, username) VALUES
-('30000001-1111-1111-1111-111111111111', NOW(), true, '$2a$10$hash1', 'CUSTOMER', 'patient1'),
-('30000002-2222-2222-2222-222222222222', NOW(), true, '$2a$10$hash2', 'CUSTOMER', 'patient2'),
-('30000003-3333-3333-3333-333333333333', NOW(), true, '$2a$10$hash3', 'CUSTOMER', 'patient3'),
-('30000004-4444-4444-4444-444444444444', NOW(), true, '$2a$10$hash4', 'STAFF', 'receptionist'),
-('30000005-5555-5555-5555-555555555555', NOW(), true, '$2a$10$hash5', 'STAFF', 'cashier'),
-('30000006-6666-6666-6666-666666666666', NOW(), true, '$2a$10$hash6', 'STAFF', 'doctor'),
-('30000007-7777-7777-7777-777777777777', NOW(), true, '$2a$10$hash7', 'STAFF', 'nurse'),
-('30000008-8888-8888-8888-888888888888', NOW(), true, '$2a$10$hash8', 'STAFF', 'labdoctor'),
-('30000009-9999-9999-9999-999999999999', NOW(), true, '$2a$10$hash9', 'STAFF', 'imagingdoctor'),
-('30000010-0000-0000-0000-000000000001', NOW(), true, '$2a$10$hash10', 'STAFF', 'cardiologydoctor'),
-('30000011-1111-1111-1111-111111111111', NOW(), true, '$2a$10$hash11', 'CUSTOMER', 'guest');
+('30000001-1111-1111-1111-111111111111', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'CUSTOMER', 'patient1'),
+('30000002-2222-2222-2222-222222222222', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'CUSTOMER', 'patient2'),
+('30000003-3333-3333-3333-333333333333', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'CUSTOMER', 'patient3'),
+('30000004-4444-4444-4444-444444444444', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'STAFF', 'receptionist'),
+('30000005-5555-5555-5555-555555555555', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'STAFF', 'cashier'),
+('30000006-6666-6666-6666-666666666666', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'STAFF', 'doctor'),
+('30000007-7777-7777-7777-777777777777', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'STAFF', 'nurse'),
+('30000008-8888-8888-8888-888888888888', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'STAFF', 'labdoctor'),
+('30000009-9999-9999-9999-999999999999', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'STAFF', 'imagingdoctor'),
+('30000010-0000-0000-0000-000000000001', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'STAFF', 'cardiologydoctor'),
+('30000011-1111-1111-1111-111111111111', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'CUSTOMER', 'guest');
 
 -- Link profile - account
 UPDATE profile SET account_id = '30000001-1111-1111-1111-111111111111' WHERE profile_id = '10000001-1111-1111-1111-111111111111';
@@ -71,6 +101,16 @@ UPDATE profile SET account_id = '30000008-8888-8888-8888-888888888888' WHERE pro
 UPDATE profile SET account_id = '30000009-9999-9999-9999-999999999999' WHERE profile_id = '20000006-6666-6666-6666-666666666666';
 UPDATE profile SET account_id = '30000010-0000-0000-0000-000000000001' WHERE profile_id = '20000007-7777-7777-7777-777777777777';
 UPDATE profile SET account_id = '30000011-1111-1111-1111-111111111111' WHERE profile_id = '20000008-8888-8888-8888-888888888888';
+
+-- PostgreSQL/Hibernate khong tu cap nhat CHECK constraint khi enum co them DOCTOR.
+-- Database moi chi seed vai tro hien hanh; khong can migration du lieu cu.
+-- Danh muc nang luc thuc hien do admin mo rong.
+INSERT INTO service_capability (capability_id, created_at, updated_at, deleted, code, name, description, active) VALUES
+('ca000001-0000-0000-0000-000000000001', NOW(), NOW(), false, 'HEMATOLOGY', 'Xét nghiệm huyết học', 'Công thức máu và đông máu', true),
+('ca000002-0000-0000-0000-000000000002', NOW(), NOW(), false, 'BIOCHEMISTRY', 'Xét nghiệm sinh hóa', 'Sinh hóa máu, gan, thận, đường huyết', true),
+('ca000003-0000-0000-0000-000000000003', NOW(), NOW(), false, 'ULTRASOUND', 'Siêu âm', 'Các dịch vụ siêu âm', true),
+('ca000004-0000-0000-0000-000000000004', NOW(), NOW(), false, 'XRAY', 'X-quang', 'Các dịch vụ X-quang', true),
+('ca000005-0000-0000-0000-000000000005', NOW(), NOW(), false, 'CT_MRI', 'CT và MRI', 'Chụp cắt lớp và cộng hưởng từ', true);
 
 -- ============================
 -- MedicalService (39 bản ghi)
@@ -123,15 +163,64 @@ INSERT INTO medical_service (service_id, service_code, created_at, updated_at, d
 ('40000038-1111-1111-1111-111111111111', 'KHB010', NOW(), NOW(), false, 'Khám răng hàm mặt', 'ACTIVE', false, 'Khám răng', 250000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', NULL),
 ('40000039-1111-1111-1111-111111111111', 'KHB011', NOW(), NOW(), false, 'Khám sức khỏe tổng quát', 'ACTIVE', false, 'Khám sức khỏe', 500000, 'EXAMINATION', '33333333-3333-3333-3333-333333333333', NULL);
 
+-- Chuan hoa truc tiep ve hai nhom chuc nang hien tai tren database moi.
+UPDATE department SET department_type = 'PARACLINICAL'
+WHERE department_type IN ('LABORATORY', 'IMAGING');
+UPDATE medical_service SET department_type = 'PARACLINICAL'
+WHERE department_type IN ('LABORATORY', 'IMAGING');
+
+-- Chuẩn hóa MedicalService theo mô hình điều phối mới:
+-- dịch vụ chỉ khai báo yêu cầu; phòng cụ thể được chọn tại thời điểm check-in.
+UPDATE medical_service
+SET department_id = NULL,
+    duration_minutes = CASE department_type
+        WHEN 'EXAMINATION' THEN 30
+        WHEN 'PARACLINICAL' THEN 20
+        ELSE 15
+    END,
+    allow_customer_booking = true,
+    minimum_age = 0,
+    maximum_age = 120,
+    allowed_gender = NULL;
+
+-- Mỗi dịch vụ khám bắt buộc thuộc một chuyên khoa phục vụ.
+UPDATE medical_service SET required_specialization_id = '00000006-6666-6666-6666-666666666666' WHERE service_code IN ('KHB001', 'KHB011');
+UPDATE medical_service SET required_specialization_id = '00000001-1111-1111-1111-111111111111', minimum_age = 16 WHERE service_code = 'KHB002';
+UPDATE medical_service SET required_specialization_id = '00000003-3333-3333-3333-333333333333' WHERE service_code IN ('KHB003', 'ECG001');
+UPDATE medical_service SET required_specialization_id = '00000004-4444-4444-4444-444444444444' WHERE service_code IN ('KHB004', 'HH001');
+UPDATE medical_service SET required_specialization_id = '00000005-5555-5555-5555-555555555555' WHERE service_code = 'KHB005';
+UPDATE medical_service SET required_specialization_id = '00000007-7777-7777-7777-777777777777', maximum_age = 15 WHERE service_code = 'KHB006';
+UPDATE medical_service SET required_specialization_id = '00000008-8888-8888-8888-888888888888' WHERE service_code = 'KHB007';
+UPDATE medical_service SET required_specialization_id = '00000009-9999-9999-9999-999999999999' WHERE service_code = 'KHB008';
+UPDATE medical_service SET required_specialization_id = '00000010-aaaa-aaaa-aaaa-aaaaaaaaaaaa' WHERE service_code = 'KHB009';
+UPDATE medical_service SET required_specialization_id = '00000011-bbbb-bbbb-bbbb-bbbbbbbbbbbb' WHERE service_code = 'KHB010';
+
+-- Xét nghiệm và chẩn đoán hình ảnh không phụ thuộc chuyên khoa phòng khám.
+UPDATE medical_service SET required_specialization_id = NULL WHERE department_type = 'PARACLINICAL';
+INSERT INTO department_capability (department_id, capability_id) VALUES
+('44444444-4444-4444-4444-444444444444', 'ca000001-0000-0000-0000-000000000001'),
+('44444444-4444-4444-4444-444444444444', 'ca000002-0000-0000-0000-000000000002'),
+('55555555-5555-5555-5555-555555555555', 'ca000003-0000-0000-0000-000000000003'),
+('55555555-5555-5555-5555-555555555555', 'ca000004-0000-0000-0000-000000000004'),
+('55555555-5555-5555-5555-555555555555', 'ca000005-0000-0000-0000-000000000005');
+UPDATE medical_service SET required_capability_id = 'ca000001-0000-0000-0000-000000000001', department_id = NULL WHERE service_code IN ('XN001', 'XN009');
+UPDATE medical_service SET required_capability_id = 'ca000002-0000-0000-0000-000000000002', department_id = NULL WHERE department_type = 'PARACLINICAL' AND required_capability_id IS NULL;
+UPDATE medical_service SET required_capability_id = 'ca000003-0000-0000-0000-000000000003', department_id = NULL WHERE service_code LIKE 'CDHA%';
+UPDATE medical_service SET required_capability_id = 'ca000004-0000-0000-0000-000000000004', department_id = NULL WHERE service_code LIKE 'XQ%';
+UPDATE medical_service SET required_capability_id = 'ca000005-0000-0000-0000-000000000005', department_id = NULL WHERE service_code LIKE 'CT%' OR service_code LIKE 'MRI%';
+
+-- Ví dụ điều kiện nhân khẩu học: siêu âm thai chỉ cho nữ trong độ tuổi cấu hình.
+UPDATE medical_service SET minimum_age = 15, maximum_age = 55, allowed_gender = 'FEMALE' WHERE service_code = 'CDHA005';
+
 -- ============================
 -- Appointment (5 bản ghi)
 -- ============================
 INSERT INTO appointment (appointment_id, created_at, updated_at, deleted, scheduled_at, status, is_guest, customer_id, time_slot) VALUES
-('50000001-1111-1111-1111-111111111111', NOW(), NOW(), false, '2026-07-15 08:00:00', 'PENDING', false, '10000001-1111-1111-1111-111111111111', 'MORNING'),
-('50000002-2222-2222-2222-222222222222', NOW(), NOW(), false, '2026-07-16 09:30:00', 'PENDING', false, '10000001-1111-1111-1111-111111111111', 'MORNING'),
-('50000003-3333-3333-3333-333333333333', NOW(), NOW(), false, '2026-07-17 10:00:00', 'CANCELLED', false, '10000002-2222-2222-2222-222222222222', 'MORNING'),
-('50000004-4444-4444-4444-444444444444', NOW(), NOW(), false, '2026-07-18 14:00:00', 'PENDING', false, '10000002-2222-2222-2222-222222222222', 'AFTERNOON'),
-('50000005-5555-5555-5555-555555555555', NOW(), NOW(), false, '2026-07-19 15:30:00', 'PENDING', true, '20000008-8888-8888-8888-888888888888', 'AFTERNOON');
+('50000001-1111-1111-1111-111111111111', NOW(), NOW(), false, '2026-07-15 08:00:00', 'CHECKED_IN', false, '10000001-1111-1111-1111-111111111111', 'MORNING'),
+('50000002-2222-2222-2222-222222222222', NOW(), NOW(), false, '2026-07-16 09:30:00', 'CHECKED_IN', false, '10000001-1111-1111-1111-111111111111', 'MORNING'),
+('50000003-3333-3333-3333-333333333333', NOW(), NOW(), false, '2026-07-17 10:00:00', 'CHECKED_IN', false, '10000002-2222-2222-2222-222222222222', 'MORNING'),
+('50000004-4444-4444-4444-444444444444', NOW(), NOW(), false, '2026-07-18 14:00:00', 'CHECKED_IN', false, '10000002-2222-2222-2222-222222222222', 'AFTERNOON'),
+('50000005-5555-5555-5555-555555555555', NOW(), NOW(), false, '2026-07-19 15:30:00', 'CANCELLED', true, '20000008-8888-8888-8888-888888888888', 'AFTERNOON');
 
 -- Thêm dịch vụ vào appointment
 INSERT INTO appointment_services (appointment_id, service_id) VALUES
@@ -144,12 +233,12 @@ INSERT INTO appointment_services (appointment_id, service_id) VALUES
 -- ============================
 -- CustomerVisit (5 bản ghi)
 -- ============================
-INSERT INTO customer_visit (visit_id, created_at, updated_at, deleted, check_in_time, status, customer_id, appointment_id) VALUES
-('60000001-1111-1111-1111-111111111111', NOW(), NOW(), false, NOW(), 'CHECKED_IN', '10000001-1111-1111-1111-111111111111', '50000001-1111-1111-1111-111111111111'),
-('60000002-2222-2222-2222-222222222222', NOW(), NOW(), false, NOW(), 'CHECKED_IN', '10000001-1111-1111-1111-111111111111', '50000002-2222-2222-2222-222222222222'),
-('60000003-3333-3333-3333-333333333333', NOW(), NOW(), false, NOW(), 'CHECKED_IN', '10000002-2222-2222-2222-222222222222', '50000003-3333-3333-3333-333333333333'),
-('60000004-4444-4444-4444-444444444444', NOW(), NOW(), false, NOW(), 'CHECKED_IN', '10000002-2222-2222-2222-222222222222', '50000004-4444-4444-4444-444444444444'),
-('60000005-5555-5555-5555-555555555555', NOW(), NOW(), false, NOW(), 'CHECKED_IN', '20000008-8888-8888-8888-888888888888', '50000005-5555-5555-5555-555555555555');
+INSERT INTO customer_visit (visit_id, created_at, updated_at, deleted, check_in_time, check_out_time, status, customer_id, appointment_id) VALUES
+('60000001-1111-1111-1111-111111111111', NOW(), NOW(), false, NOW() - INTERVAL '4 hour', NOW() - INTERVAL '1 hour', 'COMPLETED', '10000001-1111-1111-1111-111111111111', '50000001-1111-1111-1111-111111111111'),
+('60000002-2222-2222-2222-222222222222', NOW(), NOW(), false, NOW() - INTERVAL '2 day', NOW() - INTERVAL '2 day' + INTERVAL '2 hour', 'COMPLETED', '10000001-1111-1111-1111-111111111111', '50000002-2222-2222-2222-222222222222'),
+('60000003-3333-3333-3333-333333333333', NOW(), NOW(), false, NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day' + INTERVAL '1 hour', 'COMPLETED', '10000002-2222-2222-2222-222222222222', '50000003-3333-3333-3333-333333333333'),
+('60000004-4444-4444-4444-444444444444', NOW(), NOW(), false, NOW(), NULL, 'CHECKED_IN', '10000002-2222-2222-2222-222222222222', '50000004-4444-4444-4444-444444444444'),
+('60000005-5555-5555-5555-555555555555', NOW(), NOW(), false, NOW() - INTERVAL '3 day', NOW() - INTERVAL '3 day', 'CANCELLED', '20000008-8888-8888-8888-888888888888', '50000005-5555-5555-5555-555555555555');
 
 -- ============================
 -- Invoice (5 bản ghi)
@@ -177,27 +266,34 @@ INSERT INTO invoice_item (item_id, created_at, updated_at, deleted, line_total, 
 INSERT INTO staff_info (staff_id, created_at, updated_at, deleted, profile_id, staff_code, system_role, national_id, bank_account, highest_degree, university, license_number, specialization_id) VALUES
 ('90000001-1111-1111-1111-111111111111', NOW(), NOW(), false, '20000001-1111-1111-1111-111111111111', 'STF-20260711-LT01', 'RECEPTIONIST', '0123456789', NULL, NULL, NULL, NULL, NULL),
 ('90000002-2222-2222-2222-222222222222', NOW(), NOW(), false, '20000002-2222-2222-2222-222222222222', 'STF-20260711-TN01', 'CASHIER', '1123456789', NULL, NULL, NULL, NULL, NULL),
-('90000003-3333-3333-3333-333333333333', NOW(), NOW(), false, '20000003-3333-3333-3333-333333333333', 'STF-20260711-BS01', 'GENERAL_DOCTOR', '2123456789', NULL, 'Bác sĩ đa khoa', NULL, NULL, '00000001-1111-1111-1111-111111111111'),
+('90000003-3333-3333-3333-333333333333', NOW(), NOW(), false, '20000003-3333-3333-3333-333333333333', 'STF-20260711-BS01', 'DOCTOR', '2123456789', NULL, NULL, NULL, NULL, '00000001-1111-1111-1111-111111111111'),
 ('90000004-4444-4444-4444-444444444444', NOW(), NOW(), false, '20000004-4444-4444-4444-444444444444', 'STF-20260711-YT01', 'NURSE', '3123456789', NULL, NULL, NULL, NULL, NULL),
-('90000005-5555-5555-5555-555555555555', NOW(), NOW(), false, '20000005-5555-5555-5555-555555555555', 'STF-20260711-XN01', 'SPECIALIST_DOCTOR', '4123456789', NULL, NULL, NULL, NULL, '00000002-2222-2222-2222-222222222222'),
-('90000006-6666-6666-6666-666666666666', NOW(), NOW(), false, '20000006-6666-6666-6666-666666666666', 'STF-20260711-IMG01', 'SPECIALIST_DOCTOR', '5123456789', NULL, NULL, NULL, NULL, '00000003-3333-3333-3333-333333333333'),
-('90000007-7777-7777-7777-777777777777', NOW(), NOW(), false, '20000007-7777-7777-7777-777777777777', 'STF-20260711-TM01', 'SPECIALIST_DOCTOR', '6123456789', NULL, NULL, NULL, NULL, '00000004-4444-4444-4444-444444444444');
+('90000005-5555-5555-5555-555555555555', NOW(), NOW(), false, '20000005-5555-5555-5555-555555555555', 'STF-20260711-XN01', 'DOCTOR', '4123456789', NULL, NULL, NULL, NULL, '00000002-2222-2222-2222-222222222222'),
+('90000006-6666-6666-6666-666666666666', NOW(), NOW(), false, '20000006-6666-6666-6666-666666666666', 'STF-20260711-IMG01', 'DOCTOR', '5123456789', NULL, NULL, NULL, NULL, '00000003-3333-3333-3333-333333333333'),
+('90000007-7777-7777-7777-777777777777', NOW(), NOW(), false, '20000007-7777-7777-7777-777777777777', 'STF-20260711-TM01', 'DOCTOR', '6123456789', NULL, NULL, NULL, NULL, '00000004-4444-4444-4444-444444444444');
+
+-- Năng lực bác sĩ; toàn bộ thông tin chứng nhận chi tiết được phép NULL.
+INSERT INTO staff_capability (staff_capability_id, created_at, updated_at, deleted, staff_id, capability_id, certificate_number, issued_date, expiry_date, issuing_organization, status) VALUES
+('ac000001-0000-0000-0000-000000000001', NOW(), NOW(), false, '90000005-5555-5555-5555-555555555555', 'ca000001-0000-0000-0000-000000000001', NULL, NULL, NULL, NULL, 'ACTIVE'),
+('ac000002-0000-0000-0000-000000000002', NOW(), NOW(), false, '90000005-5555-5555-5555-555555555555', 'ca000002-0000-0000-0000-000000000002', NULL, NULL, NULL, NULL, 'ACTIVE'),
+('ac000003-0000-0000-0000-000000000003', NOW(), NOW(), false, '90000006-6666-6666-6666-666666666666', 'ca000003-0000-0000-0000-000000000003', NULL, NULL, NULL, NULL, 'ACTIVE'),
+('ac000004-0000-0000-0000-000000000004', NOW(), NOW(), false, '90000006-6666-6666-6666-666666666666', 'ca000004-0000-0000-0000-000000000004', NULL, NULL, NULL, NULL, 'ACTIVE');
 
 -- ============================
 -- QueueTicket (5 bản ghi)
 -- ============================
 INSERT INTO queue_ticket (ticket_id, created_at, updated_at, deleted, work_date, queue_number, status, called_at, completed_at, visit_id, department_id, service_id) VALUES
-('a0000001-a000-a000-a000-a00000000001', NOW(), NOW(), false, NOW()::date, 1, 'WAITING', NULL, NULL, '60000001-1111-1111-1111-111111111111', '44444444-4444-4444-4444-444444444444', '40000001-1111-1111-1111-111111111111'),
-('a0000002-a000-a000-a000-a00000000002', NOW(), NOW(), false, NOW()::date, 2, 'CALLED', NOW(), NULL, '60000002-2222-2222-2222-222222222222', '44444444-4444-4444-4444-444444444444', '40000002-2222-2222-2222-222222222222'),
+('a0000001-a000-a000-a000-a00000000001', NOW(), NOW(), false, NOW()::date, 1, 'DONE', NOW() - INTERVAL '2 hour', NOW() - INTERVAL '1 hour', '60000001-1111-1111-1111-111111111111', '44444444-4444-4444-4444-444444444444', '40000001-1111-1111-1111-111111111111'),
+('a0000002-a000-a000-a000-a00000000002', NOW(), NOW(), false, NOW()::date, 2, 'DONE', NOW(), NOW(), '60000002-2222-2222-2222-222222222222', '44444444-4444-4444-4444-444444444444', '40000002-2222-2222-2222-222222222222'),
 ('a0000003-a000-a000-a000-a00000000003', NOW(), NOW(), false, NOW()::date, 10, 'DONE', NOW(), NOW(), '60000003-3333-3333-3333-333333333333', '33333333-3333-3333-3333-333333333333', '40000008-8888-8888-8888-888888888888'),
 ('a0000004-a000-a000-a000-a00000000004', NOW(), NOW(), false, NOW()::date, 5, 'WAITING', NULL, NULL, '60000004-4444-4444-4444-444444444444', '33333333-3333-3333-3333-333333333333', '40000008-8888-8888-8888-888888888888'),
-('a0000005-a000-a000-a000-a00000000005', NOW(), NOW(), false, NOW()::date, 6, 'WAITING', NULL, NULL, '60000005-5555-5555-5555-555555555555', '33333333-3333-3333-3333-333333333333', '40000008-8888-8888-8888-888888888888');
+('a0000005-a000-a000-a000-a00000000005', NOW(), NOW(), false, NOW()::date, 6, 'SKIPPED', NULL, NOW(), '60000005-5555-5555-5555-555555555555', '33333333-3333-3333-3333-333333333333', '40000008-8888-8888-8888-888888888888');
 
 -- ============================
 -- MedicalRecord (3 bản ghi) - có rating mẫu
 -- ============================
 INSERT INTO medical_record (record_id, created_at, updated_at, deleted, chief_complaint, clinical_findings, diagnosis, prescription_note, conclusion, patient_instruction, status, completed_at, doctor_id, visit_id, vital_signs_id, rating_score, rated_at) VALUES
-('c0000001-c000-c000-c000-c00000000001', NOW(), NOW(), false, 'Sốt hô hấp', NULL, 'J18.9', NULL, NULL, NULL, 'IN_PROGRESS', NULL, '90000007-7777-7777-7777-777777777777', '60000001-1111-1111-1111-111111111111', NULL, NULL, NULL),
+('c0000001-c000-c000-c000-c00000000001', NOW(), NOW(), false, 'Sốt hô hấp', 'Đã khám và đánh giá kết quả', 'J18.9', NULL, 'Hoàn thành đợt khám', 'Theo dõi tại nhà', 'COMPLETED', NOW() - INTERVAL '1 hour', '90000007-7777-7777-7777-777777777777', '60000001-1111-1111-1111-111111111111', NULL, NULL, NULL),
 ('c0000002-c000-c000-c000-c00000000002', NOW(), NOW(), false, 'Sốt ban đêm', 'Huyết áp: 120/80, Nhiệt độ: 38.5°C', 'A01', 'Paracetamol 500mg - 3 lần/ngày', 'Theo dõi tại nhà', 'Tái khám sau 1 tuần', 'COMPLETED', NOW(), '90000007-7777-7777-7777-777777777777', '60000002-2222-2222-2222-222222222222', NULL, 4, NOW()),
 ('c0000003-c000-c000-c000-c00000000003', NOW(), NOW(), false, 'Khó thở', NULL, 'R05', NULL, 'X-quang ngực - có giảm', 'Ghi nhận kết quả', 'COMPLETED', NOW(), '90000003-3333-3333-3333-333333333333', '60000003-3333-3333-3333-333333333333', NULL, 5, NOW()),
 ('c0000003-c000-c000-c000-c00000000004', NOW(), NOW(), false, NULL, NULL, NULL, NULL, NULL, NULL, 'IN_PROGRESS', NULL, '90000003-3333-3333-3333-333333333333', '60000004-4444-4444-4444-444444444444', NULL, NULL, NULL);
@@ -225,6 +321,17 @@ INSERT INTO prescription_item (prescription_item_id, created_at, updated_at, del
 ('b1000001-b000-b000-b000-b00000000001', NOW(), NOW(), false, 'c0000002-c000-c000-c000-c00000000002', 'Paracetamol 500mg', 12, 'viên', 'Uống khi sốt, sau ăn', 3),
 ('b1000002-b000-b000-b000-b00000000002', NOW(), NOW(), false, 'c0000002-c000-c000-c000-c00000000002', 'Vitamin C', 10, 'viên', 'Uống hàng ngày', 1),
 ('b1000003-b000-b000-b000-b00000000003', NOW(), NOW(), false, 'c0000002-c000-c000-c000-c00000000002', 'Thuốc ho tan mật', 6, 'ml', 'Uống 2 lần/ngày, 10ml/lần', 2);
+
+-- Danh mục thuốc dùng để bác sĩ tìm/chọn nhanh khi kê đơn.
+-- Bác sĩ vẫn được phép nhập tên thuốc ngoài danh mục; đơn thuốc lưu snapshot bằng medicine_name.
+INSERT INTO medicine_catalog (medicine_id, medicine_code, name, active_ingredient, default_unit, default_usage, default_frequency_per_day, active, deleted) VALUES
+('d1000001-d000-d000-d000-d00000000001', 'MED-PARA-500', 'Paracetamol 500mg', 'Paracetamol 500mg', 'viên', 'Uống sau ăn khi đau hoặc sốt', 2, true, false),
+('d1000002-d000-d000-d000-d00000000002', 'MED-AMOX-500', 'Amoxicillin 500mg', 'Amoxicillin 500mg', 'viên', 'Uống sau ăn theo chỉ định của bác sĩ', 3, true, false),
+('d1000003-d000-d000-d000-d00000000003', 'MED-OME-20', 'Omeprazole 20mg', 'Omeprazole 20mg', 'viên', 'Uống trước ăn sáng 30 phút', 1, true, false),
+('d1000004-d000-d000-d000-d00000000004', 'MED-CET-10', 'Cetirizine 10mg', 'Cetirizine 10mg', 'viên', 'Uống vào buổi tối', 1, true, false),
+('d1000005-d000-d000-d000-d00000000005', 'MED-ORS', 'Oresol', 'Glucose và điện giải', 'gói', 'Pha đúng lượng nước ghi trên bao bì', 3, true, false),
+('d1000006-d000-d000-d000-d00000000006', 'MED-SAL-100', 'Salbutamol 100mcg/liều', 'Salbutamol', 'lọ', 'Sử dụng theo hướng dẫn của bác sĩ', 2, true, false)
+ON CONFLICT (medicine_id) DO NOTHING;
 
 -- ============================
 -- PaymentTransaction (5 bản ghi)
@@ -265,6 +372,9 @@ VALUES
 -- ============================
 -- Admin & Clinic Manager Accounts
 -- ============================
+-- Tai khoan seed co the dang nhap:
+--   admin         / 88888888
+--   clinicmanager / 88888888
 
 -- Profile - Admin (1 bản ghi)
 INSERT INTO profile (profile_id, created_at, updated_at, deleted, full_name, date_of_birth, gender, phone, email, address, blood_type) VALUES
@@ -276,11 +386,11 @@ INSERT INTO profile (profile_id, created_at, updated_at, deleted, full_name, dat
 
 -- Account - Admin (1 bản ghi)
 INSERT INTO account (account_id, created_at, is_active, password_hash, role, username) VALUES
-('30000012-2222-2222-2222-222222222222', NOW(), true, '$2a$10$adminhash', 'STAFF', 'admin');
+('30000012-2222-2222-2222-222222222222', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'STAFF', 'admin');
 
 -- Account - Clinic Manager (1 bản ghi)
 INSERT INTO account (account_id, created_at, is_active, password_hash, role, username) VALUES
-('30000013-3333-3333-3333-333333333333', NOW(), true, '$2a$10$managerhash', 'STAFF', 'clinicmanager');
+('30000013-3333-3333-3333-333333333333', NOW(), true, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'STAFF', 'clinicmanager');
 
 -- Link profile - account
 UPDATE profile SET account_id = '30000012-2222-2222-2222-222222222222' WHERE profile_id = '20000009-9999-9999-9999-999999999999';
@@ -299,5 +409,15 @@ INSERT INTO test_request (test_request_id, created_at, updated_at, deleted, desc
 ('d0000001-d000-d000-d000-d00000000001', NOW(), NOW(), false, NULL, 'COMPLETED', NOW(), 'c0000002-c000-c000-c000-c00000000002', '40000002-2222-2222-2222-222222222222', '44444444-4444-4444-4444-444444444444', '90000003-3333-3333-3333-333333333333');
 
 -- TestResult cho test_request trên
-INSERT INTO test_result (result_id, created_at, updated_at, deleted, conclusion, image_url, sample_id, performed_at, performed_by, test_request_id) VALUES
-('e0000001-e000-e000-e000-e00000000001', NOW(), NOW(), false, 'Ket qua binh thuong', '/uploads/test-results/blood-test-001.jpg', 'SAMPLE-001', NOW(), '90000003-3333-3333-3333-333333333333', 'd0000001-d000-d000-d000-d00000000001');
+INSERT INTO test_result (result_id, created_at, updated_at, deleted, conclusion, image_url, sample_id, performed_at, performed_by, verified_by, verified_at, test_request_id) VALUES
+('e0000001-e000-e000-e000-e00000000001', NOW(), NOW(), false, 'Ket qua binh thuong', '/uploads/test-results/blood-test-001.pdf', 'SAMPLE-001', NOW(), '90000004-4444-4444-4444-444444444444', '90000005-5555-5555-5555-555555555555', NOW(), 'd0000001-d000-d000-d000-d00000000001');
+
+-- Tat ca tai khoan seed dung chung mat khau: 88888888 (BCrypt).
+UPDATE account SET password_hash = '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m';
+
+-- Phong thu cuoi cung o tang database: moi benh nhan chi co mot luot dang hoat dong.
+CREATE UNIQUE INDEX IF NOT EXISTS uk_customer_visit_one_active
+ON customer_visit (customer_id)
+WHERE deleted = false
+  AND customer_id IS NOT NULL
+  AND status IN ('CHECKED_IN', 'IN_PROGRESS');

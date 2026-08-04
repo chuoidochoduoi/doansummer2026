@@ -6,6 +6,7 @@ import org.example.doansummer2026.model.Profile;
 
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.List;
 
 public record ProfileResponse(
         UUID profileId,
@@ -18,6 +19,10 @@ public record ProfileResponse(
         String email,
         String address,
         BloodType bloodType,
+        String insuranceId,
+        Integer height,
+        Integer weight,
+        List<String> allergies,
         Boolean hasStaffInfo,
         UUID staffId
 ) {
@@ -34,6 +39,13 @@ public record ProfileResponse(
                 p.getEmail(),
                 p.getAddress(),
                 p.getBloodType(),
+                p.getInsuranceId(),
+                p.getHeight(),
+                p.getWeight(),
+                p.getAllergies() == null || p.getAllergies().isBlank()
+                        ? List.of()
+                        : java.util.Arrays.stream(p.getAllergies().split("\\r?\\n"))
+                                .map(String::trim).filter(value -> !value.isBlank()).toList(),
                 null,
                 null
         );

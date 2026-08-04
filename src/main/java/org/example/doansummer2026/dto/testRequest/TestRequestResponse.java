@@ -31,6 +31,9 @@ public record TestRequestResponse(
         // Thong tin benh nhan cho danh sach
         String patientCode,
         String patientName
+        ,UUID queueTicketId
+        ,Integer queueNumber
+        ,org.example.doansummer2026.enums.QueueStatus queueStatus
 ) {
     public static TestRequestResponse from(TestRequest t) {
         UUID recordId = t.getMedicalRecord() != null ? t.getMedicalRecord().getRecordId() : null;
@@ -58,10 +61,12 @@ public record TestRequestResponse(
         return new TestRequestResponse(t.getTestRequestId(), recordId, serviceId, serviceName,
                 serviceType, deptId, deptName, t.getDescription(), t.getStatus(), reqById, reqByName,
                 t.getCompletedAt(), t.getCancelReason(), t.getCreatedAt(), resultId, invoiceItemId,
-                patientCode, patientName);
+                patientCode, patientName,
+                t.getQueueTicket() != null ? t.getQueueTicket().getTicketId() : null,
+                t.getQueueTicket() != null ? t.getQueueTicket().getQueueNumber() : null,
+                t.getQueueTicket() != null ? t.getQueueTicket().getStatus() : null);
     }
 }
-
 
 
 

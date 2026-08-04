@@ -69,6 +69,10 @@ public class CustomerVisit extends BaseEntity {
     @Column(name = "check_out_time")
     private LocalDateTime checkOutTime;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "checked_in_by")
+    private StaffInfo checkedInBy;
+
     @NotNull
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

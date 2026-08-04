@@ -8,9 +8,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 @Repository
 public interface InvoiceRepository extends JpaRepository<Invoice, UUID>, JpaSpecificationExecutor<Invoice> {
@@ -18,20 +22,11 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID>, JpaSpec
     Optional<Invoice> findByInvoiceCode(String invoiceCode);
 
     boolean existsByInvoiceCode(String invoiceCode);
+    List<Invoice> findAllByVisit_VisitId(UUID visitId);
 
-    @org.springframework.data.jpa.repository.Query(
-            "SELECT DISTINCT i FROM Invoice i " +
-            "LEFT JOIN FETCH i.items it LEFT JOIN FETCH it.service " +
-            "WHERE (:customerId IS NULL OR i.customer.profileId = :customerId) " +
-            "AND (:status IS NULL OR i.status = :status) " +
-            "AND (:from IS NULL OR i.issueDate >= :from) " +
-            "AND (:to IS NULL OR i.issueDate <= :to)"
-    )
-    Page<Invoice> search(@org.springframework.data.repository.query.Param("customerId") UUID customerId,
-                         @org.springframework.data.repository.query.Param("status") InvoiceStatus status,
-                         @org.springframework.data.repository.query.Param("from") LocalDate from,
-                         @org.springframework.data.repository.query.Param("to") LocalDate to,
-                         Pageable pageable);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT i FROM Invoice i WHERE i.invoiceId = :id")
+    Optional<Invoice> findByIdForUpdate(@Param("id") UUID id);
 
     @org.springframework.data.jpa.repository.Query("SELECT i FROM Invoice i LEFT JOIN FETCH i.items it LEFT JOIN FETCH it.service WHERE i.invoiceId = :id")
     Optional<Invoice> findById(@org.springframework.data.repository.query.Param("id") UUID id);
@@ -42,6 +37,3 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID>, JpaSpec
     // Search dung Specification vi filter paymentMethod qua Transaction phuc tap
     // Method nao day duoc trien khai trong InvoiceService.searchForPatientSpec()
 }
-
-
-

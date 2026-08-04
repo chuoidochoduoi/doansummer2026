@@ -34,6 +34,7 @@ import java.util.UUID;
 
 import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.enums.ServiceStatus;
+import org.example.doansummer2026.enums.Gender;
 
 /**
  * Dich vu y te (kham benh, xet nghiem, CDHA, ...).
@@ -95,6 +96,44 @@ public class MedicalService extends BaseEntity {
     @Builder.Default
     private Boolean isPointOfCare = false;
 
+    /** Thoi gian thuc hien uoc tinh, dung de can bang tai queue. */
+    @Column(name = "duration_minutes")
+    @Builder.Default
+    private Integer durationMinutes = 15;
+
+    /** 0 = co the lam sau, 1 = binh thuong, 2 = uu tien som. */
+    @Column(name = "workflow_priority")
+    @Builder.Default
+    private Integer workflowPriority = 1;
+
+    @Column(name = "requires_doctor_order")
+    @Builder.Default
+    private Boolean requiresDoctorOrder = false;
+
+    @Column(name = "requires_return_to_doctor")
+    @Builder.Default
+    private Boolean requiresReturnToDoctor = false;
+
+    @Column(name = "result_wait_minutes")
+    @Builder.Default
+    private Integer resultWaitMinutes = 0;
+
+    /** Cho phep benh nhan tu dat; null duoc xem la true de tuong thich du lieu cu. */
+    @Column(name = "allow_customer_booking")
+    @Builder.Default
+    private Boolean allowCustomerBooking = true;
+
+    @Column(name = "minimum_age")
+    private Integer minimumAge;
+
+    @Column(name = "maximum_age")
+    private Integer maximumAge;
+
+    /** null = moi gioi tinh. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "allowed_gender", length = 10)
+    private Gender allowedGender;
+
 
     /** Khoa thuc hien mac dinh (nullable - mot so dich vu khong gan khoa cu the). */
     @ManyToOne(fetch = FetchType.LAZY)
@@ -106,13 +145,14 @@ public class MedicalService extends BaseEntity {
     @JoinColumn(name = "required_specialization_id")
     private Specialization requiredSpecialization;
 
+    /** Năng lực cần có ở phòng thực hiện; thay cho liên kết cứng theo loại phòng. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "required_capability_id")
+    private ServiceCapability requiredCapability;
+
     /** Ma dich vu (duy nhat, dung cho hoa don snapshot). */
     @NotBlank
     @Size(max = 20)
     @Column(name = "service_code", nullable = false, unique = true, length = 20)
     private String serviceCode;
 }
-
-
-
-

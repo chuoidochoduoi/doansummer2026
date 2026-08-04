@@ -8,7 +8,7 @@ package org.example.doansummer2026.enums;
  * - CANCELLED: huy (sau khi IN_PROGRESS, can ghi ly do)
  */
 public enum TestRequestStatus {
-    PENDING, IN_PROGRESS, COMPLETED, CANCELLED
+    BLOCKED, PENDING, IN_PROGRESS, COMPLETED, CANCELLED
 }
 
 

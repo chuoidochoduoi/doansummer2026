@@ -48,10 +48,12 @@ public class InvoiceController {
     public ResponseEntity<PageResponse<InvoiceResponse>> list(
             @RequestParam(required = false) UUID customerId,
             @RequestParam(required = false) InvoiceStatus status,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String category,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             Pageable pageable) {
-        return RestResponses.ok(service.search(customerId, status, from, to, pageable));
+        return RestResponses.ok(service.search(customerId, status, search, category, from, to, pageable));
     }
 
     @GetMapping("/api/v1/invoices/{id}")
@@ -94,7 +96,7 @@ public class InvoiceController {
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Invoice", idParamName = "id")
     public ResponseEntity<InvoiceResponse> pay(@PathVariable UUID id) {
-        return RestResponses.ok(service.pay(id));
+        return RestResponses.ok(service.pay(id, authService.currentStaffId()));
     }
 
     /**
@@ -176,7 +178,5 @@ public class InvoiceController {
         };
     }
 }
-
-
 
 

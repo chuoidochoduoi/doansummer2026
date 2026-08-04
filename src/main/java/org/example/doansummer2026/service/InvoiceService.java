@@ -31,8 +31,13 @@ import org.example.doansummer2026.repository.AccountRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.repository.TransactionRepository;
+import org.example.doansummer2026.repository.QueueTicketRepository;
+import org.example.doansummer2026.repository.TestRequestRepository;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.example.doansummer2026.service.interfaces.InvoiceServiceInterface;
 import org.example.doansummer2026.service.interfaces.QueueTicketServiceInterface;
@@ -62,11 +67,55 @@ public class InvoiceService implements InvoiceServiceInterface {
     private final AccountRepository accountRepo;
     private final QueueTicketService queueTicketService;
     private final TestRequestService testRequestService;
+    private final QueueTicketRepository queueTicketRepo;
+    private final TestRequestRepository testRequestRepo;
 
     @Transactional(readOnly = true)
     public PageResponse<InvoiceResponse> search(UUID customerId, InvoiceStatus status,
+                                                 String search, String category,
                                                  LocalDate from, LocalDate to, Pageable pageable) {
-        Page<Invoice> page = repo.search(customerId, status, from, to, pageable);
+        String normalizedSearch = search == null || search.isBlank() ? null : search.trim().toLowerCase();
+        String normalizedCategory = category == null || category.isBlank() ? null : category.trim().toLowerCase();
+        Specification<Invoice> spec = (root, query, cb) -> cb.conjunction();
+
+        if (customerId != null) {
+            spec = spec.and((root, query, cb) ->
+                    cb.equal(root.get("customer").get("profileId"), customerId));
+        }
+        if (status != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        if (normalizedSearch != null) {
+            String pattern = "%" + normalizedSearch + "%";
+            spec = spec.and((root, query, cb) -> cb.or(
+                    cb.like(cb.lower(root.get("invoiceCode")), pattern),
+                    cb.like(cb.lower(root.get("customer").get("fullName")), pattern),
+                    cb.like(cb.lower(root.get("customer").get("phone")), pattern)
+            ));
+        }
+        if (normalizedCategory != null) {
+            String pattern = "%" + normalizedCategory + "%";
+            spec = spec.and((root, query, cb) -> {
+                var item = root.join("items", jakarta.persistence.criteria.JoinType.LEFT);
+                var medicalService = item.join("service", jakarta.persistence.criteria.JoinType.LEFT);
+                query.distinct(true);
+                return cb.or(
+                        cb.like(cb.lower(item.get("serviceSnapshot")), pattern),
+                        cb.like(cb.lower(medicalService.get("name")), pattern)
+                );
+            });
+        }
+        if (from != null) {
+            spec = spec.and((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("issueDate"), from));
+        }
+        if (to != null) {
+            spec = spec.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("issueDate"), to));
+        }
+
+        Pageable sortedPageable = pageable.getSort().isSorted()
+                ? pageable
+                : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<Invoice> page = repo.findAll(spec, sortedPageable);
         return PageResponse.from(page, i -> {
             List<UUID> txIds = transactionRepo.findByInvoice_InvoiceId(i.getInvoiceId()).stream()
                     .map(t -> t.getTransactionId())
@@ -166,7 +215,8 @@ public class InvoiceService implements InvoiceServiceInterface {
     }
 
     public InvoiceResponse cancel(UUID id) {
-        Invoice i = findById(id);
+        Invoice i = repo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
         if (i.getStatus() == InvoiceStatus.PAID) {
             throw new ConflictException("Khong the huy hoa don da thanh toan: " + i.getStatus());
         }
@@ -179,10 +229,14 @@ public class InvoiceService implements InvoiceServiceInterface {
         return InvoiceResponse.from(repo.save(i));
     }
 
-    public InvoiceResponse pay(UUID id) {
-        Invoice i = findById(id);
+    public InvoiceResponse pay(UUID id, UUID receivedById) {
+        Invoice i = repo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
         if (i.getStatus() == InvoiceStatus.PAID) {
-            throw new ConflictException("Hoa don da thanh toan: " + i.getStatus());
+            var previous = transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(id, TransactionStatus.SUCCESS).orElse(null);
+            String cashier = previous != null && previous.getReceivedBy() != null && previous.getReceivedBy().getProfile() != null
+                    ? previous.getReceivedBy().getProfile().getFullName() : "nhan vien khac";
+            throw new ConflictException("Hoa don da duoc thanh toan boi " + cashier);
         }
         if (i.getStatus() == InvoiceStatus.CANCELLED) {
             throw new ConflictException("Khong the thanh toan hoa don da huy: " + i.getStatus());
@@ -190,6 +244,14 @@ public class InvoiceService implements InvoiceServiceInterface {
         i.setPaidAmount(i.getTotalAmount());
         i.setStatus(InvoiceStatus.PAID);
         Invoice saved = repo.save(i);
+        StaffInfo cashier = receivedById != null ? staffRepo.findById(receivedById).orElse(null) : null;
+        if (transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(id, TransactionStatus.SUCCESS).isEmpty()) {
+            transactionRepo.save(org.example.doansummer2026.model.Transaction.builder()
+                    .invoice(saved).transactionCode("PAY-" + saved.getInvoiceCode())
+                    .amount(saved.getTotalAmount()).paymentMethod(PaymentMethod.CASH)
+                    .status(TransactionStatus.SUCCESS).paidAt(java.time.LocalDateTime.now())
+                    .receivedBy(cashier).note("Thanh toan tai quay").build());
+        }
         // Tao QueueTicket sau khi thanh toan
         if (saved.getVisit() != null) {
             createQueueTicketsFromInvoiceItems(saved);
@@ -211,7 +273,8 @@ public class InvoiceService implements InvoiceServiceInterface {
 
     /** Recalculate paidAmount + status tuyen tu cac transaction SUCCESS. */
     public void recalculatePaidAmount(UUID invoiceId) {
-        Invoice i = findById(invoiceId);
+        Invoice i = repo.findByIdForUpdate(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + invoiceId));
         BigDecimal paid = transactionRepo.findByInvoice_InvoiceId(invoiceId).stream()
                 .filter(t -> t.getStatus() == TransactionStatus.SUCCESS)
                 .map(t -> t.getAmount())
@@ -247,35 +310,82 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .orElse(invoice);
 
         UUID visitId = loaded.getVisit() != null ? loaded.getVisit().getVisitId() : null;
-        UUID medicalRecordId = loaded.getMedicalRecord() != null ? loaded.getMedicalRecord().getRecordId() : null;
-        UUID requestedById = loaded.getIssuedBy() != null ? loaded.getIssuedBy().getStaffId() : null;
+        UUID medicalRecordId = loaded.getMedicalRecord() != null
+                ? loaded.getMedicalRecord().getRecordId()
+                : (visitId != null ? recordRepo.findFirstByVisit_VisitIdOrderByCreatedAtDesc(visitId)
+                        .map(record -> record.getRecordId()).orElse(null) : null);
+        UUID requestedById = loaded.getIssuedBy() != null ? loaded.getIssuedBy().getStaffId()
+                : transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                        loaded.getInvoiceId(), TransactionStatus.SUCCESS)
+                        .map(transaction -> transaction.getReceivedBy() != null
+                                ? transaction.getReceivedBy().getStaffId() : null)
+                        .orElse(null);
+        boolean workflowActivated = queueTicketRepo.findAllByVisit_VisitId(visitId).stream()
+                .anyMatch(ticket -> ticket.getStatus() != org.example.doansummer2026.enums.QueueStatus.BLOCKED
+                        && ticket.getStatus() != org.example.doansummer2026.enums.QueueStatus.DONE
+                        && ticket.getStatus() != org.example.doansummer2026.enums.QueueStatus.SKIPPED
+                        && ticket.getStatus() != org.example.doansummer2026.enums.QueueStatus.WAITING_FOR_TEST)
+                || testRequestRepo.findAllByMedicalRecord_Visit_VisitId(visitId).stream()
+                .anyMatch(test -> test.getStatus() == org.example.doansummer2026.enums.TestRequestStatus.PENDING
+                        || test.getStatus() == org.example.doansummer2026.enums.TestRequestStatus.IN_PROGRESS);
 
-        for (InvoiceItem item : loaded.getItems()) {
+        var workflowItems = new ArrayList<>(loaded.getItems());
+        workflowItems.sort(java.util.Comparator
+                .comparing((InvoiceItem item) -> item.getService() != null && Boolean.TRUE.equals(item.getService().getRequiresDoctorOrder()))
+                .thenComparing((InvoiceItem item) -> item.getService() != null && item.getService().getWorkflowPriority() != null ? item.getService().getWorkflowPriority() : 1, java.util.Comparator.reverseOrder())
+                .thenComparing((InvoiceItem item) -> item.getService() != null && item.getService().getResultWaitMinutes() != null ? item.getService().getResultWaitMinutes() : 0, java.util.Comparator.reverseOrder()));
+        for (InvoiceItem item : workflowItems) {
             MedicalService service = item.getService();
-            // Neu service la null (lazy load hoac da xoa), bo qua
-            if (service == null || service.getDepartment() == null) continue;
+            // Dich vu can lam sang duoc xep phong dong theo danh muc ky thuat,
+            // nen khong bat buoc gan san department tren dich vu.
+            if (service == null) continue;
 
             DepartmentType departmentType = service.getDepartmentType();
             if (departmentType == DepartmentType.EXAMINATION) {
+                if (service.getDepartment() == null || visitId == null) continue;
                 // CLINICAL_EXAM: tao QueueTicket cho bac si kham
-                queueTicketService.create(new org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest(
+                var ticket = queueTicketService.create(new org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest(
                         visitId,
                         service.getDepartment().getDepartmentId(),
                         service.getServiceId(),
                         null
                 ));
-            } else if (departmentType == DepartmentType.LABORATORY
-                    || departmentType == DepartmentType.IMAGING) {
+                if (workflowActivated) {
+                    queueTicketRepo.findById(ticket.ticketId()).ifPresent(blocked -> {
+                        blocked.setStatus(org.example.doansummer2026.enums.QueueStatus.BLOCKED);
+                        queueTicketRepo.save(blocked);
+                    });
+                } else {
+                    workflowActivated = true;
+                }
+            } else if (departmentType != null && departmentType.isParaclinical()) {
                 // LAB_TEST, IMAGING, PROCEDURE: tao TestRequest cho phong tuong ung
-                // Can co medicalRecord va requestedBy (issuedBy) moi tao duoc test request
-                if (medicalRecordId == null || requestedById == null) continue;
-                testRequestService.create(new org.example.doansummer2026.dto.testRequest.TestRequestCreateRequest(
+                var test = testRequestService.createFromPaidInvoice(
+                        visitId,
                         medicalRecordId,
                         service.getServiceId(),
                         requestedById,
                         item.getNote() != null ? item.getNote() : service.getName(),
                         item.getItemId()
-                ));
+                );
+                if (workflowActivated) {
+                    testRequestRepo.findById(test.testRequestId()).ifPresent(blocked -> {
+                        boolean sharedActiveQueue = blocked.getQueueTicket() != null
+                                && testRequestRepo.findAllByQueueTicket_TicketId(blocked.getQueueTicket().getTicketId()).stream()
+                                .anyMatch(existing -> !existing.getTestRequestId().equals(blocked.getTestRequestId())
+                                        && (existing.getStatus() == org.example.doansummer2026.enums.TestRequestStatus.PENDING
+                                        || existing.getStatus() == org.example.doansummer2026.enums.TestRequestStatus.IN_PROGRESS));
+                        if (sharedActiveQueue) return;
+                        blocked.setStatus(org.example.doansummer2026.enums.TestRequestStatus.BLOCKED);
+                        testRequestRepo.save(blocked);
+                        if (blocked.getQueueTicket() != null) {
+                            blocked.getQueueTicket().setStatus(org.example.doansummer2026.enums.QueueStatus.BLOCKED);
+                            queueTicketRepo.save(blocked.getQueueTicket());
+                        }
+                    });
+                } else {
+                    workflowActivated = true;
+                }
             }
         }
     }
@@ -334,7 +444,9 @@ public class InvoiceService implements InvoiceServiceInterface {
                                                                         LocalDate from, LocalDate to,
                                                                         PaymentMethod paymentMethod,
                                                                         Pageable pageable) {
-        var page = repo.findAll(searchForPatientSpec(customerId, from, to), pageable);
+        Pageable sortedPageable = pageable.getSort().isSorted() ? pageable
+                : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));
+        var page = repo.findAll(searchForPatientSpec(customerId, from, to, paymentMethod), sortedPageable);
         // Eager fetch customer, items de tranh LazyInitializationException
         page.getContent().forEach(invoice -> {
             if (invoice.getCustomer() != null) {
@@ -343,20 +455,7 @@ public class InvoiceService implements InvoiceServiceInterface {
             invoice.getItems().size();
         });
 
-        // Filter paymentMethod neu co
-        var filteredContent = page.getContent().stream()
-                .filter(invoice -> {
-                    if (paymentMethod == null) return true;
-                    var txs = transactionRepo.findByInvoice_InvoiceId(invoice.getInvoiceId());
-                    return txs.stream().anyMatch(t -> t.getPaymentMethod() == paymentMethod);
-                })
-                .toList();
-
-        // Tao page moi voi du lieu da filter
-        var filteredPage = new org.springframework.data.domain.PageImpl<>(
-                filteredContent, pageable, filteredContent.size());
-
-        return PageResponse.from(filteredPage, invoice -> {
+        return PageResponse.from(page, invoice -> {
             var latestTx = transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
                     invoice.getInvoiceId(), org.example.doansummer2026.enums.TransactionStatus.SUCCESS);
             return PaymentHistoryResponse.from(invoice, latestTx.orElse(null));
@@ -364,18 +463,30 @@ public class InvoiceService implements InvoiceServiceInterface {
     }
 
     private org.springframework.data.jpa.domain.Specification<Invoice> searchForPatientSpec(
-            UUID customerId, LocalDate from, LocalDate to) {
+            UUID customerId, LocalDate from, LocalDate to, PaymentMethod paymentMethod) {
         return (root, query, cb) -> {
             var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
 
             if (customerId != null) {
                 predicates.add(cb.equal(root.get("customer").get("profileId"), customerId));
             }
+            predicates.add(cb.equal(root.get("status"), InvoiceStatus.PAID));
             if (from != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("issueDate"), from));
             }
             if (to != null) {
                 predicates.add(cb.lessThanOrEqualTo(root.get("issueDate"), to));
+            }
+            if (paymentMethod != null) {
+                var subquery = query.subquery(UUID.class);
+                var tx = subquery.from(org.example.doansummer2026.model.Transaction.class);
+                subquery.select(tx.get("invoice").get("invoiceId"));
+                subquery.where(
+                        cb.equal(tx.get("invoice").get("invoiceId"), root.get("invoiceId")),
+                        cb.equal(tx.get("paymentMethod"), paymentMethod),
+                        cb.equal(tx.get("status"), TransactionStatus.SUCCESS)
+                );
+                predicates.add(cb.exists(subquery));
             }
 
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
@@ -393,10 +504,9 @@ public class InvoiceService implements InvoiceServiceInterface {
         if (invoice.getCustomer() == null || !invoice.getCustomer().getProfileId().equals(customerId)) {
             throw new ResourceNotFoundException("Khong tim thay hoa don");
         }
+        if (invoice.getStatus() != InvoiceStatus.PAID) {
+            throw new ConflictException("Chi co the xem phieu thu cua hoa don da thanh toan");
+        }
         return ReceiptDetailResponse.from(invoice);
     }
 }
-
-
-
-

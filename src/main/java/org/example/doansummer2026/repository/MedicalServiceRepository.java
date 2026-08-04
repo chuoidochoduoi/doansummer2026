@@ -25,7 +25,7 @@ public interface MedicalServiceRepository extends JpaRepository<MedicalService, 
     Optional<MedicalService> findById(UUID id);
 
     default Page<MedicalService> search(String keyword, DepartmentType departmentType,
-                                         ServiceStatus status,
+                                         ServiceStatus status, UUID specializationId,
                                          Pageable pageable) {
         Specification<MedicalService> spec = (root, query, cb) -> cb.conjunction();
 
@@ -42,7 +42,27 @@ public interface MedicalServiceRepository extends JpaRepository<MedicalService, 
         if (status != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
         }
+        if (specializationId != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("requiredSpecialization").get("specializationId"), specializationId));
+        }
 
+        return findAll(spec, pageable);
+    }
+
+    default Page<MedicalService> searchCustomerBookable(String keyword, DepartmentType departmentType,
+                                                         Pageable pageable) {
+        Specification<MedicalService> spec = (root, query, cb) -> cb.equal(root.get("status"), ServiceStatus.ACTIVE);
+        spec = spec.and((root, query, cb) -> cb.or(
+                cb.isNull(root.get("allowCustomerBooking")),
+                cb.isTrue(root.get("allowCustomerBooking"))));
+        if (keyword != null && !keyword.isBlank()) {
+            spec = spec.and((root, query, cb) -> cb.or(
+                    cb.like(cb.lower(root.get("name")), "%" + keyword.toLowerCase() + "%"),
+                    cb.like(cb.lower(root.get("description")), "%" + keyword.toLowerCase() + "%")));
+        }
+        if (departmentType != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("departmentType"), departmentType));
+        }
         return findAll(spec, pageable);
     }
 }

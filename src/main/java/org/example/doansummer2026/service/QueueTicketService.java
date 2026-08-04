@@ -13,6 +13,7 @@ import org.example.doansummer2026.dto.icd.ICD10SelectionCreateRequest;
 import org.example.doansummer2026.dto.testRequest.TestRequestCreateRequest;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
+import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.model.Department;
 import org.example.doansummer2026.model.MedicalRecord;
 import org.example.doansummer2026.model.CustomerVisit;
@@ -58,6 +59,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     private final StaffInfoRepository staffRepo;
     private final Icd10CodeRepository icd10Repo;
     private final TestRequestService testRequestService;
+    private final PatientJourneyService patientJourneyService;
 
     @Autowired
     @Lazy
@@ -67,7 +69,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     public PageResponse<QueueTicketResponse> search(UUID departmentId, LocalDate workDate,
                                                      QueueStatus status, Pageable pageable) {
         Page<QueueTicket> page = repo.search(departmentId, workDate, status, pageable);
-        return PageResponse.from(page, QueueTicketResponse::from);
+        return PageResponse.from(page, q -> QueueTicketResponse.from(q, getRecordId(q), null));
     }
 
     @Transactional(readOnly = true)
@@ -78,7 +80,9 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     public QueueTicketResponse create(QueueTicketCreateRequest req) {
         CustomerVisit visit = visitRepo.findById(req.visitId())
                 .orElseThrow(() -> new ResourceNotFoundException("Luot kham khong ton tai: " + req.visitId()));
-        Department dept = departmentRepo.findById(req.departmentId())
+        var existing = repo.findByVisit_VisitIdAndService_ServiceId(req.visitId(), req.serviceId());
+        if (existing.isPresent()) return QueueTicketResponse.from(existing.get());
+        Department dept = departmentRepo.findByIdForUpdate(req.departmentId())
                 .orElseThrow(() -> new ResourceNotFoundException("Khoa khong ton tai: " + req.departmentId()));
         org.example.doansummer2026.model.MedicalService service = serviceRepo.findById(req.serviceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + req.serviceId()));
@@ -125,7 +129,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     public QueueTicketResponse call(UUID id) {
         QueueTicket q = findById(id);
         // Cho phep call tu WAITING, WAITING_FOR_TEST hoac TEST_DONE
-        if (q.getStatus() != QueueStatus.WAITING && q.getStatus() != QueueStatus.WAITING_FOR_TEST && q.getStatus() != QueueStatus.TEST_DONE) {
+        if (q.getStatus() != QueueStatus.WAITING && q.getStatus() != QueueStatus.CALLED && q.getStatus() != QueueStatus.WAITING_FOR_TEST && q.getStatus() != QueueStatus.TEST_DONE) {
             throw new BadRequestException("Chi goi duoc phieu dang cho (WAITING, WAITING_FOR_TEST hoac TEST_DONE), hien tai: " + q.getStatus());
         }
         q.setStatus(QueueStatus.CALLED);
@@ -146,9 +150,17 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         }
 
         // Lay staffId tu SecurityContext (JWT token)
-        UUID doctorId = getCurrentStaffId();
-        if (doctorId == null) {
+        UUID currentStaffId = getCurrentStaffId();
+        if (currentStaffId == null) {
             throw new BadRequestException("Tai khoan khong phai bac si");
+        }
+        boolean nurse = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_NURSE"));
+        UUID doctorId = currentStaffId;
+        if (nurse) {
+            if (q.getDepartment().getHeadDoctor() == null)
+                throw new BadRequestException("Phong chua co bac si phu trach; y ta khong the bat dau ca kham");
+            doctorId = q.getDepartment().getHeadDoctor().getStaffId();
         }
 
         // Tu dong tao medical record neu chua co, hoac lay record cu
@@ -178,8 +190,18 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         if (q.getVisit() == null) {
             throw new BadRequestException("Phieu khong co thong tin visit");
         }
-        var record = recordRepo.findByVisit_VisitId(q.getVisit().getVisitId())
+        var record = recordRepo.findByQueueTicket_TicketId(q.getTicketId())
                 .orElseThrow(() -> new ResourceNotFoundException("Chua co ho so benh an cho visit nay"));
+
+        UUID completingStaffId = getCurrentStaffId();
+        boolean admin = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ADMIN"));
+        if (!admin && (completingStaffId == null || record.getDoctor() == null
+                || !record.getDoctor().getStaffId().equals(completingStaffId)))
+            throw new BadRequestException("Chi bac si phu trach moi duoc hoan thanh ca kham");
+
+        if (req != null && req.version() != null && !java.util.Objects.equals(req.version(), record.getVersion()))
+            throw new ConflictException("Ho so da duoc nhan vien khac cap nhat. Vui long tai lai truoc khi hoan thanh");
 
         // Cap nhat thong tin medical record neu co request (icd-10, prescription, vitals, ...)
         if (req != null) {
@@ -187,14 +209,17 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             record = recordRepo.save(record);
         }
 
-        if (record.getStatus() != MedicalRecordStatus.COMPLETED) {
+        boolean hasTestRequests = req != null && req.testRequests() != null && !req.testRequests().isEmpty();
+        if (!hasTestRequests && record.getStatus() != MedicalRecordStatus.COMPLETED) {
             record.setStatus(MedicalRecordStatus.COMPLETED);
             record.setCompletedAt(LocalDateTime.now());
+            StaffInfo confirmer = completingStaffId != null ? staffRepo.findById(completingStaffId).orElse(null) : null;
+            record.setDoctorConfirmedBy(confirmer);
+            record.setDoctorConfirmedAt(LocalDateTime.now());
             recordRepo.save(record);
         }
 
         // Tao TestRequest neu co trong payload (gop voi API hoan thien de tranh goi 2 lan)
-        boolean hasTestRequests = req != null && req.testRequests() != null && !req.testRequests().isEmpty();
         if (hasTestRequests) {
             UUID doctorId = record.getDoctor() != null ? record.getDoctor().getStaffId() : null;
             if (doctorId == null) {
@@ -245,10 +270,10 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             q.setCompletedAt(LocalDateTime.now());
         }
         repo.save(q);
+        if (q.getStatus() == QueueStatus.DONE) patientJourneyService.activateNext(q.getVisit().getVisitId());
         updateDepartmentStatus(q.getDepartment().getDepartmentId());
 
-        var fetched = recordRepo.getWithDetailsByVisitId(q.getVisit().getVisitId()).orElse(record);
-        return MedicalRecordResponse.from(fetched, true);
+        return MedicalRecordResponse.from(record, true);
     }
 
     private void updateMedicalRecordFields(MedicalRecord r, MedicalRecordUpdateRequest req) {
@@ -338,6 +363,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         q.setStatus(QueueStatus.DONE);
         q.setCompletedAt(LocalDateTime.now());
         QueueTicket saved = repo.save(q);
+        if (q.getVisit() != null) patientJourneyService.activateNext(q.getVisit().getVisitId());
         updateDepartmentStatus(q.getDepartment().getDepartmentId());
         return QueueTicketResponse.from(saved);
     }
@@ -383,7 +409,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         QueueTicket ticket = repo.findTopByDepartment_DepartmentIdAndStatusOrderByCreatedAtAsc(departmentId, QueueStatus.IN_PROGRESS)
                 .orElse(null);
         if (ticket == null) return null;
-        var medicalRecord = getMedicalRecord(ticket.getVisit() != null ? ticket.getVisit().getVisitId() : null);
+        var medicalRecord = getMedicalRecordByQueueTicket(ticket.getTicketId());
         UUID recordId = medicalRecord != null ? medicalRecord.recordId() : null;
         return QueueTicketResponse.from(ticket, recordId, null, medicalRecord);
     }
@@ -420,21 +446,29 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
     private MedicalRecordResponse getMedicalRecord(UUID visitId) {
         if (visitId == null) return null;
-        var record = recordRepo.getWithDetailsByVisitId(visitId).orElse(null);
+        var record = recordRepo.findFirstByVisit_VisitIdOrderByCreatedAtDesc(visitId).orElse(null);
         if (record == null) return null;
         return MedicalRecordResponse.from(record, false);
+    }
+
+    /** Hồ sơ của màn khám phải thuộc đúng phiếu hàng chờ, không lấy hồ sơ mới nhất của cả lượt khám. */
+    private MedicalRecordResponse getMedicalRecordByQueueTicket(UUID ticketId) {
+        if (ticketId == null) return null;
+        var record = recordRepo.findByQueueTicket_TicketId(ticketId).orElse(null);
+        return record == null ? null : MedicalRecordResponse.from(record, true);
     }
 
     private MedicalRecordResponse getMedicalRecordOrCreate(QueueTicket q, UUID doctorId) {
         if (q.getVisit() == null) return null;
         var visitId = q.getVisit().getVisitId();
-        var existingRecord = recordRepo.findByVisit_VisitId(visitId).orElse(null);
+        var existingRecord = recordRepo.findByQueueTicket_TicketId(q.getTicketId()).orElse(null);
         MedicalRecord record;
         if (existingRecord == null) {
             StaffInfo doctor = staffRepo.findById(doctorId)
                     .orElseThrow(() -> new ResourceNotFoundException("Bac si khong ton tai: " + doctorId));
             record = MedicalRecord.builder()
                     .visit(q.getVisit())
+                    .queueTicket(q)
                     .doctor(doctor)
                     .status(MedicalRecordStatus.IN_PROGRESS)
                     .build();
@@ -443,13 +477,11 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             record = existingRecord;
         }
         // Fetch again with vital signs for response
-        var fetchedRecord = recordRepo.getWithDetailsByVisitId(visitId).orElse(record);
-        return MedicalRecordResponse.from(fetchedRecord, false);
+        return MedicalRecordResponse.from(record, false);
     }
 
     private UUID getRecordId(QueueTicket q) {
-        UUID visitId = q.getVisit() != null ? q.getVisit().getVisitId() : null;
-        return visitId != null ? recordRepo.findByVisit_VisitId(visitId).map(r -> r.getRecordId()).orElse(null) : null;
+        return recordRepo.findByQueueTicket_TicketId(q.getTicketId()).map(r -> r.getRecordId()).orElse(null);
     }
 
     private Integer getWaitingCount(QueueTicket q) {
@@ -504,6 +536,3 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         departmentRepo.save(dept);
     }
 }
-
-
-

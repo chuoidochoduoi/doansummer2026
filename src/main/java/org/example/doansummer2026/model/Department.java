@@ -10,6 +10,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.JoinTable;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
@@ -24,6 +26,8 @@ import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import org.example.doansummer2026.enums.DepartmentStatus;
 import org.example.doansummer2026.enums.DepartmentType;
@@ -67,6 +71,19 @@ public class Department extends BaseEntity {
     @Builder.Default
     private DepartmentType departmentType = DepartmentType.EXAMINATION;
 
+    /** Chuyen khoa chuan; nhieu phong vat ly co the thuoc cung mot chuyen khoa. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "specialization_id")
+    private Specialization specialization;
+
+    /** Năng lực mà phòng có thể thực hiện; admin có thể cấu hình nhiều giá trị. */
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "department_capability",
+            joinColumns = @JoinColumn(name = "department_id"),
+            inverseJoinColumns = @JoinColumn(name = "capability_id"))
+    @Builder.Default
+    private Set<ServiceCapability> capabilities = new HashSet<>();
+
     /** Ghi chu/thiet bi (mo ta them) */
     @Size(max = 500)
     @Column(length = 500)
@@ -81,6 +98,4 @@ public class Department extends BaseEntity {
     @Builder.Default
     private List<StaffInfo> nurses = new ArrayList<>();
 }
-
-
 

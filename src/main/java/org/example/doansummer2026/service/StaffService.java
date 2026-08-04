@@ -8,6 +8,9 @@ import org.example.doansummer2026.dto.staff.StaffCreateRequest;
 import org.example.doansummer2026.dto.staff.StaffOptionResponse;
 import org.example.doansummer2026.dto.staff.StaffResponse;
 import org.example.doansummer2026.dto.staff.StaffUpdateRequest;
+import org.example.doansummer2026.dto.staff.StaffProfessionalUpdateRequest;
+import org.example.doansummer2026.dto.staff.StaffCapabilityRequest;
+import org.example.doansummer2026.dto.staff.StaffCapabilityResponse;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Account;
@@ -19,6 +22,10 @@ import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.repository.AccountRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
+import org.example.doansummer2026.repository.StaffCapabilityRepository;
+import org.example.doansummer2026.repository.ServiceCapabilityRepository;
+import org.example.doansummer2026.model.StaffCapability;
+import org.example.doansummer2026.enums.StaffCapabilityStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -55,8 +62,11 @@ public class StaffService implements StaffServiceInterface {
     private final DepartmentRepository departmentRepo;
     private final SpecializationService specializationService;
     private final PasswordEncoder passwordEncoder;
+    private final StaffCapabilityRepository staffCapabilityRepo;
+    private final ServiceCapabilityRepository capabilityRepo;
 
     public StaffResponse create(StaffCreateRequest req) {
+        SystemRole systemRole = req.systemRole().normalized();
         // Validate unique
         if (accountRepo.existsByUsername(req.username())) {
             throw new ConflictException("Username da ton tai: " + req.username());
@@ -75,18 +85,13 @@ public class StaffService implements StaffServiceInterface {
             throw new ConflictException("Email da duoc su dung");
         }
 
-        // Validate specialization required for SPECIALIST_DOCTOR
-        if (req.systemRole() == SystemRole.SPECIALIST_DOCTOR && req.specializationId() == null) {
-            throw new ConflictException("Bac si chuyen khoa (SPECIALIST_DOCTOR) phai co specializationId");
+        // Moi bac si deu phai khai bao pham vi chuyen khoa phuc vu.
+        if (systemRole.isDoctor()
+                && req.specializationId() == null) {
+            throw new ConflictException("Bac si phai co specializationId; bac si da khoa chon chuyen khoa Kham tong quat");
         }
 
-        // Validate license required for DOCTOR roles
-        if ((req.systemRole() == SystemRole.GENERAL_DOCTOR || req.systemRole() == SystemRole.SPECIALIST_DOCTOR)
-                && (req.licenseNumber() == null || req.licenseNumber().isBlank())) {
-            throw new ConflictException("Bac si phai co licenseNumber (so giay phep hanh nghe)");
-        }
-
-        Role accountRole = mapSystemRoleToRole(req.systemRole());
+        Role accountRole = mapSystemRoleToRole(systemRole);
 
         Account account = Account.builder()
                 .username(req.username())
@@ -109,12 +114,12 @@ public class StaffService implements StaffServiceInterface {
 
         StaffInfo staff = StaffInfo.builder()
                 .profile(profile)
-                .systemRole(req.systemRole())
-                .nationalId(req.nationalId())
+                .systemRole(systemRole)
+                .nationalId(blankToNull(req.nationalId()))
                 .bankAccount(req.bankAccount())
-                .highestDegree(req.highestDegree())
-                .university(req.university())
-                .licenseNumber(req.licenseNumber())
+                .highestDegree(blankToNull(req.highestDegree()))
+                .university(blankToNull(req.university()))
+                .licenseNumber(blankToNull(req.licenseNumber()))
                 .specialization(req.specializationId() != null
                         ? specializationService.findById(req.specializationId()) : null)
                 .build();
@@ -153,22 +158,33 @@ public class StaffService implements StaffServiceInterface {
             if (!req.nationalId().isBlank() && staffRepo.existsByNationalId(req.nationalId())) {
                 throw new ConflictException("CCCD/CMND da ton tai");
             }
-            s.setNationalId(req.nationalId());
         }
+        s.setNationalId(blankToNull(req.nationalId()));
         if (req.licenseNumber() != null && !req.licenseNumber().equals(s.getLicenseNumber())) {
             if (!req.licenseNumber().isBlank() && staffRepo.existsByLicenseNumber(req.licenseNumber())) {
                 throw new ConflictException("So giay phep hanh nghe da ton tai");
             }
-            s.setLicenseNumber(req.licenseNumber());
         }
-        if (req.systemRole() != null) s.setSystemRole(req.systemRole());
+        s.setLicenseNumber(blankToNull(req.licenseNumber()));
+        if (req.systemRole() != null) s.setSystemRole(req.systemRole().normalized());
         if (req.bankAccount() != null) s.setBankAccount(req.bankAccount());
-        if (req.highestDegree() != null) s.setHighestDegree(req.highestDegree());
-        if (req.university() != null) s.setUniversity(req.university());
+        if (req.highestDegree() != null) s.setHighestDegree(blankToNull(req.highestDegree()));
+        if (req.university() != null) s.setUniversity(blankToNull(req.university()));
         if (req.specializationId() != null) {
             s.setSpecialization(specializationService.findById(req.specializationId()));
         }
+        boolean isDoctor = s.getSystemRole().isDoctor();
+        if (isDoctor && s.getSpecialization() == null) {
+            throw new ConflictException("Bac si phai co chuyen khoa phuc vu");
+        }
         return toResponse(staffRepo.save(s));
+    }
+
+    public StaffResponse updateOwnProfessionalInfo(UUID staffId, StaffProfessionalUpdateRequest req) {
+        StaffInfo staff = findById(staffId);
+        staff.setHighestDegree(blankToNull(req.highestDegree()));
+        staff.setUniversity(blankToNull(req.university()));
+        return toResponse(staffRepo.save(staff));
     }
 
     public void delete(UUID staffId) {
@@ -205,6 +221,33 @@ public class StaffService implements StaffServiceInterface {
                 .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai: " + id));
     }
 
+    @Transactional(readOnly = true)
+    public List<StaffCapabilityResponse> listCapabilities(UUID staffId) {
+        findById(staffId);
+        return staffCapabilityRepo.findAllByStaff_StaffId(staffId).stream()
+                .map(StaffCapabilityResponse::from).toList();
+    }
+
+    public List<StaffCapabilityResponse> replaceCapabilities(UUID staffId, List<StaffCapabilityRequest> requests) {
+        StaffInfo staff = findById(staffId);
+        if (!staff.getSystemRole().isDoctor()) throw new ConflictException("Chi bac si moi duoc cap nang luc thuc hien");
+        staffCapabilityRepo.deleteAllByStaff_StaffId(staffId);
+        List<StaffCapabilityRequest> unique = (requests == null ? List.<StaffCapabilityRequest>of() : requests).stream()
+                .filter(request -> request.capabilityId() != null)
+                .collect(java.util.stream.Collectors.toMap(StaffCapabilityRequest::capabilityId,
+                        request -> request, (first, ignored) -> first)).values().stream().toList();
+        List<StaffCapability> values = unique.stream().map(request -> StaffCapability.builder()
+                .staff(staff)
+                .capability(capabilityRepo.findById(request.capabilityId()).orElseThrow(() ->
+                        new ResourceNotFoundException("Nang luc khong ton tai: " + request.capabilityId())))
+                .certificateNumber(blankToNull(request.certificateNumber()))
+                .issuedDate(request.issuedDate()).expiryDate(request.expiryDate())
+                .issuingOrganization(blankToNull(request.issuingOrganization()))
+                .status(request.status() != null ? request.status() : StaffCapabilityStatus.ACTIVE)
+                .build()).toList();
+        return staffCapabilityRepo.saveAll(values).stream().map(StaffCapabilityResponse::from).toList();
+    }
+
     /**
      * Danh sach nhan su cho Schedule (khong phan trang).
      */
@@ -212,7 +255,9 @@ public class StaffService implements StaffServiceInterface {
     public List<StaffOptionResponse> listForSchedule(SystemRole systemRole) {
         List<StaffInfo> staff;
         if (systemRole != null) {
-            staff = staffRepo.findAllBySystemRoleIn(List.of(systemRole));
+            staff = systemRole.isDoctor()
+                    ? staffRepo.findAllBySystemRoleIn(doctorRoles())
+                    : staffRepo.findAllBySystemRoleIn(List.of(systemRole));
         } else {
             staff = staffRepo.findAll();
         }
@@ -220,12 +265,11 @@ public class StaffService implements StaffServiceInterface {
     }
 
     /**
-     * Lay danh sach tat ca bac si (GENERAL_DOCTOR + SPECIALIST_DOCTOR) de chon lam head doctor.
+     * Lay danh sach tat ca bac si de chon lam head doctor.
      */
     @Transactional(readOnly = true)
     public List<StaffOptionResponse> findAllDoctors() {
-        List<StaffInfo> doctors = staffRepo.findAllBySystemRoleIn(
-                List.of(SystemRole.GENERAL_DOCTOR, SystemRole.SPECIALIST_DOCTOR));
+        List<StaffInfo> doctors = staffRepo.findAllBySystemRoleIn(doctorRoles());
                 
         List<Department> allDepts = departmentRepo.findAll();
         Map<UUID, UUID> doctorToDeptMap = allDepts.stream()
@@ -252,7 +296,9 @@ public class StaffService implements StaffServiceInterface {
     private Gender parseGender(String raw) {
         if (raw == null || raw.isBlank()) return null;
         try {
-            return Gender.valueOf(raw.trim().toUpperCase());
+            Gender gender = Gender.valueOf(raw.trim().toUpperCase());
+            if (gender == Gender.OTHER) throw new IllegalArgumentException();
+            return gender;
         } catch (IllegalArgumentException ex) {
             throw new ConflictException("Gender khong hop le: " + raw);
         }
@@ -261,7 +307,13 @@ public class StaffService implements StaffServiceInterface {
     private Role mapSystemRoleToRole(SystemRole systemRole) {
         return Role.STAFF;
     }
+
+    private String blankToNull(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.trim();
+    }
+
+    private List<SystemRole> doctorRoles() {
+        return List.of(SystemRole.DOCTOR, SystemRole.GENERAL_DOCTOR, SystemRole.SPECIALIST_DOCTOR);
+    }
 }
-
-
-

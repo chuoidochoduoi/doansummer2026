@@ -7,8 +7,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import jakarta.persistence.LockModeType;
 
 import java.util.Optional;
+import java.util.Collection;
 import java.util.UUID;
 
 @Repository
@@ -17,6 +21,11 @@ public interface ProfileRepository extends JpaRepository<Profile, UUID>, JpaSpec
     Optional<Profile> findFirstByAccount_AccountId(UUID accountId);
 
     Optional<Profile> findFirstByPhone(String phone);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Profile p where p.profileId = :id")
+    Optional<Profile> findByIdForUpdate(UUID id);
+    Optional<Profile> findFirstByPhoneIn(Collection<String> phones);
 
     Optional<Profile> findFirstByEmail(String email);
 

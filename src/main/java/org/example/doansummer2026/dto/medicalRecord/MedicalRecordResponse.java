@@ -23,6 +23,8 @@ public record MedicalRecordResponse(
         String prescriptionNote,
         String conclusion,
         String patientInstruction,
+        String followUpNote,
+        java.time.LocalDate followUpDate,
         MedicalRecordStatus status,
         LocalDateTime completedAt,
         LocalDateTime createdAt,
@@ -32,6 +34,13 @@ public record MedicalRecordResponse(
         Set<ICD10SelectionResponse> icdSelections,
         Integer ratingScore,
         LocalDateTime ratedAt
+        ,Long version
+        ,UUID nursingUpdatedById
+        ,String nursingUpdatedByName
+        ,LocalDateTime nursingUpdatedAt
+        ,UUID doctorConfirmedById
+        ,String doctorConfirmedByName
+        ,LocalDateTime doctorConfirmedAt
 ) {
     public static MedicalRecordResponse from(MedicalRecord r, boolean includeNested) {
         UUID visitId = r.getVisit() != null ? r.getVisit().getVisitId() : null;
@@ -50,12 +59,17 @@ public record MedicalRecordResponse(
         return new MedicalRecordResponse(r.getRecordId(), visitId, doctorId, doctorName,
                 r.getChiefComplaint(), r.getClinicalFindings(), r.getDiagnosis(),
                 r.getPrescriptionNote(), r.getConclusion(), r.getPatientInstruction(),
+                r.getFollowUpNote(), r.getFollowUpDate(),
                 r.getStatus(), r.getCompletedAt(), r.getCreatedAt(),
                 vitalSigns, prescriptions, testRequests, icdSelections,
-                r.getRatingScore(), r.getRatedAt());
+                r.getRatingScore(), r.getRatedAt(), r.getVersion(),
+                r.getNursingUpdatedBy()!=null?r.getNursingUpdatedBy().getStaffId():null,
+                r.getNursingUpdatedBy()!=null&&r.getNursingUpdatedBy().getProfile()!=null?r.getNursingUpdatedBy().getProfile().getFullName():null,
+                r.getNursingUpdatedAt(),
+                r.getDoctorConfirmedBy()!=null?r.getDoctorConfirmedBy().getStaffId():null,
+                r.getDoctorConfirmedBy()!=null&&r.getDoctorConfirmedBy().getProfile()!=null?r.getDoctorConfirmedBy().getProfile().getFullName():null,
+                r.getDoctorConfirmedAt());
     }
 }
-
-
 
 

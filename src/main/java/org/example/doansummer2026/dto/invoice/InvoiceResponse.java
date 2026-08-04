@@ -5,6 +5,7 @@ import org.example.doansummer2026.enums.InvoiceStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -16,6 +17,8 @@ public record InvoiceResponse(
         UUID visitId,
         UUID medicalRecordId,
         LocalDate issueDate,
+        LocalDateTime createdAt,
+        LocalDateTime checkInTime,
         LocalDate dueDate,
         BigDecimal subtotal,
         BigDecimal discount,
@@ -44,7 +47,8 @@ public record InvoiceResponse(
         BigDecimal balance = i.getTotalAmount().subtract(i.getPaidAmount());
         List<InvoiceItemResponse> items = i.getItems().stream().map(InvoiceItemResponse::from).toList();
         return new InvoiceResponse(i.getInvoiceId(), i.getInvoiceCode(), customerId, customerName,
-                visitId, recordId, i.getIssueDate(), i.getDueDate(),
+                visitId, recordId, i.getIssueDate(), i.getCreatedAt(),
+                i.getVisit() != null ? i.getVisit().getCheckInTime() : null, i.getDueDate(),
                 i.getSubtotal(), i.getDiscount(), i.getTax(), i.getTotalAmount(), i.getPaidAmount(),
                 balance, i.getStatus(), i.getNote(), issuedById, issuedByName, items, transactionIds);
     }

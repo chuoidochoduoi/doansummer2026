@@ -67,6 +67,11 @@ public class TestRequest extends BaseEntity {
     @JoinColumn(name = "performing_department", nullable = false)
     private Department performingDepartment;
 
+    /** Phiếu gọi số của phòng cận lâm sàng; nhiều kỹ thuật cùng phòng dùng chung một phiếu. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "queue_ticket_id")
+    private QueueTicket queueTicket;
+
     @Column(columnDefinition = "TEXT")
     private String description;
 
@@ -102,7 +107,6 @@ public class TestRequest extends BaseEntity {
     @JoinColumn(name = "invoice_item_id")
     private InvoiceItem invoiceItem;
 }
-
 
 
 

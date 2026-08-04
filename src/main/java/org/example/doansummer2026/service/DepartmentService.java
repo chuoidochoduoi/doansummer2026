@@ -8,11 +8,16 @@ import org.example.doansummer2026.dto.department.DepartmentUpdateRequest;
 import org.example.doansummer2026.enums.DepartmentStatus;
 import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.exception.ConflictException;
+import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Department;
 import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.repository.DepartmentRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
+import org.example.doansummer2026.repository.SpecializationRepository;
+import org.example.doansummer2026.repository.ServiceCapabilityRepository;
+import org.example.doansummer2026.repository.StaffCapabilityRepository;
+import org.example.doansummer2026.enums.StaffCapabilityStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -32,6 +37,9 @@ public class DepartmentService implements DepartmentServiceInterface {
 
     private final DepartmentRepository repo;
     private final StaffInfoRepository staffRepo;
+    private final SpecializationRepository specializationRepo;
+    private final ServiceCapabilityRepository capabilityRepo;
+    private final StaffCapabilityRepository staffCapabilityRepo;
     private final AuthService authService;
 
     @Transactional(readOnly = true)
@@ -64,12 +72,21 @@ public class DepartmentService implements DepartmentServiceInterface {
         if (repo.existsByName(req.name())) {
             throw new ConflictException("Ten khoa da ton tai: " + req.name());
         }
+        DepartmentType departmentType = req.departmentType() != null ? req.departmentType().normalized() : DepartmentType.EXAMINATION;
+        if (departmentType == DepartmentType.EXAMINATION && req.specializationId() == null) {
+            throw new BadRequestException("Vui long chon chuyen khoa cho phong kham");
+        }
         Department.DepartmentBuilder builder = Department.builder()
                 .roomCode(req.roomCode())
                 .name(req.name())
                 .status(req.status() != null ? req.status() : DepartmentStatus.AVAILABLE)
-                .departmentType(req.departmentType() != null ? req.departmentType() : DepartmentType.EXAMINATION)
+                .departmentType(departmentType)
                 .description(req.description());
+
+        if (departmentType == DepartmentType.EXAMINATION && req.specializationId() != null) {
+            builder.specialization(specializationRepo.findById(req.specializationId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Chuyen khoa khong ton tai: " + req.specializationId())));
+        }
 
         if (req.headDoctorId() != null) {
             StaffInfo headDoctor = staffRepo.findById(req.headDoctorId())
@@ -81,7 +98,15 @@ public class DepartmentService implements DepartmentServiceInterface {
             builder.headDoctor(headDoctor);
         }
 
-        Department saved = repo.save(builder.build());
+        Department department = builder.build();
+        if (req.capabilityIds() != null) {
+            department.setCapabilities(new java.util.HashSet<>(capabilityRepo.findAllById(req.capabilityIds())));
+            if (department.getCapabilities().size() != req.capabilityIds().stream().distinct().count()) {
+                throw new ResourceNotFoundException("Co nang luc thuc hien khong ton tai");
+            }
+        }
+        validateHeadDoctorCapabilities(department);
+        Department saved = repo.save(department);
 
         if (req.nurseIds() != null && !req.nurseIds().isEmpty()) {
             for (UUID nurseId : req.nurseIds()) {
@@ -114,7 +139,22 @@ public class DepartmentService implements DepartmentServiceInterface {
             d.setName(req.name());
         }
         if (req.status() != null) d.setStatus(req.status());
-        if (req.departmentType() != null) d.setDepartmentType(req.departmentType());
+        if (req.departmentType() != null) {
+            d.setDepartmentType(req.departmentType().normalized());
+            if (req.departmentType().normalized() != DepartmentType.EXAMINATION) {
+                d.setSpecialization(null);
+            }
+        }
+        if (d.getDepartmentType() == DepartmentType.EXAMINATION && req.specializationId() != null) {
+            d.setSpecialization(specializationRepo.findById(req.specializationId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Chuyen khoa khong ton tai: " + req.specializationId())));
+        }
+        if (req.capabilityIds() != null) {
+            d.setCapabilities(new java.util.HashSet<>(capabilityRepo.findAllById(req.capabilityIds())));
+            if (d.getCapabilities().size() != req.capabilityIds().stream().distinct().count()) {
+                throw new ResourceNotFoundException("Co nang luc thuc hien khong ton tai");
+            }
+        }
         if (req.description() != null) d.setDescription(req.description());
         if (req.headDoctorId() != null) {
             // Kiem tra bac si moi chua duoc gianh cho phong khac (tru phong hien tai)
@@ -149,6 +189,7 @@ public class DepartmentService implements DepartmentServiceInterface {
             }
         }
         
+        validateHeadDoctorCapabilities(d);
         Department saved = repo.save(d);
         // Ensure nurses collection is up to date for the response mapping
         return DepartmentResponse.from(repo.findById(saved.getDepartmentId()).get());
@@ -160,6 +201,15 @@ public class DepartmentService implements DepartmentServiceInterface {
             d.setStatus(status);
         }
         return DepartmentResponse.from(repo.save(d));
+    }
+
+    private void validateHeadDoctorCapabilities(Department department) {
+        if (department.getHeadDoctor() == null || department.getCapabilities() == null
+                || department.getCapabilities().isEmpty()) return;
+        boolean matches = department.getCapabilities().stream().anyMatch(capability ->
+                staffCapabilityRepo.existsByStaff_StaffIdAndCapability_CapabilityIdAndStatus(
+                        department.getHeadDoctor().getStaffId(), capability.getCapabilityId(), StaffCapabilityStatus.ACTIVE));
+        if (!matches) throw new BadRequestException("Bác sĩ phụ trách chưa có kỹ thuật được cấp phép đang hiệu lực phù hợp với phòng");
     }
 
     public void delete(UUID id) {

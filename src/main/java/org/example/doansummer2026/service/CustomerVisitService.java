@@ -6,6 +6,7 @@ import org.example.doansummer2026.dto.customerVisit.CustomerVisitCreateRequest;
 import org.example.doansummer2026.dto.customerVisit.CustomerVisitResponse;
 import org.example.doansummer2026.dto.customerVisit.CustomerVisitUpdateRequest;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
+import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.model.Appointment;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.MedicalService;
@@ -73,6 +74,16 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
                     .build();
             customer = profileRepo.save(customer);
         }
+        customer = profileRepo.findByIdForUpdate(customer.getProfileId())
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay ho so benh nhan"));
+        UUID customerIdForCheck = customer.getProfileId();
+        repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
+                customerIdForCheck, List.of(VisitStatus.CHECKED_IN, VisitStatus.IN_PROGRESS))
+                .ifPresent(active -> {
+                    String code = "VIS-" + active.getVisitId().toString().substring(0, 8).toUpperCase();
+                    throw new ConflictException("Benh nhan dang co luot kham " + code
+                            + " chua hoan thanh. Khong the tao them luot kham dong thoi");
+                });
         Appointment appointment = null;
         if (req.appointmentId() != null) {
             appointment = appointmentRepo.findById(req.appointmentId())

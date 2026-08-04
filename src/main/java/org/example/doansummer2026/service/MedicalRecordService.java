@@ -300,11 +300,11 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return MedicalRecordResponse.from(findById(id), true);
     }
 
-    public MedicalRecordResponse create(MedicalRecordCreateRequest req) {
+    public synchronized MedicalRecordResponse create(MedicalRecordCreateRequest req) {
         CustomerVisit visit = visitRepo.findById(req.visitId())
                 .orElseThrow(() -> new ResourceNotFoundException("Luot kham khong ton tai: " + req.visitId()));
-        if (repo.findByVisit_VisitId(req.visitId()).isPresent()) {
-            throw new ConflictException("Luot kham da co ho so benh an");
+        if (repo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(req.visitId()).isPresent()) {
+            throw new ConflictException("Luot kham da co ho so benh an doc lap");
         }
         StaffInfo doctor = staffRepo.findById(req.doctorId())
                 .orElseThrow(() -> new ResourceNotFoundException("Bac si khong ton tai: " + req.doctorId()));
@@ -342,6 +342,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
     public MedicalRecordResponse update(UUID id, MedicalRecordUpdateRequest req) {
         MedicalRecord r = findById(id);
+        validateVersion(r, req);
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
             throw new BadRequestException("Ho so da dong, khong the sua");
         }
@@ -355,12 +356,51 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
      */
     public MedicalRecordResponse saveDraft(UUID id, MedicalRecordUpdateRequest req) {
         MedicalRecord r = findById(id);
+        validateVersion(r, req);
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
             throw new BadRequestException("Ho so da dong, khong the luu nham");
         }
-        updateMedicalRecordFields(r, req);
+        boolean nurse = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication()
+                .getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_NURSE"));
+        var actor = currentStaff().orElse(null);
+        if (nurse && actor != null && r.getQueueTicket() != null
+                && (actor.getDepartment() == null || !actor.getDepartment().getDepartmentId().equals(r.getQueueTicket().getDepartment().getDepartmentId())))
+            throw new BadRequestException("Y ta chi duoc cap nhat ho so tai phong duoc phan cong");
+        if (!nurse && actor != null && actor.getSystemRole().isDoctor()
+                && r.getDoctor() != null && !r.getDoctor().getStaffId().equals(actor.getStaffId()))
+            throw new BadRequestException("Ca kham nay thuoc bac si phu trach khac");
+        if (nurse) {
+            updateNursingDraftFields(r, req);
+            if (actor != null) { r.setNursingUpdatedBy(actor); r.setNursingUpdatedAt(LocalDateTime.now()); }
+        } else updateMedicalRecordFields(r, req);
         r.setStatus(MedicalRecordStatus.DRAFT);
         return MedicalRecordResponse.from(repo.save(r), true);
+    }
+
+    private void updateNursingDraftFields(MedicalRecord r, MedicalRecordUpdateRequest req) {
+        if (req.chiefComplaint() != null) r.setChiefComplaint(req.chiefComplaint());
+        if (req.clinicalFindings() != null) r.setClinicalFindings(req.clinicalFindings());
+        if (r.getVitalSigns() == null && hasVitalSignsUpdate(req)) {
+            r.setVitalSigns(VitalSigns.builder().medicalRecord(r).bloodPressure(req.bloodPressure())
+                    .heartRate(req.heartRate()).temperature(req.temperature()).weight(req.weight()).height(req.height()).build());
+        } else if (r.getVitalSigns() != null) {
+            var v = r.getVitalSigns();
+            if (req.bloodPressure()!=null) v.setBloodPressure(req.bloodPressure());
+            if (req.heartRate()!=null) v.setHeartRate(req.heartRate());
+            if (req.temperature()!=null) v.setTemperature(req.temperature());
+            if (req.weight()!=null) v.setWeight(req.weight());
+            if (req.height()!=null) v.setHeight(req.height());
+        }
+    }
+
+    private void validateVersion(MedicalRecord record, MedicalRecordUpdateRequest req) {
+        if (req != null && req.version() != null && !java.util.Objects.equals(req.version(), record.getVersion()))
+            throw new ConflictException("Ho so da duoc nhan vien khac cap nhat. Vui long tai lai du lieu truoc khi luu");
+    }
+
+    private java.util.Optional<StaffInfo> currentStaff() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return auth == null ? java.util.Optional.empty() : staffRepo.findFirstByProfile_Account_Username(auth.getName());
     }
 
     private void updateMedicalRecordFields(MedicalRecord r, MedicalRecordUpdateRequest req) {
@@ -449,6 +489,11 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
     public MedicalRecordResponse complete(UUID id, MedicalRecordUpdateRequest req) {
         MedicalRecord r = findById(id);
+        validateVersion(r, req);
+        var actor = currentStaff().orElse(null);
+        if (actor != null && actor.getSystemRole().isDoctor() && r.getDoctor()!=null
+                && !r.getDoctor().getStaffId().equals(actor.getStaffId()))
+            throw new BadRequestException("Chi bac si phu trach moi duoc hoan thanh ca kham");
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
             throw new BadRequestException("Ho so da duoc dong truoc do");
         }
@@ -467,6 +512,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
         r.setStatus(MedicalRecordStatus.COMPLETED);
         r.setCompletedAt(LocalDateTime.now());
+        if (actor != null) { r.setDoctorConfirmedBy(actor); r.setDoctorConfirmedAt(LocalDateTime.now()); }
         MedicalRecord saved = repo.save(r);
 
         // Tu dong cap nhat queue ticket sang DONE
@@ -482,7 +528,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                     });
         }
 
-        var fetched = repo.getWithDetailsByVisitId(visit.getVisitId()).orElse(saved);
+        var fetched = repo.findById(saved.getRecordId()).orElse(saved);
         return MedicalRecordResponse.from(fetched, true);
     }
 
@@ -513,8 +559,12 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         String lastCode = repo.findTopByRecordCodeStartingWithOrderByRecordCodeDesc(prefix);
         int nextNum = 1;
         if (lastCode != null) {
-            String numStr = lastCode.substring(prefix.length());
-            nextNum = Integer.parseInt(numStr) + 1;
+            try {
+                String numStr = lastCode.substring(prefix.length());
+                nextNum = Math.addExact(Integer.parseInt(numStr), 1);
+            } catch (RuntimeException ex) {
+                throw new IllegalStateException("Ma ho so gan nhat khong dung dinh dang: " + lastCode, ex);
+            }
         }
 
         return prefix + String.format("%05d", nextNum);
@@ -564,7 +614,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
      */
     @Transactional(readOnly = true)
     public org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse getVisitDetail(UUID visitId, UUID profileId) {
-        org.example.doansummer2026.model.MedicalRecord record = repo.getWithDetailsByVisitId(visitId)
+        org.example.doansummer2026.model.MedicalRecord record = repo.findFirstByVisit_VisitIdOrderByCreatedAtDesc(visitId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ho so khong ton tai: " + visitId));
 
         // Kiem tra quyen so huu
@@ -573,7 +623,8 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             throw new ResourceNotFoundException("Khong tim thay ho so");
         }
 
-        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(record);
+        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
+                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(record.getVisit().getVisitId()));
     }
 
     /**
@@ -590,7 +641,8 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             throw new ResourceNotFoundException("Khong tim thay ho so");
         }
 
-        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(record);
+        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
+                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(record.getVisit().getVisitId()));
     }
 
     /**
@@ -607,6 +659,48 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         r.setRatingScore(ratingScore);
         r.setRatedAt(LocalDateTime.now());
         return MedicalRecordResponse.from(repo.save(r), true);
+    }
+
+    public org.example.doansummer2026.dto.medicalRecord.FeedbackResponse submitFeedback(
+            UUID id, UUID profileId, org.example.doansummer2026.dto.medicalRecord.FeedbackRequest req) {
+        MedicalRecord r = findById(id);
+        if (r.getVisit() == null || r.getVisit().getCustomer() == null
+                || !r.getVisit().getCustomer().getProfileId().equals(profileId)) {
+            throw new ResourceNotFoundException("Khong tim thay ho so");
+        }
+        if (r.getStatus() != MedicalRecordStatus.COMPLETED) throw new BadRequestException("Chi danh gia dich vu da hoan thanh");
+        r.setRatingScore(req.overallRating());
+        r.setDoctorRating(null); r.setWaitingRating(null); r.setStaffRating(null);
+        r.setRatingComment(req.comment()); r.setContactRequested(false);
+        r.setRatedAt(LocalDateTime.now()); r.setFeedbackStatus("NEW");
+        r.getFeedbackTargets().clear();
+        return org.example.doansummer2026.dto.medicalRecord.FeedbackResponse.from(repo.save(r));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse> listFeedbacks(UUID doctorId, Pageable pageable) {
+        var page = doctorId == null ? repo.findByRatingScoreIsNotNull(pageable)
+                : repo.findFeedbacksForStaff(doctorId, pageable);
+        return PageResponse.from(page, org.example.doansummer2026.dto.medicalRecord.FeedbackResponse::from);
+    }
+
+    public org.example.doansummer2026.dto.medicalRecord.FeedbackResponse respondFeedback(
+            UUID id, UUID staffId, String response, String internalNote, String status) {
+        MedicalRecord r = findById(id);
+        if (response != null) { r.setManagerResponse(response); r.setRespondedAt(LocalDateTime.now());
+            if (staffId != null) r.setRespondedBy(staffRepo.findById(staffId).orElse(null)); }
+        if (internalNote != null) r.setInternalNote(internalNote);
+        r.setFeedbackStatus(status != null ? status : (response != null ? "RESPONDED" : "IN_REVIEW"));
+        return org.example.doansummer2026.dto.medicalRecord.FeedbackResponse.from(repo.save(r));
+    }
+
+    public org.example.doansummer2026.dto.medicalRecord.FeedbackResponse explainFeedback(UUID id, UUID doctorId, String explanation) {
+        MedicalRecord r = findById(id);
+        boolean related = r.getDoctor() != null && r.getDoctor().getStaffId().equals(doctorId)
+                || r.getFeedbackTargets().stream().anyMatch(t -> t.getStaff() != null && t.getStaff().getStaffId().equals(doctorId));
+        if (!related) throw new ResourceNotFoundException("Danh gia khong thuoc bac si nay");
+        r.setDoctorExplanation(explanation); r.setFeedbackStatus("WAITING_INTERNAL");
+        return org.example.doansummer2026.dto.medicalRecord.FeedbackResponse.from(repo.save(r));
     }
 
     /** Lấy danh sách yêu cầu tái khám (follow-up) chưa đặt lịch cho lễ tân */
@@ -658,6 +752,3 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return org.example.doansummer2026.dto.medicalRecord.FollowUpResponse.from(repo.save(record));
     }
 }
-
-
-

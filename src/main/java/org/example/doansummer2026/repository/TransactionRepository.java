@@ -17,6 +17,10 @@ import java.util.UUID;
 @Repository
 public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Transaction t WHERE t.transactionId = :id")
+    Optional<Transaction> findByIdForUpdate(@Param("id") UUID id);
+
     Optional<Transaction> findByTransactionCode(String transactionCode);
 
     boolean existsByTransactionCode(String transactionCode);
@@ -45,6 +49,5 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
                               @Param("to") LocalDateTime to,
                               Pageable pageable);
 }
-
 
 

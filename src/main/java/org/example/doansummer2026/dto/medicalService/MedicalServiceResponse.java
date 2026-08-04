@@ -3,6 +3,7 @@ package org.example.doansummer2026.dto.medicalService;
 import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.enums.ServiceStatus;
 import org.example.doansummer2026.enums.DepartmentType;
+import org.example.doansummer2026.enums.Gender;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -20,10 +21,21 @@ public record MedicalServiceResponse(
         BigDecimal price,
         ServiceStatus status,               // DRAFT, ACTIVE, INACTIVE
         Boolean isPointOfCare,
+        Integer durationMinutes,
+        Integer workflowPriority,
+        Boolean requiresDoctorOrder,
+        Boolean requiresReturnToDoctor,
+        Integer resultWaitMinutes,
+        Boolean allowCustomerBooking,
+        Integer minimumAge,
+        Integer maximumAge,
+        Gender allowedGender,
         UUID departmentId,
         String departmentName,
         UUID requiredSpecializationId,
-        String requiredSpecializationName
+        String requiredSpecializationName,
+        UUID requiredCapabilityId,
+        String requiredCapabilityName
 ) {
     public static MedicalServiceResponse from(MedicalService s) {
 
@@ -37,18 +49,25 @@ public record MedicalServiceResponse(
                 s.getServiceCode(),
                 s.getName(),
                 s.getDescription(),
-                s.getDepartmentType(),
+                s.getDepartmentType() != null ? s.getDepartmentType().normalized() : null,
                 s.getPrice(),
                 s.getStatus(),
                 s.getIsPointOfCare(),
+                s.getDurationMinutes() != null ? s.getDurationMinutes() : 15,
+                s.getWorkflowPriority() != null ? s.getWorkflowPriority() : 1,
+                Boolean.TRUE.equals(s.getRequiresDoctorOrder()),
+                Boolean.TRUE.equals(s.getRequiresReturnToDoctor()),
+                s.getResultWaitMinutes() != null ? s.getResultWaitMinutes() : 0,
+                s.getAllowCustomerBooking() == null || s.getAllowCustomerBooking(),
+                s.getMinimumAge(),
+                s.getMaximumAge(),
+                s.getAllowedGender(),
                 deptId,
                 deptName,
                 specId,
-                specName
+                specName,
+                s.getRequiredCapability() != null ? s.getRequiredCapability().getCapabilityId() : null,
+                s.getRequiredCapability() != null ? s.getRequiredCapability().getName() : null
         );
     }
 }
-
-
-
-

@@ -15,7 +15,7 @@ import java.util.UUID;
 /** Service interface for MedicalService management. */
 public interface MedicalServiceServiceInterface {
     PageResponse<MedicalServiceResponse> search(String keyword, DepartmentType departmentType,
-                                                 ServiceStatus status, Pageable pageable);
+                                                 ServiceStatus status, UUID specializationId, Pageable pageable);
 
     /** API cho khach hang/benh nhan xem dich vu dang hoat dong. */
     PageResponse<MedicalServiceResponse> listAvailable(String keyword, DepartmentType departmentType,
@@ -30,6 +30,5 @@ public interface MedicalServiceServiceInterface {
     MedicalServiceResponse publish(UUID id);
     MedicalService findById(UUID id);
 }
-
 
 

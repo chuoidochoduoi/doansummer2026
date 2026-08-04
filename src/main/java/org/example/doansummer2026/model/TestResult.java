@@ -69,7 +69,14 @@ public class TestResult extends BaseEntity {
     @Column(name = "performed_at", nullable = false)
     @Builder.Default
     private LocalDateTime performedAt = LocalDateTime.now();
-}
 
+    /** Bac si chuyen mon ky xac nhan ket qua sau khi nhan vien luu nhap. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "verified_by")
+    private StaffInfo verifiedBy;
+
+    @Column(name = "verified_at")
+    private LocalDateTime verifiedAt;
+}
 
 

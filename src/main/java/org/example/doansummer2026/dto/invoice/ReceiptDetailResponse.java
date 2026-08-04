@@ -42,7 +42,11 @@ public record ReceiptDetailResponse(
         }
 
         // Bỏ trường doctor vì chưa có trong model Appointment
-    	String doctor = null;
+        String doctor = null;
+        if (invoice.getMedicalRecord() != null && invoice.getMedicalRecord().getDoctor() != null
+                && invoice.getMedicalRecord().getDoctor().getProfile() != null) {
+            doctor = invoice.getMedicalRecord().getDoctor().getProfile().getFullName();
+        }
 
         BigDecimal bhytCoverage = invoice.getItems().stream()
                 .map(item -> item.getBhytFund() != null ? item.getBhytFund() : BigDecimal.ZERO)

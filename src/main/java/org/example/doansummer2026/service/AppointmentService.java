@@ -18,12 +18,14 @@ import org.example.doansummer2026.enums.Role;
 import org.example.doansummer2026.enums.VisitStatus;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
+import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.model.Appointment;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.Profile;
 import org.example.doansummer2026.model.Insurance;
+import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.repository.AccountRepository;
 import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
@@ -31,6 +33,7 @@ import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
 import org.example.doansummer2026.repository.InsuranceRepository;
 import org.example.doansummer2026.repository.InsuranceRuleRepository;
+import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.service.interfaces.AppointmentServiceInterface;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -40,6 +43,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.time.Period;
+import org.example.doansummer2026.enums.Gender;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -57,6 +62,7 @@ public class AppointmentService implements AppointmentServiceInterface {
     private final InvoiceService invoiceService;
     private final InsuranceRepository insuranceRepository;
     private final InsuranceRuleRepository insuranceRuleRepository;
+    private final StaffInfoRepository staffRepo;
 
     @Transactional(readOnly = true)
     public PageResponse<AppointmentResponse> search(UUID customerId,
@@ -104,6 +110,9 @@ public class AppointmentService implements AppointmentServiceInterface {
             for (UUID serviceId : req.serviceIds()) {
                 MedicalService service = serviceRepo.findById(serviceId)
                         .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
+                Integer age = customer.getDateOfBirth() != null
+                        ? Period.between(customer.getDateOfBirth(), req.scheduledAt().toLocalDate()).getYears() : null;
+                validateServiceEligibility(service, age, customer.getGender());
                 services.add(service);
             }
             a.setServices(services);
@@ -112,6 +121,9 @@ public class AppointmentService implements AppointmentServiceInterface {
     }
 
     public AppointmentResponse createForGuest(AppointmentGuestCreateRequest req) {
+        if (req.guestGender() == Gender.OTHER) {
+            throw new BadRequestException("He thong chi ho tro gioi tinh MALE hoac FEMALE");
+        }
         Appointment a = Appointment.builder()
                 .scheduledAt(req.scheduledAt())
                 .isGuest(true)
@@ -128,6 +140,7 @@ public class AppointmentService implements AppointmentServiceInterface {
             for (UUID serviceId : req.serviceIds()) {
                 MedicalService service = serviceRepo.findById(serviceId)
                         .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
+                validateServiceEligibility(service, req.guestAge(), req.guestGender());
                 services.add(service);
             }
             a.setServices(services);
@@ -168,18 +181,47 @@ public class AppointmentService implements AppointmentServiceInterface {
         repo.deleteById(id);
     }
 
+    private void validateServiceEligibility(MedicalService service, Integer age, Gender gender) {
+        if (age == null && (service.getMinimumAge() != null || service.getMaximumAge() != null)) {
+            throw new BadRequestException("Vui long cap nhat ngay sinh truoc khi dat dich vu: " + service.getName());
+        }
+        if (age != null && service.getMinimumAge() != null && age < service.getMinimumAge()) {
+            throw new BadRequestException("Dich vu " + service.getName() + " chi ap dung tu " + service.getMinimumAge() + " tuoi");
+        }
+        if (age != null && service.getMaximumAge() != null && age > service.getMaximumAge()) {
+            throw new BadRequestException("Dich vu " + service.getName() + " chi ap dung den " + service.getMaximumAge() + " tuoi");
+        }
+        if (service.getAllowedGender() != null) {
+            if (gender == null) {
+                throw new BadRequestException("Vui long cap nhat gioi tinh truoc khi dat dich vu: " + service.getName());
+            }
+            if (service.getAllowedGender() != gender) {
+                throw new BadRequestException("Dich vu " + service.getName() + " khong phu hop voi gioi tinh trong ho so");
+            }
+        }
+    }
+
     /**
      * Check-in tu appointment: tao CustomerVisit + Invoice cho dich vu dau tien.
      * - QueueTicket se duoc tao khi Invoice duoc thanh toan (trong InvoiceService).
      * - serviceIds (optional): Cho phep thay doi dich vu khi check-in.
      */
     public AppointmentCheckInResponse checkIn(AppointmentCheckInRequest req) {
-        Appointment a = findById(req.appointmentId());
+        Appointment a = repo.findByIdForUpdate(req.appointmentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Lich hen khong ton tai: " + req.appointmentId()));
 
         // Kiem tra da check-in chua
         if (a.getStatus() == AppointmentStatus.CHECKED_IN) {
-            throw new BadRequestException("Appointment da duoc check-in: " + req.appointmentId());
+            throw new ConflictException("Lich hen da duoc nhan vien khac check-in");
         }
+        if (a.getStatus() != AppointmentStatus.PENDING) {
+            throw new BadRequestException("Chi co the check-in lich hen dang cho tiep nhan");
+        }
+        if (req.issuedById() == null) {
+            throw new BadRequestException("Khong tim thay nhan vien le tan dang thuc hien check-in");
+        }
+        StaffInfo checkedInBy = staffRepo.findById(req.issuedById())
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nhan vien thuc hien check-in"));
 
         // Thay doi dich vu neu duoc cung cap, hoac lay services hien co
         Set<MedicalService> services;
@@ -210,26 +252,29 @@ public class AppointmentService implements AppointmentServiceInterface {
             insuranceRules = insuranceRuleRepository.findByInsurance_InsuranceId(req.insuranceId());
         }
 
-        // Tao hoac lay CustomerVisit hien co
+        // Khoa ho so benh nhan trong transaction de hai nhan vien khong the
+        // dong thoi tao hai luot kham dang hoat dong.
+        Profile visitCustomer;
+        if (Boolean.TRUE.equals(a.getIsGuest())) {
+            visitCustomer = profileRepo.findFirstByPhone(a.getGuestPhone()).orElseGet(() ->
+                    profileRepo.save(Profile.builder()
+                            .fullName(a.getGuestFullName()).phone(a.getGuestPhone())
+                            .address(a.getGuestAddress()).gender(a.getGuestGender()).build()));
+        } else {
+            visitCustomer = a.getCustomer();
+        }
+        Profile lockedCustomer = profileRepo.findByIdForUpdate(visitCustomer.getProfileId())
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay ho so benh nhan"));
+        ensureNoActiveVisit(lockedCustomer.getProfileId());
+
         CustomerVisit visit = visitRepo.findByAppointment_AppointmentId(a.getAppointmentId())
-            .orElseGet(() -> {
-                CustomerVisit newVisit;
-                if (Boolean.TRUE.equals(a.getIsGuest())) {
-                    newVisit = CustomerVisit.builder()
-                            .appointment(a)
-                            .checkInTime(LocalDateTime.now())
-                            .status(VisitStatus.CHECKED_IN)
-                            .build();
-                } else {
-                    newVisit = CustomerVisit.builder()
-                            .customer(a.getCustomer())
-                            .appointment(a)
-                            .checkInTime(LocalDateTime.now())
-                            .status(VisitStatus.CHECKED_IN)
-                            .build();
-                }
-                return visitRepo.save(newVisit);
-            });
+                .orElseGet(() -> visitRepo.save(CustomerVisit.builder()
+                        .customer(lockedCustomer)
+                        .appointment(a)
+                        .checkInTime(LocalDateTime.now())
+                        .checkedInBy(checkedInBy)
+                        .status(VisitStatus.CHECKED_IN)
+                        .build()));
         CustomerVisit savedVisit = visit;
 
         final List<org.example.doansummer2026.model.InsuranceRule> finalRules = insuranceRules;
@@ -311,7 +356,15 @@ public class AppointmentService implements AppointmentServiceInterface {
      * - serviceIds (optional): Neu null hoac rong se tao invoice rong.
      */
     public GuestCheckInResponse guestCheckIn(GuestCheckInRequest req) {
+        Profile guestProfile = profileRepo.findFirstByPhone(req.guestPhone()).orElseGet(() ->
+                profileRepo.save(Profile.builder()
+                        .fullName(req.guestFullName()).phone(req.guestPhone()).build()));
+        guestProfile = profileRepo.findByIdForUpdate(guestProfile.getProfileId())
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay ho so benh nhan"));
+        ensureNoActiveVisit(guestProfile.getProfileId());
         CustomerVisit visit = CustomerVisit.builder()
+                .customer(guestProfile)
+                .checkedInBy(req.issuedById()!=null?staffRepo.findById(req.issuedById()).orElse(null):null)
                 .checkInTime(LocalDateTime.now())
                 .status(VisitStatus.CHECKED_IN)
                 .build();
@@ -319,7 +372,7 @@ public class AppointmentService implements AppointmentServiceInterface {
 
         // Tao invoice rong cho guest check-in
         var invoiceResponse = invoiceService.create(new org.example.doansummer2026.dto.invoice.InvoiceCreateRequest(
-                null,
+                guestProfile.getProfileId(),
                 savedVisit.getVisitId(),
                 null,
                 null,
@@ -331,6 +384,16 @@ public class AppointmentService implements AppointmentServiceInterface {
         ));
 
         return GuestCheckInResponse.from(savedVisit, invoiceResponse.invoiceId(), req.guestFullName(), req.guestPhone());
+    }
+
+    private void ensureNoActiveVisit(UUID profileId) {
+        visitRepo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
+                profileId, List.of(VisitStatus.CHECKED_IN, VisitStatus.IN_PROGRESS))
+                .ifPresent(active -> {
+                    String code = "VIS-" + active.getVisitId().toString().substring(0, 8).toUpperCase();
+                    throw new ConflictException("Benh nhan dang co luot kham " + code
+                            + " chua hoan thanh. Vui long hoan thanh hoac huy luot hien tai truoc khi check-in lich moi");
+                });
     }
 
     @Transactional(readOnly = true)
@@ -362,7 +425,7 @@ public class AppointmentService implements AppointmentServiceInterface {
         Profile customer = profileRepo.findFirstByAccount_AccountId(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Benh nhan khong ton tai"));
 
-        Appointment a = repo.findById(appointmentId)
+        Appointment a = repo.findByIdForUpdate(appointmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Lich hen khong ton tai"));
 
         if (a.getCustomer() == null || !a.getCustomer().getProfileId().equals(customer.getProfileId())) {
@@ -391,7 +454,7 @@ public class AppointmentService implements AppointmentServiceInterface {
         Profile customer = profileRepo.findFirstByAccount_AccountId(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Benh nhan khong ton tai"));
 
-        Appointment appointment = repo.findById(appointmentId)
+        Appointment appointment = repo.findByIdForUpdate(appointmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Lich hen khong ton tai"));
 
         if (appointment.getCustomer() == null || !appointment.getCustomer().getProfileId().equals(customer.getProfileId())) {
@@ -406,6 +469,3 @@ public class AppointmentService implements AppointmentServiceInterface {
         repo.save(appointment);
     }
 }
-
-
-

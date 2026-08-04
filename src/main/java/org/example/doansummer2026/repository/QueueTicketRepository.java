@@ -19,8 +19,6 @@ import java.util.UUID;
 @Repository
 public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>, JpaSpecificationExecutor<QueueTicket> {
 
-    Optional<QueueTicket> findByVisit_VisitId(UUID visitId);
-
     /**
      * Tim queue ticket theo visit + department (1 visit co the co nhieu ticket cho cac khoa khac nhau).
      * Dung khi biet ro department can cap nhat (vi du: performingDepartment cua TestRequest).
@@ -32,6 +30,8 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
      * Dung khi can duyet de tim ticket dung (vi du: ticket dang IN_PROGRESS).
      */
     List<QueueTicket> findAllByVisit_VisitId(UUID visitId);
+    Optional<QueueTicket> findByVisit_VisitIdAndService_ServiceId(UUID visitId, UUID serviceId);
+    Optional<QueueTicket> findTopByVisit_VisitIdAndStatusOrderByCreatedAtAsc(UUID visitId, QueueStatus status);
 
     @Query("SELECT MAX(q.queueNumber) FROM QueueTicket q WHERE q.department.departmentId = :departmentId AND q.workDate = :workDate")
     Optional<Integer> findMaxQueueNumberForDay(@Param("departmentId") UUID departmentId,
@@ -123,6 +123,3 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
         return findAll(spec, pageable);
     }
 }
-
-
-

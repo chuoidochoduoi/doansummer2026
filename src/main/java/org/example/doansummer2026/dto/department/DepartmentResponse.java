@@ -14,6 +14,9 @@ public record DepartmentResponse(
         String name,
         DepartmentStatus status,
         DepartmentType departmentType,
+        UUID specializationId,
+        String specializationName,
+        List<CapabilityInfo> capabilities,
         String description,
         HeadDoctor headDoctor,
         List<NurseInfo> nurses
@@ -27,7 +30,11 @@ public record DepartmentResponse(
                 d.getRoomCode(),
                 d.getName(),
                 d.getStatus(),
-                d.getDepartmentType(),
+                d.getDepartmentType() != null ? d.getDepartmentType().normalized() : null,
+                d.getSpecialization() != null ? d.getSpecialization().getSpecializationId() : null,
+                d.getSpecialization() != null ? d.getSpecialization().getName() : null,
+                d.getCapabilities() == null ? List.of() : d.getCapabilities().stream()
+                        .map(c -> new CapabilityInfo(c.getCapabilityId(), c.getCode(), c.getName())).toList(),
                 d.getDescription(),
                 hd,
                 d.getNurses() != null ? d.getNurses().stream()
@@ -38,7 +45,5 @@ public record DepartmentResponse(
 
     public record HeadDoctor(UUID staffId, String fullName) {}
     public record NurseInfo(UUID staffId, String fullName) {}
+    public record CapabilityInfo(UUID capabilityId, String code, String name) {}
 }
-
-
-

@@ -123,6 +123,13 @@ public class ProfileService implements ProfileServiceInterface {
         if (req.gender() != null) p.setGender(parseGender(req.gender()));
         if (req.bloodType() != null) p.setBloodType(req.bloodType());
         if (req.address() != null) p.setAddress(req.address());
+        if (req.insuranceId() != null) p.setInsuranceId(req.insuranceId());
+        if (req.height() != null) p.setHeight(req.height());
+        if (req.weight() != null) p.setWeight(req.weight());
+        if (req.allergies() != null) {
+            p.setAllergies(req.allergies().stream().map(String::trim)
+                    .filter(value -> !value.isBlank()).distinct().collect(java.util.stream.Collectors.joining("\n")));
+        }
         if (req.phone() != null || req.email() != null) {
             String newPhone = req.phone() != null ? req.phone() : p.getPhone();
             String newEmail = req.email() != null ? req.email() : p.getEmail();
@@ -171,12 +178,12 @@ public class ProfileService implements ProfileServiceInterface {
     private Gender parseGender(String raw) {
         if (raw == null || raw.isBlank()) return null;
         try {
-            return Gender.valueOf(raw.trim().toUpperCase());
+            Gender gender = Gender.valueOf(raw.trim().toUpperCase());
+            if (gender == Gender.OTHER) throw new IllegalArgumentException();
+            return gender;
         } catch (IllegalArgumentException ex) {
             throw new ConflictException("Gender khong hop le: " + raw);
         }
     }
 }
-
-
 

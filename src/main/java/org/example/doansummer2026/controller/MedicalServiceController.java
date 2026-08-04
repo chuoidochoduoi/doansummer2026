@@ -42,8 +42,9 @@ public class MedicalServiceController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) DepartmentType departmentType,
             @RequestParam(required = false) ServiceStatus status,
+            @RequestParam(required = false) UUID specializationId,
             Pageable pageable) {
-        return RestResponses.ok(service.search(keyword, departmentType, status, pageable));
+        return RestResponses.ok(service.search(keyword, departmentType, status, specializationId, pageable));
     }
 
     /**
@@ -110,7 +111,6 @@ public class MedicalServiceController {
         return RestResponses.ok(service.publish(id));
     }
 }
-
 
 
 

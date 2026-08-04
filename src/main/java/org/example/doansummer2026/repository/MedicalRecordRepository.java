@@ -16,17 +16,28 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
 
 @Repository
 public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UUID>, JpaSpecificationExecutor<MedicalRecord> {
 
-    Optional<MedicalRecord> findByVisit_VisitId(UUID visitId);
-
+    List<MedicalRecord> findAllByVisit_VisitIdOrderByCreatedAtAsc(UUID visitId);
     @EntityGraph("MedicalRecord.withDetails")
-    @Query("SELECT DISTINCT m FROM MedicalRecord m WHERE m.visit.visitId = :visitId")
-    Optional<MedicalRecord> getWithDetailsByVisitId(@Param("visitId") UUID visitId);
+    Optional<MedicalRecord> findFirstByVisit_VisitIdOrderByCreatedAtDesc(UUID visitId);
+    Optional<MedicalRecord> findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(UUID visitId);
+    Page<MedicalRecord> findByRatingScoreIsNotNull(Pageable pageable);
+    @Query("SELECT DISTINCT m FROM MedicalRecord m LEFT JOIN m.feedbackTargets ft WHERE m.ratingScore IS NOT NULL AND (m.doctor.staffId = :doctorId OR ft.staff.staffId = :doctorId)")
+    Page<MedicalRecord> findFeedbacksForStaff(@Param("doctorId") UUID doctorId, Pageable pageable);
+    Optional<MedicalRecord> findByQueueTicket_TicketId(UUID ticketId);
 
-    @Query("SELECT m.recordCode FROM MedicalRecord m WHERE m.recordCode LIKE :prefix ORDER BY m.recordCode DESC LIMIT 1")
+
+    @Query(value = """
+            SELECT record_code
+            FROM medical_record
+            WHERE record_code ~ ('^' || :prefix || '[0-9]+$')
+            ORDER BY CAST(SUBSTRING(record_code FROM CHAR_LENGTH(:prefix) + 1) AS BIGINT) DESC
+            LIMIT 1
+            """, nativeQuery = true)
     String findTopByRecordCodeStartingWithOrderByRecordCodeDesc(@Param("prefix") String prefix);
 
     @Query("SELECT m FROM MedicalRecord m WHERE (m.followUpDate IS NOT NULL OR (m.followUpNote IS NOT NULL AND TRIM(m.followUpNote) <> '')) AND m.followUpAppointment IS NULL ORDER BY m.followUpDate ASC")

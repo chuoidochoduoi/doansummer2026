@@ -34,8 +34,7 @@ public record StaffScheduleItemResponse(
 
     private static String getRoleCode(org.example.doansummer2026.enums.SystemRole systemRole) {
         return switch (systemRole) {
-            case GENERAL_DOCTOR -> "BS";
-            case SPECIALIST_DOCTOR -> "BS";
+            case DOCTOR, GENERAL_DOCTOR, SPECIALIST_DOCTOR -> "BS";
             case NURSE -> "YT";
             case RECEPTIONIST -> "LT";
             case CASHIER -> "TN";
