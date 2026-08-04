@@ -60,6 +60,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     private final Icd10CodeRepository icd10Repo;
     private final TestRequestService testRequestService;
     private final PatientJourneyService patientJourneyService;
+    private final MedicalRecordService medicalRecordService;
 
     @Autowired
     @Lazy
@@ -274,6 +275,64 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         updateDepartmentStatus(q.getDepartment().getDepartmentId());
 
         return MedicalRecordResponse.from(record, true);
+    }
+
+    // --- Doctor examination facade (1:1 with /api/doctor/examinations/{id}) ---
+
+    /**
+     * Load the examination (medical record + nested details) the doctor is editing.
+     * Accepts either a queue-ticket id or a medical-record id.
+     */
+    @Transactional(readOnly = true)
+    public MedicalRecordResponse loadExamination(UUID id) {
+        MedicalRecord record = resolveMedicalRecord(id);
+        return MedicalRecordResponse.from(record, true);
+    }
+
+    /**
+     * Save a draft of the examination. Delegates to MedicalRecordService.saveDraft
+     * (ownership + optimistic-lock checks apply). Accepts a queue-ticket id or record id.
+     */
+    @Transactional
+    public MedicalRecordResponse saveExaminationDraft(UUID id, MedicalRecordUpdateRequest req) {
+        MedicalRecord record = resolveMedicalRecord(id);
+        return medicalRecordService.saveDraft(record.getRecordId(), req);
+    }
+
+    /**
+     * Complete the examination. Resolves the id to the queue ticket and runs the canonical
+     * complete flow already wired at /api/v1/queue-tickets/{id}/complete: ordered test requests
+     * are billed via an invoice and the queue moves to WAITING_FOR_TEST; otherwise the record
+     * is closed (COMPLETED) and the queue moves to DONE.
+     */
+    @Transactional
+    public MedicalRecordResponse completeExamination(UUID id, MedicalRecordUpdateRequest req) {
+        UUID ticketId = resolveTicketId(id);
+        return completeAndReturnRecord(ticketId, req);
+    }
+
+    /** Resolve an id that may be a queue-ticket id or a medical-record id to a medical record. */
+    private MedicalRecord resolveMedicalRecord(UUID id) {
+        MedicalRecord record = recordRepo.findById(id).orElse(null);
+        if (record != null) return record;
+        QueueTicket ticket = repo.findById(id).orElse(null);
+        if (ticket != null) {
+            return recordRepo.findByQueueTicket_TicketId(ticket.getTicketId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Chua co ho so cho phieu kham: " + id));
+        }
+        throw new ResourceNotFoundException("Khong tim thay ho so benh an: " + id);
+    }
+
+    /** Resolve an id that may be a queue-ticket id or a medical-record id to a queue ticket id. */
+    private UUID resolveTicketId(UUID id) {
+        if (repo.existsById(id)) return id;
+        MedicalRecord record = recordRepo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay ho so benh an: " + id));
+        QueueTicket ticket = record.getQueueTicket(); // lazy; accessed within tx
+        if (ticket == null) {
+            throw new ResourceNotFoundException("Ho so khong co phieu kham dang kham: " + id);
+        }
+        return ticket.getTicketId();
     }
 
     private void updateMedicalRecordFields(MedicalRecord r, MedicalRecordUpdateRequest req) {

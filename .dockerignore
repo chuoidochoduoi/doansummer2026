@@ -1,0 +1,14 @@
+.git
+.gitignore
+.gradle
+build
+target
+Dockerfile
+.dockerignore
+.idea
+.vscode
+*.iml
+*.ipr
+*.iws
+uploads
+.memory
