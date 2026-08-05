@@ -125,6 +125,13 @@ public record VisitDetailResponse(
     public static VisitDetailResponse from(List<MedicalRecord> records) {
         if (records == null || records.isEmpty()) return null;
         MedicalRecord first = records.get(0);
+        
+        // Tìm record đã có đánh giá (nếu có), hoặc mặc định lấy record cuối cùng (đây thường là record mà frontend gửi feedback đến)
+        MedicalRecord feedbackRecord = records.stream()
+                .filter(r -> r.getRatingScore() != null || r.getFeedbackStatus() != null)
+                .findFirst()
+                .orElse(records.get(records.size() - 1));
+                
         VisitDetailResponse base = from(first);
         List<ExaminationResponse> examinations = records.stream()
                 .filter(r -> r.getQueueTicket() != null && r.getQueueTicket().getService() != null
@@ -139,8 +146,8 @@ public record VisitDetailResponse(
         boolean completed = records.stream().allMatch(r -> r.getStatus() == org.example.doansummer2026.enums.MedicalRecordStatus.COMPLETED);
         return new VisitDetailResponse(base.id(), base.recordId(), base.appointmentDate(), base.symptoms(),
                 base.clinicalResult(), base.diagnoses(), base.treatmentPlan(), base.followUpNote(), base.prescription(),
-                tests, completed ? "COMPLETED" : "IN_PROGRESS", base.ratingScore(), base.ratingComment(),
-                base.feedbackStatus(), base.managerResponse(), base.doctorName(), labDoctors,
+                tests, completed ? "COMPLETED" : "IN_PROGRESS", feedbackRecord.getRatingScore(), feedbackRecord.getRatingComment(),
+                feedbackRecord.getFeedbackStatus(), feedbackRecord.getManagerResponse(), base.doctorName(), labDoctors,
                 examinations);
     }
 }

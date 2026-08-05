@@ -57,6 +57,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     private final org.example.doansummer2026.repository.InvoiceItemRepository invoiceItemRepo;
     private final MedicalRecordService medicalRecordService;
     private final PatientJourneyService patientJourneyService;
+    private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
 
     public PageResponse<TestRequestResponse> search(UUID recordId, UUID departmentId,
                                                      TestRequestStatus status, String search,
@@ -190,7 +191,11 @@ public class TestRequestService implements TestRequestServiceInterface {
         TestRequest request = TestRequest.builder().medicalRecord(record).service(service)
                 .performingDepartment(dept).description(notes).requestedBy(requester)
                 .status(TestRequestStatus.PENDING).invoiceItem(invoiceItem).queueTicket(labQueueTicket).build();
-        return TestRequestResponse.from(repo.save(request));
+        TestRequest saved = repo.save(request);
+        try {
+            messagingTemplate.convertAndSend("/topic/department-" + dept.getDepartmentId() + "-lab-queue", "LAB_UPDATED");
+        } catch (Exception e) {}
+        return TestRequestResponse.from(saved);
     }
 
     public TestRequestResponse update(UUID id, TestRequestUpdateRequest req) {
@@ -226,7 +231,11 @@ public class TestRequestService implements TestRequestServiceInterface {
                     patientJourneyService.activateNext(visitId);
             }
         }
-        return TestRequestResponse.from(repo.save(t));
+        TestRequest saved = repo.save(t);
+        try {
+            messagingTemplate.convertAndSend("/topic/department-" + saved.getPerformingDepartment().getDepartmentId() + "-lab-queue", "LAB_UPDATED");
+        } catch (Exception e) {}
+        return TestRequestResponse.from(saved);
     }
 
     public void delete(UUID id) {

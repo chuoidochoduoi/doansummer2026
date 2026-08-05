@@ -37,6 +37,8 @@ import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.example.doansummer2026.repository.Icd10CodeRepository;
 import org.example.doansummer2026.repository.TestRequestRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
+import org.example.doansummer2026.repository.InvoiceRepository;
+import org.example.doansummer2026.enums.InvoiceStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -63,6 +65,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     private final Icd10CodeRepository icd10Repo;
     private final TestRequestRepository testRequestRepo;
     private final ProfileRepository profileRepo;
+    private final InvoiceRepository invoiceRepo;
 
     @Transactional(readOnly = true)
     public PageResponse<MedicalRecordResponse> search(UUID doctorId, MedicalRecordStatus status,
@@ -487,6 +490,12 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return incompleteCount > 0;
     }
 
+    private boolean checkUnpaidInvoices(MedicalRecord record) {
+        if (record.getRecordId() == null) return false;
+        return invoiceRepo.findAllByMedicalRecord_RecordId(record.getRecordId()).stream()
+                .anyMatch(inv -> inv.getStatus() == InvoiceStatus.PENDING);
+    }
+
     public MedicalRecordResponse complete(UUID id, MedicalRecordUpdateRequest req) {
         MedicalRecord r = findById(id);
         validateVersion(r, req);
@@ -505,9 +514,23 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             throw new BadRequestException("Con yeu cau xet nghiem chua hoan thanh");
         }
 
+        // Kiem tra xem co hoa don nao chua thanh toan khong
+        if (checkUnpaidInvoices(r)) {
+            throw new BadRequestException("Benh nhan chua thanh toan hoa don xet nghiem/dich vu");
+        }
+
         // Cap nhat thong tin medical record (icd-10, prescription, vitals, ...)
         if (req != null) {
             updateMedicalRecordFields(r, req);
+        }
+
+        // Kiem tra bat buoc nhap chan doan hoac ket luan
+        boolean hasDiagnosis = r.getDiagnosis() != null && !r.getDiagnosis().trim().isEmpty();
+        boolean hasConclusion = r.getConclusion() != null && !r.getConclusion().trim().isEmpty();
+        boolean hasIcd10 = r.getIcdSelections() != null && !r.getIcdSelections().isEmpty();
+
+        if (!hasDiagnosis && !hasConclusion && !hasIcd10) {
+            throw new BadRequestException("Vui long nhap chan doan, ket luan hoac chon ma ICD-10 truoc khi hoan thanh ho so");
         }
 
         r.setStatus(MedicalRecordStatus.COMPLETED);

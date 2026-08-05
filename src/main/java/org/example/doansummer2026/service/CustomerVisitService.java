@@ -59,6 +59,10 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
     }
 
     public CustomerVisitResponse create(CustomerVisitCreateRequest req) {
+        if (req.serviceIds() == null || req.serviceIds().isEmpty()) {
+            throw new org.example.doansummer2026.exception.BadRequestException("Vui long chon it nhat 1 dich vu kham");
+        }
+
         Profile customer;
         if (req.customerId() != null) {
             customer = profileRepo.findById(req.customerId())

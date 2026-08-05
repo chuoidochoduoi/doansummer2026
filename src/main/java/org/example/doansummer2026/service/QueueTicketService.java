@@ -61,6 +61,8 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     private final TestRequestService testRequestService;
     private final PatientJourneyService patientJourneyService;
     private final MedicalRecordService medicalRecordService;
+    private final org.example.doansummer2026.repository.InvoiceRepository invoiceRepo;
+    private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
 
     @Autowired
     @Lazy
@@ -212,6 +214,23 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
         boolean hasTestRequests = req != null && req.testRequests() != null && !req.testRequests().isEmpty();
         if (!hasTestRequests && record.getStatus() != MedicalRecordStatus.COMPLETED) {
+            
+            // Validate unpaid invoices
+            boolean hasUnpaidInvoices = invoiceRepo.findAllByMedicalRecord_RecordId(record.getRecordId()).stream()
+                .anyMatch(inv -> inv.getStatus() == org.example.doansummer2026.enums.InvoiceStatus.PENDING);
+            if (hasUnpaidInvoices) {
+                throw new BadRequestException("Benh nhan chua thanh toan hoa don xet nghiem/dich vu");
+            }
+
+            // Validate diagnosis/conclusion/icd10
+            boolean hasDiagnosis = record.getDiagnosis() != null && !record.getDiagnosis().trim().isEmpty();
+            boolean hasConclusion = record.getConclusion() != null && !record.getConclusion().trim().isEmpty();
+            boolean hasIcd10 = record.getIcdSelections() != null && !record.getIcdSelections().isEmpty();
+            
+            if (!hasDiagnosis && !hasConclusion && !hasIcd10) {
+                throw new BadRequestException("Vui long nhap chan doan, ket luan hoac chon ma ICD-10 truoc khi hoan thanh ho so");
+            }
+
             record.setStatus(MedicalRecordStatus.COMPLETED);
             record.setCompletedAt(LocalDateTime.now());
             StaffInfo confirmer = completingStaffId != null ? staffRepo.findById(completingStaffId).orElse(null) : null;
@@ -593,5 +612,12 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             dept.setStatus(DepartmentStatus.AVAILABLE);
         }
         departmentRepo.save(dept);
+
+        // Notify clients about queue changes in this department
+        try {
+            messagingTemplate.convertAndSend("/topic/department-" + departmentId + "-queue", "QUEUE_UPDATED");
+        } catch (Exception e) {
+            // Ignore messaging errors so it doesn't break the transaction
+        }
     }
 }

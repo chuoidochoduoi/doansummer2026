@@ -23,6 +23,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID>, JpaSpec
 
     boolean existsByInvoiceCode(String invoiceCode);
     List<Invoice> findAllByVisit_VisitId(UUID visitId);
+    List<Invoice> findAllByMedicalRecord_RecordId(UUID recordId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT i FROM Invoice i WHERE i.invoiceId = :id")
