@@ -78,3 +78,46 @@ UPDATE profile SET account_id = '30000013-3333-3333-3333-333333333333' WHERE pro
 INSERT INTO staff_info (staff_id, created_at, updated_at, deleted, profile_id, staff_code, system_role, national_id, bank_account, highest_degree, university, license_number, specialization_id, department_id) VALUES
 ('90000008-1111-1111-1111-111111111111', NOW(), NOW(), false, '20000009-9999-9999-9999-999999999999', 'STF-ADM-001', 'ADMIN', '9123456789', NULL, NULL, NULL, NULL, NULL, NULL),
 ('90000009-2222-2222-2222-222222222222', NOW(), NOW(), false, '20000010-0000-0000-0000-000000000001', 'STF-CLM-001', 'CLINIC_MANAGER', '9223456789', NULL, NULL, NULL, NULL, NULL, '33333333-3333-3333-3333-333333333333');
+
+-- ===================================================================
+-- Medicine Catalog
+-- ===================================================================
+INSERT INTO medicine_catalog (medicine_id, medicine_code, name, active_ingredient, default_unit, default_usage, default_frequency_per_day, active, deleted) VALUES
+('b0000001-1111-1111-1111-111111111111', 'MED-001', 'Paracetamol 500mg', 'Paracetamol', 'Viên', 'Uống sau ăn', 2, true, false),
+('b0000002-2222-2222-2222-222222222222', 'MED-002', 'Amoxicillin 500mg', 'Amoxicillin', 'Viên', 'Uống sau ăn', 3, true, false),
+('b0000003-3333-3333-3333-333333333333', 'MED-003', 'Oresol', 'Glucose, Natri, Kali', 'Gói', 'Pha với 200ml nước', 3, true, false);
+
+-- ===================================================================
+-- ICD-10 Codes
+-- ===================================================================
+INSERT INTO icd_10_codes (code, name, description, category, deleted) VALUES
+('J00', 'Viêm mũi họng cấp [cảm lạnh thông thường]', 'Viêm mũi họng cấp tính do virus', 'Bệnh hệ hô hấp', false),
+('J02.9', 'Viêm họng cấp, không chỉ định', 'Viêm họng cấp tính chưa rõ nguyên nhân', 'Bệnh hệ hô hấp', false),
+('A09', 'Tiêu chảy và viêm dạ dày ruột do nhiễm khuẩn', 'Tiêu chảy cấp', 'Bệnh nhiễm trùng', false);
+
+-- ===================================================================
+-- Account (Thêm Doctor, Nurse, Receptionist, Cashier)
+-- ===================================================================
+INSERT INTO account (account_id, created_at, is_active, password_hash, role, username) VALUES
+('30000014-4444-4444-4444-444444444444', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor1'),
+('30000015-5555-5555-5555-555555555555', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'nurse1'),
+('30000016-6666-6666-6666-666666666666', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'receptionist1'),
+('30000017-7777-7777-7777-777777777777', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'cashier1');
+
+-- ===================================================================
+-- Profile (Thêm profile cho các account trên)
+-- ===================================================================
+INSERT INTO profile (profile_id, account_id, created_at, updated_at, deleted, full_name, date_of_birth, gender, phone, email, address, blood_type) VALUES
+('20000011-1111-1111-1111-111111111111', '30000014-4444-4444-4444-444444444444', NOW(), NOW(), false, 'Bác sĩ Nguyễn Văn A', '1980-05-10', 'MALE', '0911111111', 'doctor1@example.com', 'Hà Nội', NULL),
+('20000012-2222-2222-2222-222222222222', '30000015-5555-5555-5555-555555555555', NOW(), NOW(), false, 'Y tá Trần Thị B', '1990-08-20', 'FEMALE', '0922222222', 'nurse1@example.com', 'Hà Nội', NULL),
+('20000013-3333-3333-3333-333333333333', '30000016-6666-6666-6666-666666666666', NOW(), NOW(), false, 'Lễ tân Lê Văn C', '1995-12-01', 'MALE', '0933333333', 'receptionist1@example.com', 'Hà Nội', NULL),
+('20000014-4444-4444-4444-444444444444', '30000017-7777-7777-7777-777777777777', NOW(), NOW(), false, 'Thu ngân Phạm Thị D', '1992-03-15', 'FEMALE', '0944444444', 'cashier1@example.com', 'Hà Nội', NULL);
+
+-- ===================================================================
+-- StaffInfo (Thêm staff_info cho các profile trên)
+-- ===================================================================
+INSERT INTO staff_info (staff_id, created_at, updated_at, deleted, profile_id, staff_code, system_role, national_id, bank_account, highest_degree, university, license_number, specialization_id, department_id) VALUES
+('90000010-3333-3333-3333-333333333333', NOW(), NOW(), false, '20000011-1111-1111-1111-111111111111', 'STF-DOC-001', 'DOCTOR', '001080123456', NULL, 'Bác sĩ chuyên khoa', 'Đại học Y Hà Nội', 'CCHN-12345', '00000006-6666-6666-6666-666666666666', '33333333-3333-3333-3333-333333333333'),
+('90000011-4444-4444-4444-444444444444', NOW(), NOW(), false, '20000012-2222-2222-2222-222222222222', 'STF-NUR-001', 'NURSE', '001090123456', NULL, 'Cử nhân điều dưỡng', 'Đại học Y Dược', 'CCHN-23456', NULL, '44444444-4444-4444-4444-444444444444'),
+('90000012-5555-5555-5555-555555555555', NOW(), NOW(), false, '20000013-3333-3333-3333-333333333333', 'STF-REC-001', 'RECEPTIONIST', '001095123456', NULL, NULL, NULL, NULL, NULL, NULL),
+('90000013-6666-6666-6666-666666666666', NOW(), NOW(), false, '20000014-4444-4444-4444-444444444444', 'STF-CAS-001', 'CASHIER', '001092123456', NULL, NULL, NULL, NULL, NULL, NULL);
