@@ -51,26 +51,40 @@ public class AuthService implements AuthServiceInterface {
     private final InvoiceRepository invoiceRepository;
     public AuthResponse register(RegisterRequest req) {
         // Xac thuc OTP truoc khi dang ky
-        if (!otpService.verifyOtp(req.phone(), req.otp())) {
+        if (!otpService.verifyOtp(req.identifier(), req.otp())) {
             throw new BadRequestException("OTP khong hop le hoac da het han");
         }
 
         // Tao account voi role CUSTOMER
-        Account account = accountService.create(req.phone(), req.password(), Role.CUSTOMER);
+        Account account = accountService.create(req.identifier(), req.password(), Role.CUSTOMER);
 
-        Set<String> phoneVariants = phoneVariants(req.phone());
-        Profile profile = profileRepository.findFirstByPhoneIn(phoneVariants).orElse(null);
-        if (profile != null && profile.getAccount() != null) {
-            throw new BadRequestException("So dien thoai da duoc lien ket voi tai khoan khac");
-        }
-        if (profile == null) {
-            profile = Profile.builder().account(account).phone(normalizePhone(req.phone())).build();
+        Profile profile;
+        if (req.identifier().contains("@")) {
+            profile = profileRepository.findFirstByEmail(req.identifier()).orElse(null);
+            if (profile != null && profile.getAccount() != null) {
+                throw new BadRequestException("Email da duoc lien ket voi tai khoan khac");
+            }
+            if (profile == null) {
+                profile = Profile.builder().account(account).email(req.identifier()).build();
+            } else {
+                profile.setAccount(account);
+            }
         } else {
-            profile.setAccount(account);
-            profile.setPhone(normalizePhone(req.phone()));
+            Set<String> phoneVariants = phoneVariants(req.identifier());
+            profile = profileRepository.findFirstByPhoneIn(phoneVariants).orElse(null);
+            if (profile != null && profile.getAccount() != null) {
+                throw new BadRequestException("So dien thoai da duoc lien ket voi tai khoan khac");
+            }
+            if (profile == null) {
+                profile = Profile.builder().account(account).phone(normalizePhone(req.identifier())).build();
+            } else {
+                profile.setAccount(account);
+                profile.setPhone(normalizePhone(req.identifier()));
+            }
+            linkGuestHistory(profile, phoneVariants);
         }
+        
         profile = profileRepository.save(profile);
-        linkGuestHistory(profile, phoneVariants);
         return buildAuthResponse(account);
     }
 
@@ -236,11 +250,11 @@ public class AuthService implements AuthServiceInterface {
 
     public void resetPassword(org.example.doansummer2026.dto.auth.ResetPasswordRequest req) {
         // Xac thuc OTP
-        if (!otpService.verifyOtp(req.phone(), req.otp())) {
+        if (!otpService.verifyOtp(req.identifier(), req.otp())) {
             throw new BadRequestException("OTP khong hop le hoac da het han");
         }
         // Tim tai khoan
-        Account account = accountService.findByUsername(req.phone());
+        Account account = accountService.findByUsername(req.identifier());
         if (account == null) {
             throw new BadRequestException("Tai khoan khong ton tai");
         }

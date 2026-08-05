@@ -19,6 +19,10 @@ import org.example.doansummer2026.enums.VisitStatus;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.exception.ConflictException;
+import org.example.doansummer2026.dto.notification.NotificationCreateRequest;
+import org.example.doansummer2026.enums.NotificationType;
+import org.example.doansummer2026.enums.NotificationChannel;
+import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.model.Appointment;
 import org.example.doansummer2026.model.CustomerVisit;
@@ -63,6 +67,7 @@ public class AppointmentService implements AppointmentServiceInterface {
     private final InsuranceRepository insuranceRepository;
     private final InsuranceRuleRepository insuranceRuleRepository;
     private final StaffInfoRepository staffRepo;
+    private final NotificationService notificationService;
 
     @Transactional(readOnly = true)
     public PageResponse<AppointmentResponse> search(UUID customerId,
@@ -117,7 +122,9 @@ public class AppointmentService implements AppointmentServiceInterface {
             }
             a.setServices(services);
         }
-        return AppointmentResponse.from(repo.save(a));
+        Appointment saved = repo.save(a);
+        notifyReceptionists(saved);
+        return AppointmentResponse.from(saved);
     }
 
     public AppointmentResponse createForGuest(AppointmentGuestCreateRequest req) {
@@ -145,11 +152,15 @@ public class AppointmentService implements AppointmentServiceInterface {
             }
             a.setServices(services);
         }
-        return AppointmentResponse.from(repo.save(a));
+        Appointment saved = repo.save(a);
+        notifyReceptionists(saved);
+        return AppointmentResponse.from(saved);
     }
 
     public AppointmentResponse update(UUID id, AppointmentUpdateRequest req) {
         Appointment a = findById(id);
+        AppointmentStatus oldStatus = a.getStatus();
+        
         if (req.scheduledAt() != null) a.setScheduledAt(req.scheduledAt());
         if (req.status() != null) a.setStatus(req.status());
         if (req.cancelReason() != null) a.setCancelReason(req.cancelReason());
@@ -171,7 +182,13 @@ public class AppointmentService implements AppointmentServiceInterface {
             }
             a.setServices(services);
         }
-        return AppointmentResponse.from(repo.save(a));
+        
+        Appointment saved = repo.save(a);
+        if (req.status() != null && req.status() != oldStatus) {
+            notifyCustomerStatusChange(saved, oldStatus);
+        }
+        
+        return AppointmentResponse.from(saved);
     }
 
     public void delete(UUID id) {
@@ -197,6 +214,51 @@ public class AppointmentService implements AppointmentServiceInterface {
             }
             if (service.getAllowedGender() != gender) {
                 throw new BadRequestException("Dich vu " + service.getName() + " khong phu hop voi gioi tinh trong ho so");
+            }
+        }
+    }
+
+    private void notifyReceptionists(Appointment a) {
+        String patientName = (a.getIsGuest() != null && a.getIsGuest()) ? a.getGuestFullName() : (a.getCustomer() != null ? a.getCustomer().getFullName() : "Khach");
+        String content = String.format("Co lich hen moi tu %s vao luc %s", patientName, a.getScheduledAt());
+        
+        List<StaffInfo> receptionists = staffRepo.findAllBySystemRoleIn(List.of(SystemRole.RECEPTIONIST));
+        for (StaffInfo staff : receptionists) {
+            if (staff.getProfile() != null) {
+                try {
+                    notificationService.create(new NotificationCreateRequest(
+                            staff.getProfile().getProfileId(),
+                            NotificationType.GENERAL,
+                            NotificationChannel.IN_APP,
+                            "Lich hen moi",
+                            content,
+                            "Appointment",
+                            a.getAppointmentId()
+                    ));
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
+        }
+    }
+
+    private void notifyCustomerStatusChange(Appointment a, AppointmentStatus oldStatus) {
+        if ((a.getIsGuest() != null && a.getIsGuest()) || a.getCustomer() == null) return;
+        if (a.getStatus() == AppointmentStatus.CHECKED_IN || a.getStatus() == AppointmentStatus.CANCELLED || a.getStatus() == AppointmentStatus.RESCHEDULED) {
+            String statusStr = a.getStatus() == AppointmentStatus.CHECKED_IN ? "da duoc tiep nhan" : (a.getStatus() == AppointmentStatus.CANCELLED ? "bi huy" : "duoc doi lich");
+            String content = String.format("Lich hen cua ban vao luc %s %s", a.getScheduledAt(), statusStr);
+            try {
+                notificationService.create(new NotificationCreateRequest(
+                        a.getCustomer().getProfileId(),
+                        NotificationType.GENERAL,
+                        NotificationChannel.IN_APP,
+                        "Cap nhat lich hen",
+                        content,
+                        "Appointment",
+                        a.getAppointmentId()
+                    ));
+            } catch (Exception e) {
+                // Ignore
             }
         }
     }

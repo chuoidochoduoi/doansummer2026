@@ -25,12 +25,18 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+import org.example.doansummer2026.service.AuthService;
+import org.example.doansummer2026.service.ProfileService;
+import org.example.doansummer2026.model.Profile;
+
 @RestController
 @RequestMapping("/api/v1/notifications")
 @RequiredArgsConstructor
 public class NotificationController {
 
     private final NotificationService service;
+    private final AuthService authService;
+    private final ProfileService profileService;
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
@@ -39,6 +45,22 @@ public class NotificationController {
             @RequestParam(required = false) NotificationStatus status,
             Pageable pageable) {
         return RestResponses.ok(service.search(recipientId, status, pageable));
+    }
+
+    @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<PageResponse<NotificationResponse>> myNotifications(
+            @RequestParam(required = false) NotificationStatus status,
+            Pageable pageable) {
+        Profile p = profileService.findById(profileService.getByAccount(authService.currentAccount().getAccountId()).profileId());
+        return RestResponses.ok(service.search(p.getProfileId(), status, pageable));
+    }
+
+    @GetMapping("/me/unread-count")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<UnreadCountResponse> myUnreadCount() {
+        Profile p = profileService.findById(profileService.getByAccount(authService.currentAccount().getAccountId()).profileId());
+        return RestResponses.ok(service.unreadCount(p.getProfileId()));
     }
 
     @GetMapping("/unread-count")

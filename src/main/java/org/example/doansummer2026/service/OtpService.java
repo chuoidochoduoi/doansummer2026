@@ -21,26 +21,32 @@ public class OtpService {
 
     private final StringRedisTemplate redisTemplate;
     private final SmsService smsService;
+    private final EmailService emailService;
     private final SecureRandom random = new SecureRandom();
 
-    public OtpService(StringRedisTemplate redisTemplate, SmsService smsService) {
+    public OtpService(StringRedisTemplate redisTemplate, SmsService smsService, EmailService emailService) {
         this.redisTemplate = redisTemplate;
         this.smsService = smsService;
+        this.emailService = emailService;
     }
 
-    /** Sinh OTP cho SĐT, lưu vào Redis, và gửi qua SMS gateway */
-    public void sendOtp(String phone) {
+    /** Sinh OTP cho SĐT hoac Email, lưu vào Redis, và gửi đi */
+    public void sendOtp(String identifier) {
         int code = random.nextInt(900_000) + 100_000;
-        String key = OTP_PREFIX + phone;
+        String key = OTP_PREFIX + identifier;
 
         redisTemplate.opsForValue().set(key, String.valueOf(code), TTL_MINUTES, TimeUnit.MINUTES);
 
-        smsService.sendOtp(phone, String.valueOf(code));
+        if (identifier.contains("@")) {
+            emailService.sendOtpEmail(identifier, String.valueOf(code));
+        } else {
+            smsService.sendOtp(identifier, String.valueOf(code));
+        }
     }
 
     /** Trả về true nếu OTP hợp lệ và đã bị tiêu thụ (one-time use) */
-    public boolean verifyOtp(String phone, String code) {
-        String key = OTP_PREFIX + phone;
+    public boolean verifyOtp(String identifier, String code) {
+        String key = OTP_PREFIX + identifier;
         String storedCode = redisTemplate.opsForValue().get(key);
 
         if (storedCode == null) {

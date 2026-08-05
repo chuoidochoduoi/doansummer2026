@@ -40,7 +40,7 @@ public class AuthController {
     /** Public: gui OTP xac thuc SĐT -> 200 OK (OTP in-memory, dev log ra console). */
     @PostMapping("/send-otp")
     public ResponseEntity<Void> sendOtp(@Valid @RequestBody SendOtpRequest req) {
-        otpService.sendOtp(req.phone());
+        otpService.sendOtp(req.identifier());
         return RestResponses.ok(null);
     }
 

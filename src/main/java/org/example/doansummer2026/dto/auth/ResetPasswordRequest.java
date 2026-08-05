@@ -5,9 +5,9 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record ResetPasswordRequest(
-        @NotBlank(message = "Số điện thoại không được để trống")
-        @Pattern(regexp = "^(\\+84|0)\\d{9,10}$", message = "Số điện thoại không hợp lệ")
-        String phone,
+        @NotBlank(message = "Email/Số điện thoại không được để trống")
+        @Pattern(regexp = "^(\\+84|0)\\d{9,10}$|^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$", message = "Email hoặc số điện thoại không hợp lệ")
+        String identifier,
 
         @NotBlank(message = "OTP không được để trống")
         String otp,

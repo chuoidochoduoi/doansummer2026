@@ -63,6 +63,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     private final MedicalRecordService medicalRecordService;
     private final org.example.doansummer2026.repository.InvoiceRepository invoiceRepo;
     private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+    private final NotificationService notificationService;
 
     @Autowired
     @Lazy
@@ -101,7 +102,43 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 .build();
         QueueTicket saved = repo.save(q);
         updateDepartmentStatus(dept.getDepartmentId());
+        if (dept.getDepartmentType() == org.example.doansummer2026.enums.DepartmentType.EXAMINATION) {
+            notifyDoctors(saved);
+        }
         return QueueTicketResponse.from(saved);
+    }
+    
+    private void notifyDoctors(QueueTicket q) {
+        String patientName = q.getVisit() != null && q.getVisit().getAppointment() != null ? q.getVisit().getAppointment().getGuestFullName() : "Khach";
+        if (q.getVisit() != null && q.getVisit().getCustomer() != null) {
+            patientName = q.getVisit().getCustomer().getFullName();
+        }
+        String roomName = q.getDepartment() != null ? q.getDepartment().getName() : "";
+        String content = String.format("Co benh nhan moi (Ten: %s) xep hang cho kham tai phong %s", patientName, roomName);
+        
+        List<StaffInfo> roomStaff = staffRepo.findByDepartment_DepartmentId(q.getDepartment().getDepartmentId());
+        List<org.example.doansummer2026.enums.SystemRole> docRoles = List.of(
+            org.example.doansummer2026.enums.SystemRole.DOCTOR,
+            org.example.doansummer2026.enums.SystemRole.GENERAL_DOCTOR,
+            org.example.doansummer2026.enums.SystemRole.SPECIALIST_DOCTOR
+        );
+        for (StaffInfo staff : roomStaff) {
+            if (docRoles.contains(staff.getSystemRole()) && staff.getProfile() != null) {
+                try {
+                    notificationService.create(new org.example.doansummer2026.dto.notification.NotificationCreateRequest(
+                            staff.getProfile().getProfileId(),
+                            org.example.doansummer2026.enums.NotificationType.GENERAL,
+                            org.example.doansummer2026.enums.NotificationChannel.IN_APP,
+                            "Benh nhan moi",
+                            content,
+                            "QueueTicket",
+                            q.getTicketId()
+                    ));
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
+        }
     }
 
     public QueueTicketResponse update(UUID id, QueueTicketUpdateRequest req) {

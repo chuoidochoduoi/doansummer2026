@@ -58,6 +58,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     private final MedicalRecordService medicalRecordService;
     private final PatientJourneyService patientJourneyService;
     private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+    private final NotificationService notificationService;
 
     public PageResponse<TestRequestResponse> search(UUID recordId, UUID departmentId,
                                                      TestRequestStatus status, String search,
@@ -195,7 +196,31 @@ public class TestRequestService implements TestRequestServiceInterface {
         try {
             messagingTemplate.convertAndSend("/topic/department-" + dept.getDepartmentId() + "-lab-queue", "LAB_UPDATED");
         } catch (Exception e) {}
+        notifyNurses(saved);
         return TestRequestResponse.from(saved);
+    }
+    
+    private void notifyNurses(TestRequest t) {
+        String patientName = t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null && t.getMedicalRecord().getVisit().getCustomer() != null ? t.getMedicalRecord().getVisit().getCustomer().getFullName() : "Khach";
+        String serviceName = t.getService() != null ? t.getService().getName() : "Can lam sang";
+        String content = String.format("Co y lenh moi (%s) can thuc hien cho benh nhan %s", serviceName, patientName);
+        
+        List<StaffInfo> labStaff = staffRepo.findByDepartment_DepartmentId(t.getPerformingDepartment().getDepartmentId());
+        for (StaffInfo staff : labStaff) {
+            if (staff.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE && staff.getProfile() != null) {
+                try {
+                    notificationService.create(new org.example.doansummer2026.dto.notification.NotificationCreateRequest(
+                            staff.getProfile().getProfileId(),
+                            org.example.doansummer2026.enums.NotificationType.GENERAL,
+                            org.example.doansummer2026.enums.NotificationChannel.IN_APP,
+                            "Y lenh moi",
+                            content,
+                            "TestRequest",
+                            t.getTestRequestId()
+                    ));
+                } catch (Exception e) {}
+            }
+        }
     }
 
     public TestRequestResponse update(UUID id, TestRequestUpdateRequest req) {
@@ -235,7 +260,31 @@ public class TestRequestService implements TestRequestServiceInterface {
         try {
             messagingTemplate.convertAndSend("/topic/department-" + saved.getPerformingDepartment().getDepartmentId() + "-lab-queue", "LAB_UPDATED");
         } catch (Exception e) {}
+        
+        if (req.status() == TestRequestStatus.COMPLETED) {
+            notifyDoctorResult(saved);
+        }
+        
         return TestRequestResponse.from(saved);
+    }
+    
+    private void notifyDoctorResult(TestRequest t) {
+        if (t.getRequestedBy() == null || t.getRequestedBy().getProfile() == null) return;
+        String patientName = t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null && t.getMedicalRecord().getVisit().getCustomer() != null ? t.getMedicalRecord().getVisit().getCustomer().getFullName() : "Khach";
+        String serviceName = t.getService() != null ? t.getService().getName() : "Can lam sang";
+        String content = String.format("Benh nhan %s da co ket qua %s", patientName, serviceName);
+        
+        try {
+            notificationService.create(new org.example.doansummer2026.dto.notification.NotificationCreateRequest(
+                    t.getRequestedBy().getProfile().getProfileId(),
+                    org.example.doansummer2026.enums.NotificationType.GENERAL,
+                    org.example.doansummer2026.enums.NotificationChannel.IN_APP,
+                    "Ket qua xet nghiem",
+                    content,
+                    "TestRequest",
+                    t.getTestRequestId()
+            ));
+        } catch (Exception e) {}
     }
 
     public void delete(UUID id) {

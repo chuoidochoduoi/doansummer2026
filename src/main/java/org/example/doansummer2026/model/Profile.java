@@ -67,9 +67,8 @@ public class Profile extends BaseEntity {
     @Column(length = 10)
     private Gender gender;
 
-    @NotBlank
     @Pattern(regexp = "^(\\+84|0)\\d{9,10}$", message = "So dien thoai khong hop le (VN)")
-    @Column(nullable = false, unique = true, length = 15)
+    @Column(nullable = true, unique = true, length = 15)
     private String phone;
 
     @Email

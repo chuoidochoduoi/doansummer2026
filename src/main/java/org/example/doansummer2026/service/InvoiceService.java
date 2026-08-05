@@ -69,6 +69,7 @@ public class InvoiceService implements InvoiceServiceInterface {
     private final TestRequestService testRequestService;
     private final QueueTicketRepository queueTicketRepo;
     private final TestRequestRepository testRequestRepo;
+    private final NotificationService notificationService;
 
     @Transactional(readOnly = true)
     public PageResponse<InvoiceResponse> search(UUID customerId, InvoiceStatus status,
@@ -179,7 +180,34 @@ public class InvoiceService implements InvoiceServiceInterface {
             }
         }
         recalculateTotals(saved);
-        return InvoiceResponse.from(repo.save(saved));
+        Invoice finalSaved = repo.save(saved);
+        notifyCashiers(finalSaved);
+        return InvoiceResponse.from(finalSaved);
+    }
+    
+    private void notifyCashiers(Invoice invoice) {
+        String patientName = invoice.getCustomer() != null ? invoice.getCustomer().getFullName() : (invoice.getVisit() != null && invoice.getVisit().getAppointment() != null ? invoice.getVisit().getAppointment().getGuestFullName() : "Khach");
+        if (patientName == null) patientName = "Khach";
+        String content = String.format("Co hoa don moi (Ma: %s) can thanh toan tu benh nhan %s", invoice.getInvoiceCode(), patientName);
+        
+        List<StaffInfo> cashiers = staffRepo.findAllBySystemRoleIn(List.of(org.example.doansummer2026.enums.SystemRole.CASHIER));
+        for (StaffInfo staff : cashiers) {
+            if (staff.getProfile() != null) {
+                try {
+                    notificationService.create(new org.example.doansummer2026.dto.notification.NotificationCreateRequest(
+                            staff.getProfile().getProfileId(),
+                            org.example.doansummer2026.enums.NotificationType.GENERAL,
+                            org.example.doansummer2026.enums.NotificationChannel.IN_APP,
+                            "Hoa don moi",
+                            content,
+                            "Invoice",
+                            invoice.getInvoiceId()
+                    ));
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
+        }
     }
 
     public InvoiceResponse update(UUID id, InvoiceUpdateRequest req) {
