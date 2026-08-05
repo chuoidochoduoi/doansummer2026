@@ -79,7 +79,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
+        configuration.setAllowedOriginPatterns(List.of("*")); // Thay đổi để hỗ trợ Vercel (hoặc điền URL Vercel cụ thể vào đây)
         configuration.setAllowedMethods(List.of(
                 "GET",
                 "POST",
