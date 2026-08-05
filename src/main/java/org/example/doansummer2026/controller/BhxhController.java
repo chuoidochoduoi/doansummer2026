@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/v1/bhyt")
+@RequestMapping("/api/v1/bhxh")
 public class BhxhController {
 
     private final BhxhIntegrationService bhxhIntegrationService;
