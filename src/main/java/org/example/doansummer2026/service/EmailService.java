@@ -2,6 +2,7 @@ package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
@@ -13,7 +14,16 @@ public class EmailService {
 
     private final JavaMailSender javaMailSender;
 
+    @Value("${spring.mail.password:}")
+    private String mailPassword;
+
     public void sendOtpEmail(String toEmail, String otpCode) {
+        if (mailPassword == null || mailPassword.trim().isEmpty()) {
+            System.out.println("[MOCK EMAIL] Gửi OTP " + otpCode + " đến " + toEmail);
+            log.info("Mocked email OTP since password is empty");
+            return;
+        }
+
         try {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setTo(toEmail);
