@@ -51,9 +51,8 @@ public class StaffSchedule extends BaseEntity {
     @Column(name = "work_date", nullable = false)
     private LocalDate workDate;
 
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "shift_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shift_id")
     private ShiftConfig shift;
 
     @NotNull

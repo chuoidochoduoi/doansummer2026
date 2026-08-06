@@ -57,9 +57,8 @@ public class StaffScheduleTemplate extends BaseEntity {
     @Column(name = "day_of_week", nullable = false, length = 10)
     private DayOfWeek dayOfWeek;
 
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "shift_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shift_id")
     private ShiftConfig shift;
 
     @Column(name = "is_active", nullable = false)
