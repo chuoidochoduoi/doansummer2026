@@ -1,6 +1,5 @@
 package org.example.doansummer2026.service;
 
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.dto.shift.ShiftConfigCreateRequest;
 import org.example.doansummer2026.dto.shift.ShiftConfigResponse;
@@ -25,7 +24,7 @@ public class ShiftConfigService {
     private final ShiftConfigRepository shiftConfigRepository;
     private final AppointmentRepository appointmentRepository;
 
-    @PostConstruct
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
     public void initDefaultShifts() {
         if (shiftConfigRepository.count() == 0) {
             shiftConfigRepository.save(ShiftConfig.builder()
