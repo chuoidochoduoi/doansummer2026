@@ -40,13 +40,6 @@ public class ShiftConfigService {
                     .isActive(true)
                     .build());
         }
-        
-        try {
-            appointmentRepository.migrateMorningShifts();
-            appointmentRepository.migrateAfternoonShifts();
-        } catch (Exception e) {
-            // Ignore if column time_slot does not exist anymore
-        }
     }
 
     @Transactional(readOnly = true)

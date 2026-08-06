@@ -11,7 +11,7 @@
 TRUNCATE TABLE
     medical_service, department, specialization,
     staff_info, staff_capability, staff_attendance, staff_schedule,
-    profile, account
+    profile, account, shift_config
 RESTART IDENTITY CASCADE;
 
 -- ===================================================================
@@ -121,3 +121,10 @@ INSERT INTO staff_info (staff_id, created_at, updated_at, deleted, profile_id, s
 ('90000011-4444-4444-4444-444444444444', NOW(), NOW(), false, '20000012-2222-2222-2222-222222222222', 'STF-NUR-001', 'NURSE', '001090123456', NULL, 'Cử nhân điều dưỡng', 'Đại học Y Dược', 'CCHN-23456', NULL, '44444444-4444-4444-4444-444444444444'),
 ('90000012-5555-5555-5555-555555555555', NOW(), NOW(), false, '20000013-3333-3333-3333-333333333333', 'STF-REC-001', 'RECEPTIONIST', '001095123456', NULL, NULL, NULL, NULL, NULL, NULL),
 ('90000013-6666-6666-6666-666666666666', NOW(), NOW(), false, '20000014-4444-4444-4444-444444444444', 'STF-CAS-001', 'CASHIER', '001092123456', NULL, NULL, NULL, NULL, NULL, NULL);
+
+-- ===================================================================
+-- Shift Config
+-- ===================================================================
+INSERT INTO shift_config (shift_id, created_at, updated_at, deleted, name, start_time, end_time, is_active, order_index) VALUES
+('70000001-1111-1111-1111-111111111111', NOW(), NOW(), false, 'Ca Sáng', '07:30', '11:30', true, 1),
+('70000002-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Ca Chiều', '13:30', '17:30', true, 2);
