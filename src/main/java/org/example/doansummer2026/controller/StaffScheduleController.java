@@ -12,7 +12,7 @@ import org.example.doansummer2026.dto.schedule.ScheduleGenerateRequest;
 import org.example.doansummer2026.dto.schedule.ScheduleResponse;
 import org.example.doansummer2026.dto.schedule.ScheduleShiftUpdateRequest;
 import org.example.doansummer2026.dto.schedule.ScheduleUpdateRequest;
-import org.example.doansummer2026.enums.Shift;
+import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.service.StaffScheduleService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -40,6 +40,7 @@ import java.util.UUID;
 public class StaffScheduleController {
 
     private final StaffScheduleService service;
+    private final ShiftConfigRepository shiftConfigRepo;
 
     // --- MAIN ENDPOINTS ---
 
@@ -49,9 +50,9 @@ public class StaffScheduleController {
             @RequestParam(required = false) UUID staffId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(required = false) Shift shift,
+            @RequestParam(required = false) UUID shiftId,
             Pageable pageable) {
-        return RestResponses.ok(service.search(staffId, from, to, shift, pageable));
+        return RestResponses.ok(service.search(staffId, from, to, shiftId, pageable));
     }
 
     @GetMapping("/api/v1/schedules/{id}")
@@ -107,7 +108,7 @@ public class StaffScheduleController {
         LocalDate weekEnd = weekStart.plusDays(6);
 
         var schedules = service.findByWeek(weekStart, weekEnd);
-        var response = ClinicManagerScheduleResponse.from(schedules, weekStart);
+        var response = ClinicManagerScheduleResponse.from(schedules, weekStart, shiftConfigRepo.findAll());
         return RestResponses.ok(response);
     }
 
@@ -135,7 +136,7 @@ public class StaffScheduleController {
         LocalDate weekEnd = weekStart.plusDays(6);
 
         var schedules = service.copyWeek(prevWeekStart, weekStart);
-        var response = ClinicManagerScheduleResponse.from(schedules, weekStart);
+        var response = ClinicManagerScheduleResponse.from(schedules, weekStart, shiftConfigRepo.findAll());
         return RestResponses.ok(response);
     }
 

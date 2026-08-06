@@ -49,10 +49,10 @@ public class AttendanceService {
  }
  @Transactional(readOnly=true) public List<AttendanceTodayResponse> today(UUID staffId){return schedules.findAllByStaff_StaffIdAndWorkDate(staffId,LocalDate.now()).stream()
   .sorted(Comparator.comparing(s->start(s.getShift()))).map(s->{StaffAttendance a=attendances.findBySchedule_ScheduleId(s.getScheduleId()).orElse(null);
-   return new AttendanceTodayResponse(s.getScheduleId(),s.getWorkDate(),s.getShift().name(),start(s.getShift()),end(s.getShift()),a==null?null:a.getAttendanceId(),status(s,a),a==null?null:a.getCheckInAt(),a==null?null:a.getCheckOutAt());}).toList();}
+   return new AttendanceTodayResponse(s.getScheduleId(),s.getWorkDate(),s.getShift().getName(),start(s.getShift()),end(s.getShift()),a==null?null:a.getAttendanceId(),status(s,a),a==null?null:a.getCheckInAt(),a==null?null:a.getCheckOutAt());}).toList();}
  @Transactional(readOnly=true) public List<AttendanceManagementResponse> manage(LocalDate date){return schedules.findAllByWorkDateBetween(date,date).stream()
   .sorted(Comparator.comparing((StaffSchedule s)->name(s.getStaff())).thenComparing(s->start(s.getShift()))).map(s->{StaffAttendance a=attendances.findBySchedule_ScheduleId(s.getScheduleId()).orElse(null);
-   return new AttendanceManagementResponse(s.getScheduleId(),s.getStaff().getStaffId(),s.getStaff().getStaffCode(),name(s.getStaff()),s.getWorkDate(),s.getShift().name(),status(s,a),a==null?null:a.getCheckInAt(),a==null?null:a.getCheckOutAt());}).toList();}
+   return new AttendanceManagementResponse(s.getScheduleId(),s.getStaff().getStaffId(),s.getStaff().getStaffCode(),name(s.getStaff()),s.getWorkDate(),s.getShift().getName(),status(s,a),a==null?null:a.getCheckInAt(),a==null?null:a.getCheckOutAt());}).toList();}
  @Transactional public AdjustmentResponse request(UUID staffId,AdjustmentRequest req){
   StaffSchedule s=schedules.findById(req.scheduleId()).orElseThrow(()->new ResourceNotFoundException("Khong tim thay ca lam viec"));
   if(!s.getStaff().getStaffId().equals(staffId))throw new BadRequestException("Ca lam viec khong thuoc nhan vien hien tai");
@@ -74,8 +74,8 @@ public class AttendanceService {
  private String status(StaffSchedule s,StaffAttendance a){if(a!=null)return a.getStatus().name();return LocalDateTime.now().isAfter(LocalDateTime.of(s.getWorkDate(),end(s.getShift())).plusMinutes(60))?AttendanceStatus.ABSENT.name():"NOT_CHECKED_IN";}
  private StaffInfo staff(UUID id){return staffRepo.findById(id).orElseThrow(()->new ResourceNotFoundException("Khong tim thay nhan vien"));}
  private String name(StaffInfo s){return s.getProfile()!=null&&s.getProfile().getFullName()!=null?s.getProfile().getFullName():s.getStaffCode();}
- private LocalTime start(Shift s){return switch(s){case MORNING->LocalTime.of(8,0);case AFTERNOON->LocalTime.of(13,0);case EVENING->LocalTime.of(17,0);};}
- private LocalTime end(Shift s){return switch(s){case MORNING->LocalTime.of(12,0);case AFTERNOON->LocalTime.of(17,0);case EVENING->LocalTime.of(21,0);};}
+ private LocalTime start(ShiftConfig s){return LocalTime.parse(s.getStartTime());}
+ private LocalTime end(ShiftConfig s){return LocalTime.parse(s.getEndTime());}
  private String limit(String s){return s==null?null:s.substring(0,Math.min(500,s.length()));}
  private String hash(String s){try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8)));}catch(Exception e){throw new IllegalStateException(e);}}
 }

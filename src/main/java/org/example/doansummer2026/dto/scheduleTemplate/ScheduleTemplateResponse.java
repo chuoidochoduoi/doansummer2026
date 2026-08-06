@@ -1,6 +1,6 @@
 package org.example.doansummer2026.dto.scheduleTemplate;
 
-import org.example.doansummer2026.enums.Shift;
+import org.example.doansummer2026.dto.schedule.ShiftResponse;
 import org.example.doansummer2026.model.StaffScheduleTemplate;
 
 import java.time.DayOfWeek;
@@ -11,7 +11,7 @@ public record ScheduleTemplateResponse(
         UUID staffId,
         String staffCode,
         DayOfWeek dayOfWeek,
-        Shift shift,
+        ShiftResponse shift,
         Boolean isActive
 ) {
     public static ScheduleTemplateResponse from(StaffScheduleTemplate t) {
@@ -20,7 +20,7 @@ public record ScheduleTemplateResponse(
                 t.getStaff() != null ? t.getStaff().getStaffId() : null,
                 t.getStaff() != null ? t.getStaff().getStaffCode() : null,
                 t.getDayOfWeek(),
-                t.getShift(),
+                ShiftResponse.from(t.getShift()),
                 t.getIsActive()
         );
     }

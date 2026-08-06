@@ -5,8 +5,10 @@ import org.example.doansummer2026.dto.scheduleTemplate.ScheduleTemplateRequest;
 import org.example.doansummer2026.dto.scheduleTemplate.ScheduleTemplateResponse;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
+import org.example.doansummer2026.model.ShiftConfig;
 import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.model.StaffScheduleTemplate;
+import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.repository.StaffScheduleTemplateRepository;
 import org.springframework.stereotype.Service;
 import org.example.doansummer2026.service.interfaces.StaffScheduleTemplateServiceInterface;
@@ -26,15 +28,18 @@ import java.util.UUID;
 public class StaffScheduleTemplateService implements StaffScheduleTemplateServiceInterface {
 
     private final StaffScheduleTemplateRepository repo;
+    private final ShiftConfigRepository shiftConfigRepo;
     private final StaffService staffService;
 
     public ScheduleTemplateResponse create(ScheduleTemplateRequest req) {
         StaffInfo staff = staffService.findById(req.staffId());
         validateUnique(staff, req.dayOfWeek(), null);
+        ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
+                .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai: " + req.shiftId()));
         StaffScheduleTemplate t = StaffScheduleTemplate.builder()
                 .staff(staff)
                 .dayOfWeek(req.dayOfWeek())
-                .shift(req.shift())
+                .shift(shift)
                 .isActive(req.isActive() == null ? Boolean.TRUE : req.isActive())
                 .build();
         return ScheduleTemplateResponse.from(repo.save(t));
@@ -48,7 +53,11 @@ public class StaffScheduleTemplateService implements StaffScheduleTemplateServic
         validateUnique(staff, dow, id);
         t.setStaff(staff);
         t.setDayOfWeek(dow);
-        if (req.shift() != null) t.setShift(req.shift());
+        if (req.shiftId() != null) {
+            ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai: " + req.shiftId()));
+            t.setShift(shift);
+        }
         if (req.isActive() != null) t.setIsActive(req.isActive());
         return ScheduleTemplateResponse.from(repo.save(t));
     }

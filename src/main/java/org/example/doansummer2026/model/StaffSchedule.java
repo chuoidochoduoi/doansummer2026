@@ -21,7 +21,7 @@ import org.example.doansummer2026.common.BaseEntity;
 
 import java.time.LocalDate;
 import java.util.UUID;
-import org.example.doansummer2026.enums.Shift;
+import java.util.UUID;
 import org.example.doansummer2026.enums.ScheduleStatus;
 
 /**
@@ -52,9 +52,9 @@ public class StaffSchedule extends BaseEntity {
     private LocalDate workDate;
 
     @NotNull
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private Shift shift;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "shift_id", nullable = false)
+    private ShiftConfig shift;
 
     @NotNull
     @Enumerated(EnumType.STRING)

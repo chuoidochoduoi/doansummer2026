@@ -24,7 +24,6 @@ import org.hibernate.annotations.SQLRestriction;
 
 import java.time.DayOfWeek;
 import java.util.UUID;
-import org.example.doansummer2026.enums.Shift;
 
 /**
  * Lich mau theo thu trong tuan - dung de sinh lich cu the cho 1 tuan.
@@ -59,9 +58,9 @@ public class StaffScheduleTemplate extends BaseEntity {
     private DayOfWeek dayOfWeek;
 
     @NotNull
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private Shift shift;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "shift_id", nullable = false)
+    private ShiftConfig shift;
 
     @Column(name = "is_active", nullable = false)
     @Builder.Default

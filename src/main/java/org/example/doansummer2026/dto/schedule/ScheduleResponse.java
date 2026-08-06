@@ -1,7 +1,6 @@
 package org.example.doansummer2026.dto.schedule;
 
 import org.example.doansummer2026.enums.ScheduleStatus;
-import org.example.doansummer2026.enums.Shift;
 import org.example.doansummer2026.model.StaffSchedule;
 
 import java.time.LocalDate;
@@ -13,7 +12,7 @@ public record ScheduleResponse(
         String staffCode,
         String fullName,
         LocalDate workDate,
-        Shift shift,
+        ShiftResponse shift,
         ScheduleStatus status,
         Boolean isCustom,
         String note,
@@ -29,7 +28,7 @@ public record ScheduleResponse(
                 code,
                 name,
                 s.getWorkDate(),
-                s.getShift(),
+                ShiftResponse.from(s.getShift()),
                 s.getStatus(),
                 s.getIsCustom(),
                 s.getNote(),

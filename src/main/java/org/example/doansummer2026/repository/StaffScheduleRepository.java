@@ -1,6 +1,6 @@
 package org.example.doansummer2026.repository;
 
-import org.example.doansummer2026.enums.Shift;
+import org.example.doansummer2026.model.ShiftConfig;
 import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.model.StaffSchedule;
 import org.springframework.data.domain.Page;
@@ -22,7 +22,7 @@ public interface StaffScheduleRepository extends JpaRepository<StaffSchedule, UU
     Page<StaffSchedule> findByStaff_StaffId(UUID staffId, Pageable pageable);
 
     default Page<StaffSchedule> search(UUID staffId, LocalDate from,
-                                        LocalDate to, Shift shift, Pageable pageable) {
+                                        LocalDate to, ShiftConfig shift, Pageable pageable) {
         Specification<StaffSchedule> spec = (root, query, cb) -> cb.conjunction();
 
         if (staffId != null) {
@@ -45,10 +45,10 @@ public interface StaffScheduleRepository extends JpaRepository<StaffSchedule, UU
 
     List<StaffSchedule> findAllByWorkDateBetween(LocalDate from, LocalDate to);
 
-    Optional<StaffSchedule> findByStaffAndWorkDateAndShift(StaffInfo staff, LocalDate workDate, Shift shift);
+    Optional<StaffSchedule> findByStaffAndWorkDateAndShift(StaffInfo staff, LocalDate workDate, ShiftConfig shift);
     List<StaffSchedule> findAllByStaff_StaffIdAndWorkDate(UUID staffId, LocalDate workDate);
 
-    void deleteByStaffAndWorkDateAndShift(StaffInfo staff, LocalDate workDate, Shift shift);
+    void deleteByStaffAndWorkDateAndShift(StaffInfo staff, LocalDate workDate, ShiftConfig shift);
 }
 
 

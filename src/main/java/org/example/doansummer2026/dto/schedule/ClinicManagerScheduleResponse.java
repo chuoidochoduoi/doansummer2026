@@ -4,7 +4,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.*;
 
-import org.example.doansummer2026.enums.Shift;
+import org.example.doansummer2026.model.ShiftConfig;
 import org.example.doansummer2026.model.StaffSchedule;
 
 /**
@@ -18,45 +18,40 @@ public record ClinicManagerScheduleResponse(
     /**
      * Tao key cho schedule: shiftId_dayKey (vi du: morning_mon, afternoon_tue)
      */
-    public static String toKey(Shift shift, DayOfWeek dayOfWeek) {
-        String shiftKey = shift.name().toLowerCase();
+    public static String toKey(String shiftIdStr, DayOfWeek dayOfWeek) {
         String dayKey = dayOfWeek.name().substring(0, 3).toLowerCase();
-        return shiftKey + "_" + dayKey;
+        return shiftIdStr + "_" + dayKey;
     }
 
     /**
      * Tao response tu danh sach schedules trong 1 tuan.
      */
-    public static ClinicManagerScheduleResponse from(List<StaffSchedule> schedules, LocalDate weekStart) {
+    public static ClinicManagerScheduleResponse from(List<StaffSchedule> schedules, LocalDate weekStart, List<ShiftConfig> allShifts) {
         Map<String, List<StaffScheduleItemResponse>> scheduleMap = new LinkedHashMap<>();
-        Set<Shift> shiftSet = new LinkedHashSet<>();
         Set<UUID> staffSet = new HashSet<>();
 
-        // Khoi tao map rong cho 7 ngay/tuan voi 3 ca
-        for (Shift shift : Shift.values()) {
+        // Khoi tao map rong cho 7 ngay/tuan voi cac ca
+        for (ShiftConfig shift : allShifts) {
             for (DayOfWeek day : DayOfWeek.values()) {
-                scheduleMap.put(toKey(shift, day), new ArrayList<>());
+                scheduleMap.put(toKey(shift.getShiftId().toString(), day), new ArrayList<>());
             }
         }
 
         // Dien du lieu
         for (StaffSchedule s : schedules) {
             DayOfWeek dayOfWeek = s.getWorkDate().getDayOfWeek();
-            String key = toKey(s.getShift(), dayOfWeek);
+            String key = toKey(s.getShift().getShiftId().toString(), dayOfWeek);
             scheduleMap.computeIfAbsent(key, k -> new ArrayList<>())
                     .add(StaffScheduleItemResponse.from(s));
-            shiftSet.add(s.getShift());
             if (s.getStaff() != null) {
                 staffSet.add(s.getStaff().getStaffId());
             }
         }
 
         // Tao danh sach shifts
-        List<ShiftResponse> shiftResps = Shift.values().length > 0
-                ? Arrays.stream(Shift.values())
-                        .map(s -> ShiftResponse.from(s, s.ordinal()))
-                        .toList()
-                : Collections.emptyList();
+        List<ShiftResponse> shiftResps = allShifts.stream()
+                .map(ShiftResponse::from)
+                .toList();
 
         // Lay danh sach staff (trong thuc te se query StaffService)
         Map<UUID, StaffScheduleItemResponse> staffMap = scheduleMap.values().stream()

@@ -12,6 +12,7 @@ import org.example.doansummer2026.dto.staff.StaffProfessionalUpdateRequest;
 import org.example.doansummer2026.dto.staff.StaffCapabilityRequest;
 import org.example.doansummer2026.dto.staff.StaffCapabilityResponse;
 import org.example.doansummer2026.enums.SystemRole;
+import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.service.StaffScheduleService;
 import org.example.doansummer2026.service.StaffService;
 import org.example.doansummer2026.aop.Auditable;
@@ -43,6 +44,7 @@ public class StaffController {
 
     private final StaffService staffService;
     private final StaffScheduleService staffScheduleService;
+    private final ShiftConfigRepository shiftConfigRepo;
 
     @GetMapping("/{staffId}/capabilities")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER','ROLE_STAFF')")
@@ -90,7 +92,7 @@ public class StaffController {
         }
 
         var schedules = staffScheduleService.findByStaffAndWeek(staffId, weekStart, weekEnd);
-        var response = MyScheduleResponse.from(schedules, staffId);
+        var response = MyScheduleResponse.from(schedules, staffId, shiftConfigRepo.findAll());
         return RestResponses.ok(response);
     }
 

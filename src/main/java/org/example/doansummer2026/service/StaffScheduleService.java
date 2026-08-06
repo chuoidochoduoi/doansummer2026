@@ -8,10 +8,11 @@ import org.example.doansummer2026.dto.schedule.ScheduleResponse;
 import org.example.doansummer2026.dto.schedule.ScheduleUpdateRequest;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.enums.ScheduleStatus;
-import org.example.doansummer2026.enums.Shift;
+import org.example.doansummer2026.model.ShiftConfig;
 import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.model.StaffSchedule;
 import org.example.doansummer2026.model.StaffScheduleTemplate;
+import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.repository.StaffScheduleRepository;
 import org.example.doansummer2026.repository.StaffScheduleTemplateRepository;
 import org.springframework.data.domain.Page;
@@ -36,14 +37,17 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
 
     private final StaffScheduleRepository scheduleRepo;
     private final StaffScheduleTemplateRepository templateRepo;
+    private final ShiftConfigRepository shiftConfigRepo;
     private final StaffService staffService;
 
     public ScheduleResponse create(ScheduleCreateRequest req) {
         StaffInfo staff = staffService.findById(req.staffId());
+        ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
+                .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai: " + req.shiftId()));
         StaffSchedule schedule = StaffSchedule.builder()
                 .staff(staff)
                 .workDate(req.workDate())
-                .shift(req.shift())
+                .shift(shift)
                 .status(req.status() != null ? req.status() : ScheduleStatus.SCHEDULED)
                 .isCustom(req.isCustom() != null && req.isCustom())
                 .note(req.note())
@@ -55,7 +59,11 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
 
     public ScheduleResponse update(UUID id, ScheduleUpdateRequest req) {
         StaffSchedule s = findById(id);
-        if (req.shift() != null) s.setShift(req.shift());
+        if (req.shiftId() != null) {
+            ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai: " + req.shiftId()));
+            s.setShift(shift);
+        }
         if (req.status() != null) s.setStatus(req.status());
         if (req.isCustom() != null) s.setIsCustom(req.isCustom());
         if (req.note() != null) s.setNote(req.note());
@@ -76,7 +84,11 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
 
     @Transactional(readOnly = true)
     public PageResponse<ScheduleResponse> search(UUID staffId, LocalDate from, LocalDate to,
-                                                 Shift shift, Pageable pageable) {
+                                                 UUID shiftId, Pageable pageable) {
+        ShiftConfig shift = null;
+        if (shiftId != null) {
+            shift = shiftConfigRepo.findById(shiftId).orElse(null);
+        }
         Page<StaffSchedule> page = scheduleRepo.search(staffId, from, to, shift, pageable);
         return PageResponse.from(page, ScheduleResponse::from);
     }
@@ -122,7 +134,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                     // Tim va xoa ban ghi cu neu co
                     scheduleRepo.findByStaffAndWorkDateBetween(staff, workDate, workDate)
                             .stream()
-                            .filter(x -> x.getShift() == t.getShift())
+                            .filter(x -> x.getShift().getShiftId().equals(t.getShift().getShiftId()))
                             .findFirst()
                             .ifPresent(scheduleRepo::delete);
                 }
@@ -164,7 +176,8 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
      */
     public void assignStaff(ScheduleAssignRequest req) {
         LocalDate date = parseDateFromDayOfWeek(req.week(), req.dayKey());
-        Shift shift = Shift.valueOf(req.shiftId().toUpperCase());
+        ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
+                .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai: " + req.shiftId()));
 
         StaffInfo staff = staffService.findById(req.staffId());
 

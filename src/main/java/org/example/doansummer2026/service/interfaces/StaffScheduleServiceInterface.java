@@ -21,7 +21,7 @@ import java.util.UUID;
 /** Service interface for StaffSchedule management. */
 public interface StaffScheduleServiceInterface {
     PageResponse<ScheduleResponse> search(UUID staffId, LocalDate from, LocalDate to,
-                                           org.example.doansummer2026.enums.Shift shift, Pageable pageable);
+                                           UUID shiftId, Pageable pageable);
     ScheduleResponse get(UUID id);
     ScheduleResponse create(ScheduleCreateRequest req);
     ScheduleResponse update(UUID id, ScheduleUpdateRequest req);
