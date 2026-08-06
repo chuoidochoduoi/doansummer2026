@@ -45,7 +45,7 @@ public record MedicalRecordResponse(
     public static MedicalRecordResponse from(MedicalRecord r, boolean includeNested) {
         UUID visitId = r.getVisit() != null ? r.getVisit().getVisitId() : null;
         UUID doctorId = r.getDoctor() != null ? r.getDoctor().getStaffId() : null;
-        String doctorName = r.getDoctor() != null ? r.getDoctor().getStaffCode() : null;
+        String doctorName = r.getDoctor() != null && r.getDoctor().getProfile() != null ? r.getDoctor().getProfile().getFullName() : null;
         VitalSignsResponse vitalSigns = r.getVitalSigns() != null ? VitalSignsResponse.from(r.getVitalSigns()) : null;
         Set<PrescriptionItemResponse> prescriptions = includeNested && r.getPrescriptionItems() != null
                 ? r.getPrescriptionItems().stream().map(PrescriptionItemResponse::from).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
