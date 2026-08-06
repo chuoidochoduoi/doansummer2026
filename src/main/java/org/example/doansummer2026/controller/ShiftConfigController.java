@@ -28,25 +28,25 @@ public class ShiftConfigController {
 
     // Admin APIs
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'CLINIC_MANAGER')")
+    @PreAuthorize("hasRole('CLINIC_MANAGER')")
     public ApiResponse<List<ShiftConfigResponse>> getAllShifts() {
         return ApiResponse.success(shiftConfigService.getAllShifts());
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'CLINIC_MANAGER')")
+    @PreAuthorize("hasRole('CLINIC_MANAGER')")
     public ApiResponse<ShiftConfigResponse> createShift(@RequestBody @Valid ShiftConfigCreateRequest request) {
         return ApiResponse.success(shiftConfigService.createShift(request));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'CLINIC_MANAGER')")
+    @PreAuthorize("hasRole('CLINIC_MANAGER')")
     public ApiResponse<ShiftConfigResponse> updateShift(@PathVariable UUID id, @RequestBody @Valid ShiftConfigUpdateRequest request) {
         return ApiResponse.success(shiftConfigService.updateShift(id, request));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'CLINIC_MANAGER')")
+    @PreAuthorize("hasRole('CLINIC_MANAGER')")
     public ApiResponse<Void> deleteShift(@PathVariable UUID id) {
         shiftConfigService.deleteShift(id);
         return ApiResponse.success(null);
