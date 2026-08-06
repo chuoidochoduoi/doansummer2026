@@ -27,15 +27,10 @@ public record CustomerAppointmentDetailResponse(
         String date = a.getScheduledAt() != null ? a.getScheduledAt().format(dateFormatter) : "";
         
         String timeSlotStr = "";
-        if (a.getTimeSlot() != null) {
-            switch (a.getTimeSlot()) {
-                case MORNING:
-                    timeSlotStr = "08:00 - 12:00 (Sáng)";
-                    break;
-                case AFTERNOON:
-                    timeSlotStr = "13:00 - 17:00 (Chiều)";
-                    break;
-            }
+        if (a.getShiftTime() != null && a.getShiftName() != null) {
+            timeSlotStr = a.getShiftTime() + " (" + a.getShiftName() + ")";
+        } else if (a.getShiftTime() != null) {
+            timeSlotStr = a.getShiftTime();
         }
         
         String queueNum = null;

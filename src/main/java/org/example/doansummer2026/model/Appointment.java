@@ -27,7 +27,7 @@ import lombok.Setter;
 import org.example.doansummer2026.common.BaseEntity;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.enums.Gender;
-import org.example.doansummer2026.enums.TimeSlot;
+
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
@@ -116,9 +116,13 @@ public class Appointment extends BaseEntity {
     @Column(name = "guest_address")
     private String guestAddress;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "time_slot", length = 10)
-    private TimeSlot timeSlot;
+    @Size(max = 100)
+    @Column(name = "shift_name", length = 100)
+    private String shiftName;
+
+    @Size(max = 50)
+    @Column(name = "shift_time", length = 50)
+    private String shiftTime;
 
     /** Cac dich vu kham da chon khi dat lich (co the thay doi khi check-in). */
     @ManyToMany

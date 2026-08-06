@@ -22,20 +22,8 @@ public record CustomerAppointmentResponse(
         DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
         String date = a.getScheduledAt() != null ? a.getScheduledAt().format(dateFormatter) : "";
         
-        String timeWindow = "";
-        String shift = "";
-        if (a.getTimeSlot() != null) {
-            switch (a.getTimeSlot()) {
-                case MORNING:
-                    timeWindow = "08:00 - 12:00";
-                    shift = "Sáng";
-                    break;
-                case AFTERNOON:
-                    timeWindow = "13:00 - 17:00";
-                    shift = "Chiều";
-                    break;
-            }
-        }
+        String timeWindow = a.getShiftTime() != null ? a.getShiftTime() : "";
+        String shift = a.getShiftName() != null ? a.getShiftName() : "";
         
         String specialty = "Khám Bệnh Chung";
         if (a.getServices() != null && !a.getServices().isEmpty()) {

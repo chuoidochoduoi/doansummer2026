@@ -1,7 +1,7 @@
 package org.example.doansummer2026.dto.appointment;
 
 import jakarta.validation.constraints.NotNull;
-import org.example.doansummer2026.enums.TimeSlot;
+
 
 import java.time.LocalDateTime;
 import java.util.Set;
@@ -11,7 +11,7 @@ public record AppointmentCreateRequest(
         @NotNull UUID customerId,
         @NotNull LocalDateTime scheduledAt,
         String cancelReason,
-        TimeSlot timeSlot,
+        UUID shiftId,
         Set<UUID> serviceIds
 ) {}
 

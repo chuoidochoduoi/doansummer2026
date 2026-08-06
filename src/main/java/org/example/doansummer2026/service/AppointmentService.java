@@ -38,6 +38,7 @@ import org.example.doansummer2026.repository.ProfileRepository;
 import org.example.doansummer2026.repository.InsuranceRepository;
 import org.example.doansummer2026.repository.InsuranceRuleRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
+import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.service.interfaces.AppointmentServiceInterface;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -68,6 +69,7 @@ public class AppointmentService implements AppointmentServiceInterface {
     private final InsuranceRuleRepository insuranceRuleRepository;
     private final StaffInfoRepository staffRepo;
     private final NotificationService notificationService;
+    private final ShiftConfigRepository shiftConfigRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<AppointmentResponse> search(UUID customerId,
@@ -103,11 +105,17 @@ public class AppointmentService implements AppointmentServiceInterface {
             throw new BadRequestException("Bạn đã có hẹn nhé");
         }
 
+        org.example.doansummer2026.model.ShiftConfig shift = req.shiftId() != null 
+                ? shiftConfigRepository.findById(req.shiftId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai"))
+                : null;
+
         Appointment a = Appointment.builder()
                 .customer(customer)
                 .scheduledAt(req.scheduledAt())
                 .cancelReason(req.cancelReason())
-                .timeSlot(req.timeSlot())
+                .shiftName(shift != null ? shift.getName() : null)
+                .shiftTime(shift != null ? shift.getStartTime() + " - " + shift.getEndTime() : null)
                 .status(AppointmentStatus.PENDING)
                 .build();
         if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
@@ -131,6 +139,11 @@ public class AppointmentService implements AppointmentServiceInterface {
         if (req.guestGender() == Gender.OTHER) {
             throw new BadRequestException("He thong chi ho tro gioi tinh MALE hoac FEMALE");
         }
+        org.example.doansummer2026.model.ShiftConfig shift = req.shiftId() != null 
+                ? shiftConfigRepository.findById(req.shiftId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai"))
+                : null;
+
         Appointment a = Appointment.builder()
                 .scheduledAt(req.scheduledAt())
                 .isGuest(true)
@@ -139,7 +152,8 @@ public class AppointmentService implements AppointmentServiceInterface {
                 .guestAddress(req.guestAddress())
                 .guestAge(req.guestAge())
                 .guestGender(req.guestGender())
-                .timeSlot(req.timeSlot())
+                .shiftName(shift != null ? shift.getName() : null)
+                .shiftTime(shift != null ? shift.getStartTime() + " - " + shift.getEndTime() : null)
                 .status(AppointmentStatus.PENDING)
                 .build();
         if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
@@ -164,7 +178,12 @@ public class AppointmentService implements AppointmentServiceInterface {
         if (req.scheduledAt() != null) a.setScheduledAt(req.scheduledAt());
         if (req.status() != null) a.setStatus(req.status());
         if (req.cancelReason() != null) a.setCancelReason(req.cancelReason());
-        if (req.timeSlot() != null) a.setTimeSlot(req.timeSlot());
+        if (req.shiftId() != null) {
+            org.example.doansummer2026.model.ShiftConfig shift = shiftConfigRepository.findById(req.shiftId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai"));
+            a.setShiftName(shift.getName());
+            a.setShiftTime(shift.getStartTime() + " - " + shift.getEndTime());
+        }
         
         // Cập nhật thông tin khách (cho phép ghi đè kể cả khách vãng lai hay khách có tk)
         if (req.guestFullName() != null) a.setGuestFullName(req.guestFullName());
@@ -499,7 +518,12 @@ public class AppointmentService implements AppointmentServiceInterface {
         }
 
         if (req.scheduledAt() != null) a.setScheduledAt(req.scheduledAt());
-        if (req.timeSlot() != null) a.setTimeSlot(req.timeSlot());
+        if (req.shiftId() != null) {
+            org.example.doansummer2026.model.ShiftConfig shift = shiftConfigRepository.findById(req.shiftId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai"));
+            a.setShiftName(shift.getName());
+            a.setShiftTime(shift.getStartTime() + " - " + shift.getEndTime());
+        }
         if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
             Set<MedicalService> services = new HashSet<>();
             for (UUID serviceId : req.serviceIds()) {

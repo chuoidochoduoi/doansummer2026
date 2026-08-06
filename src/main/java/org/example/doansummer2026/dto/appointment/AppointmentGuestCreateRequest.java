@@ -10,7 +10,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.example.doansummer2026.enums.Gender;
-import org.example.doansummer2026.enums.TimeSlot;
+
 
 /**
  * Yeu cau tao appointment cho khach khong dang nhap.
@@ -24,7 +24,7 @@ public record AppointmentGuestCreateRequest(
         Integer guestAge,
         Gender guestGender,
         @NotNull LocalDateTime scheduledAt,
-        TimeSlot timeSlot,
+        UUID shiftId,
         Set<UUID> serviceIds
 ) {}
 

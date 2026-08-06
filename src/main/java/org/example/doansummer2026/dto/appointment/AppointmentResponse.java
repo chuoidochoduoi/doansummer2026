@@ -3,7 +3,7 @@ package org.example.doansummer2026.dto.appointment;
 import org.example.doansummer2026.model.Appointment;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.enums.Gender;
-import org.example.doansummer2026.enums.TimeSlot;
+
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -25,7 +25,8 @@ public record AppointmentResponse(
         Integer guestAge,
         Gender guestGender,
         List<ServiceInfo> services,
-        TimeSlot timeSlot
+        String shiftName,
+        String shiftTime
 ) {
     public static AppointmentResponse from(Appointment a) {
         // Copy thong tin tu profile sang guest fields khi co customer
@@ -58,7 +59,7 @@ public record AppointmentResponse(
                 a.getCustomer() != null ? a.getCustomer().getProfileId() : null,
                 a.getScheduledAt(), a.getStatus(), a.getCancelReason(), a.getCreatedAt(),
                 a.getIsGuest(), guestFullName, guestPhone, guestAddress,
-                guestAge, guestGender, serviceInfos, a.getTimeSlot()
+                guestAge, guestGender, serviceInfos, a.getShiftName(), a.getShiftTime()
         );
     }
 }
