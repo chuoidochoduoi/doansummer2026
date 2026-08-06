@@ -50,6 +50,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/v1/appointments/guest").permitAll()
                         .requestMatchers("/api/v1/medical-services/available").permitAll()
+                        .requestMatchers("/api/v1/shifts/active").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // Preflight
