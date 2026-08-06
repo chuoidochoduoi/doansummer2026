@@ -2,7 +2,8 @@ package org.example.doansummer2026.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.example.doansummer2026.common.ApiResponse;
+import org.example.doansummer2026.common.RestResponses;
+import org.springframework.http.ResponseEntity;
 import org.example.doansummer2026.dto.shift.ShiftConfigCreateRequest;
 import org.example.doansummer2026.dto.shift.ShiftConfigResponse;
 import org.example.doansummer2026.dto.shift.ShiftConfigUpdateRequest;
@@ -22,33 +23,33 @@ public class ShiftConfigController {
 
     // Public API cho bệnh nhân/lễ tân xem lịch ca khám
     @GetMapping("/active")
-    public ApiResponse<List<ShiftConfigResponse>> getActiveShifts() {
-        return ApiResponse.success(shiftConfigService.getAllActiveShifts());
+    public ResponseEntity<List<ShiftConfigResponse>> getActiveShifts() {
+        return RestResponses.ok(shiftConfigService.getAllActiveShifts());
     }
 
     // Admin APIs
     @GetMapping
     @PreAuthorize("hasRole('CLINIC_MANAGER')")
-    public ApiResponse<List<ShiftConfigResponse>> getAllShifts() {
-        return ApiResponse.success(shiftConfigService.getAllShifts());
+    public ResponseEntity<List<ShiftConfigResponse>> getAllShifts() {
+        return RestResponses.ok(shiftConfigService.getAllShifts());
     }
 
     @PostMapping
     @PreAuthorize("hasRole('CLINIC_MANAGER')")
-    public ApiResponse<ShiftConfigResponse> createShift(@RequestBody @Valid ShiftConfigCreateRequest request) {
-        return ApiResponse.success(shiftConfigService.createShift(request));
+    public ResponseEntity<ShiftConfigResponse> createShift(@RequestBody @Valid ShiftConfigCreateRequest request) {
+        return RestResponses.ok(shiftConfigService.createShift(request));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('CLINIC_MANAGER')")
-    public ApiResponse<ShiftConfigResponse> updateShift(@PathVariable UUID id, @RequestBody @Valid ShiftConfigUpdateRequest request) {
-        return ApiResponse.success(shiftConfigService.updateShift(id, request));
+    public ResponseEntity<ShiftConfigResponse> updateShift(@PathVariable UUID id, @RequestBody @Valid ShiftConfigUpdateRequest request) {
+        return RestResponses.ok(shiftConfigService.updateShift(id, request));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('CLINIC_MANAGER')")
-    public ApiResponse<Void> deleteShift(@PathVariable UUID id) {
+    public ResponseEntity<Void> deleteShift(@PathVariable UUID id) {
         shiftConfigService.deleteShift(id);
-        return ApiResponse.success(null);
+        return RestResponses.ok(null);
     }
 }

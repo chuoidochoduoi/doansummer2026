@@ -66,6 +66,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     private final TestRequestRepository testRequestRepo;
     private final ProfileRepository profileRepo;
     private final InvoiceRepository invoiceRepo;
+    private final org.example.doansummer2026.repository.ShiftConfigRepository shiftConfigRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<MedicalRecordResponse> search(UUID doctorId, MedicalRecordStatus status,
@@ -747,9 +748,15 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         var customer = originalVisit.getCustomer();
         var oldAppt = originalVisit.getAppointment();
 
+        org.example.doansummer2026.model.ShiftConfig shift = req.shiftId() != null 
+                ? shiftConfigRepository.findById(req.shiftId())
+                    .orElseThrow(() -> new org.example.doansummer2026.exception.ResourceNotFoundException("Ca kham khong ton tai"))
+                : null;
+
         org.example.doansummer2026.model.Appointment appointment = org.example.doansummer2026.model.Appointment.builder()
                 .scheduledAt(req.scheduledAt())
-                .timeSlot(req.timeSlot())
+                .shiftName(shift != null ? shift.getName() : null)
+                .shiftTime(shift != null ? shift.getStartTime() + " - " + shift.getEndTime() : null)
                 .status(org.example.doansummer2026.enums.AppointmentStatus.PENDING)
                 .build();
 
