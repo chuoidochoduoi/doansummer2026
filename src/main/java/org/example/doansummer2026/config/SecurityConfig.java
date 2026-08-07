@@ -53,6 +53,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/shifts/active").permitAll()
                         .requestMatchers("/api/v1/chat/guest/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/chat/*/messages").permitAll()
+                        .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // Preflight
