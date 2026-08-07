@@ -149,6 +149,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                 .isGuest(true)
                 .guestFullName(req.guestFullName())
                 .guestPhone(req.guestPhone())
+                .guestEmail(req.guestEmail())
                 .guestAddress(req.guestAddress())
                 .guestAge(req.guestAge())
                 .guestGender(req.guestGender())
@@ -188,6 +189,7 @@ public class AppointmentService implements AppointmentServiceInterface {
         // Cập nhật thông tin khách (cho phép ghi đè kể cả khách vãng lai hay khách có tk)
         if (req.guestFullName() != null) a.setGuestFullName(req.guestFullName());
         if (req.guestPhone() != null) a.setGuestPhone(req.guestPhone());
+        if (req.guestEmail() != null) a.setGuestEmail(req.guestEmail());
         if (req.guestAddress() != null) a.setGuestAddress(req.guestAddress());
         if (req.guestAge() != null) a.setGuestAge(req.guestAge());
         if (req.guestGender() != null) a.setGuestGender(req.guestGender());

@@ -27,7 +27,9 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
     Optional<Appointment> findByIdForUpdate(@Param("id") UUID id);
 
     boolean existsByCustomer_ProfileIdAndStatusIn(UUID customerId, Collection<AppointmentStatus> statuses);
-    List<Appointment> findAllByIsGuestTrueAndGuestPhoneIn(Collection<String> phones);
+    
+    @Query("SELECT a FROM Appointment a WHERE a.isGuest = true AND (a.guestPhone IN :phones OR a.guestEmail IN :emails)")
+    List<Appointment> findGuestAppointmentsByPhonesOrEmails(@Param("phones") Collection<String> phones, @Param("emails") Collection<String> emails);
 
 }
 

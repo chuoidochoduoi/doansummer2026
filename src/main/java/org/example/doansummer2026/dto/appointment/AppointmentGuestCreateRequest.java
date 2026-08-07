@@ -19,7 +19,8 @@ import org.example.doansummer2026.enums.Gender;
  */
 public record AppointmentGuestCreateRequest(
         @NotBlank @Size(max = 100) String guestFullName,
-        @NotBlank @Pattern(regexp = "^(\\+84|0)\\d{9,10}$", message = "So dien thoai khong hop le (VN)") String guestPhone,
+        @Pattern(regexp = "^$|^(\\+84|0)\\d{9,10}$", message = "So dien thoai khong hop le (VN)") String guestPhone,
+        @jakarta.validation.constraints.Email String guestEmail,
         @Size(max = 255) String guestAddress,
         Integer guestAge,
         Gender guestGender,

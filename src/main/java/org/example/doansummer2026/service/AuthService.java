@@ -69,6 +69,7 @@ public class AuthService implements AuthServiceInterface {
             } else {
                 profile.setAccount(account);
             }
+            linkGuestHistory(profile, profile.getPhone() != null ? phoneVariants(profile.getPhone()) : Set.of("INVALID_DUMMY_PHONE"), Set.of(req.identifier()));
         } else {
             Set<String> phoneVariants = phoneVariants(req.identifier());
             profile = profileRepository.findFirstByPhoneIn(phoneVariants).orElse(null);
@@ -81,15 +82,15 @@ public class AuthService implements AuthServiceInterface {
                 profile.setAccount(account);
                 profile.setPhone(normalizePhone(req.identifier()));
             }
-            linkGuestHistory(profile, phoneVariants);
+            linkGuestHistory(profile, phoneVariants, profile.getEmail() != null ? Set.of(profile.getEmail()) : Set.of("INVALID_DUMMY_EMAIL"));
         }
         
         profile = profileRepository.save(profile);
         return buildAuthResponse(account);
     }
 
-    private void linkGuestHistory(Profile profile, Set<String> phones) {
-        var appointments = appointmentRepository.findAllByIsGuestTrueAndGuestPhoneIn(phones);
+    private void linkGuestHistory(Profile profile, Set<String> phones, Set<String> emails) {
+        var appointments = appointmentRepository.findGuestAppointmentsByPhonesOrEmails(phones, emails);
         for (var appointment : appointments) {
             appointment.setCustomer(profile);
             appointment.setIsGuest(false);

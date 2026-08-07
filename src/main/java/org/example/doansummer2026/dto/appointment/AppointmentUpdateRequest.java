@@ -16,6 +16,7 @@ public record AppointmentUpdateRequest(
         UUID shiftId,
         String guestFullName,
         String guestPhone,
+        String guestEmail,
         String guestAddress,
         Integer guestAge,
         Gender guestGender

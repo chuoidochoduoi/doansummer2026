@@ -21,6 +21,7 @@ public record AppointmentResponse(
         Boolean isGuest,
         String guestFullName,
         String guestPhone,
+        String guestEmail,
         String guestAddress,
         Integer guestAge,
         Gender guestGender,
@@ -32,6 +33,7 @@ public record AppointmentResponse(
         // Copy thong tin tu profile sang guest fields khi co customer
         String guestFullName = a.getGuestFullName();
         String guestPhone = a.getGuestPhone();
+        String guestEmail = a.getGuestEmail();
         String guestAddress = a.getGuestAddress();
         Integer guestAge = a.getGuestAge();
         Gender guestGender = a.getGuestGender();
@@ -40,6 +42,7 @@ public record AppointmentResponse(
         if (a.getCustomer() != null) {
             guestFullName = a.getCustomer().getFullName();
             guestPhone = a.getCustomer().getPhone();
+            guestEmail = a.getCustomer().getEmail();
             guestAddress = a.getCustomer().getAddress();
             // Tinh tuoi tu ngay sinh
             if (a.getCustomer().getDateOfBirth() != null) {
@@ -58,7 +61,7 @@ public record AppointmentResponse(
                 a.getAppointmentId(),
                 a.getCustomer() != null ? a.getCustomer().getProfileId() : null,
                 a.getScheduledAt(), a.getStatus(), a.getCancelReason(), a.getCreatedAt(),
-                a.getIsGuest(), guestFullName, guestPhone, guestAddress,
+                a.getIsGuest(), guestFullName, guestPhone, guestEmail, guestAddress,
                 guestAge, guestGender, serviceInfos, a.getShiftName(), a.getShiftTime()
         );
     }

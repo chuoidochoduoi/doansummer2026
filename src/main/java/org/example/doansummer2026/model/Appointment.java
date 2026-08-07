@@ -105,6 +105,10 @@ public class Appointment extends BaseEntity {
     @Column(name = "guest_phone", length = 15)
     private String guestPhone;
 
+    @Size(max = 255)
+    @Column(name = "guest_email")
+    private String guestEmail;
+
     @Column(name = "guest_age")
     private Integer guestAge;
 
