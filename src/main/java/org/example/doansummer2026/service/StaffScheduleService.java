@@ -67,7 +67,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                         NotificationType.GENERAL,
                         NotificationChannel.IN_APP,
                         "Phân công lịch trực mới",
-                        String.format("Bạn vừa được phân công lịch trực vào ngày %s, ca %s.", saved.getWorkDate(), shift.getShiftName()),
+                        String.format("Bạn vừa được phân công lịch trực vào ngày %s, ca %s.", saved.getWorkDate(), shift.getName()),
                         "StaffSchedule",
                         saved.getScheduleId()
                 ));
@@ -97,7 +97,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                         NotificationType.GENERAL,
                         NotificationChannel.IN_APP,
                         "Thay đổi lịch trực",
-                        String.format("Lịch trực ngày %s, ca %s của bạn đã được cập nhật.", updated.getWorkDate(), updated.getShift().getShiftName()),
+                        String.format("Lịch trực ngày %s, ca %s của bạn đã được cập nhật.", updated.getWorkDate(), updated.getShift().getName()),
                         "StaffSchedule",
                         updated.getScheduleId()
                 ));
@@ -117,7 +117,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                         NotificationType.GENERAL,
                         NotificationChannel.IN_APP,
                         "Hủy lịch trực",
-                        String.format("Lịch trực ngày %s, ca %s của bạn đã bị hủy.", s.getWorkDate(), s.getShift().getShiftName()),
+                        String.format("Lịch trực ngày %s, ca %s của bạn đã bị hủy.", s.getWorkDate(), s.getShift().getName()),
                         "StaffSchedule",
                         s.getScheduleId()
                 ));
