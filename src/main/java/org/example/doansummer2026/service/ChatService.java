@@ -90,6 +90,9 @@ public class ChatService {
             messagingTemplate.convertAndSend("/topic/receptionist-chat", "NEW_MESSAGE");
         }
 
+        // Luôn broadcast tới topic của session để update UI cho cả Khách và Lễ tân
+        messagingTemplate.convertAndSend("/topic/chat-" + sessionId, "NEW_MESSAGE");
+
         // 3. Nếu đang được BOT_HANDLING, gọi bot
         if (session.getStatus() == ChatSessionStatus.BOT_HANDLING) {
             String botReply = botService.getBotResponse(content);
