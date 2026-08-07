@@ -42,6 +42,7 @@ import org.springframework.stereotype.Service;
 import org.example.doansummer2026.service.interfaces.InvoiceServiceInterface;
 import org.example.doansummer2026.service.interfaces.QueueTicketServiceInterface;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -70,6 +71,7 @@ public class InvoiceService implements InvoiceServiceInterface {
     private final QueueTicketRepository queueTicketRepo;
     private final TestRequestRepository testRequestRepo;
     private final NotificationService notificationService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Transactional(readOnly = true)
     public PageResponse<InvoiceResponse> search(UUID customerId, InvoiceStatus status,

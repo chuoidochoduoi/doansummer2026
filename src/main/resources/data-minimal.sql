@@ -125,6 +125,6 @@ INSERT INTO staff_info (staff_id, created_at, updated_at, deleted, profile_id, s
 -- ===================================================================
 -- Shift Config
 -- ===================================================================
-INSERT INTO shift_config (shift_id, created_at, updated_at, deleted, name, start_time, end_time, is_active, order_index) VALUES
-('70000001-1111-1111-1111-111111111111', NOW(), NOW(), false, 'Ca Sáng', '07:30', '11:30', true, 1),
-('70000002-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Ca Chiều', '13:30', '17:30', true, 2);
+INSERT INTO shift_config (shift_id, created_at, updated_at, deleted, name, start_time, end_time, is_active) VALUES
+('70000001-1111-1111-1111-111111111111', NOW(), NOW(), false, 'Ca Sáng', '07:30', '11:30', true),
+('70000002-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Ca Chiều', '13:30', '17:30', true);
