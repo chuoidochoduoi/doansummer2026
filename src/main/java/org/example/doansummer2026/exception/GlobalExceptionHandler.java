@@ -61,6 +61,17 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.CONFLICT, msg, req, null);
     }
 
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<ApiError> handleConstraintViolation(jakarta.validation.ConstraintViolationException ex,
+                                                              HttpServletRequest req) {
+        log.warn("Constraint violation", ex);
+        String msg = ex.getConstraintViolations().stream()
+                .map(v -> v.getMessage())
+                .findFirst()
+                .orElse("Du lieu khong hop le");
+        return build(HttpStatus.BAD_REQUEST, msg, req, null);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex, HttpServletRequest req) {
         return build(HttpStatus.FORBIDDEN, "Khong co quyen truy cap", req, null);
