@@ -36,15 +36,15 @@ public class ReportService {
         LocalDate now = LocalDate.now();
         LocalDate from, to;
 
-        // Xác định khoảng thời gian
         switch (period.toLowerCase()) {
             case "day" -> { from = now; to = now; }
-            case "year" -> { from = now.withDayOfYear(1); to = now.withDayOfYear(now.lengthOfYear()); }
-            default -> { // month
-                YearMonth ym = YearMonth.from(now);
-                from = ym.atDay(1);
-                to = ym.atEndOfMonth();
+            case "quarter" -> {
+                int q = (now.getMonthValue() - 1) / 3 + 1;
+                from = LocalDate.of(now.getYear(), (q - 1) * 3 + 1, 1);
+                to = from.plusMonths(2).withDayOfMonth(from.plusMonths(2).lengthOfMonth());
             }
+            case "year" -> { from = now.withDayOfYear(1); to = now.withDayOfYear(now.lengthOfYear()); }
+            default -> { YearMonth ym = YearMonth.from(now); from = ym.atDay(1); to = ym.atEndOfMonth(); }
         }
 
         // 1. Doanh thu theo tháng
@@ -56,6 +56,7 @@ public class ReportService {
         // 3. Tổng số ca hoàn thành
         int totalSessions = (int) queueTicketRepo.findAll().stream()
                 .filter(q -> q.getStatus() == QueueStatus.DONE)
+                .filter(q -> !q.getUpdatedAt().toLocalDate().isBefore(from) && !q.getUpdatedAt().toLocalDate().isAfter(to))
                 .count();
 
         // 4. Bảng thống kê theo khoa
@@ -70,6 +71,11 @@ public class ReportService {
 
         switch (period.toLowerCase()) {
             case "day" -> { from = now; to = now; }
+            case "quarter" -> {
+                int q = (now.getMonthValue() - 1) / 3 + 1;
+                from = LocalDate.of(now.getYear(), (q - 1) * 3 + 1, 1);
+                to = from.plusMonths(2).withDayOfMonth(from.plusMonths(2).lengthOfMonth());
+            }
             case "year" -> { from = now.withDayOfYear(1); to = now.withDayOfYear(now.lengthOfYear()); }
             default -> { YearMonth ym = YearMonth.from(now); from = ym.atDay(1); to = ym.atEndOfMonth(); }
         }
@@ -77,12 +83,14 @@ public class ReportService {
         // 1. Tổng doanh thu (PAID invoices)
         long totalRevenue = invoiceRepo.findAll().stream()
                 .filter(i -> i.getStatus() == InvoiceStatus.PAID)
+                .filter(i -> !i.getIssueDate().isBefore(from) && !i.getIssueDate().isAfter(to))
                 .mapToLong(i -> i.getTotalAmount().longValue())
                 .sum();
 
         // 2. Tổng ca
         int totalSessions = (int) queueTicketRepo.findAll().stream()
                 .filter(q -> q.getStatus() == QueueStatus.DONE)
+                .filter(q -> !q.getUpdatedAt().toLocalDate().isBefore(from) && !q.getUpdatedAt().toLocalDate().isAfter(to))
                 .count();
 
         // 3. Bảng chi tiết dịch vụ với BHYT thực tế
@@ -124,8 +132,14 @@ public class ReportService {
     private List<DashboardReportResponse.ChartItem> getRevenueChart(LocalDate from, LocalDate to, String period) {
         List<DashboardReportResponse.ChartItem> list = invoiceRepo.findAll().stream()
                 .filter(i -> i.getStatus() == InvoiceStatus.PAID)
+                .filter(i -> !i.getIssueDate().isBefore(from) && !i.getIssueDate().isAfter(to))
                 .collect(Collectors.groupingBy(
-                        i -> YearMonth.from(i.getIssueDate()).toString(),
+                        i -> {
+                            if (period.equalsIgnoreCase("year") || period.equalsIgnoreCase("quarter")) {
+                                return YearMonth.from(i.getIssueDate()).toString();
+                            }
+                            return i.getIssueDate().toString();
+                        },
                         Collectors.summingLong(i -> i.getTotalAmount().longValue())
                 ))
                 .entrySet().stream()
@@ -133,20 +147,13 @@ public class ReportService {
                 .sorted(Comparator.comparing(DashboardReportResponse.ChartItem::label))
                 .collect(Collectors.toList());
                 
-        if (list.isEmpty()) {
-            YearMonth current = YearMonth.now();
-            list.add(new DashboardReportResponse.ChartItem(current.minusMonths(4).toString(), 15000000.0));
-            list.add(new DashboardReportResponse.ChartItem(current.minusMonths(3).toString(), 22000000.0));
-            list.add(new DashboardReportResponse.ChartItem(current.minusMonths(2).toString(), 18000000.0));
-            list.add(new DashboardReportResponse.ChartItem(current.minusMonths(1).toString(), 30000000.0));
-            list.add(new DashboardReportResponse.ChartItem(current.toString(), 25000000.0));
-        }
         return list;
     }
 
     private List<DashboardReportResponse.ChartItem> getSessionChart(LocalDate from, LocalDate to) {
         return queueTicketRepo.findAll().stream()
                 .filter(q -> q.getStatus() == QueueStatus.DONE)
+                .filter(q -> !q.getUpdatedAt().toLocalDate().isBefore(from) && !q.getUpdatedAt().toLocalDate().isAfter(to))
                 .collect(Collectors.groupingBy(
                         q -> q.getDepartment().getName(),
                         Collectors.counting()
@@ -163,6 +170,7 @@ public class ReportService {
                     int sessions = (int) queueTicketRepo.findAll().stream()
                             .filter(q -> q.getDepartment().getDepartmentId().equals(d.getDepartmentId()))
                             .filter(q -> q.getStatus() == QueueStatus.DONE)
+                            .filter(q -> !q.getUpdatedAt().toLocalDate().isBefore(from) && !q.getUpdatedAt().toLocalDate().isAfter(to))
                             .count();
                     long revenue = sessions * 300000L; // Tạm tính: trung bình 300k/ca
                     
@@ -188,11 +196,15 @@ public class ReportService {
     private List<ServiceReportResponse.ServiceStat> getServiceStats(LocalDate from, LocalDate to) {
         return serviceRepo.findAll().stream()
                 .map(s -> {
-                    // Tính totalOrders, bhytQty, bhytFund từ InvoiceItem
-                    int totalOrders = (int) invoiceItemRepo.countByServiceId(s.getServiceId());
-                    int bhytQty = (int) invoiceItemRepo.countBhytUsageByServiceId(s.getServiceId());
-                    long bhytFund = invoiceItemRepo.sumBhytFundByServiceId(s.getServiceId()) != null
-                            ? invoiceItemRepo.sumBhytFundByServiceId(s.getServiceId()).longValue() : 0L;
+                    List<org.example.doansummer2026.model.InvoiceItem> items = invoiceItemRepo.findAll().stream()
+                            .filter(ii -> ii.getService().getServiceId().equals(s.getServiceId()))
+                            .filter(ii -> ii.getInvoice().getStatus() == InvoiceStatus.PAID)
+                            .filter(ii -> !ii.getInvoice().getIssueDate().isBefore(from) && !ii.getInvoice().getIssueDate().isAfter(to))
+                            .toList();
+
+                    int totalOrders = items.size();
+                    int bhytQty = (int) items.stream().filter(ii -> ii.getBhytFund() != null && ii.getBhytFund().longValue() > 0).count();
+                    long bhytFund = items.stream().mapToLong(ii -> ii.getBhytFund() != null ? ii.getBhytFund().longValue() : 0L).sum();
 
                     return new ServiceReportResponse.ServiceStat(
                             s.getDepartmentType() != null ? s.getDepartmentType().name() : "Khác",
