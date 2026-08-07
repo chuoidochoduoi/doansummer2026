@@ -47,6 +47,32 @@ public class ChatService {
         return sessionRepo.save(newSession);
     }
 
+    public ChatSession startOrGetGuestSession(String fullName, String phone) {
+        Profile guestProfile = profileRepo.findFirstByPhone(phone).orElseGet(() -> {
+            Profile newProfile = Profile.builder()
+                    .fullName(fullName)
+                    .phone(phone)
+                    .build();
+            return profileRepo.save(newProfile);
+        });
+
+        // Tìm xem khách này có session chưa đóng không
+        List<ChatSession> sessions = sessionRepo.findByCustomer_ProfileId(guestProfile.getProfileId());
+        Optional<ChatSession> active = sessions.stream()
+                .filter(s -> s.getStatus() != ChatSessionStatus.CLOSED)
+                .findFirst();
+
+        if (active.isPresent()) {
+            return active.get();
+        }
+
+        ChatSession newSession = ChatSession.builder()
+                .customer(guestProfile)
+                .status(ChatSessionStatus.BOT_HANDLING)
+                .build();
+        return sessionRepo.save(newSession);
+    }
+
     public void processCustomerMessage(UUID sessionId, UUID customerId, String content) {
         ChatSession session = sessionRepo.findById(sessionId).orElseThrow();
         

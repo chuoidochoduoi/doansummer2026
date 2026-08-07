@@ -38,7 +38,27 @@ public class ChatController {
         Account acc = accountRepo.findFirstByUsername(auth.getName()).orElseThrow();
         Profile profile = profileRepo.findFirstByAccount_AccountId(acc.getAccountId()).orElseThrow();
         ChatSession session = chatService.startOrGetActiveSession(profile.getProfileId());
-        return ResponseEntity.ok(Map.of("sessionId", session.getSessionId(), "status", session.getStatus()));
+        return ResponseEntity.ok(Map.of(
+            "sessionId", session.getSessionId(), 
+            "status", session.getStatus(),
+            "profileId", profile.getProfileId()
+        ));
+    }
+
+    @PostMapping("/guest/session")
+    public ResponseEntity<?> startOrGetGuestSession(@RequestBody Map<String, String> body) {
+        String fullName = body.get("fullName");
+        String phone = body.get("phone");
+        if (fullName == null || phone == null || fullName.trim().isEmpty() || phone.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("Thiếu thông tin tên hoặc số điện thoại");
+        }
+        
+        ChatSession session = chatService.startOrGetGuestSession(fullName.trim(), phone.trim());
+        return ResponseEntity.ok(Map.of(
+            "sessionId", session.getSessionId(),
+            "status", session.getStatus(),
+            "guestProfileId", session.getCustomer().getProfileId()
+        ));
     }
 
     @GetMapping("/sessions/active")
@@ -90,6 +110,21 @@ public class ChatController {
         Account acc = accountRepo.findFirstByUsername(auth.getName()).orElseThrow();
         Profile profile = profileRepo.findFirstByAccount_AccountId(acc.getAccountId()).orElseThrow();
         chatService.processCustomerMessage(sessionId, profile.getProfileId(), body.get("content"));
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/guest/{sessionId}/messages")
+    public ResponseEntity<?> sendGuestMessage(
+            @PathVariable UUID sessionId,
+            @RequestBody Map<String, String> body) {
+        String content = body.get("content");
+        String guestProfileIdStr = body.get("guestProfileId");
+        
+        if (content == null || content.trim().isEmpty() || guestProfileIdStr == null) {
+            return ResponseEntity.badRequest().body("Thiếu nội dung tin nhắn hoặc guestProfileId");
+        }
+        
+        chatService.processCustomerMessage(sessionId, UUID.fromString(guestProfileIdStr), content.trim());
         return ResponseEntity.ok().build();
     }
 
