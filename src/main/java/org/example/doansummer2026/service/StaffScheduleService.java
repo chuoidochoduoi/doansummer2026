@@ -15,6 +15,9 @@ import org.example.doansummer2026.model.StaffScheduleTemplate;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.repository.StaffScheduleRepository;
 import org.example.doansummer2026.repository.StaffScheduleTemplateRepository;
+import org.example.doansummer2026.dto.notification.NotificationCreateRequest;
+import org.example.doansummer2026.enums.NotificationType;
+import org.example.doansummer2026.enums.NotificationChannel;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -39,6 +42,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     private final StaffScheduleTemplateRepository templateRepo;
     private final ShiftConfigRepository shiftConfigRepo;
     private final StaffService staffService;
+    private final NotificationService notificationService;
 
     public ScheduleResponse create(ScheduleCreateRequest req) {
         StaffInfo staff = staffService.findById(req.staffId());
@@ -54,7 +58,23 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                 .template(req.templateId() != null
                         ? templateRepo.findById(req.templateId()).orElse(null) : null)
                 .build();
-        return ScheduleResponse.from(scheduleRepo.save(schedule));
+        StaffSchedule saved = scheduleRepo.save(schedule);
+        
+        if (staff.getProfile() != null) {
+            try {
+                notificationService.create(new NotificationCreateRequest(
+                        staff.getProfile().getProfileId(),
+                        NotificationType.GENERAL,
+                        NotificationChannel.IN_APP,
+                        "Phân công lịch trực mới",
+                        String.format("Bạn vừa được phân công lịch trực vào ngày %s, ca %s.", saved.getWorkDate(), shift.getShiftName()),
+                        "StaffSchedule",
+                        saved.getScheduleId()
+                ));
+            } catch (Exception e) {}
+        }
+        
+        return ScheduleResponse.from(saved);
     }
 
     public ScheduleResponse update(UUID id, ScheduleUpdateRequest req) {
@@ -67,13 +87,43 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         if (req.status() != null) s.setStatus(req.status());
         if (req.isCustom() != null) s.setIsCustom(req.isCustom());
         if (req.note() != null) s.setNote(req.note());
-        return ScheduleResponse.from(scheduleRepo.save(s));
+        
+        StaffSchedule updated = scheduleRepo.save(s);
+        
+        if (s.getStaff() != null && s.getStaff().getProfile() != null) {
+            try {
+                notificationService.create(new NotificationCreateRequest(
+                        s.getStaff().getProfile().getProfileId(),
+                        NotificationType.GENERAL,
+                        NotificationChannel.IN_APP,
+                        "Thay đổi lịch trực",
+                        String.format("Lịch trực ngày %s, ca %s của bạn đã được cập nhật.", updated.getWorkDate(), updated.getShift().getShiftName()),
+                        "StaffSchedule",
+                        updated.getScheduleId()
+                ));
+            } catch (Exception e) {}
+        }
+        
+        return ScheduleResponse.from(updated);
     }
 
     public void delete(UUID id) {
-        if (!scheduleRepo.existsById(id)) {
-            throw new ResourceNotFoundException("Lich khong ton tai: " + id);
+        StaffSchedule s = scheduleRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Lich khong ton tai: " + id));
+        
+        if (s.getStaff() != null && s.getStaff().getProfile() != null) {
+            try {
+                notificationService.create(new NotificationCreateRequest(
+                        s.getStaff().getProfile().getProfileId(),
+                        NotificationType.GENERAL,
+                        NotificationChannel.IN_APP,
+                        "Hủy lịch trực",
+                        String.format("Lịch trực ngày %s, ca %s của bạn đã bị hủy.", s.getWorkDate(), s.getShift().getShiftName()),
+                        "StaffSchedule",
+                        s.getScheduleId()
+                ));
+            } catch (Exception e) {}
         }
+        
         scheduleRepo.deleteById(id);
     }
 

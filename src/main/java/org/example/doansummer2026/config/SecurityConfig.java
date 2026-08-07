@@ -52,8 +52,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/medical-services/available").permitAll()
                         .requestMatchers("/api/v1/shifts/active").permitAll()
                         .requestMatchers("/api/v1/chat/guest/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/chat/*/messages").permitAll()
-                        .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/chat/*/messages", "/api/v1/chat/*/status").permitAll()
+                        .requestMatchers("/ws", "/ws/**", "/ws/info").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // Preflight

@@ -18,6 +18,13 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.example.doansummer2026.service.interfaces.NotificationServiceInterface;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.messaging.simp.SimpMessageSendingOperations;
+import org.example.doansummer2026.repository.StaffInfoRepository;
+import org.example.doansummer2026.model.StaffInfo;
+import org.example.doansummer2026.enums.SystemRole;
+import org.example.doansummer2026.enums.NotificationType;
+import org.example.doansummer2026.enums.NotificationChannel;
+import java.util.List;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -29,6 +36,8 @@ public class NotificationService implements NotificationServiceInterface {
 
     private final NotificationRepository repo;
     private final ProfileRepository profileRepo;
+    private final StaffInfoRepository staffRepo;
+    private final SimpMessageSendingOperations messagingTemplate;
 
     @Transactional(readOnly = true)
     public PageResponse<NotificationResponse> search(UUID recipientId, NotificationStatus status,
@@ -53,9 +62,18 @@ public class NotificationService implements NotificationServiceInterface {
                 .content(req.content())
                 .relatedEntity(req.relatedEntity())
                 .relatedEntityId(req.relatedEntityId())
-                .status(NotificationStatus.PENDING)
+                .status(NotificationStatus.SENT)
+                .sentAt(LocalDateTime.now())
                 .build();
-        return NotificationResponse.from(repo.save(n));
+        Notification saved = repo.save(n);
+        
+        // Broadcast to recipient via WebSocket
+        NotificationResponse response = NotificationResponse.from(saved);
+        if (recipient.getAccount() != null) {
+            messagingTemplate.convertAndSend("/topic/notifications-" + recipient.getAccount().getAccountId(), response);
+        }
+        
+        return response;
     }
 
     public NotificationResponse update(UUID id, NotificationUpdateRequest req) {
@@ -110,6 +128,25 @@ public class NotificationService implements NotificationServiceInterface {
     public UnreadCountResponse unreadCount(UUID recipientId) {
         return new UnreadCountResponse(recipientId,
                 repo.countByRecipient_ProfileIdAndStatus(recipientId, NotificationStatus.SENT));
+    }
+
+    public void notifyStaffByRole(SystemRole role, String title, String content, String relatedEntity, UUID relatedEntityId) {
+        List<StaffInfo> staffList = staffRepo.findAllBySystemRoleIn(List.of(role));
+        for (StaffInfo staff : staffList) {
+            if (staff.getProfile() != null) {
+                try {
+                    create(new NotificationCreateRequest(
+                            staff.getProfile().getProfileId(),
+                            NotificationType.GENERAL,
+                            NotificationChannel.IN_APP,
+                            title,
+                            content,
+                            relatedEntity,
+                            relatedEntityId
+                    ));
+                } catch (Exception e) {}
+            }
+        }
     }
 }
 

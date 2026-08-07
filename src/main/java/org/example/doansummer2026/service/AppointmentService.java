@@ -205,6 +205,10 @@ public class AppointmentService implements AppointmentServiceInterface {
         Appointment saved = repo.save(a);
         if (req.status() != null && req.status() != oldStatus) {
             notifyCustomerStatusChange(saved, oldStatus);
+            if (req.status() == AppointmentStatus.CANCELLED) {
+                String patientName = (saved.getIsGuest() != null && saved.getIsGuest()) ? saved.getGuestFullName() : (saved.getCustomer() != null ? saved.getCustomer().getFullName() : "Khách");
+                notificationService.notifyStaffByRole(SystemRole.RECEPTIONIST, "Lịch hẹn đã bị hủy", String.format("%s đã hủy lịch hẹn vào lúc %s", patientName, saved.getScheduledAt()), "Appointment", saved.getAppointmentId());
+            }
         }
         
         return AppointmentResponse.from(saved);
@@ -239,26 +243,8 @@ public class AppointmentService implements AppointmentServiceInterface {
 
     private void notifyReceptionists(Appointment a) {
         String patientName = (a.getIsGuest() != null && a.getIsGuest()) ? a.getGuestFullName() : (a.getCustomer() != null ? a.getCustomer().getFullName() : "Khach");
-        String content = String.format("Co lich hen moi tu %s vao luc %s", patientName, a.getScheduledAt());
-        
-        List<StaffInfo> receptionists = staffRepo.findAllBySystemRoleIn(List.of(SystemRole.RECEPTIONIST));
-        for (StaffInfo staff : receptionists) {
-            if (staff.getProfile() != null) {
-                try {
-                    notificationService.create(new NotificationCreateRequest(
-                            staff.getProfile().getProfileId(),
-                            NotificationType.GENERAL,
-                            NotificationChannel.IN_APP,
-                            "Lich hen moi",
-                            content,
-                            "Appointment",
-                            a.getAppointmentId()
-                    ));
-                } catch (Exception e) {
-                    // Ignore
-                }
-            }
-        }
+        String content = String.format("Có lịch hẹn mới từ %s vào lúc %s", patientName, a.getScheduledAt());
+        notificationService.notifyStaffByRole(SystemRole.RECEPTIONIST, "Lịch hẹn mới", content, "Appointment", a.getAppointmentId());
     }
 
     private void notifyCustomerStatusChange(Appointment a, AppointmentStatus oldStatus) {

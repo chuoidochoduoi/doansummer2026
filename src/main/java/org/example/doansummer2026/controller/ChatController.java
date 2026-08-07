@@ -110,6 +110,12 @@ public class ChatController {
         return ResponseEntity.ok(res);
     }
 
+    @GetMapping("/{sessionId}/status")
+    public ResponseEntity<?> getSessionStatus(@PathVariable UUID sessionId) {
+        ChatSession session = chatService.getSession(sessionId);
+        return ResponseEntity.ok(Map.of("status", session.getStatus()));
+    }
+
     @PostMapping("/{sessionId}/messages/customer")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<?> sendCustomerMessage(

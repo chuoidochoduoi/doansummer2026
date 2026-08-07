@@ -172,4 +172,8 @@ public class ChatService {
     public List<ChatMessage> getMessages(UUID sessionId) {
         return messageRepo.findBySession_SessionIdOrderByCreatedAtAsc(sessionId);
     }
+
+    public ChatSession getSession(UUID sessionId) {
+        return sessionRepo.findById(sessionId).orElseThrow();
+    }
 }

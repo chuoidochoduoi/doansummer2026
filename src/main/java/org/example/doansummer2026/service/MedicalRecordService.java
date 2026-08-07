@@ -67,6 +67,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     private final ProfileRepository profileRepo;
     private final InvoiceRepository invoiceRepo;
     private final org.example.doansummer2026.repository.ShiftConfigRepository shiftConfigRepository;
+    private final NotificationService notificationService;
 
     @Transactional(readOnly = true)
     public PageResponse<MedicalRecordResponse> search(UUID doctorId, MedicalRecordStatus status,
@@ -538,6 +539,19 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         r.setCompletedAt(LocalDateTime.now());
         if (actor != null) { r.setDoctorConfirmedBy(actor); r.setDoctorConfirmedAt(LocalDateTime.now()); }
         MedicalRecord saved = repo.save(r);
+        
+        String patientName = r.getVisit() != null && r.getVisit().getAppointment() != null ? 
+            (r.getVisit().getAppointment().getIsGuest() != null && r.getVisit().getAppointment().getIsGuest() ? 
+                r.getVisit().getAppointment().getGuestFullName() : 
+                (r.getVisit().getAppointment().getCustomer() != null ? r.getVisit().getAppointment().getCustomer().getFullName() : "Khách")) : "Khách";
+        
+        notificationService.notifyStaffByRole(
+            org.example.doansummer2026.enums.SystemRole.RECEPTIONIST,
+            "Khám bệnh hoàn tất", 
+            String.format("Bác sĩ đã khám xong cho bệnh nhân %s.", patientName), 
+            "MedicalRecord", 
+            saved.getRecordId()
+        );
 
         // Tu dong cap nhat queue ticket sang DONE
         CustomerVisit visit = saved.getVisit();

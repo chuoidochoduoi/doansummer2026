@@ -158,7 +158,18 @@ public class TestRequestService implements TestRequestServiceInterface {
                 .status(TestRequestStatus.PENDING)
                 .invoiceItem(invoiceItem)
                 .build();
-        return TestRequestResponse.from(repo.save(t));
+        TestRequest saved = repo.save(t);
+        
+        String patientName = record.getVisit() != null && record.getVisit().getCustomer() != null ? record.getVisit().getCustomer().getFullName() : "Khách";
+        notificationService.notifyStaffByRole(
+            org.example.doansummer2026.enums.SystemRole.CASHIER,
+            "Yêu cầu cận lâm sàng mới",
+            String.format("Bệnh nhân %s có chỉ định mới (%s), vui lòng thu phí.", patientName, service.getName()),
+            "TestRequest",
+            saved.getTestRequestId()
+        );
+        
+        return TestRequestResponse.from(saved);
     }
 
     /** Tao hang cho sau thanh toan, ke ca luot chi co dich vu can lam sang chua co ho so. */
