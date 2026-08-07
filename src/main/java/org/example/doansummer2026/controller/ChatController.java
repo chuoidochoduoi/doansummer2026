@@ -27,6 +27,14 @@ public class ChatController {
     private final ChatService chatService;
     private final AccountRepository accountRepo;
     private final ProfileRepository profileRepo;
+
+    private String getUsername(org.springframework.security.core.Authentication auth) {
+        if (auth.getPrincipal() instanceof Map<?, ?> map) {
+            return (String) map.get("username");
+        }
+        return auth.getName();
+    }
+
     // Helper để lấy current user id - do JwtAuthFilter set Auth
     // Tuy nhiên trong controller đơn giản nhất là pass customerId hoặc receptionistId
     // Trong Spring Security có thể dùng Authentication
@@ -34,8 +42,9 @@ public class ChatController {
     @PostMapping("/session")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<?> startOrGetSession(org.springframework.security.core.Authentication auth) {
-        // auth.getName() la username
-        Account acc = accountRepo.findFirstByUsername(auth.getName()).orElseThrow();
+        // Lấy thông tin user
+        String username = getUsername(auth);
+        Account acc = accountRepo.findFirstByUsername(username).orElseThrow();
         Profile profile = profileRepo.findFirstByAccount_AccountId(acc.getAccountId()).orElseThrow();
         ChatSession session = chatService.startOrGetActiveSession(profile.getProfileId());
         return ResponseEntity.ok(Map.of(
@@ -107,7 +116,8 @@ public class ChatController {
             @PathVariable UUID sessionId,
             @RequestBody Map<String, String> body,
             org.springframework.security.core.Authentication auth) {
-        Account acc = accountRepo.findFirstByUsername(auth.getName()).orElseThrow();
+        String username = getUsername(auth);
+        Account acc = accountRepo.findFirstByUsername(username).orElseThrow();
         Profile profile = profileRepo.findFirstByAccount_AccountId(acc.getAccountId()).orElseThrow();
         chatService.processCustomerMessage(sessionId, profile.getProfileId(), body.get("content"));
         return ResponseEntity.ok().build();
@@ -134,7 +144,8 @@ public class ChatController {
             @PathVariable UUID sessionId,
             @RequestBody Map<String, String> body,
             org.springframework.security.core.Authentication auth) {
-        Account acc = accountRepo.findFirstByUsername(auth.getName()).orElseThrow();
+        String username = getUsername(auth);
+        Account acc = accountRepo.findFirstByUsername(username).orElseThrow();
         // Cần truyền receptionistId (có thể lấy từ acc.getStaffInfo().getStaffId() nếu có mapping)
         // Tạm thời truyền accountId hoặc UUID ngẫu nhiên nếu không cần track chặt chẽ
         UUID staffId = acc.getAccountId(); 
