@@ -32,19 +32,24 @@ public class ReportService {
     private final DepartmentRepository departmentRepo;
     private final InvoiceItemRepository invoiceItemRepo;
 
-    public DashboardReportResponse getDashboardReport(String period) {
+    public DashboardReportResponse getDashboardReport(String period, LocalDate customFrom, LocalDate customTo) {
         LocalDate now = LocalDate.now();
         LocalDate from, to;
 
-        switch (period.toLowerCase()) {
-            case "day" -> { from = now; to = now; }
-            case "quarter" -> {
-                int q = (now.getMonthValue() - 1) / 3 + 1;
-                from = LocalDate.of(now.getYear(), (q - 1) * 3 + 1, 1);
-                to = from.plusMonths(2).withDayOfMonth(from.plusMonths(2).lengthOfMonth());
+        if (customFrom != null && customTo != null) {
+            from = customFrom;
+            to = customTo;
+        } else {
+            switch (period.toLowerCase()) {
+                case "day" -> { from = now; to = now; }
+                case "quarter" -> {
+                    int q = (now.getMonthValue() - 1) / 3 + 1;
+                    from = LocalDate.of(now.getYear(), (q - 1) * 3 + 1, 1);
+                    to = from.plusMonths(2).withDayOfMonth(from.plusMonths(2).lengthOfMonth());
+                }
+                case "year" -> { from = now.withDayOfYear(1); to = now.withDayOfYear(now.lengthOfYear()); }
+                default -> { YearMonth ym = YearMonth.from(now); from = ym.atDay(1); to = ym.atEndOfMonth(); }
             }
-            case "year" -> { from = now.withDayOfYear(1); to = now.withDayOfYear(now.lengthOfYear()); }
-            default -> { YearMonth ym = YearMonth.from(now); from = ym.atDay(1); to = ym.atEndOfMonth(); }
         }
 
         // 1. Doanh thu theo tháng
@@ -65,19 +70,24 @@ public class ReportService {
         return new DashboardReportResponse(revenueChart, sessionChart, totalSessions, table);
     }
 
-    public ServiceReportResponse getServiceReport(String period) {
+    public ServiceReportResponse getServiceReport(String period, LocalDate customFrom, LocalDate customTo) {
         LocalDate now = LocalDate.now();
         LocalDate from, to;
 
-        switch (period.toLowerCase()) {
-            case "day" -> { from = now; to = now; }
-            case "quarter" -> {
-                int q = (now.getMonthValue() - 1) / 3 + 1;
-                from = LocalDate.of(now.getYear(), (q - 1) * 3 + 1, 1);
-                to = from.plusMonths(2).withDayOfMonth(from.plusMonths(2).lengthOfMonth());
+        if (customFrom != null && customTo != null) {
+            from = customFrom;
+            to = customTo;
+        } else {
+            switch (period.toLowerCase()) {
+                case "day" -> { from = now; to = now; }
+                case "quarter" -> {
+                    int q = (now.getMonthValue() - 1) / 3 + 1;
+                    from = LocalDate.of(now.getYear(), (q - 1) * 3 + 1, 1);
+                    to = from.plusMonths(2).withDayOfMonth(from.plusMonths(2).lengthOfMonth());
+                }
+                case "year" -> { from = now.withDayOfYear(1); to = now.withDayOfYear(now.lengthOfYear()); }
+                default -> { YearMonth ym = YearMonth.from(now); from = ym.atDay(1); to = ym.atEndOfMonth(); }
             }
-            case "year" -> { from = now.withDayOfYear(1); to = now.withDayOfYear(now.lengthOfYear()); }
-            default -> { YearMonth ym = YearMonth.from(now); from = ym.atDay(1); to = ym.atEndOfMonth(); }
         }
 
         // 1. Tổng doanh thu (PAID invoices)
