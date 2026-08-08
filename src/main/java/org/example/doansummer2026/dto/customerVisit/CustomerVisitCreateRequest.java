@@ -3,6 +3,7 @@ package org.example.doansummer2026.dto.customerVisit;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import jakarta.validation.constraints.PastOrPresent;
 
 import org.example.doansummer2026.enums.Gender;
 
@@ -21,7 +22,7 @@ public record CustomerVisitCreateRequest(
         String guestFullName,
         String guestPhone,
         String guestAddress,
-        LocalDate guestDateOfBirth,
+        @PastOrPresent(message = "Ngay sinh khong hop le") LocalDate guestDateOfBirth,
         Gender guestGender,
         // Bao hiem y te
         UUID insuranceId

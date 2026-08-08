@@ -9,6 +9,3 @@ public record RegisterRequest(
         @NotBlank @Size(min = 8, max = 64) String password,
         @NotBlank @Pattern(regexp = "^\\d{6}$", message = "Ma OTP khong hop le (phai 6 so)") String otp
 ) {}
-
-
-

@@ -347,24 +347,24 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
     public MedicalRecordResponse update(UUID id, MedicalRecordUpdateRequest req) {
         MedicalRecord r = findById(id);
-        validateVersion(r, req);
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
-            throw new BadRequestException("Ho so da dong, khong the sua");
+            throw new ConflictException("Khong the cap nhat ho so da hoan thanh");
         }
+        validateVersion(r, req);
         updateMedicalRecordFields(r, req);
         return MedicalRecordResponse.from(repo.save(r), true);
     }
 
     /**
-     * Lục nháp - cập nhật dữ liệu và đồi status sang DRAFT.
-     * Dùng khi bác sĩ đang nhập thông tin, chưa kết lục.
+     * Luu nhap - cap nhat du lieu va doi status sang DRAFT.
+     * Dung khi bac si dang nhap thong tin, chua ket luan.
      */
     public MedicalRecordResponse saveDraft(UUID id, MedicalRecordUpdateRequest req) {
         MedicalRecord r = findById(id);
-        validateVersion(r, req);
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
-            throw new BadRequestException("Ho so da dong, khong the luu nham");
+            throw new ConflictException("Khong the cap nhat ho so da hoan thanh");
         }
+        validateVersion(r, req);
         boolean nurse = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication()
                 .getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_NURSE"));
         var actor = currentStaff().orElse(null);

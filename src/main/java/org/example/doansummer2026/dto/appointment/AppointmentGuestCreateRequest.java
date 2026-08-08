@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.FutureOrPresent;
+import jakarta.validation.constraints.Positive;
 
 import java.time.LocalDateTime;
 import java.util.Set;
@@ -22,9 +24,9 @@ public record AppointmentGuestCreateRequest(
         @Pattern(regexp = "^$|^(\\+84|0)\\d{9,10}$", message = "So dien thoai khong hop le (VN)") String guestPhone,
         @jakarta.validation.constraints.Email String guestEmail,
         @Size(max = 255) String guestAddress,
-        Integer guestAge,
+        @Positive(message = "Tuoi khong hop le") Integer guestAge,
         Gender guestGender,
-        @NotNull LocalDateTime scheduledAt,
+        @NotNull @FutureOrPresent(message = "Thoi gian dat lich phai tu hien tai tro di") LocalDateTime scheduledAt,
         UUID shiftId,
         Set<UUID> serviceIds
 ) {}

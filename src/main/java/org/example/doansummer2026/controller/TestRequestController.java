@@ -86,7 +86,16 @@ public class TestRequestController {
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
     public ResponseEntity<TestRequestResponse> update(@PathVariable UUID id,
-                                                       @Valid @RequestBody TestRequestUpdateRequest req) {
+                                                       @Valid @RequestBody TestRequestUpdateRequest req,
+                                                       org.springframework.security.core.Authentication auth) {
+        if (req.status() == org.example.doansummer2026.enums.TestRequestStatus.COMPLETED) {
+            boolean isDoctorOrAdmin = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_DOCTOR") || a.getAuthority().equals("ADMIN") 
+                            || a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("GENERAL_DOCTOR") || a.getAuthority().equals("SPECIALIST_DOCTOR"));
+            if (!isDoctorOrAdmin) {
+                throw new org.springframework.security.access.AccessDeniedException("Chi co Bac si moi duoc quyen hoan thanh xet nghiem");
+            }
+        }
         return RestResponses.ok(service.update(id, req));
     }
 
