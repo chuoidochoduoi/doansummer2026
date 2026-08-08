@@ -10,8 +10,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.TimeZone;
 
+import org.springframework.scheduling.annotation.EnableScheduling;
+
 @SpringBootApplication
 @EnableConfigurationProperties(SmsProperties.class)
+@EnableScheduling
 public class DoAnSummer2026Application {
 
     public static void main(String[] args) {

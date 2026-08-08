@@ -11,6 +11,8 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,6 +30,7 @@ public interface TestRequestRepository extends JpaRepository<TestRequest, UUID> 
             WHERE (:recordId IS NULL OR mr.recordId = :recordId)
               AND (:departmentId IS NULL OR d.departmentId = :departmentId)
               AND (:status IS NULL OR t.status = :status)
+              AND (CAST(:workDate AS date) IS NULL OR CAST(t.createdAt AS date) = :workDate)
               AND (:search = '' OR LOWER(c.fullName) LIKE CONCAT('%', :search, '%')
                    OR LOWER(c.phone) LIKE CONCAT('%', :search, '%')
                    OR LOWER(s.name) LIKE CONCAT('%', :search, '%'))
@@ -37,6 +40,7 @@ public interface TestRequestRepository extends JpaRepository<TestRequest, UUID> 
             WHERE (:recordId IS NULL OR t.medicalRecord.recordId = :recordId)
               AND (:departmentId IS NULL OR t.performingDepartment.departmentId = :departmentId)
               AND (:status IS NULL OR t.status = :status)
+              AND (CAST(:workDate AS date) IS NULL OR CAST(t.createdAt AS date) = :workDate)
               AND (:search = '' OR LOWER(t.medicalRecord.visit.customer.fullName) LIKE CONCAT('%', :search, '%')
                    OR LOWER(t.medicalRecord.visit.customer.phone) LIKE CONCAT('%', :search, '%')
                    OR LOWER(t.service.name) LIKE CONCAT('%', :search, '%'))
@@ -45,6 +49,7 @@ public interface TestRequestRepository extends JpaRepository<TestRequest, UUID> 
                               @Param("departmentId") UUID departmentId,
                               @Param("status") TestRequestStatus status,
                               @Param("search") String search,
+                              @Param("workDate") LocalDate workDate,
                               Pageable pageable);
 
     /** Tim TestRequest kem theo TestResult va MedicalRecord/Visit - dung cho truong hop completeResult */

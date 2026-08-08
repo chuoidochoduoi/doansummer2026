@@ -212,8 +212,9 @@ public class MedicalRecordController {
     @GetMapping("/api/receptionist/follow-ups")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
     public ResponseEntity<PageResponse<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse>> getPendingFollowUps(
+            @RequestParam(required = false) String search,
             Pageable pageable) {
-        return RestResponses.ok(service.getPendingFollowUps(pageable));
+        return RestResponses.ok(service.getPendingFollowUps(search, pageable));
     }
 
     @PostMapping("/api/receptionist/follow-ups/{recordId}/schedule")

@@ -62,10 +62,11 @@ public class TestRequestService implements TestRequestServiceInterface {
 
     public PageResponse<TestRequestResponse> search(UUID recordId, UUID departmentId,
                                                      TestRequestStatus status, String search,
+                                                     java.time.LocalDate workDate,
                                                      Pageable pageable) {
         String normalizedSearch = search == null ? "" : search.trim().toLowerCase();
         Page<TestRequest> page = repo.search(recordId, departmentId, status,
-                normalizedSearch, pageable);
+                normalizedSearch, workDate, pageable);
         // Tạo bù số phòng cho dữ liệu cũ được sinh trước khi có queue cận lâm sàng.
         page.getContent().stream()
                 .filter(test -> test.getQueueTicket() == null)

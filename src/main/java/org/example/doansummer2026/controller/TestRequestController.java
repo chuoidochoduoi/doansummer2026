@@ -16,6 +16,7 @@ import org.example.doansummer2026.enums.TestRequestStatus;
 import org.example.doansummer2026.service.TestRequestService;
 import org.example.doansummer2026.service.AuthService;
 import org.springframework.data.domain.Pageable;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -49,8 +50,9 @@ public class TestRequestController {
             @RequestParam(required = false) UUID departmentId,
             @RequestParam(required = false) TestRequestStatus status,
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate workDate,
             Pageable pageable) {
-        return RestResponses.ok(service.search(recordId, departmentId, status, search, pageable));
+        return RestResponses.ok(service.search(recordId, departmentId, status, search, workDate, pageable));
     }
 
     @GetMapping("/{id}")

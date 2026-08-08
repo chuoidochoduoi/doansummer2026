@@ -11,6 +11,7 @@ import org.example.doansummer2026.dto.testResult.TestResultUpdateRequest;
 import org.example.doansummer2026.model.TestRequest;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.data.domain.Pageable;
+import org.example.doansummer2026.enums.TestRequestStatus;
 
 import java.io.IOException;
 import java.util.List;
@@ -19,8 +20,9 @@ import java.util.UUID;
 /** Service interface for TestRequest management. */
 public interface TestRequestServiceInterface {
     PageResponse<TestRequestResponse> search(UUID recordId, UUID departmentId,
-                                            org.example.doansummer2026.enums.TestRequestStatus status,
-                                            String search, Pageable pageable);
+                                              TestRequestStatus status, String search,
+                                              java.time.LocalDate workDate,
+                                              Pageable pageable);
     TestRequestResponse get(UUID id);
     TestRequestResponse create(TestRequestCreateRequest req);
     TestRequestResponse update(UUID id, TestRequestUpdateRequest req);

@@ -742,8 +742,8 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     }
 
     /** Lấy danh sách yêu cầu tái khám (follow-up) chưa đặt lịch cho lễ tân */
-    public PageResponse<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> getPendingFollowUps(Pageable pageable) {
-        Page<MedicalRecord> page = repo.findPendingFollowUps(pageable);
+    public PageResponse<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> getPendingFollowUps(String search, Pageable pageable) {
+        Page<MedicalRecord> page = repo.findPendingFollowUps(search, pageable);
         return PageResponse.from(page, org.example.doansummer2026.dto.medicalRecord.FollowUpResponse::from);
     }
 
