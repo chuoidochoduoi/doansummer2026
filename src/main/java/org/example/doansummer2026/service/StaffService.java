@@ -210,9 +210,9 @@ public class StaffService implements StaffServiceInterface {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<StaffResponse> search(UUID specializationId,
+    public PageResponse<StaffResponse> search(String search, UUID specializationId,
                                               SystemRole systemRole, Pageable pageable) {
-        Page<StaffInfo> page = staffRepo.search(null, specializationId, systemRole, pageable);
+        Page<StaffInfo> page = staffRepo.search(search, specializationId, systemRole, pageable);
         return PageResponse.from(page, this::toResponse);
     }
 

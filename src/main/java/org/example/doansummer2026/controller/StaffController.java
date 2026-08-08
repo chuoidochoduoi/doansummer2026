@@ -63,10 +63,11 @@ public class StaffController {
     @GetMapping
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF')")
     public ResponseEntity<PageResponse<StaffResponse>> search(
+            @RequestParam(required = false) String search,
             @RequestParam(required = false) UUID specializationId,
             @RequestParam(required = false) SystemRole systemRole,
             Pageable pageable) {
-        return RestResponses.ok(staffService.search(specializationId, systemRole, pageable));
+        return RestResponses.ok(staffService.search(search, specializationId, systemRole, pageable));
     }
 
     /** ADMIN vaf CLINIC_MANAGER xem danh sach nhan su don gian (cho Schedule). */
