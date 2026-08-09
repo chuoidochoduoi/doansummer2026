@@ -153,9 +153,7 @@ public class AccountService implements AccountServiceInterface {
         });
     }
 
-    /**
-     * Khoa tai khoan. KHONG cho phep khoa tai khoan ADMIN hoac CLINIC_MANAGER.
-     */
+    /** Bat/tat khoa tai khoan. Khong cho phep thay doi ADMIN hoac CLINIC_MANAGER. */
     public Account lock(UUID id) {
         Account a = findById(id);
         // Kiem tra xem co phai admin/clinic_manager khong
@@ -166,10 +164,9 @@ public class AccountService implements AccountServiceInterface {
                 throw new ConflictException("Khong the khoa tai khoan ADMIN hoac CLINIC_MANAGER");
             }
         }
-        a.setIsActive(false);
+        a.setIsActive(!Boolean.TRUE.equals(a.getIsActive()));
         return accountRepository.save(a);
     }
 }
-
 
 
