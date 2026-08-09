@@ -16,10 +16,9 @@ public interface StaffServiceInterface {
     StaffResponse update(UUID staffId, StaffUpdateRequest req);
     void delete(UUID staffId);
     StaffResponse lock(UUID staffId);
-    PageResponse<StaffResponse> search(UUID specializationId,
+    PageResponse<StaffResponse> search(String search, UUID specializationId,
                                         org.example.doansummer2026.enums.SystemRole systemRole, Pageable pageable);
     StaffInfo findById(UUID id);
 }
-
 
 

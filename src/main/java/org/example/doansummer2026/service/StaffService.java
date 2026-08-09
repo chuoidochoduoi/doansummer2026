@@ -210,6 +210,7 @@ public class StaffService implements StaffServiceInterface {
     }
 
     @Transactional(readOnly = true)
+    @Override
     public PageResponse<StaffResponse> search(String search, UUID specializationId,
                                               SystemRole systemRole, Pageable pageable) {
         Page<StaffInfo> page = staffRepo.search(search, specializationId, systemRole, pageable);
