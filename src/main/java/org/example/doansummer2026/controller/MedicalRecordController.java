@@ -201,14 +201,14 @@ public class MedicalRecordController {
         return RestResponses.ok(pageResponse);
     }
 
-    @GetMapping("/api/receptionist/customers/{customerId}")
+    @GetMapping("/api/receptionist/records/customers/{customerId}")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<ReceptionistCustomerResponse> getCustomerForReceptionist(
             @PathVariable UUID customerId) {
         return RestResponses.ok(service.getCustomerForReceptionist(customerId));
     }
 
-    @GetMapping("/api/receptionist/customers/{customerId}/visits")
+    @GetMapping("/api/receptionist/records/customers/{customerId}/visits")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<PageResponse<MedicalHistoryResponse>> getCustomerVisitsForReceptionist(
             @PathVariable UUID customerId,
@@ -217,7 +217,7 @@ public class MedicalRecordController {
         return RestResponses.ok(service.getMedicalHistoryForPatient(customerId, search, pageable));
     }
 
-    @GetMapping("/api/receptionist/customers/{customerId}/visits/{visitId}")
+    @GetMapping("/api/receptionist/records/customers/{customerId}/visits/{visitId}")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<VisitDetailResponse> getCustomerVisitForReceptionist(
             @PathVariable UUID customerId,
