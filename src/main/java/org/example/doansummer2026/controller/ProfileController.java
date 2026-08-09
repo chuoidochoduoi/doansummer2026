@@ -73,14 +73,14 @@ public class ProfileController {
 
     /** ADMIN xem chi tiet profile bat ky. */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<ProfileResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(profileService.get(id));
     }
 
     /** ADMIN tim kiem. */
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<PageResponse<ProfileResponse>> search(
             @RequestParam(required = false) String keyword,
             Pageable pageable) {
@@ -89,7 +89,7 @@ public class ProfileController {
 
     /** ADMIN tao profile (thuong di kem StaffService.create). */
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<ProfileResponse> create(@RequestBody ProfileCreateRequest req) {
         if (req.accountId() == null) {
             throw new BadRequestException("accountId bat buoc");
@@ -100,14 +100,14 @@ public class ProfileController {
 
     /** ADMIN cap nhat profile bat ky. */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<ProfileResponse> update(@PathVariable UUID id,
                                                   @RequestBody ProfileUpdateRequest req) {
         return RestResponses.ok(profileService.update(id, req));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         profileService.delete(id);
         return RestResponses.noContent();

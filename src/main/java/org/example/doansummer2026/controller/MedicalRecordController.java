@@ -46,7 +46,7 @@ public class MedicalRecordController {
     // --- MAIN ENDPOINTS ---
 
     @GetMapping("/api/v1/medical-records")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<PageResponse<MedicalRecordResponse>> list(
             @RequestParam(required = false) UUID doctorId,
             @RequestParam(required = false) MedicalRecordStatus status,
@@ -57,13 +57,13 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/v1/medical-records/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<MedicalRecordResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
     @PostMapping("/api/v1/medical-records")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     @Auditable(action = AuditAction.CREATE, entityName = "MedicalRecord")
     public ResponseEntity<MedicalRecordResponse> create(@Valid @RequestBody MedicalRecordCreateRequest req) {
         MedicalRecordResponse created = service.create(req);
@@ -71,7 +71,7 @@ public class MedicalRecordController {
     }
 
     @PutMapping("/api/v1/medical-records/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "id")
     public ResponseEntity<MedicalRecordResponse> update(@PathVariable UUID id,
                                                           @Valid @RequestBody MedicalRecordUpdateRequest req) {
@@ -79,23 +79,23 @@ public class MedicalRecordController {
     }
 
     @PostMapping("/api/v1/medical-records/{id}/draft")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ADMIN')")
-    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "MedicalRecord", idParamName = "id")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.DRAFT_SAVED, entityName = "MedicalRecord", idParamName = "id", description = "Lưu nháp hồ sơ khám")
     public ResponseEntity<MedicalRecordResponse> saveDraft(@PathVariable UUID id,
                                                            @Valid @RequestBody MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.saveDraft(id, req));
     }
 
     @PostMapping("/api/v1/medical-records/{id}/complete")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
-    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "MedicalRecord", idParamName = "id")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.RECORD_COMPLETED, entityName = "MedicalRecord", idParamName = "id", description = "Hoàn thành hồ sơ khám")
     public ResponseEntity<MedicalRecordResponse> complete(@PathVariable UUID id,
                                                           @Valid @RequestBody(required = false) MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.complete(id, req));
     }
 
     @DeleteMapping("/api/v1/medical-records/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     @Auditable(action = AuditAction.DELETE, entityName = "MedicalRecord", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
@@ -103,7 +103,7 @@ public class MedicalRecordController {
     }
 
     @PostMapping("/api/v1/medical-records/{id}/rate")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<MedicalRecordResponse> rate(@PathVariable UUID id,
                                                      @RequestParam int ratingScore) {
         return RestResponses.ok(service.rate(id, ratingScore));
@@ -112,7 +112,7 @@ public class MedicalRecordController {
     // --- PATIENT ENDPOINTS ---
 
     @GetMapping("/api/patient/medical-history")
-    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
     public ResponseEntity<ReceptionistRecordPageResponse<MedicalHistoryResponse>> getMedicalHistory(
             @RequestParam(required = false) String search,
             Pageable pageable) {
@@ -125,7 +125,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/patient/medical-history/{recordId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
     public ResponseEntity<VisitDetailResponse> getVisitDetail(@PathVariable UUID recordId) {
         UUID profileId = authService.currentProfileId();
         if (profileId == null) {
@@ -136,7 +136,7 @@ public class MedicalRecordController {
     }
 
     @PostMapping("/api/patient/medical-history/{recordId}/rate")
-    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
     public ResponseEntity<MedicalRecordResponse> rateVisit(@PathVariable UUID recordId,
                                                           @RequestParam int ratingScore) {
         return RestResponses.ok(service.rate(recordId, ratingScore));
@@ -176,7 +176,7 @@ public class MedicalRecordController {
     // --- RECEPTIONIST ENDPOINTS ---
 
     @GetMapping("/api/receptionist/records")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<ReceptionistRecordPageResponse<ReceptionistRecordResponse>> listRecordsForReceptionist(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String gender,
@@ -189,7 +189,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/receptionist/records/customers")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<PageResponse<ReceptionistCustomerResponse>> listCustomersForReceptionist(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String gender,
@@ -202,7 +202,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/receptionist/records/search-by-phone")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<java.util.List<ReceptionistAllCustomerResponse>> searchByPhoneForReceptionist(
             @RequestParam String phone) {
         var result = service.searchByPhone(phone);
@@ -210,7 +210,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/receptionist/follow-ups")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<PageResponse<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse>> getPendingFollowUps(
             @RequestParam(required = false) String search,
             Pageable pageable) {
@@ -218,7 +218,7 @@ public class MedicalRecordController {
     }
 
     @PostMapping("/api/receptionist/follow-ups/{recordId}/schedule")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> scheduleFollowUp(
             @PathVariable UUID recordId,
             @Valid @RequestBody org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {

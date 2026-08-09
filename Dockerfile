@@ -22,6 +22,10 @@ WORKDIR /app
 
 COPY --from=build /app/build/libs/*.jar app.jar
 
+ENV UPLOAD_ROOT=/app/uploads
+RUN mkdir -p /app/uploads/test-results
+VOLUME ["/app/uploads"]
+
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-Xmx256m", "-Xss256k", "-XX:MaxMetaspaceSize=150m", "-XX:TieredStopAtLevel=1", "-noverify", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Xmx256m", "-Xss256k", "-XX:MaxMetaspaceSize=150m", "-XX:TieredStopAtLevel=1", "-jar", "app.jar"]

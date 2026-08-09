@@ -11,6 +11,7 @@ import org.example.doansummer2026.dto.auditLog.AuditLogCreateRequest;
 import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.service.AuditLogService;
 import org.example.doansummer2026.service.AuthService;
+import org.example.doansummer2026.service.AuditSnapshotService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -18,7 +19,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.lang.reflect.Method;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
+import tools.jackson.databind.ObjectMapper;
 
 @Aspect
 @Component
@@ -28,9 +29,13 @@ public class AuditLogAspect {
 
     private final AuditLogService auditLogService;
     private final AuthService authService;
+    private final ObjectMapper objectMapper;
+    private final AuditSnapshotService auditSnapshotService;
 
     @Around("@annotation(auditable)")
     public Object logAudit(ProceedingJoinPoint joinPoint, Auditable auditable) throws Throwable {
+        String requestedEntityId = extractEntityId(joinPoint, auditable, null);
+        String oldValueJson = auditSnapshotService.snapshot(auditable.entityName(), requestedEntityId);
         Object result = joinPoint.proceed();
         
         try {
@@ -47,6 +52,10 @@ public class AuditLogAspect {
             }
 
             String entityId = extractEntityId(joinPoint, auditable, result);
+            String newValueJson = serializeResponse(result);
+            String description = auditable.description().isBlank()
+                    ? getVietnameseAction(auditable.action()) + " dữ liệu " + getVietnameseEntity(auditable.entityName())
+                    : auditable.description();
 
             AuditLogCreateRequest logReq = new AuditLogCreateRequest(
                     auditable.action(),
@@ -55,24 +64,30 @@ public class AuditLogAspect {
                     actorId,
                     ipAddress != null && ipAddress.length() > 50 ? ipAddress.substring(0, 50) : ipAddress,
                     userAgent != null && userAgent.length() > 500 ? userAgent.substring(0, 500) : userAgent,
-                    null,
-                    null,
-                    getVietnameseAction(auditable.action()) + " dữ liệu " + getVietnameseEntity(auditable.entityName())
+                    oldValueJson,
+                    newValueJson,
+                    description
             );
-            
-            CompletableFuture.runAsync(() -> {
-                try {
-                    auditLogService.create(logReq);
-                } catch (Exception e) {
-                    log.error("Failed to save audit log", e);
-                }
-            });
+            // Ghi dong bo bang REQUIRES_NEW sau khi nghiep vu da tra ve thanh cong.
+            // Khong dung common pool de tranh mat log khi JVM dung hoac request context ket thuc.
+            auditLogService.create(logReq);
             
         } catch (Exception e) {
             log.error("Failed to process audit logging", e);
         }
 
         return result;
+    }
+
+    private String serializeResponse(Object result) {
+        if (result == null) return null;
+        try {
+            Object value = result instanceof ResponseEntity<?> response ? response.getBody() : result;
+            return value == null ? null : objectMapper.writeValueAsString(value);
+        } catch (Exception ex) {
+            log.warn("Could not serialize audit response: {}", ex.getMessage());
+            return null;
+        }
     }
 
     private HttpServletRequest getRequest() {

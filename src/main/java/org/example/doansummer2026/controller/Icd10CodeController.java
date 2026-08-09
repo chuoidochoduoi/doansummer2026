@@ -33,7 +33,7 @@ public class Icd10CodeController {
     private final Icd10CodeService service;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN','STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN','ROLE_STAFF')")
     public ResponseEntity<PageResponse<ICD10Response>> list(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String category,
@@ -42,7 +42,7 @@ public class Icd10CodeController {
     }
 
     @GetMapping("/{code}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN','STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN','ROLE_STAFF')")
     public ResponseEntity<ICD10Response> get(@PathVariable String code) {
         return RestResponses.ok(service.get(code));
     }

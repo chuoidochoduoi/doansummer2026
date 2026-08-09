@@ -28,27 +28,27 @@ public class VitalSignsController {
     private final VitalSignsService service;
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<VitalSignsResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<VitalSignsResponse> create(@Valid @RequestBody VitalSignsCreateRequest req) {
         VitalSignsResponse created = service.create(req);
         return RestResponses.created("/api/v1/vital-signs/{id}", created.vitalId(), created);
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<VitalSignsResponse> update(@PathVariable UUID id,
                                                       @Valid @RequestBody VitalSignsUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();

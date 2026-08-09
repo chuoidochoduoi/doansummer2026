@@ -34,6 +34,8 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.example.doansummer2026.aop.Auditable;
+import org.example.doansummer2026.enums.AuditAction;
 
 @RestController
 @RequestMapping("/api/v1/test-requests")
@@ -44,7 +46,7 @@ public class TestRequestController {
     private final AuthService authService;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<PageResponse<TestRequestResponse>> list(
             @RequestParam(required = false) UUID recordId,
             @RequestParam(required = false) UUID departmentId,
@@ -56,19 +58,19 @@ public class TestRequestController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<TestRequestResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
     @GetMapping("/queue/{ticketId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<List<TestRequestResponse>> listByQueue(@PathVariable UUID ticketId) {
         return RestResponses.ok(service.listByQueueTicket(ticketId));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<TestRequestResponse> create(@Valid @RequestBody TestRequestCreateRequest req) {
         TestRequestResponse created = service.create(req);
         return RestResponses.created("/api/v1/test-requests/{id}", created.testRequestId(), created);
@@ -78,7 +80,7 @@ public class TestRequestController {
      * Tao nhieu TestRequest cung luc - bac si chon nhieu dich vu xet nghiem.
      */
     @PostMapping("/batch")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<List<TestRequestResponse>> createBatch(
             @Valid @RequestBody TestRequestBatchCreateRequest req) {
         List<TestRequestResponse> created = service.createBatch(req);
@@ -86,7 +88,7 @@ public class TestRequestController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<TestRequestResponse> update(@PathVariable UUID id,
                                                        @Valid @RequestBody TestRequestUpdateRequest req,
                                                        org.springframework.security.core.Authentication auth) {
@@ -102,7 +104,7 @@ public class TestRequestController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
@@ -122,7 +124,7 @@ public class TestRequestController {
      * Tim TestRequest theo InvoiceItem (traceability: Invoice -> InvoiceItem -> TestRequest).
      */
     @GetMapping("/by-invoice-item/{itemId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<List<TestRequestResponse>> findByInvoiceItem(@PathVariable UUID itemId) {
         return RestResponses.ok(service.findByInvoiceItem(itemId));
     }
@@ -131,7 +133,7 @@ public class TestRequestController {
      * Tim TestRequest theo Invoice (traceability: Invoice -> InvoiceItem -> TestRequest).
      */
     @GetMapping("/by-invoice/{invoiceId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<List<TestRequestResponse>> findByInvoice(@PathVariable UUID invoiceId) {
         return RestResponses.ok(service.findByInvoice(invoiceId));
     }
@@ -139,13 +141,13 @@ public class TestRequestController {
     // --- TestResult sub-resource ---
 
     @GetMapping("/{id}/result")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<TestResultResponse> getResult(@PathVariable UUID id) {
         return RestResponses.ok(service.getResult(id));
     }
 
     @PostMapping("/{id}/result")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<TestResultResponse> createResult(@PathVariable UUID id,
                                                             @Valid @RequestBody TestResultCreateRequest req) {
         TestResultResponse created = service.createResult(id, req);
@@ -153,7 +155,7 @@ public class TestRequestController {
     }
 
     @PutMapping("/{id}/result")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<TestResultResponse> updateResult(@PathVariable UUID id,
                                                             @Valid @RequestBody TestResultUpdateRequest req) {
         return RestResponses.ok(service.updateResult(id, req));
@@ -165,6 +167,7 @@ public class TestRequestController {
      */
     @PostMapping("/{id}/result/complete")
     @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
+    @Auditable(action = AuditAction.RESULT_SIGNED, entityName = "TestRequest", idParamName = "id", description = "Bác sĩ ký xác nhận kết quả cận lâm sàng")
     public ResponseEntity<TestResultResponse> completeResult(@PathVariable UUID id,
                                                                 @Valid @RequestBody TestResultCreateRequest req) {
         return RestResponses.ok(service.completeResult(id, req, authService.currentStaffId()));
@@ -177,7 +180,8 @@ public class TestRequestController {
      * Luu file vao thu muc local va tra ve URL va ten file.
      */
     @PostMapping("/{id}/upload")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.RESULT_UPLOADED, entityName = "TestRequest", idParamName = "id", description = "Tải phiếu kết quả PDF")
     public ResponseEntity<Map<String, String>> uploadResult(
             @PathVariable UUID id,
             @RequestParam("file") MultipartFile file) throws IOException {

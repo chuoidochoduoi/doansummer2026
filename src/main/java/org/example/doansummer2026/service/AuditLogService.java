@@ -52,6 +52,7 @@ public class AuditLogService implements AuditLogServiceInterface {
                 .stream().map(a -> AuditLogResponse.from(a, getActorName(a.getActorAccountId()))).toList();
     }
 
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public AuditLogResponse create(AuditLogCreateRequest req) {
         AuditLog a = AuditLog.builder()
                 .action(req.action())

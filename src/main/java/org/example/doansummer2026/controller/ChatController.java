@@ -99,7 +99,21 @@ public class ChatController {
     }
 
     @GetMapping("/{sessionId}/messages")
-    public ResponseEntity<?> getMessages(@PathVariable UUID sessionId) {
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> getMessages(@PathVariable UUID sessionId,
+                                         org.springframework.security.core.Authentication auth) {
+        verifyAuthenticatedSessionAccess(sessionId, auth);
+        return messagesResponse(sessionId);
+    }
+
+    @GetMapping("/guest/{sessionId}/messages")
+    public ResponseEntity<?> getGuestMessages(@PathVariable UUID sessionId,
+                                              @RequestParam UUID guestProfileId) {
+        verifyGuestSessionAccess(sessionId, guestProfileId);
+        return messagesResponse(sessionId);
+    }
+
+    private ResponseEntity<?> messagesResponse(UUID sessionId) {
         List<ChatMessage> messages = chatService.getMessages(sessionId);
         var res = messages.stream().map(m -> Map.of(
             "messageId", m.getMessageId(),
@@ -111,9 +125,45 @@ public class ChatController {
     }
 
     @GetMapping("/{sessionId}/status")
-    public ResponseEntity<?> getSessionStatus(@PathVariable UUID sessionId) {
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> getSessionStatus(@PathVariable UUID sessionId,
+                                              org.springframework.security.core.Authentication auth) {
+        verifyAuthenticatedSessionAccess(sessionId, auth);
         ChatSession session = chatService.getSession(sessionId);
         return ResponseEntity.ok(Map.of("status", session.getStatus()));
+    }
+
+    @GetMapping("/guest/{sessionId}/status")
+    public ResponseEntity<?> getGuestSessionStatus(@PathVariable UUID sessionId,
+                                                   @RequestParam UUID guestProfileId) {
+        verifyGuestSessionAccess(sessionId, guestProfileId);
+        ChatSession session = chatService.getSession(sessionId);
+        return ResponseEntity.ok(Map.of("status", session.getStatus()));
+    }
+
+    private void verifyGuestSessionAccess(UUID sessionId, UUID guestProfileId) {
+        ChatSession session = chatService.getSession(sessionId);
+        if (session.getCustomer() == null
+                || !session.getCustomer().getProfileId().equals(guestProfileId)
+                || session.getCustomer().getAccount() != null) {
+            throw new org.example.doansummer2026.exception.BadRequestException("Khong co quyen truy cap phien chat");
+        }
+    }
+
+    private void verifyAuthenticatedSessionAccess(UUID sessionId,
+                                                  org.springframework.security.core.Authentication auth) {
+        boolean receptionist = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_RECEPTIONIST")
+                        || a.getAuthority().equals("ROLE_ADMIN")
+                        || a.getAuthority().equals("ROLE_CLINIC_MANAGER"));
+        if (receptionist) return;
+        String username = getUsername(auth);
+        Account account = accountRepo.findFirstByUsername(username).orElseThrow();
+        Profile profile = profileRepo.findFirstByAccount_AccountId(account.getAccountId()).orElseThrow();
+        ChatSession session = chatService.getSession(sessionId);
+        if (session.getCustomer() == null || !session.getCustomer().getProfileId().equals(profile.getProfileId())) {
+            throw new org.example.doansummer2026.exception.BadRequestException("Khong co quyen truy cap phien chat");
+        }
     }
 
     @PostMapping("/{sessionId}/messages/customer")
@@ -140,7 +190,9 @@ public class ChatController {
             return ResponseEntity.badRequest().body("Thiếu nội dung tin nhắn hoặc guestProfileId");
         }
         
-        chatService.processCustomerMessage(sessionId, UUID.fromString(guestProfileIdStr), content.trim());
+        UUID guestProfileId = UUID.fromString(guestProfileIdStr);
+        verifyGuestSessionAccess(sessionId, guestProfileId);
+        chatService.processCustomerMessage(sessionId, guestProfileId, content.trim());
         return ResponseEntity.ok().build();
     }
 

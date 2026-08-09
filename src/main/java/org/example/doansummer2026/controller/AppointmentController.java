@@ -66,6 +66,12 @@ public class AppointmentController {
     @PreAuthorize("isAuthenticated()")
     @Auditable(action = AuditAction.CREATE, entityName = "Appointment")
     public ResponseEntity<AppointmentResponse> create(@Valid @RequestBody AppointmentCreateRequest req) {
+        var current = authService.currentAccount();
+        if (current.getRole() == org.example.doansummer2026.enums.Role.CUSTOMER
+                && !current.getAccountId().equals(req.customerId())) {
+            throw new org.example.doansummer2026.exception.BadRequestException(
+                    "Khach hang chi co the dat lich cho chinh minh");
+        }
         AppointmentResponse created = service.create(req);
         return RestResponses.created("/api/v1/appointments/{id}", created.appointmentId(), created);
     }
@@ -167,5 +173,4 @@ public class AppointmentController {
         return RestResponses.noContent();
     }
 }
-
 

@@ -27,7 +27,10 @@ public record TestResultResponse(
         UUID verifiedById = r.getVerifiedBy() != null ? r.getVerifiedBy().getStaffId() : null;
         String verifiedByName = r.getVerifiedBy() != null && r.getVerifiedBy().getProfile() != null
                 ? r.getVerifiedBy().getProfile().getFullName() : null;
-        return new TestResultResponse(r.getResultId(), reqId, r.getImageUrl(), fileName,
+        String protectedFileUrl = r.getImageUrl() != null
+                ? "/api/v1/test-results/" + r.getResultId() + "/file"
+                : null;
+        return new TestResultResponse(r.getResultId(), reqId, protectedFileUrl, fileName,
                 r.getConclusion(), r.getSampleId(), performedById, performedByName, r.getPerformedAt(),
                 verifiedById, verifiedByName, r.getVerifiedAt());
     }
@@ -38,6 +41,5 @@ public record TestResultResponse(
         return idx >= 0 ? imageUrl.substring(idx + 1) : imageUrl;
     }
 }
-
 
 

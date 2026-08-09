@@ -13,6 +13,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -23,7 +24,13 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
      * Tim queue ticket theo visit + department (1 visit co the co nhieu ticket cho cac khoa khac nhau).
      * Dung khi biet ro department can cap nhat (vi du: performingDepartment cua TestRequest).
      */
-    Optional<QueueTicket> findByVisit_VisitIdAndDepartment_DepartmentId(UUID visitId, UUID departmentId);
+    /**
+     * Lay ticket con hoat dong moi nhat cua mot luot tai mot phong.
+     * Mot visit co the quay lai cung phong sau khi ticket cu da ket thuc, vi vay
+     * khong duoc dung truy van Optional khong kem trang thai (co the tra ve > 1 dong).
+     */
+    Optional<QueueTicket> findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
+            UUID visitId, UUID departmentId, Collection<QueueStatus> terminalStatuses);
 
     /**
      * Lay tat ca queue ticket cua 1 visit (1 visit co the co nhieu ticket cho cac khoa khac nhau).

@@ -37,7 +37,7 @@ public class DoctorExaminationController {
 
     /** Load the examination (medical record + nested details) the doctor is editing. */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<MedicalRecordResponse> load(@PathVariable UUID id) {
         return RestResponses.ok(service.loadExamination(id));
     }
@@ -47,7 +47,7 @@ public class DoctorExaminationController {
      * field which is intentionally ignored here (the service enforces the draft status).
      */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<MedicalRecordResponse> draft(@PathVariable UUID id,
                                                        @Valid @RequestBody MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.saveExaminationDraft(id, req));
@@ -63,7 +63,7 @@ public class DoctorExaminationController {
      * </ul>
      */
     @PostMapping("/{id}/complete")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<MedicalRecordResponse> complete(@PathVariable UUID id,
                                                           @Valid @RequestBody(required = false) MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.completeExamination(id, req));

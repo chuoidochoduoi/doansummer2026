@@ -59,6 +59,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AppointmentService implements AppointmentServiceInterface {
 
+    private static final long APPOINTMENT_CONFLICT_MINUTES = 30;
+
     private final AppointmentRepository repo;
     private final ProfileRepository profileRepo;
     private final AccountRepository accountRepo;
@@ -98,11 +100,9 @@ public class AppointmentService implements AppointmentServiceInterface {
         Profile customer = profileRepo.findFirstByAccount_AccountId(req.customerId())
                 .orElseThrow(() -> new ResourceNotFoundException("Benh nhan khong ton tai (Customer ID)"));
 
-        // Kiem tra da co cuoc hen nao dang hoat dong chua (1 customer 1 appointment at a time)
-        boolean hasActive = repo.existsByCustomer_ProfileIdAndStatusIn(customer.getProfileId(), 
-                java.util.List.of(AppointmentStatus.PENDING));
-        if (hasActive) {
-            throw new BadRequestException("Bạn đã có hẹn nhé");
+        // Cho phep nhieu lich trong tuong lai, chi chan cac lich bi chong thoi gian.
+        if (hasAppointmentConflict(customer.getProfileId(), req.scheduledAt())) {
+            throw new BadRequestException("Bạn đã có lịch hẹn khác trùng hoặc quá gần thời gian này");
         }
 
         org.example.doansummer2026.model.ShiftConfig shift = req.shiftId() != null 
@@ -135,6 +135,18 @@ public class AppointmentService implements AppointmentServiceInterface {
         return AppointmentResponse.from(saved);
     }
 
+    private boolean hasAppointmentConflict(UUID customerId, LocalDateTime scheduledAt) {
+        return repo.existsCustomerConflict(
+                customerId,
+                List.of(AppointmentStatus.PENDING),
+                scheduledAt.minusMinutes(APPOINTMENT_CONFLICT_MINUTES),
+                scheduledAt.plusMinutes(APPOINTMENT_CONFLICT_MINUTES + 1));
+    }
+
+    private String emptyToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     public AppointmentResponse createForGuest(AppointmentGuestCreateRequest req) {
         if (req.guestGender() == Gender.OTHER) {
             throw new BadRequestException("He thong chi ho tro gioi tinh MALE hoac FEMALE");
@@ -143,6 +155,18 @@ public class AppointmentService implements AppointmentServiceInterface {
                 ? shiftConfigRepository.findById(req.shiftId())
                     .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai"))
                 : null;
+
+        LocalDateTime conflictFrom = req.scheduledAt().minusMinutes(APPOINTMENT_CONFLICT_MINUTES);
+        LocalDateTime conflictTo = req.scheduledAt().plusMinutes(APPOINTMENT_CONFLICT_MINUTES + 1);
+        if ((emptyToNull(req.guestPhone()) != null || emptyToNull(req.guestEmail()) != null)
+                && repo.existsGuestConflict(
+                        emptyToNull(req.guestPhone()),
+                        emptyToNull(req.guestEmail()),
+                        List.of(AppointmentStatus.PENDING),
+                        conflictFrom,
+                        conflictTo)) {
+            throw new BadRequestException("Khách hàng đã có lịch hẹn khác trùng hoặc quá gần thời gian này");
+        }
 
         Appointment a = Appointment.builder()
                 .scheduledAt(req.scheduledAt())
@@ -176,7 +200,10 @@ public class AppointmentService implements AppointmentServiceInterface {
         Appointment a = findById(id);
         AppointmentStatus oldStatus = a.getStatus();
         
-        if (req.scheduledAt() != null) a.setScheduledAt(req.scheduledAt());
+        if (req.scheduledAt() != null) {
+            validateRescheduleConflict(a, req.scheduledAt());
+            a.setScheduledAt(req.scheduledAt());
+        }
         if (req.status() != null) a.setStatus(req.status());
         if (req.cancelReason() != null) a.setCancelReason(req.cancelReason());
         if (req.shiftId() != null) {
@@ -505,7 +532,10 @@ public class AppointmentService implements AppointmentServiceInterface {
             throw new BadRequestException("Chi co the cap nhat lich hen khi chua check-in");
         }
 
-        if (req.scheduledAt() != null) a.setScheduledAt(req.scheduledAt());
+        if (req.scheduledAt() != null) {
+            validateRescheduleConflict(a, req.scheduledAt());
+            a.setScheduledAt(req.scheduledAt());
+        }
         if (req.shiftId() != null) {
             org.example.doansummer2026.model.ShiftConfig shift = shiftConfigRepository.findById(req.shiftId())
                     .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai"));
@@ -522,6 +552,19 @@ public class AppointmentService implements AppointmentServiceInterface {
             a.setServices(services);
         }
         return CustomerAppointmentDetailResponse.from(repo.save(a));
+    }
+
+    private void validateRescheduleConflict(Appointment appointment, LocalDateTime scheduledAt) {
+        if (appointment.getCustomer() == null) return;
+        boolean conflict = repo.existsOtherCustomerConflict(
+                appointment.getCustomer().getProfileId(),
+                appointment.getAppointmentId(),
+                List.of(AppointmentStatus.PENDING),
+                scheduledAt.minusMinutes(APPOINTMENT_CONFLICT_MINUTES),
+                scheduledAt.plusMinutes(APPOINTMENT_CONFLICT_MINUTES + 1));
+        if (conflict) {
+            throw new BadRequestException("Bạn đã có lịch hẹn khác trùng hoặc quá gần thời gian này");
+        }
     }
 
     public void cancelMyAppointment(UUID customerId, UUID appointmentId) {

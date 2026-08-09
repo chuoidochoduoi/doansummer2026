@@ -17,4 +17,5 @@ public @interface Auditable {
      * If not provided, the aspect will attempt to extract the ID from the return object.
      */
     String idParamName() default "";
+    String description() default "";
 }

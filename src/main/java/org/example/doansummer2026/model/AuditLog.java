@@ -56,7 +56,7 @@ public class AuditLog {
 
     @NotNull
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false, length = 40)
     private AuditAction action;
 
     @NotBlank

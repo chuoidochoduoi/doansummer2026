@@ -361,8 +361,8 @@ public class InvoiceService implements InvoiceServiceInterface {
 
         var workflowItems = new ArrayList<>(loaded.getItems());
         workflowItems.sort(java.util.Comparator
-                .comparing((InvoiceItem item) -> item.getService() != null && Boolean.TRUE.equals(item.getService().getRequiresDoctorOrder()))
-                .thenComparing((InvoiceItem item) -> item.getService() != null && item.getService().getWorkflowPriority() != null ? item.getService().getWorkflowPriority() : 1, java.util.Comparator.reverseOrder())
+                .comparing((InvoiceItem item) -> item.getService() != null && item.getService().getWorkflowPriority() != null ? item.getService().getWorkflowPriority() : 1, java.util.Comparator.reverseOrder())
+                .thenComparing((InvoiceItem item) -> item.getService() != null && Boolean.TRUE.equals(item.getService().getRequiresDoctorOrder()))
                 .thenComparing((InvoiceItem item) -> item.getService() != null && item.getService().getResultWaitMinutes() != null ? item.getService().getResultWaitMinutes() : 0, java.util.Comparator.reverseOrder()));
         for (InvoiceItem item : workflowItems) {
             MedicalService service = item.getService();

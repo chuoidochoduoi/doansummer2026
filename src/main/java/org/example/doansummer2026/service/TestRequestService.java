@@ -47,6 +47,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TestRequestService implements TestRequestServiceInterface {
 
+    @org.springframework.beans.factory.annotation.Value("${app.upload.root:uploads}")
+    private String uploadRoot;
+
     private final TestRequestRepository repo;
     private final TestResultRepository resultRepo;
     private final MedicalRecordRepository recordRepo;
@@ -251,8 +254,12 @@ public class TestRequestService implements TestRequestServiceInterface {
                         java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS));
                 completeStandaloneRecordIfReady(t.getMedicalRecord(), totalTestRequests, incompleteCount);
 
-                QueueTicket queueTicket = queueTicketRepo.findByVisit_VisitIdAndDepartment_DepartmentId(
-                        visitId, t.getPerformingDepartment().getDepartmentId()).orElse(null);
+                QueueTicket queueTicket = queueTicketRepo
+                        .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
+                                visitId,
+                                t.getPerformingDepartment().getDepartmentId(),
+                                List.of(QueueStatus.DONE, QueueStatus.SKIPPED))
+                        .orElse(null);
                 if (queueTicket != null) {
                     if (totalTestRequests > 0 && incompleteCount == 0) {
                         // Tat ca test da xong
@@ -511,9 +518,16 @@ public class TestRequestService implements TestRequestServiceInterface {
         if (file.getSize() > 10L * 1024 * 1024) {
             throw new BadRequestException("Tep PDF khong duoc vuot qua 10 MB");
         }
+        byte[] signature = new byte[5];
+        try (var input = file.getInputStream()) {
+            if (input.read(signature) != signature.length
+                    || !java.util.Arrays.equals(signature, "%PDF-".getBytes(java.nio.charset.StandardCharsets.US_ASCII))) {
+                throw new BadRequestException("Noi dung tep khong phai dinh dang PDF hop le");
+            }
+        }
 
         // Tao thu muc luu tru neu chua co
-        Path uploadDir = Paths.get("uploads/test-results");
+        Path uploadDir = Paths.get(uploadRoot, "test-results");
         Files.createDirectories(uploadDir);
 
         // Tao ten file duy nhat
@@ -639,8 +653,17 @@ public class TestRequestService implements TestRequestServiceInterface {
     /** Tạo một số gọi cho mỗi phòng/lượt; các kỹ thuật cùng phòng được gom chung số. */
     private QueueTicket ensureParaclinicalQueue(MedicalRecord record, MedicalService service, Department department) {
         UUID visitId = record.getVisit().getVisitId();
-        QueueTicket existing = queueTicketRepo.findByVisit_VisitIdAndDepartment_DepartmentId(visitId, department.getDepartmentId()).orElse(null);
-        if (existing != null && existing.getStatus() != QueueStatus.DONE && existing.getStatus() != QueueStatus.SKIPPED) return existing;
+        // Khoa phong truoc khi kiem tra/tang so de cac request dong thoi khong tao trung ticket/so goi.
+        department = departmentRepo.findByIdForUpdate(department.getDepartmentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Phong thuc hien khong ton tai"));
+        QueueTicket existing = queueTicketRepo
+                .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
+                        visitId,
+                        department.getDepartmentId(),
+                        List.of(QueueStatus.DONE, QueueStatus.SKIPPED))
+                .orElse(null);
+        // Tat ca yeu cau can lam sang cung phong trong cung dot dung chung mot so goi.
+        if (existing != null) return existing;
         java.time.LocalDate workDate = java.time.LocalDate.now();
         int nextNumber = queueTicketRepo.findMaxQueueNumberForDay(department.getDepartmentId(), workDate).orElse(0) + 1;
         return queueTicketRepo.save(QueueTicket.builder()

@@ -16,6 +16,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.example.doansummer2026.repository.AccountRepository;
+import org.example.doansummer2026.model.Account;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -37,6 +39,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
     private final JwtService jwtService;
     private final ObjectMapper objectMapper;
+    private final AccountRepository accountRepository;
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
@@ -56,9 +59,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String username = claims.getSubject();
             String role = claims.get("role", String.class);
             String sid = claims.get("sid", String.class);
+            String type = claims.get("type", String.class);
 
-            if (username == null || role == null) {
+            if (username == null || role == null || !"access".equals(type)) {
                 writeError(response, "Token khong hop le", request.getRequestURI());
+                return;
+            }
+
+            Account account = accountRepository.findFirstByUsername(username).orElse(null);
+            if (account == null || !Boolean.TRUE.equals(account.getIsActive())) {
+                writeError(response, "Tai khoan khong ton tai hoac da bi khoa", request.getRequestURI());
                 return;
             }
 
@@ -106,6 +116,4 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         response.getWriter().write(objectMapper.writeValueAsString(body));
     }
 }
-
-
 

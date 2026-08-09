@@ -34,7 +34,7 @@ public class TransactionController {
     private final TransactionService service;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
     public ResponseEntity<PageResponse<TransactionResponse>> list(
             @RequestParam(required = false) UUID invoiceId,
             @RequestParam(required = false) TransactionStatus status,
@@ -45,40 +45,40 @@ public class TransactionController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
     public ResponseEntity<TransactionResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
     public ResponseEntity<TransactionResponse> create(@Valid @RequestBody TransactionCreateRequest req) {
         TransactionResponse created = service.create(req);
         return RestResponses.created("/api/v1/transactions/{id}", created.transactionId(), created);
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
     public ResponseEntity<TransactionResponse> update(@PathVariable UUID id,
                                                        @Valid @RequestBody TransactionUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
     }
 
     @PostMapping("/{id}/confirm")
-    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
     public ResponseEntity<TransactionResponse> confirm(@PathVariable UUID id) {
         return RestResponses.ok(service.confirm(id));
     }
 
     @PostMapping("/{id}/fail")
-    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
     public ResponseEntity<TransactionResponse> fail(@PathVariable UUID id) {
         return RestResponses.ok(service.fail(id));
     }
 
     
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();

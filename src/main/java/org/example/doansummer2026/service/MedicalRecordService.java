@@ -305,7 +305,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return MedicalRecordResponse.from(findById(id), true);
     }
 
-    public synchronized MedicalRecordResponse create(MedicalRecordCreateRequest req) {
+    public MedicalRecordResponse create(MedicalRecordCreateRequest req) {
         CustomerVisit visit = visitRepo.findById(req.visitId())
                 .orElseThrow(() -> new ResourceNotFoundException("Luot kham khong ton tai: " + req.visitId()));
         if (repo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(req.visitId()).isPresent()) {
@@ -587,25 +587,12 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     }
 
     /**
-     * Sinh ma so benh an tu dong: MR-YYYY-XXXXX (MR-nam-so thu tu).
+     * Sinh ma ho so khong phu thuoc MAX+1, an toan khi chay nhieu backend instance.
      */
     private String generateRecordCode() {
         String year = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy"));
-        String prefix = "MR-" + year + "-";
-
-        // Tim ma so cuoi cung trong nam
-        String lastCode = repo.findTopByRecordCodeStartingWithOrderByRecordCodeDesc(prefix);
-        int nextNum = 1;
-        if (lastCode != null) {
-            try {
-                String numStr = lastCode.substring(prefix.length());
-                nextNum = Math.addExact(Integer.parseInt(numStr), 1);
-            } catch (RuntimeException ex) {
-                throw new IllegalStateException("Ma ho so gan nhat khong dung dinh dang: " + lastCode, ex);
-            }
-        }
-
-        return prefix + String.format("%05d", nextNum);
+        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase();
+        return "MR-" + year + "-" + suffix;
     }
 
     /**

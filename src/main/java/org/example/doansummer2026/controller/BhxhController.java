@@ -20,7 +20,7 @@ public class BhxhController {
     }
 
     @GetMapping("/check")
-    @PreAuthorize("hasAnyAuthority('RECEPTIONIST', 'CLINIC_MANAGER', 'ADMIN', 'ROLE_CUSTOMER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST', 'ROLE_CLINIC_MANAGER', 'ROLE_ADMIN', 'ROLE_CUSTOMER')")
     public ResponseEntity<BhxhCheckResponse> checkCard(@RequestParam String cardNumber) {
         return ResponseEntity.ok(bhxhIntegrationService.checkBhytCard(cardNumber));
     }

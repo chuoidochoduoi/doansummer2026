@@ -35,7 +35,7 @@ public class CustomerVisitController {
     private final AuthService authService;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<PageResponse<CustomerVisitResponse>> list(
             @RequestParam(required = false) UUID customerId,
             @RequestParam(required = false) VisitStatus status,
@@ -46,13 +46,13 @@ public class CustomerVisitController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<CustomerVisitResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<CustomerVisitResponse> create(@Valid @RequestBody CustomerVisitCreateRequest req) {
         UUID issuedById = req.issuedById() != null ? req.issuedById() : authService.currentStaffId();
         var updatedReq = new CustomerVisitCreateRequest(
@@ -72,14 +72,14 @@ public class CustomerVisitController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<CustomerVisitResponse> update(@PathVariable UUID id,
                                                         @Valid @RequestBody CustomerVisitUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();

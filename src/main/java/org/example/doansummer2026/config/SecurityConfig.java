@@ -21,6 +21,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.time.Instant;
 import java.util.List;
+import java.util.Arrays;
+import org.springframework.beans.factory.annotation.Value;
 
 @Configuration
 @EnableMethodSecurity
@@ -29,6 +31,9 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtFilter;
     private final ObjectMapper objectMapper;
+
+    @Value("${app.cors.allowed-origins:http://localhost:3000}")
+    private String allowedOrigins;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -52,9 +57,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/medical-services/available").permitAll()
                         .requestMatchers("/api/v1/shifts/active").permitAll()
                         .requestMatchers("/api/v1/chat/guest/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/chat/*/messages", "/api/v1/chat/*/status").permitAll()
                         .requestMatchers("/ws", "/ws/**", "/ws/info").permitAll()
-                        .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // Preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -84,7 +87,10 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOriginPatterns(List.of("*")); // Thay đổi để hỗ trợ Vercel (hoặc điền URL Vercel cụ thể vào đây)
+        configuration.setAllowedOrigins(Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isBlank())
+                .toList());
         configuration.setAllowedMethods(List.of(
                 "GET",
                 "POST",
@@ -103,6 +109,4 @@ public class SecurityConfig {
         return source;
     }
 }
-
-
 
