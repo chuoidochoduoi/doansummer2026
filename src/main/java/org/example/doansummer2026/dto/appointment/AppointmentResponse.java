@@ -24,6 +24,7 @@ public record AppointmentResponse(
         String guestEmail,
         String guestAddress,
         Integer guestAge,
+        LocalDate guestDateOfBirth,
         Gender guestGender,
         List<ServiceInfo> services,
         String shiftName,
@@ -62,7 +63,8 @@ public record AppointmentResponse(
                 a.getCustomer() != null ? a.getCustomer().getProfileId() : null,
                 a.getScheduledAt(), a.getStatus(), a.getCancelReason(), a.getCreatedAt(),
                 a.getIsGuest(), guestFullName, guestPhone, guestEmail, guestAddress,
-                guestAge, guestGender, serviceInfos, a.getShiftName(), a.getShiftTime()
+                guestAge, a.getCustomer() != null ? a.getCustomer().getDateOfBirth() : null,
+                guestGender, serviceInfos, a.getShiftName(), a.getShiftTime()
         );
     }
 }
