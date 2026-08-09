@@ -31,17 +31,22 @@ public class OtpService {
     }
 
     /** Sinh OTP cho SĐT hoac Email, lưu vào Redis, và gửi đi */
-    public void sendOtp(String identifier) {
-        int code = random.nextInt(900_000) + 100_000;
+    public String sendOtp(String identifier) {
         String key = OTP_PREFIX + identifier;
+        String previousCode = redisTemplate.opsForValue().get(key);
+        String code;
+        do {
+            code = String.valueOf(random.nextInt(900_000) + 100_000);
+        } while (code.equals(previousCode));
 
-        redisTemplate.opsForValue().set(key, String.valueOf(code), TTL_MINUTES, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().set(key, code, TTL_MINUTES, TimeUnit.MINUTES);
 
         if (identifier.contains("@")) {
-            emailService.sendOtpEmail(identifier, String.valueOf(code));
+            emailService.sendOtpEmail(identifier, code);
         } else {
-            smsService.sendOtp(identifier, String.valueOf(code));
+            smsService.sendOtp(identifier, code);
         }
+        return code;
     }
 
     /** Trả về true nếu OTP hợp lệ và đã bị tiêu thụ (one-time use) */

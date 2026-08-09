@@ -10,11 +10,13 @@ import org.example.doansummer2026.dto.auth.RefreshRequest;
 import org.example.doansummer2026.dto.auth.RegisterRequest;
 import org.example.doansummer2026.dto.auth.ResetPasswordRequest;
 import org.example.doansummer2026.dto.auth.SendOtpRequest;
+import org.example.doansummer2026.dto.auth.SendOtpResponse;
 import org.example.doansummer2026.dto.account.AccountResponse;
 import org.example.doansummer2026.service.AuthService;
 import org.example.doansummer2026.service.OtpService;
 import org.example.doansummer2026.service.interfaces.AuthServiceInterface;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,6 +33,9 @@ public class AuthController {
     private final AuthServiceInterface authService;
     private final OtpService otpService;
 
+    @Value("${app.otp.expose-code:false}")
+    private boolean exposeOtpCode;
+
     /** Public: dang ky benh nhan moi -> 200 OK (tra token, khong tao resource co URI rieng). */
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest req) {
@@ -39,9 +44,9 @@ public class AuthController {
 
     /** Public: gui OTP xac thuc SĐT -> 200 OK (OTP in-memory, dev log ra console). */
     @PostMapping("/send-otp")
-    public ResponseEntity<Void> sendOtp(@Valid @RequestBody SendOtpRequest req) {
-        otpService.sendOtp(req.identifier());
-        return RestResponses.ok(null);
+    public ResponseEntity<SendOtpResponse> sendOtp(@Valid @RequestBody SendOtpRequest req) {
+        String code = otpService.sendOtp(req.identifier());
+        return RestResponses.ok(new SendOtpResponse(exposeOtpCode ? code : null, 300));
     }
 
     /** Public: reset mat khau bang OTP -> 200 OK. */
@@ -80,6 +85,5 @@ public class AuthController {
         return RestResponses.noContent();
     }
 }
-
 
 
