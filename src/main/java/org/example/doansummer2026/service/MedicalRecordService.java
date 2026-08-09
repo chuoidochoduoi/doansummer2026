@@ -781,6 +781,12 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             appointment.setGuestFullName("Khách vãng lai");
         }
 
+        // Tái khám quay lại đúng dịch vụ/phòng khám đã đưa ra chỉ định.
+        // Không tạo lượt khám hay hàng chờ tại thời điểm lễ tân đặt lịch.
+        if (record.getQueueTicket() != null && record.getQueueTicket().getService() != null) {
+            appointment.getServices().add(record.getQueueTicket().getService());
+        }
+
         appointment = appointmentRepo.save(appointment);
         
         // Cập nhật MedicalRecord với ID của lịch hẹn vừa tạo
