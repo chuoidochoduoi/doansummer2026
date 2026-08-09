@@ -491,6 +491,21 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         return QueueTicketResponse.from(saved);
     }
 
+    public QueueTicketResponse returnToQueue(UUID id) {
+        QueueTicket q = findById(id);
+        if (q.getStatus() != QueueStatus.SKIPPED) {
+            throw new BadRequestException("Chi co the dua phieu vang quay lai hang cho");
+        }
+        if (q.getWorkDate() == null || !q.getWorkDate().equals(LocalDate.now())) {
+            throw new BadRequestException("Chi co the dua benh nhan quay lai hang cho trong ngay cua phieu");
+        }
+        q.setStatus(QueueStatus.WAITING);
+        q.setCalledAt(null);
+        QueueTicket saved = repo.save(q);
+        updateDepartmentStatus(q.getDepartment().getDepartmentId());
+        return QueueTicketResponse.from(saved);
+    }
+
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
             throw new ResourceNotFoundException("Phieu xep hang khong ton tai: " + id);

@@ -68,15 +68,22 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
             customer = profileRepo.findById(req.customerId())
                     .orElseThrow(() -> new ResourceNotFoundException("Khach hang khong ton tai: " + req.customerId()));
         } else {
-            // Tao Profile moi cho khach vang lai
-            customer = Profile.builder()
-                    .fullName(req.guestFullName())
-                    .phone(req.guestPhone())
-                    .address(req.guestAddress())
-                    .dateOfBirth(req.guestDateOfBirth())
-                    .gender(req.guestGender() != null ? req.guestGender() : org.example.doansummer2026.enums.Gender.OTHER)
-                    .build();
-            customer = profileRepo.save(customer);
+            String guestPhone = req.guestPhone() == null ? null : req.guestPhone().trim();
+            // Bệnh nhân từng khám có thể là hồ sơ khách vãng lai chưa có account.
+            // Tái sử dụng hồ sơ theo SĐT thay vì tạo Profile trùng lặp.
+            customer = guestPhone == null || guestPhone.isBlank()
+                    ? null
+                    : profileRepo.findFirstByPhone(guestPhone).orElse(null);
+            if (customer == null) {
+                customer = Profile.builder()
+                        .fullName(req.guestFullName())
+                        .phone(guestPhone)
+                        .address(req.guestAddress())
+                        .dateOfBirth(req.guestDateOfBirth())
+                        .gender(req.guestGender() != null ? req.guestGender() : org.example.doansummer2026.enums.Gender.OTHER)
+                        .build();
+                customer = profileRepo.save(customer);
+            }
         }
         customer = profileRepo.findByIdForUpdate(customer.getProfileId())
                 .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay ho so benh nhan"));

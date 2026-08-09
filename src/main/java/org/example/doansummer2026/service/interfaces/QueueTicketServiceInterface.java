@@ -21,6 +21,7 @@ public interface QueueTicketServiceInterface {
     QueueTicketResponse startExam(UUID id);
     QueueTicketResponse complete(UUID id);
     QueueTicketResponse skip(UUID id);
+    QueueTicketResponse returnToQueue(UUID id);
     void delete(UUID id);
     QueueTicket findById(UUID id);
 
@@ -30,6 +31,5 @@ public interface QueueTicketServiceInterface {
     /** Lay tat ca phieu dang kham (IN_PROGRESS) - cho phong kham da khoa. */
     PageResponse<QueueTicketResponse> getAllInprogress(Pageable pageable);
 }
-
 
 

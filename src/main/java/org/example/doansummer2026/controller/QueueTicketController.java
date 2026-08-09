@@ -98,6 +98,13 @@ public class QueueTicketController {
         return RestResponses.ok(service.skip(id));
     }
 
+    @PostMapping("/api/v1/queue-tickets/{id}/return")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket", idParamName = "id", description = "Dua benh nhan vang quay lai hang cho")
+    public ResponseEntity<QueueTicketResponse> returnToQueue(@PathVariable UUID id) {
+        return RestResponses.ok(service.returnToQueue(id));
+    }
+
     @DeleteMapping("/api/v1/queue-tickets/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {

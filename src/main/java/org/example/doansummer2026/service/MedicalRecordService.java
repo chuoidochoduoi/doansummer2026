@@ -131,7 +131,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             } else {
                 // Guest profile khong co account - them vao
                 result.add(ReceptionistAllCustomerResponse.forGuest(
-                        p.getPhone(), p.getFullName(), p.getGender(), p.getAddress()
+                        p.getProfileId(), p.getPhone(), p.getFullName(), p.getGender(), p.getAddress()
                 ));
             }
         });
@@ -144,6 +144,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 var key = a.getGuestPhone() + "_" + a.getGuestFullName();
                 if (!seenGuestInfo.contains(key)) {
                     result.add(ReceptionistAllCustomerResponse.forGuest(
+                            null,
                             a.getGuestPhone(),
                             a.getGuestFullName(),
                             a.getGuestGender(),
