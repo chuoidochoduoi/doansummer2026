@@ -730,7 +730,8 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
     /** Lấy danh sách yêu cầu tái khám (follow-up) chưa đặt lịch cho lễ tân */
     public PageResponse<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> getPendingFollowUps(String search, Pageable pageable) {
-        Page<MedicalRecord> page = repo.findPendingFollowUps(search, pageable);
+        String normalizedSearch = search == null ? "" : search.trim().toLowerCase(java.util.Locale.ROOT);
+        Page<MedicalRecord> page = repo.findPendingFollowUps(normalizedSearch, pageable);
         return PageResponse.from(page, org.example.doansummer2026.dto.medicalRecord.FollowUpResponse::from);
     }
 

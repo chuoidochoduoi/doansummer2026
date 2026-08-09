@@ -40,7 +40,16 @@ public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UU
             """, nativeQuery = true)
     String findTopByRecordCodeStartingWithOrderByRecordCodeDesc(@Param("prefix") String prefix);
 
-    @Query("SELECT m FROM MedicalRecord m WHERE (m.followUpDate IS NOT NULL OR (m.followUpNote IS NOT NULL AND TRIM(m.followUpNote) <> '')) AND m.followUpAppointment IS NULL AND (:search IS NULL OR LOWER(m.visit.customer.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR m.visit.customer.phone LIKE CONCAT('%', :search, '%') OR LOWER(m.recordCode) LIKE LOWER(CONCAT('%', :search, '%'))) ORDER BY m.followUpDate ASC")
+    @Query("""
+            SELECT m FROM MedicalRecord m
+            WHERE (m.followUpDate IS NOT NULL OR (m.followUpNote IS NOT NULL AND TRIM(m.followUpNote) <> ''))
+              AND m.followUpAppointment IS NULL
+              AND (:search = ''
+                   OR LOWER(m.visit.customer.fullName) LIKE CONCAT('%', :search, '%')
+                   OR m.visit.customer.phone LIKE CONCAT('%', :search, '%')
+                   OR LOWER(m.recordCode) LIKE CONCAT('%', :search, '%'))
+            ORDER BY m.followUpDate ASC
+            """)
     Page<MedicalRecord> findPendingFollowUps(@Param("search") String search, Pageable pageable);
 
     default Page<MedicalRecord> search(UUID doctorId, MedicalRecordStatus status,
