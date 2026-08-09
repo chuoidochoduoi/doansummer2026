@@ -95,6 +95,7 @@ public class SecurityConfig {
                 "GET",
                 "POST",
                 "PUT",
+                "PATCH",
                 "DELETE",
                 "OPTIONS"
         ));
@@ -109,4 +110,3 @@ public class SecurityConfig {
         return source;
     }
 }
-
