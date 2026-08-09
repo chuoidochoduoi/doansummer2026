@@ -201,6 +201,30 @@ public class MedicalRecordController {
         return RestResponses.ok(pageResponse);
     }
 
+    @GetMapping("/api/receptionist/customers/{customerId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    public ResponseEntity<ReceptionistCustomerResponse> getCustomerForReceptionist(
+            @PathVariable UUID customerId) {
+        return RestResponses.ok(service.getCustomerForReceptionist(customerId));
+    }
+
+    @GetMapping("/api/receptionist/customers/{customerId}/visits")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    public ResponseEntity<PageResponse<MedicalHistoryResponse>> getCustomerVisitsForReceptionist(
+            @PathVariable UUID customerId,
+            @RequestParam(required = false) String search,
+            Pageable pageable) {
+        return RestResponses.ok(service.getMedicalHistoryForPatient(customerId, search, pageable));
+    }
+
+    @GetMapping("/api/receptionist/customers/{customerId}/visits/{visitId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    public ResponseEntity<VisitDetailResponse> getCustomerVisitForReceptionist(
+            @PathVariable UUID customerId,
+            @PathVariable UUID visitId) {
+        return RestResponses.ok(service.getVisitDetail(visitId, customerId));
+    }
+
     @GetMapping("/api/receptionist/records/search-by-phone")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<java.util.List<ReceptionistAllCustomerResponse>> searchByPhoneForReceptionist(

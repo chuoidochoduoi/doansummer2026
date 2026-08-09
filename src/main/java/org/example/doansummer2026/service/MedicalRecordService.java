@@ -114,6 +114,13 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     }
 
     @Transactional(readOnly = true)
+    public ReceptionistCustomerResponse getCustomerForReceptionist(UUID customerId) {
+        Profile profile = profileRepo.findById(customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay benh nhan"));
+        return ReceptionistCustomerResponse.from(profile);
+    }
+
+    @Transactional(readOnly = true)
     public java.util.List<ReceptionistAllCustomerResponse> searchByPhone(String phone) {
         var result = new java.util.ArrayList<ReceptionistAllCustomerResponse>();
 
@@ -167,9 +174,12 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return (root, query, cb) -> {
             var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
 
-            // Chi lay CUSTOMER (account.role = CUSTOMER)
-            var account = root.get("account");
-            predicates.add(cb.equal(account.get("role"), org.example.doansummer2026.enums.Role.CUSTOMER));
+            // Bao gồm cả bệnh nhân có tài khoản và hồ sơ khách vãng lai đã từng khám.
+            var account = root.join("account", jakarta.persistence.criteria.JoinType.LEFT);
+            predicates.add(cb.or(
+                    cb.isNull(account.get("accountId")),
+                    cb.equal(account.get("role"), org.example.doansummer2026.enums.Role.CUSTOMER)
+            ));
 
             // Search theo ten, phone
             if (search != null && !search.isEmpty()) {
