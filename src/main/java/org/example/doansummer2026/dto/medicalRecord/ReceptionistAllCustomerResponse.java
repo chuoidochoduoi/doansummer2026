@@ -32,10 +32,11 @@ public record ReceptionistAllCustomerResponse(
     }
 
     public static ReceptionistAllCustomerResponse forGuest(
-            UUID profileId, String phone, String fullName, Gender gender, String address) {
+            UUID profileId, String phone, String fullName, Gender gender,
+            LocalDate dateOfBirth, BloodType bloodType, String email, String address) {
         return new ReceptionistAllCustomerResponse(
-                profileId, phone, fullName, gender, null, null,
-                phone, null, address, true
+                profileId, phone, fullName, gender, dateOfBirth, bloodType,
+                phone, email, address, true
         );
     }
 }
