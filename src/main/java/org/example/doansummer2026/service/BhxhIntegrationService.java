@@ -3,6 +3,7 @@ package org.example.doansummer2026.service;
 import org.example.doansummer2026.dto.insurance.BhxhCheckResponse;
 import org.example.doansummer2026.model.Insurance;
 import org.example.doansummer2026.repository.InsuranceRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -17,11 +18,16 @@ public class BhxhIntegrationService {
     private final RestTemplate restTemplate;
     
     // Đọc từ properties hoặc gán cứng cho demo
-    private final String mockBhxhUrl = "http://localhost:8081/api/verify-card";
+    private final String mockBhxhUrl;
 
-    public BhxhIntegrationService(InsuranceRepository insuranceRepository) {
+    public BhxhIntegrationService(
+            InsuranceRepository insuranceRepository,
+            RestTemplate restTemplate,
+            @Value("${integration.bhxh.verify-card-url:http://localhost:8081/api/verify-card}") String mockBhxhUrl
+    ) {
         this.insuranceRepository = insuranceRepository;
-        this.restTemplate = new RestTemplate();
+        this.restTemplate = restTemplate;
+        this.mockBhxhUrl = mockBhxhUrl;
     }
 
     public BhxhCheckResponse checkBhytCard(String cardNumber) {
