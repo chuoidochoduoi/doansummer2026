@@ -6,8 +6,10 @@ import org.example.doansummer2026.dto.invoice.InvoiceCreateRequest;
 import org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest;
 import org.example.doansummer2026.dto.invoice.InvoiceResponse;
 import org.example.doansummer2026.dto.invoice.InvoiceUpdateRequest;
+import org.example.doansummer2026.dto.invoice.InvoiceInsuranceRequest;
 import org.example.doansummer2026.dto.invoice.PaymentHistoryResponse;
 import org.example.doansummer2026.dto.invoice.ReceiptDetailResponse;
+import org.example.doansummer2026.dto.invoice.ReceiptPrintResponse;
 import org.example.doansummer2026.enums.PaymentMethod;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
@@ -20,9 +22,13 @@ import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.Profile;
 import org.example.doansummer2026.model.StaffInfo;
+import org.example.doansummer2026.model.Department;
 import org.example.doansummer2026.enums.DepartmentType;
+import org.example.doansummer2026.enums.DepartmentStatus;
 import org.example.doansummer2026.enums.TransactionStatus;
 import org.example.doansummer2026.repository.InvoiceItemRepository;
+import org.example.doansummer2026.repository.InsuranceRepository;
+import org.example.doansummer2026.repository.InsuranceRuleRepository;
 import org.example.doansummer2026.repository.InvoiceRepository;
 import org.example.doansummer2026.repository.MedicalRecordRepository;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
@@ -33,6 +39,7 @@ import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.repository.TransactionRepository;
 import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.example.doansummer2026.repository.TestRequestRepository;
+import org.example.doansummer2026.repository.DepartmentRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -70,8 +77,12 @@ public class InvoiceService implements InvoiceServiceInterface {
     private final TestRequestService testRequestService;
     private final QueueTicketRepository queueTicketRepo;
     private final TestRequestRepository testRequestRepo;
+    private final DepartmentRepository departmentRepo;
     private final NotificationService notificationService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final InsuranceRepository insuranceRepository;
+    private final InsuranceRuleRepository insuranceRuleRepository;
+    private final BhxhIntegrationService bhxhIntegrationService;
 
     @Transactional(readOnly = true)
     public PageResponse<InvoiceResponse> search(UUID customerId, InvoiceStatus status,
@@ -177,9 +188,19 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .build();
         Invoice saved = repo.save(invoice);
         if (req.items() != null) {
+            List<InvoiceItem> persistedItems = new ArrayList<>();
             for (InvoiceItemCreateRequest itemReq : req.items()) {
-                saved.getItems().add(buildItem(saved, itemReq));
+                /*
+                 * Invoice.items la phia mappedBy. Khong chi dua vao cascade cua
+                 * collection nay: o mot so luong tao luot kham (dac biet guest),
+                 * Invoice da duoc persist truoc khi item duoc them vao collection.
+                 * Luu owner InvoiceItem mot cach tuong minh de dam bao dong dich vu
+                 * ton tai truoc khi thu ngan thanh toan va dieu phoi hang cho.
+                 */
+                InvoiceItem item = buildItem(saved, itemReq);
+                persistedItems.add(itemRepo.save(item));
             }
+            saved.getItems().addAll(persistedItems);
         }
         recalculateTotals(saved);
         Invoice finalSaved = repo.save(saved);
@@ -232,6 +253,50 @@ public class InvoiceService implements InvoiceServiceInterface {
         return InvoiceResponse.from(repo.save(i));
     }
 
+    public InvoiceResponse applyInsurance(UUID id, InvoiceInsuranceRequest req) {
+        Invoice invoice = repo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
+        if (invoice.getStatus() != InvoiceStatus.PENDING) {
+            throw new ConflictException("Chi co the ap dung BHYT khi hoa don dang cho thanh toan");
+        }
+
+        var insurance = insuranceRepository.findById(req.insuranceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Bao hiem khong ton tai: " + req.insuranceId()));
+        var verification = bhxhIntegrationService.checkBhytCard(req.bhytCode().trim());
+        if (!verification.isValid()) {
+            throw new BadRequestException(verification.message());
+        }
+        if (verification.insuranceId() != null
+                && !verification.insuranceId().equals(insurance.getInsuranceId())) {
+            throw new BadRequestException("Ma the khong thuoc loai bao hiem da chon");
+        }
+
+        var rules = insuranceRuleRepository.findByInsurance_InsuranceId(insurance.getInsuranceId());
+        BigDecimal totalBhyt = BigDecimal.ZERO;
+        for (InvoiceItem item : invoice.getItems()) {
+            DepartmentType type = item.getService() != null ? item.getService().getDepartmentType() : null;
+            BigDecimal rate = rules.stream()
+                    .filter(rule -> type != null && rule.getDepartmentType() == type)
+                    .map(rule -> rule.getDiscountPercent() != null ? rule.getDiscountPercent() : BigDecimal.ZERO)
+                    .findFirst()
+                    .orElse(BigDecimal.ZERO);
+            BigDecimal lineTotal = item.getLineTotal() != null ? item.getLineTotal() : BigDecimal.ZERO;
+            BigDecimal bhytAmount = lineTotal.multiply(rate)
+                    .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+            item.setDiscountPercent(rate);
+            item.setDiscountAmount(bhytAmount);
+            item.setBhytFund(bhytAmount);
+            item.setFinalPrice(lineTotal.subtract(bhytAmount));
+            totalBhyt = totalBhyt.add(bhytAmount);
+        }
+
+        invoice.getCustomer().setInsuranceId(req.bhytCode().trim());
+        profileRepo.save(invoice.getCustomer());
+        invoice.setDiscount(totalBhyt);
+        recalculateTotals(invoice);
+        return InvoiceResponse.from(repo.save(invoice));
+    }
+
     public InvoiceResponse issue(UUID id) {
         Invoice i = findById(id);
         if (i.getStatus() != InvoiceStatus.PENDING) {
@@ -263,10 +328,13 @@ public class InvoiceService implements InvoiceServiceInterface {
         Invoice i = repo.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
         if (i.getStatus() == InvoiceStatus.PAID) {
-            var previous = transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(id, TransactionStatus.SUCCESS).orElse(null);
-            String cashier = previous != null && previous.getReceivedBy() != null && previous.getReceivedBy().getProfile() != null
-                    ? previous.getReceivedBy().getProfile().getFullName() : "nhan vien khac";
-            throw new ConflictException("Hoa don da duoc thanh toan boi " + cashier);
+            /*
+             * Thanh toan la thao tac idempotent. Cac hoa don da PAID tu phien
+             * ban cu co the chua sinh TestRequest/QueueTicket; cho phep goi lai
+             * de tu phuc hoi workflow, tuyet doi khong tao giao dich thu tien moi.
+             */
+            createQueueTicketsFromInvoiceItems(i);
+            return InvoiceResponse.from(i);
         }
         if (i.getStatus() == InvoiceStatus.CANCELLED) {
             throw new ConflictException("Khong the thanh toan hoa don da huy: " + i.getStatus());
@@ -282,10 +350,10 @@ public class InvoiceService implements InvoiceServiceInterface {
                     .status(TransactionStatus.SUCCESS).paidAt(java.time.LocalDateTime.now())
                     .receivedBy(cashier).note("Thanh toan tai quay").build());
         }
-        // Tao QueueTicket sau khi thanh toan
-        if (saved.getVisit() != null) {
-            createQueueTicketsFromInvoiceItems(saved);
-        }
+        // Luon nap lai hoa don trong ham dieu phoi. Entity vua save co the chua
+        // mang quan he visit do LAZY loading, dan den hoa don CLS da PAID nhung
+        // bi bo qua viec tao hang cho.
+        createQueueTicketsFromInvoiceItems(saved);
         return InvoiceResponse.from(saved);
     }
 
@@ -299,6 +367,18 @@ public class InvoiceService implements InvoiceServiceInterface {
     public Invoice findById(UUID id) {
         return repo.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
+    }
+
+    @Transactional(readOnly = true)
+    public ReceiptPrintResponse getReceiptPrintData(UUID id) {
+        Invoice invoice = repo.getWithDetailsByInvoiceId(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
+        if (invoice.getStatus() != InvoiceStatus.PAID) {
+            throw new ConflictException("Chi in phieu thu sau khi hoa don da thanh toan");
+        }
+        var payment = transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                id, TransactionStatus.SUCCESS).orElse(null);
+        return ReceiptPrintResponse.from(invoice, payment);
     }
 
     /** Recalculate paidAmount + status tuyen tu cac transaction SUCCESS. */
@@ -320,8 +400,9 @@ public class InvoiceService implements InvoiceServiceInterface {
             i.setStatus(InvoiceStatus.PENDING);
         }
         Invoice saved = repo.save(i);
-        // Tu dong tao QueueTicket cho moi InvoiceItem khi Invoice duoc thanh toan
-        if (saved.getStatus() == InvoiceStatus.PAID && saved.getVisit() != null) {
+        // Dung cung mot duong dieu phoi voi thanh toan tai quay; ham ben duoi tu
+        // nap quan he visit thay vi phu thuoc vao entity LAZY vua save.
+        if (saved.getStatus() == InvoiceStatus.PAID) {
             createQueueTicketsFromInvoiceItems(saved);
         }
     }
@@ -359,24 +440,45 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .anyMatch(test -> test.getStatus() == org.example.doansummer2026.enums.TestRequestStatus.PENDING
                         || test.getStatus() == org.example.doansummer2026.enums.TestRequestStatus.IN_PROGRESS);
 
-        var workflowItems = new ArrayList<>(loaded.getItems());
+        // Doc truc tiep tu InvoiceItem. Day la diem quan trong: Invoice.items la
+        // mappedBy + LAZY; neu collection cua entity vua luu chua dong bo thi vong
+        // lap rong va thanh toan da PAID nhung khong sinh TestRequest nao.
+        var workflowItems = new ArrayList<>(itemRepo.findAllWithServiceByInvoiceId(loaded.getInvoiceId()));
+        if (workflowItems.isEmpty()) {
+            if (visitId != null) {
+                throw new BadRequestException("Hoa don cua luot kham chua co dich vu. Vui long them dich vu truoc khi thanh toan");
+            }
+            return;
+        }
+        if (visitId == null) {
+            throw new BadRequestException("Hoa don co dich vu nhung chua gan voi luot kham; khong the tao hang cho");
+        }
         workflowItems.sort(java.util.Comparator
                 .comparing((InvoiceItem item) -> item.getService() != null && item.getService().getWorkflowPriority() != null ? item.getService().getWorkflowPriority() : 1, java.util.Comparator.reverseOrder())
                 .thenComparing((InvoiceItem item) -> item.getService() != null && Boolean.TRUE.equals(item.getService().getRequiresDoctorOrder()))
                 .thenComparing((InvoiceItem item) -> item.getService() != null && item.getService().getResultWaitMinutes() != null ? item.getService().getResultWaitMinutes() : 0, java.util.Comparator.reverseOrder()));
+        int dispatchedItemCount = 0;
         for (InvoiceItem item : workflowItems) {
             MedicalService service = item.getService();
+            // Hoa don cu co the chi luu snapshot. Van phai dieu phoi sau thanh toan
+            // neu ma dich vu con ton tai trong danh muc.
+            if (service == null && item.getServiceCodeSnapshot() != null) {
+                service = serviceRepo.findByServiceCode(item.getServiceCodeSnapshot()).orElse(null);
+            }
             // Dich vu can lam sang duoc xep phong dong theo danh muc ky thuat,
             // nen khong bat buoc gan san department tren dich vu.
-            if (service == null) continue;
+            if (service == null) {
+                throw new BadRequestException("Khong xac dinh duoc dich vu cua dong hoa don: "
+                        + item.getServiceSnapshot());
+            }
 
             DepartmentType departmentType = service.getDepartmentType();
             if (departmentType == DepartmentType.EXAMINATION) {
-                if (service.getDepartment() == null || visitId == null) continue;
+                Department performingRoom = selectExaminationRoom(service);
                 // CLINICAL_EXAM: tao QueueTicket cho bac si kham
                 var ticket = queueTicketService.create(new org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest(
                         visitId,
-                        service.getDepartment().getDepartmentId(),
+                        performingRoom.getDepartmentId(),
                         service.getServiceId(),
                         null
                 ));
@@ -388,9 +490,11 @@ public class InvoiceService implements InvoiceServiceInterface {
                 } else {
                     workflowActivated = true;
                 }
+                dispatchedItemCount++;
             } else if (departmentType != null && departmentType.isParaclinical()) {
-                // LAB_TEST, IMAGING, PROCEDURE: tao TestRequest cho phong tuong ung
-                var test = testRequestService.createFromPaidInvoice(
+                // TestRequestService tim queue theo visit + phong truoc khi tao.
+                // Nhieu dich vu cung phong se dung chung mot QueueTicket.
+                var createdRequest = testRequestService.createFromPaidInvoice(
                         visitId,
                         medicalRecordId,
                         service.getServiceId(),
@@ -398,29 +502,58 @@ public class InvoiceService implements InvoiceServiceInterface {
                         item.getNote() != null ? item.getNote() : service.getName(),
                         item.getItemId()
                 );
-                if (workflowActivated) {
-                    testRequestRepo.findById(test.testRequestId()).ifPresent(blocked -> {
-                        boolean sharedActiveQueue = blocked.getQueueTicket() != null
-                                && testRequestRepo.findAllByQueueTicket_TicketId(blocked.getQueueTicket().getTicketId()).stream()
-                                .anyMatch(existing -> !existing.getTestRequestId().equals(blocked.getTestRequestId())
-                                        && (existing.getStatus() == org.example.doansummer2026.enums.TestRequestStatus.PENDING
-                                        || existing.getStatus() == org.example.doansummer2026.enums.TestRequestStatus.IN_PROGRESS));
-                        if (sharedActiveQueue) return;
-                        blocked.setStatus(org.example.doansummer2026.enums.TestRequestStatus.BLOCKED);
-                        testRequestRepo.save(blocked);
-                        if (blocked.getQueueTicket() != null) {
-                            blocked.getQueueTicket().setStatus(org.example.doansummer2026.enums.QueueStatus.BLOCKED);
-                            queueTicketRepo.save(blocked.getQueueTicket());
-                        }
-                    });
-                } else {
-                    workflowActivated = true;
+                // Luot chi co can lam sang chua co ho so. Request dau tien se tao
+                // ho so toi thieu; cac dong sau cua cung hoa don dung lai dung ho so do.
+                if (medicalRecordId == null) {
+                    medicalRecordId = createdRequest.medicalRecordId();
                 }
+                // Khong block sau khi da tao: trang thai duoc quyet dinh ngay
+                // luc TestRequestService tim/tao ticket cua phong.
+                workflowActivated = true;
+                dispatchedItemCount++;
+            } else {
+                throw new BadRequestException("Dich vu '" + service.getName()
+                        + "' chua co nhom dieu phoi hop le");
             }
+        }
+        if (dispatchedItemCount == 0) {
+            throw new BadRequestException("Khong co dich vu nao duoc dieu phoi sau thanh toan");
         }
     }
 
     // --- helpers ---
+
+    /**
+     * Dịch vụ khám được cấu hình theo chuyên khoa; phòng vật lý được chọn lúc
+     * thanh toán để có thể có nhiều phòng cùng một chuyên khoa. Giữ fallback
+     * cho dữ liệu dịch vụ cũ còn gắn phòng trực tiếp.
+     */
+    private Department selectExaminationRoom(MedicalService service) {
+        if (service.getDepartment() != null
+                && service.getDepartment().getDepartmentType() == DepartmentType.EXAMINATION
+                && service.getDepartment().getStatus() != DepartmentStatus.MAINTENANCE
+                && service.getDepartment().getHeadDoctor() != null) {
+            return service.getDepartment();
+        }
+
+        if (service.getRequiredSpecialization() == null) {
+            throw new BadRequestException("Dich vu kham benh '" + service.getName()
+                    + "' chua duoc cau hinh chuyen khoa phuc vu");
+        }
+
+        return departmentRepo.findEligibleExaminationRoomsBySpecialization(
+                        service.getRequiredSpecialization().getSpecializationId())
+                .stream()
+                // Ưu tiên phòng đã có bác sĩ phụ trách, nhưng vẫn điều phối được
+                // dữ liệu phòng cũ chưa đồng bộ head_doctor_id.
+                .min(java.util.Comparator
+                        .comparing((Department room) -> room.getHeadDoctor() == null)
+                        .thenComparingLong(room -> queueTicketRepo
+                                .countActiveTicketsByDepartment(room.getDepartmentId())))
+                .orElseThrow(() -> new BadRequestException("Chua co phong kham san sang "
+                        + "cho chuyen khoa '" + service.getRequiredSpecialization().getName()
+                        + "' cua dich vu '" + service.getName() + "'"));
+    }
 
     private InvoiceItem buildItem(Invoice invoice, InvoiceItemCreateRequest req) {
         MedicalService service = null;

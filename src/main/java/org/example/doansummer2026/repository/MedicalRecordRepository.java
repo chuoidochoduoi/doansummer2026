@@ -30,6 +30,21 @@ public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UU
     Page<MedicalRecord> findFeedbacksForStaff(@Param("doctorId") UUID doctorId, Pageable pageable);
     Optional<MedicalRecord> findByQueueTicket_TicketId(UUID ticketId);
 
+    @Query("""
+            SELECT m FROM MedicalRecord m
+            LEFT JOIN FETCH m.visit v
+            LEFT JOIN FETCH m.doctor d
+            LEFT JOIN FETCH d.profile
+            WHERE v.customer.profileId = :profileId
+              AND m.recordId <> :currentRecordId
+              AND m.status = org.example.doansummer2026.enums.MedicalRecordStatus.COMPLETED
+              AND m.queueTicket IS NOT NULL
+              AND m.queueTicket.department.departmentType = org.example.doansummer2026.enums.DepartmentType.EXAMINATION
+            ORDER BY m.createdAt DESC
+            """)
+    List<MedicalRecord> findCompletedHistoryByProfileIdExcludingRecord(
+            @Param("profileId") UUID profileId, @Param("currentRecordId") UUID currentRecordId);
+
 
     @Query(value = """
             SELECT record_code
@@ -54,7 +69,9 @@ public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UU
 
     default Page<MedicalRecord> search(UUID doctorId, MedicalRecordStatus status,
                                         LocalDateTime from, LocalDateTime to, Pageable pageable) {
-        Specification<MedicalRecord> spec = (root, query, cb) -> cb.conjunction();
+        // Standalone record chi la cau noi ky thuat cho CLS; khong hien nhu mot
+        // benh an kham tren cac danh sach bac si/le tan.
+        Specification<MedicalRecord> spec = (root, query, cb) -> cb.isNotNull(root.get("queueTicket"));
 
         if (doctorId != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("doctor").get("staffId"), doctorId));

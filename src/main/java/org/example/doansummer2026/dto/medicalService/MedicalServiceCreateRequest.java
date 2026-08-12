@@ -29,6 +29,7 @@ public record MedicalServiceCreateRequest(
         @Min(0) @Max(2) Integer workflowPriority,
         Boolean requiresDoctorOrder,
         Boolean requiresReturnToDoctor,
+        Boolean requiresSpecimen,
         @Min(0) Integer resultWaitMinutes,
         Boolean allowCustomerBooking,
         @Min(0) @Max(120) Integer minimumAge,

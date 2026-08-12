@@ -7,7 +7,12 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
+import jakarta.persistence.LockModeType;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -18,6 +23,12 @@ import java.util.List;
 public interface CustomerVisitRepository extends JpaRepository<CustomerVisit, UUID>, JpaSpecificationExecutor<CustomerVisit> {
 
     Optional<CustomerVisit> findByAppointment_AppointmentId(UUID appointmentId);
+
+    /** Khoa luot kham khi tao standalone record CLS, tranh hai thanh toan dong thoi tao trung record. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT v FROM CustomerVisit v WHERE v.visitId = :visitId")
+    Optional<CustomerVisit> findByIdForUpdate(@Param("visitId") UUID visitId);
+
     List<CustomerVisit> findAllByCustomer_ProfileIdOrderByCheckInTimeDesc(UUID profileId);
     Optional<CustomerVisit> findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
             UUID profileId, List<VisitStatus> statuses);

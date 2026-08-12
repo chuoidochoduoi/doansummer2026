@@ -28,15 +28,12 @@ import org.example.doansummer2026.model.Appointment;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.Profile;
-import org.example.doansummer2026.model.Insurance;
 import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.repository.AccountRepository;
 import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
-import org.example.doansummer2026.repository.InsuranceRepository;
-import org.example.doansummer2026.repository.InsuranceRuleRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.service.interfaces.AppointmentServiceInterface;
@@ -46,6 +43,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.time.Period;
@@ -67,8 +65,6 @@ public class AppointmentService implements AppointmentServiceInterface {
     private final CustomerVisitRepository visitRepo;
     private final MedicalServiceRepository serviceRepo;
     private final InvoiceService invoiceService;
-    private final InsuranceRepository insuranceRepository;
-    private final InsuranceRuleRepository insuranceRuleRepository;
     private final StaffInfoRepository staffRepo;
     private final NotificationService notificationService;
     private final ShiftConfigRepository shiftConfigRepository;
@@ -199,7 +195,7 @@ public class AppointmentService implements AppointmentServiceInterface {
     public AppointmentResponse update(UUID id, AppointmentUpdateRequest req) {
         Appointment a = findById(id);
         AppointmentStatus oldStatus = a.getStatus();
-        
+
         if (req.scheduledAt() != null) {
             validateRescheduleConflict(a, req.scheduledAt());
             a.setScheduledAt(req.scheduledAt());
@@ -212,14 +208,10 @@ public class AppointmentService implements AppointmentServiceInterface {
             a.setShiftName(shift.getName());
             a.setShiftTime(shift.getStartTime() + " - " + shift.getEndTime());
         }
-        
+
         // Cập nhật thông tin khách (cho phép ghi đè kể cả khách vãng lai hay khách có tk)
-        if (req.guestFullName() != null) a.setGuestFullName(req.guestFullName());
-        if (req.guestPhone() != null) a.setGuestPhone(req.guestPhone());
-        if (req.guestEmail() != null) a.setGuestEmail(req.guestEmail());
-        if (req.guestAddress() != null) a.setGuestAddress(req.guestAddress());
-        if (req.guestAge() != null) a.setGuestAge(req.guestAge());
-        if (req.guestGender() != null) a.setGuestGender(req.guestGender());
+        updatePatientInformation(a, req.guestFullName(), req.guestPhone(), req.guestEmail(),
+                req.guestAddress(), req.guestDateOfBirth(), req.guestAge(), req.guestGender());
 
         if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
             Set<MedicalService> services = new HashSet<>();
@@ -230,7 +222,7 @@ public class AppointmentService implements AppointmentServiceInterface {
             }
             a.setServices(services);
         }
-        
+
         Appointment saved = repo.save(a);
         if (req.status() != null && req.status() != oldStatus) {
             notifyCustomerStatusChange(saved, oldStatus);
@@ -239,7 +231,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                 notificationService.notifyStaffByRole(SystemRole.RECEPTIONIST, "Lịch hẹn đã bị hủy", String.format("%s đã hủy lịch hẹn vào lúc %s", patientName, saved.getScheduledAt()), "Appointment", saved.getAppointmentId());
             }
         }
-        
+
         return AppointmentResponse.from(saved);
     }
 
@@ -319,6 +311,9 @@ public class AppointmentService implements AppointmentServiceInterface {
         StaffInfo checkedInBy = staffRepo.findById(req.issuedById())
                 .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nhan vien thuc hien check-in"));
 
+        updatePatientInformation(a, req.patientFullName(), req.patientPhone(), req.patientEmail(),
+                req.patientAddress(), req.patientDateOfBirth(), req.patientAge(), req.patientGender());
+
         // Thay doi dich vu neu duoc cung cap, hoac lay services hien co
         Set<MedicalService> services;
         if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
@@ -339,15 +334,6 @@ public class AppointmentService implements AppointmentServiceInterface {
         repo.save(a); // Luu lai appointment voi services moi (neu co)
 
 
-        // Lay bao hiem neu co
-        Insurance insurance = null;
-        List<org.example.doansummer2026.model.InsuranceRule> insuranceRules = List.of();
-        if (req.insuranceId() != null) {
-            insurance = insuranceRepository.findById(req.insuranceId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Bao hiem khong ton tai: " + req.insuranceId()));
-            insuranceRules = insuranceRuleRepository.findByInsurance_InsuranceId(req.insuranceId());
-        }
-
         // Khoa ho so benh nhan trong transaction de hai nhan vien khong the
         // dong thoi tao hai luot kham dang hoat dong.
         Profile visitCustomer;
@@ -355,12 +341,18 @@ public class AppointmentService implements AppointmentServiceInterface {
             visitCustomer = profileRepo.findFirstByPhone(a.getGuestPhone()).orElseGet(() ->
                     profileRepo.save(Profile.builder()
                             .fullName(a.getGuestFullName()).phone(a.getGuestPhone())
-                            .address(a.getGuestAddress()).gender(a.getGuestGender()).build()));
+                            .email(a.getGuestEmail()).address(a.getGuestAddress())
+                            .dateOfBirth(req.patientDateOfBirth()).gender(a.getGuestGender()).build()));
         } else {
             visitCustomer = a.getCustomer();
         }
         Profile lockedCustomer = profileRepo.findByIdForUpdate(visitCustomer.getProfileId())
                 .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay ho so benh nhan"));
+        if (appointmentHasNoRegisteredCustomer(a)) {
+            updateProfileInformation(lockedCustomer, req.patientFullName(), req.patientPhone(),
+                    req.patientEmail(), req.patientAddress(), req.patientDateOfBirth(),
+                    req.patientGender());
+        }
         ensureNoActiveVisit(lockedCustomer.getProfileId());
 
         CustomerVisit visit = visitRepo.findByAppointment_AppointmentId(a.getAppointmentId())
@@ -373,24 +365,9 @@ public class AppointmentService implements AppointmentServiceInterface {
                         .build()));
         CustomerVisit savedVisit = visit;
 
-        final List<org.example.doansummer2026.model.InsuranceRule> finalRules = insuranceRules;
-
         var invoiceItems = services.stream()
                 .map(s -> {
                     BigDecimal price = s.getPrice() != null ? s.getPrice() : BigDecimal.ZERO;
-                    BigDecimal discountPercent = BigDecimal.ZERO;
-                    
-                    if (!finalRules.isEmpty() && s.getDepartment() != null) {
-                        for (org.example.doansummer2026.model.InsuranceRule rule : finalRules) {
-                            if (rule.getDepartmentType() == s.getDepartment().getDepartmentType()) {
-                                discountPercent = rule.getDiscountPercent();
-                                break;
-                            }
-                        }
-                    }
-                    
-                    BigDecimal discountAmount = price.multiply(discountPercent).divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP);
-                    BigDecimal finalPrice = price.subtract(discountAmount);
                     
                     return new org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest(
                             s.getServiceId(),
@@ -398,9 +375,9 @@ public class AppointmentService implements AppointmentServiceInterface {
                             s.getServiceCode(),
                             price,
                             1,
-                            discountPercent,
-                            discountAmount,
-                            finalPrice,
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                            price,
                             null
                     );
                 })
@@ -426,6 +403,87 @@ public class AppointmentService implements AppointmentServiceInterface {
 
         return AppointmentCheckInResponse.from(a, savedVisit, invoiceResponse.invoiceId());
     }
+
+    private void updatePatientInformation(
+            Appointment appointment,
+            String fullName,
+            String phone,
+            String email,
+            String address,
+            LocalDate dateOfBirth,
+            Integer age,
+            Gender gender
+    ) {
+        String normalizedPhone = normalizeOptional(phone);
+        String normalizedEmail = normalizeOptional(email);
+        if (normalizedEmail != null) normalizedEmail = normalizedEmail.toLowerCase();
+
+        if (fullName != null) appointment.setGuestFullName(fullName.trim());
+        if (phone != null) appointment.setGuestPhone(normalizedPhone);
+        if (email != null) appointment.setGuestEmail(normalizedEmail);
+        if (address != null) appointment.setGuestAddress(normalizeOptional(address));
+        if (age != null) appointment.setGuestAge(age);
+        if (gender != null) appointment.setGuestGender(gender);
+
+        Profile customer = appointment.getCustomer();
+        if (customer == null) return;
+        updateProfileInformation(customer, fullName, phone, email, address, dateOfBirth, gender);
+    }
+
+    private void updateProfileInformation(
+            Profile customer,
+            String fullName,
+            String phone,
+            String email,
+            String address,
+            LocalDate dateOfBirth,
+            Gender gender
+    ) {
+        String normalizedPhone = normalizeOptional(phone);
+        String normalizedEmail = normalizeOptional(email);
+        if (normalizedEmail != null) normalizedEmail = normalizedEmail.toLowerCase();
+
+        if (fullName != null) customer.setFullName(fullName.trim());
+        if (dateOfBirth != null) customer.setDateOfBirth(dateOfBirth);
+        if (gender != null) customer.setGender(gender);
+        if (address != null) customer.setAddress(normalizeOptional(address));
+
+        if (phone != null && !java.util.Objects.equals(normalizedPhone, customer.getPhone())) {
+            if (normalizedPhone != null) {
+                profileRepo.findFirstByPhone(normalizedPhone).ifPresent(existing -> {
+                    if (!existing.getProfileId().equals(customer.getProfileId())) {
+                        throw new ConflictException("So dien thoai da duoc su dung");
+                    }
+                });
+            }
+            customer.setPhone(normalizedPhone);
+        }
+
+        if (email != null && !java.util.Objects.equals(normalizedEmail, customer.getEmail())) {
+            if (normalizedEmail != null) {
+                String finalEmail = normalizedEmail;
+                profileRepo.findFirstByEmail(finalEmail).ifPresent(existing -> {
+                    if (!existing.getProfileId().equals(customer.getProfileId())) {
+                        throw new ConflictException("Email da duoc su dung");
+                    }
+                });
+            }
+            customer.setEmail(normalizedEmail);
+        }
+
+        profileRepo.save(customer);
+    }
+
+    private boolean appointmentHasNoRegisteredCustomer(Appointment appointment) {
+        return appointment.getCustomer() == null;
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null) return null;
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
 
     public Appointment findById(UUID id) {
         return repo.findById(id)
@@ -466,7 +524,30 @@ public class AppointmentService implements AppointmentServiceInterface {
                 .build();
         CustomerVisit savedVisit = visitRepo.save(visit);
 
-        // Tao invoice rong cho guest check-in
+        // Khach vang lai van phai co cac InvoiceItem tu dich vu da chon.
+        // Truoc day req.serviceIds bi bo qua o nhanh nay, nen hoa don van PAID
+        // nhung rong va khong the sinh TestRequest/QueueTicket sau thanh toan.
+        var invoiceItems = req.serviceIds() == null ? java.util.List.<org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest>of()
+                : req.serviceIds().stream()
+                .map(serviceId -> serviceRepo.findById(serviceId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId)))
+                .map(service -> {
+                    java.math.BigDecimal price = service.getPrice() != null
+                            ? service.getPrice() : java.math.BigDecimal.ZERO;
+                    return new org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest(
+                            service.getServiceId(),
+                            service.getName(),
+                            service.getServiceCode(),
+                            price,
+                            1,
+                            java.math.BigDecimal.ZERO,
+                            java.math.BigDecimal.ZERO,
+                            price,
+                            null
+                    );
+                })
+                .toList();
+
         var invoiceResponse = invoiceService.create(new org.example.doansummer2026.dto.invoice.InvoiceCreateRequest(
                 guestProfile.getProfileId(),
                 savedVisit.getVisitId(),
@@ -476,7 +557,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                 null,
                 null,
                 req.issuedById(),
-                null
+                invoiceItems.isEmpty() ? null : invoiceItems
         ));
 
         return GuestCheckInResponse.from(savedVisit, invoiceResponse.invoiceId(), req.guestFullName(), req.guestPhone());

@@ -12,7 +12,7 @@ import java.util.UUID;
  */
 public record ReceptionistAllCustomerResponse(
         UUID customerId,           // UUID neu co account, hoac UUID cua appointment (dung lam id tam thoi)
-        String patientCode,        // Phone lam ma (cho ca customer va guest)
+        String patientCode,        // Ma benh nhan rieng, khong phai so dien thoai
         String fullName,
         Gender gender,
         LocalDate dateOfBirth,
@@ -23,19 +23,19 @@ public record ReceptionistAllCustomerResponse(
         boolean isGuest           // true neu la guest vang lai
 ) {
     public static ReceptionistAllCustomerResponse forRegistered(
-            UUID profileId, String phone, String fullName, Gender gender,
+            UUID profileId, String patientCode, String phone, String fullName, Gender gender,
             LocalDate dateOfBirth, BloodType bloodType, String email, String address) {
         return new ReceptionistAllCustomerResponse(
-                profileId, phone, fullName, gender, dateOfBirth, bloodType,
+                profileId, patientCode, fullName, gender, dateOfBirth, bloodType,
                 phone, email, address, false
         );
     }
 
     public static ReceptionistAllCustomerResponse forGuest(
-            UUID profileId, String phone, String fullName, Gender gender,
+            UUID profileId, String patientCode, String phone, String fullName, Gender gender,
             LocalDate dateOfBirth, BloodType bloodType, String email, String address) {
         return new ReceptionistAllCustomerResponse(
-                profileId, phone, fullName, gender, dateOfBirth, bloodType,
+                profileId, patientCode, fullName, gender, dateOfBirth, bloodType,
                 phone, email, address, true
         );
     }

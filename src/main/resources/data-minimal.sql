@@ -9,7 +9,7 @@
 -- ===================================================================
 
 TRUNCATE TABLE
-    medical_service, department, specialization,
+    medical_service, department, specialization, service_capability,
     staff_info, staff_capability, staff_attendance, staff_schedule,
     profile, account, shift_config
 RESTART IDENTITY CASCADE;
@@ -63,10 +63,29 @@ INSERT INTO department_capability (department_id, capability_id) VALUES
 -- ===================================================================
 -- MedicalService (dich vu y te - toi thieu: kham + xn + CDHA)
 -- ===================================================================
-INSERT INTO medical_service (service_id, service_code, created_at, updated_at, deleted, description, status, is_point_of_care, name, price, department_type, duration_minutes, allow_customer_booking, minimum_age, maximum_age, allowed_gender, department_id, required_specialization_id, required_capability_id) VALUES
-('40000008-8888-8888-8888-888888888888', 'KHB001', NOW(), NOW(), false, 'Khám bệnh tổng quát', 'ACTIVE', false, 'Khám bệnh tổng quát', 200000, 'EXAMINATION', 30, true, 0, 120, NULL, '33333333-3333-3333-3333-333333333333', '00000006-6666-6666-6666-666666666666', NULL),
-('40000001-1111-1111-1111-111111111111', 'XN001', NOW(), NOW(), false, 'Xét nghiệm công thức máu (CBC)', 'ACTIVE', false, 'Xét nghiệm công thức máu', 120000, 'PARACLINICAL', 20, true, 0, 120, NULL, '44444444-4444-4444-4444-444444444444', NULL, 'ca000001-0000-0000-0000-000000000001'),
-('40000004-4444-4444-4444-444444444444', 'CDHA001', NOW(), NOW(), false, 'Siêu âm ổ bụng', 'ACTIVE', false, 'Siêu âm ổ bụng', 250000, 'PARACLINICAL', 20, true, 0, 120, NULL, '55555555-5555-5555-5555-555555555555', '00000003-3333-3333-3333-333333333333', 'ca000003-0000-0000-0000-000000000003');
+INSERT INTO medical_service (
+    service_id, service_code, created_at, updated_at, deleted,
+    description, status, is_point_of_care, name, price, department_type,
+    duration_minutes, workflow_priority, requires_doctor_order,
+    requires_return_to_doctor, requires_specimen, result_wait_minutes,
+    allow_customer_booking, minimum_age, maximum_age, allowed_gender,
+    department_id, required_specialization_id, required_capability_id
+) VALUES
+-- Dịch vụ khám không gắn cứng department_id. Phòng được chọn theo chuyên khoa
+-- phục vụ tại thời điểm điều phối.
+('40000008-8888-8888-8888-888888888888', 'KHB001', NOW(), NOW(), false,
+ 'Khám bệnh tổng quát', 'ACTIVE', false, 'Khám bệnh tổng quát', 200000, 'EXAMINATION',
+ 30, 1, false, false, false, 0, true, 0, 120, NULL,
+ NULL, '00000006-6666-6666-6666-666666666666', NULL),
+-- Dịch vụ cận lâm sàng được chọn phòng theo năng lực thực hiện.
+('40000001-1111-1111-1111-111111111111', 'XN001', NOW(), NOW(), false,
+ 'Xét nghiệm công thức máu (CBC)', 'ACTIVE', false, 'Xét nghiệm công thức máu', 120000, 'PARACLINICAL',
+ 20, 1, false, false, true, 30, true, 0, 120, NULL,
+ NULL, NULL, 'ca000001-0000-0000-0000-000000000001'),
+('40000004-4444-4444-4444-444444444444', 'CDHA001', NOW(), NOW(), false,
+ 'Siêu âm ổ bụng', 'ACTIVE', false, 'Siêu âm ổ bụng', 250000, 'PARACLINICAL',
+ 20, 1, false, false, false, 15, true, 0, 120, NULL,
+ NULL, NULL, 'ca000003-0000-0000-0000-000000000003');
 
 -- Link profile -> account
 UPDATE profile SET account_id = '30000012-2222-2222-2222-222222222222' WHERE profile_id = '20000009-9999-9999-9999-999999999999';
@@ -121,6 +140,21 @@ INSERT INTO staff_info (staff_id, created_at, updated_at, deleted, profile_id, s
 ('90000011-4444-4444-4444-444444444444', NOW(), NOW(), false, '20000012-2222-2222-2222-222222222222', 'STF-NUR-001', 'NURSE', '001090123456', NULL, 'Cử nhân điều dưỡng', 'Đại học Y Dược', 'CCHN-23456', NULL, '44444444-4444-4444-4444-444444444444'),
 ('90000012-5555-5555-5555-555555555555', NOW(), NOW(), false, '20000013-3333-3333-3333-333333333333', 'STF-REC-001', 'RECEPTIONIST', '001095123456', NULL, NULL, NULL, NULL, NULL, NULL),
 ('90000013-6666-6666-6666-666666666666', NOW(), NOW(), false, '20000014-4444-4444-4444-444444444444', 'STF-CAS-001', 'CASHIER', '001092123456', NULL, NULL, NULL, NULL, NULL, NULL);
+
+-- Phòng khám mẫu cần bác sĩ phụ trách để hệ thống tạo được hàng chờ khám.
+UPDATE department
+SET head_doctor_id = '90000010-3333-3333-3333-333333333333'
+WHERE department_id = '33333333-3333-3333-3333-333333333333';
+
+-- Năng lực nhân sự mẫu; các thông tin chứng chỉ được để trống theo nghiệp vụ.
+INSERT INTO staff_capability (
+    staff_capability_id, created_at, updated_at, deleted,
+    staff_id, capability_id, certificate_number, issued_date, expiry_date,
+    issuing_organization, status
+) VALUES
+('a0000001-1111-1111-1111-111111111111', NOW(), NOW(), false,
+ '90000011-4444-4444-4444-444444444444', 'ca000001-0000-0000-0000-000000000001',
+ NULL, NULL, NULL, NULL, 'ACTIVE');
 
 -- ===================================================================
 -- Shift Config

@@ -21,12 +21,11 @@ public record CustomerVisitResponse(
     public static CustomerVisitResponse from(CustomerVisit v) {
         UUID customerId = v.getCustomer() != null ? v.getCustomer().getProfileId() : null;
         String customerName = v.getCustomer() != null ? v.getCustomer().getFullName() : null;
-        String patientCode = v.getCustomer() != null ? v.getCustomer().getPhone() : null; // Phone lam ma benh nhan
+        String patientCode = v.getCustomer() != null ? v.getCustomer().getPatientCode() : null;
 
         // Lay thong tin guest tu appointment neu la khach vang lai
         if (v.getAppointment() != null && Boolean.TRUE.equals(v.getAppointment().getIsGuest())) {
             customerName = v.getAppointment().getGuestFullName();
-            patientCode = v.getAppointment().getGuestPhone(); // Guest phone
         }
 
         UUID appointmentId = v.getAppointment() != null ? v.getAppointment().getAppointmentId() : null;
@@ -37,12 +36,11 @@ public record CustomerVisitResponse(
     public static CustomerVisitResponse from(CustomerVisit v, UUID invoiceId) {
         UUID customerId = v.getCustomer() != null ? v.getCustomer().getProfileId() : null;
         String customerName = v.getCustomer() != null ? v.getCustomer().getFullName() : null;
-        String patientCode = v.getCustomer() != null ? v.getCustomer().getPhone() : null; // Phone lam ma benh nhan
+        String patientCode = v.getCustomer() != null ? v.getCustomer().getPatientCode() : null;
 
         // Lay thong tin guest tu appointment neu la khach vang lai
         if (v.getAppointment() != null && Boolean.TRUE.equals(v.getAppointment().getIsGuest())) {
             customerName = v.getAppointment().getGuestFullName();
-            patientCode = v.getAppointment().getGuestPhone(); // Guest phone
         }
 
         UUID appointmentId = v.getAppointment() != null ? v.getAppointment().getAppointmentId() : null;
@@ -50,6 +48,4 @@ public record CustomerVisitResponse(
                 invoiceId, v.getCheckInTime(), v.getCheckOutTime(), v.getStatus(), v.getCreatedAt());
     }
 }
-
-
 

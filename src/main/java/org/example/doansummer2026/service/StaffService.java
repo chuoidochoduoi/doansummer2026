@@ -11,6 +11,7 @@ import org.example.doansummer2026.dto.staff.StaffUpdateRequest;
 import org.example.doansummer2026.dto.staff.StaffProfessionalUpdateRequest;
 import org.example.doansummer2026.dto.staff.StaffCapabilityRequest;
 import org.example.doansummer2026.dto.staff.StaffCapabilityResponse;
+import org.example.doansummer2026.dto.staff.ClinicManagerStaffResponse;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Account;
@@ -215,6 +216,17 @@ public class StaffService implements StaffServiceInterface {
                                               SystemRole systemRole, Pageable pageable) {
         Page<StaffInfo> page = staffRepo.search(search, specializationId, systemRole, pageable);
         return PageResponse.from(page, this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<ClinicManagerStaffResponse> searchForClinicManager(String search, Pageable pageable) {
+        Page<StaffInfo> page = staffRepo.search(search, null, null, pageable);
+        return PageResponse.from(page, ClinicManagerStaffResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public ClinicManagerStaffResponse getForClinicManager(UUID staffId) {
+        return ClinicManagerStaffResponse.from(findById(staffId));
     }
 
     public StaffInfo findById(UUID id) {

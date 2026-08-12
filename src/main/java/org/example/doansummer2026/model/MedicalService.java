@@ -114,6 +114,11 @@ public class MedicalService extends BaseEntity {
     @Builder.Default
     private Boolean requiresReturnToDoctor = false;
 
+    /** Dịch vụ cần tiếp nhận mẫu vật trước khi thực hiện (máu, nước tiểu, ...). */
+    @Column(name = "requires_specimen", nullable = false)
+    @Builder.Default
+    private Boolean requiresSpecimen = false;
+
     @Column(name = "result_wait_minutes")
     @Builder.Default
     private Integer resultWaitMinutes = 0;

@@ -12,7 +12,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Max;
 
 /**
- * Cap nhat dich vu. Chi cap nhat khi status = DRAFT hoac ACTIVE.
+ * Cap nhat dich vu; DRAFT chi duoc chuyen sang ACTIVE, ACTIVE va INACTIVE co the chuyen qua lai.
  */
 public record MedicalServiceUpdateRequest(
         @Size(max = 200) String name,
@@ -25,6 +25,7 @@ public record MedicalServiceUpdateRequest(
         @Min(0) @Max(2) Integer workflowPriority,
         Boolean requiresDoctorOrder,
         Boolean requiresReturnToDoctor,
+        Boolean requiresSpecimen,
         @Min(0) Integer resultWaitMinutes,
         Boolean allowCustomerBooking,
         @Min(0) @Max(120) Integer minimumAge,

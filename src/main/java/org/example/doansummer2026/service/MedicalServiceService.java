@@ -106,12 +106,14 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
                 .description(req.description())
                 .departmentType(departmentType)
                 .price(req.price() != null ? req.price() : BigDecimal.ZERO)
-                .status(req.status() != null ? req.status() : ServiceStatus.DRAFT)
+                .status(ServiceStatus.DRAFT)
                 .isPointOfCare(req.isPointOfCare() != null ? req.isPointOfCare() : false)
                 .durationMinutes(req.durationMinutes() != null ? req.durationMinutes() : 15)
                 .workflowPriority(req.workflowPriority() != null ? req.workflowPriority() : 1)
                 .requiresDoctorOrder(Boolean.TRUE.equals(req.requiresDoctorOrder()))
                 .requiresReturnToDoctor(Boolean.TRUE.equals(req.requiresReturnToDoctor()))
+                .requiresSpecimen(departmentType != DepartmentType.EXAMINATION
+                        && Boolean.TRUE.equals(req.requiresSpecimen()))
                 .resultWaitMinutes(req.resultWaitMinutes() != null ? req.resultWaitMinutes() : 0)
                 .allowCustomerBooking(req.allowCustomerBooking() != null ? req.allowCustomerBooking() : true)
                 .minimumAge(req.minimumAge() != null ? req.minimumAge() : 0)
@@ -119,25 +121,21 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
                 .allowedGender(req.allowedGender())
                 .department(null)
                 .requiredSpecialization(spec)
-                .requiredCapability(req.requiredCapabilityId() != null
+                .requiredCapability(departmentType != DepartmentType.EXAMINATION && req.requiredCapabilityId() != null
                         ? capabilityRepo.findById(req.requiredCapabilityId()).orElseThrow(() ->
                         new ResourceNotFoundException("Nang luc thuc hien khong ton tai: " + req.requiredCapabilityId())) : null)
                 .build();
         return MedicalServiceResponse.from(repo.save(s));
     }
 
-    /**
-     * Cap nhat dich vu. Chi cap nhat khi status = DRAFT hoac ACTIVE.
-     */
+    /** Cap nhat dich vu va chi cho phep chuyen trang thai theo workflow da chot. */
     public MedicalServiceResponse update(UUID id, MedicalServiceUpdateRequest req) {
         validateDemographicRules(req.minimumAge(), req.maximumAge());
         if (req.allowedGender() == org.example.doansummer2026.enums.Gender.OTHER) {
             throw new BadRequestException("He thong chi ho tro gioi tinh MALE hoac FEMALE");
         }
         MedicalService s = findById(id);
-        if (s.getStatus() == ServiceStatus.INACTIVE) {
-            throw new ConflictException("Khong the chinh sua dich vu da ngung hoat dong");
-        }
+        validateStatusTransition(s.getStatus(), req.status());
         if (req.name() != null && !req.name().equals(s.getName())) {
             if (repo.existsByName(req.name())) {
                 throw new ConflictException("Ten dich vu da ton tai: " + req.name());
@@ -153,6 +151,7 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
         if (req.workflowPriority() != null) s.setWorkflowPriority(req.workflowPriority());
         if (req.requiresDoctorOrder() != null) s.setRequiresDoctorOrder(req.requiresDoctorOrder());
         if (req.requiresReturnToDoctor() != null) s.setRequiresReturnToDoctor(req.requiresReturnToDoctor());
+        if (req.requiresSpecimen() != null) s.setRequiresSpecimen(req.requiresSpecimen());
         if (req.resultWaitMinutes() != null) s.setResultWaitMinutes(req.resultWaitMinutes());
         if (req.allowCustomerBooking() != null) s.setAllowCustomerBooking(req.allowCustomerBooking());
         if (req.minimumAge() != null || req.maximumAge() != null || req.allowedGender() != null) {
@@ -162,22 +161,29 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
         }
         // Phong cu the se do bo dieu phoi queue chon khi check-in.
         s.setDepartment(null);
-        if (s.getDepartmentType() == DepartmentType.EXAMINATION && req.requiredSpecializationId() != null) {
-            s.setRequiredSpecialization(specializationRepo.findById(req.requiredSpecializationId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Chuyen khoa khong ton tai: " + req.requiredSpecializationId())));
-        } else if (s.getDepartmentType() != DepartmentType.EXAMINATION) {
+        if (s.getDepartmentType() == DepartmentType.EXAMINATION) {
+            // Dich vu kham chi dung chuyen khoa; khong duoc giu cau hinh CLS cu.
+            s.setRequiredCapability(null);
+            s.setRequiresSpecimen(false);
+            if (req.requiredSpecializationId() != null) {
+                s.setRequiredSpecialization(specializationRepo.findById(req.requiredSpecializationId())
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Chuyen khoa khong ton tai: " + req.requiredSpecializationId())));
+            }
+            if (s.getRequiredSpecialization() == null) {
+                throw new BadRequestException("Dich vu phong kham bat buoc chon chuyen khoa phuc vu");
+            }
+        } else {
+            // Dich vu CLS chi dung nang luc; gan nang luc moi truoc khi kiem tra bat buoc.
             s.setRequiredSpecialization(null);
-        }
-        if (s.getDepartmentType() == DepartmentType.EXAMINATION && s.getRequiredSpecialization() == null) {
-            throw new BadRequestException("Dich vu phong kham bat buoc chon chuyen khoa phuc vu");
-        }
-        if (s.getDepartmentType() != DepartmentType.EXAMINATION && s.getRequiredCapability() == null) {
-            throw new BadRequestException("Dich vu can lam sang bat buoc chon nang luc thuc hien");
-        }
-        if (req.requiredCapabilityId() != null) {
-            s.setRequiredCapability(capabilityRepo.findById(req.requiredCapabilityId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Nang luc thuc hien khong ton tai: " + req.requiredCapabilityId())));
+            if (req.requiredCapabilityId() != null) {
+                s.setRequiredCapability(capabilityRepo.findById(req.requiredCapabilityId())
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Nang luc thuc hien khong ton tai: " + req.requiredCapabilityId())));
+            }
+            if (s.getRequiredCapability() == null) {
+                throw new BadRequestException("Dich vu can lam sang bat buoc chon nang luc thuc hien");
+            }
         }
 
         return MedicalServiceResponse.from(repo.save(s));
@@ -232,6 +238,17 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
     private void validateDemographicRules(Integer minimumAge, Integer maximumAge) {
         if (minimumAge != null && maximumAge != null && minimumAge > maximumAge) {
             throw new BadRequestException("Tuoi toi thieu khong duoc lon hon tuoi toi da");
+        }
+    }
+
+    /** DRAFT chi co the phat hanh sang ACTIVE; ACTIVE va INACTIVE co the chuyen qua lai. */
+    private void validateStatusTransition(ServiceStatus current, ServiceStatus requested) {
+        if (requested == null || requested == current) return;
+        if (current == ServiceStatus.DRAFT && requested != ServiceStatus.ACTIVE) {
+            throw new ConflictException("Dich vu ban nhap chi co the chuyen sang trang thai dang ap dung");
+        }
+        if (current != ServiceStatus.DRAFT && requested == ServiceStatus.DRAFT) {
+            throw new ConflictException("Dich vu da ap dung hoac tam ngung khong the quay lai ban nhap");
         }
     }
 }

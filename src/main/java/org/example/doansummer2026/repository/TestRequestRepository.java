@@ -20,6 +20,32 @@ import java.util.UUID;
 public interface TestRequestRepository extends JpaRepository<TestRequest, UUID> {
     List<TestRequest> findAllByMedicalRecord_Visit_VisitId(UUID visitId);
 
+    /**
+     * Tat ca yeu cau CLS cua mot luot kham, bao gom ca yeu cau dang cho ket qua.
+     * Khong lay qua mot MedicalRecord cu the, vi mot visit co the co record CLS
+     * standalone va nhieu record kham chuyen khoa.
+     */
+    @Query("""
+            SELECT t FROM TestRequest t
+            LEFT JOIN FETCH t.service
+            LEFT JOIN FETCH t.performingDepartment
+            LEFT JOIN FETCH t.testResult tr
+            LEFT JOIN FETCH tr.performedBy performer
+            LEFT JOIN FETCH performer.profile
+            LEFT JOIN FETCH tr.collectedBy collector
+            LEFT JOIN FETCH collector.profile
+            WHERE t.medicalRecord.visit.visitId = :visitId
+            ORDER BY t.createdAt ASC
+            """)
+    List<TestRequest> findAllByVisitIdWithDetails(@Param("visitId") UUID visitId);
+
+    /**
+     * Moi dich vu can lam sang chi duoc chi dinh mot lan trong cung mot luot kham.
+     * Ban ghi da huy khong chan viec chi dinh lai.
+     */
+    boolean existsByMedicalRecord_Visit_VisitIdAndService_ServiceIdAndStatusNot(
+            UUID visitId, UUID serviceId, TestRequestStatus status);
+
     @Query(value = """
             SELECT DISTINCT t FROM TestRequest t
             LEFT JOIN FETCH t.medicalRecord mr

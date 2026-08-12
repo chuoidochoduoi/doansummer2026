@@ -35,8 +35,24 @@ public interface DepartmentRepository extends JpaRepository<Department, UUID> {
 
     Page<Department> findAllByDepartmentTypeIn(List<DepartmentType> departmentTypes, Pageable pageable);
 
+    /**
+     * Phong IN_SESSION van nhan benh nhan vao hang cho; trang thai nay chi cho
+     * biet phong dang phuc vu mot ca. Chi phong BAO TRI moi bi loai dieu phoi.
+     */
     @Query("SELECT DISTINCT d FROM Department d JOIN d.capabilities c WHERE c.capabilityId = :capabilityId AND d.status <> org.example.doansummer2026.enums.DepartmentStatus.MAINTENANCE")
     List<Department> findEligibleByCapability(@Param("capabilityId") UUID capabilityId);
+
+    /**
+     * Phòng khám được điều phối theo chuyên khoa của dịch vụ, không theo một
+     * phòng cố định trên MedicalService. Dữ liệu cũ có thể chưa đồng bộ
+     * head_doctor_id nên không được loại phòng chỉ vì trường này đang trống.
+     */
+    @Query("SELECT d FROM Department d " +
+           "WHERE d.departmentType = org.example.doansummer2026.enums.DepartmentType.EXAMINATION " +
+           "AND d.specialization.specializationId = :specializationId " +
+           "AND d.status <> org.example.doansummer2026.enums.DepartmentStatus.MAINTENANCE")
+    List<Department> findEligibleExaminationRoomsBySpecialization(
+            @Param("specializationId") UUID specializationId);
 
     /** Kiem tra bac si da duoc gianh cho phong nao khong. */
     @Query("SELECT CASE WHEN COUNT(d) > 0 THEN true ELSE false END FROM Department d WHERE d.headDoctor.staffId = :staffId")

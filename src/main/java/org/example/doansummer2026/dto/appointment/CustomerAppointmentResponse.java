@@ -14,7 +14,8 @@ public record CustomerAppointmentResponse(
         String shift,
         String specialty,
         String queueNumber,
-        String status
+        String status,
+        String serviceSummary
 ) {
     public static CustomerAppointmentResponse from(Appointment a) {
         String code = "APPT-" + a.getAppointmentId().toString().substring(0, 8).toUpperCase();
@@ -26,10 +27,21 @@ public record CustomerAppointmentResponse(
         String shift = a.getShiftName() != null ? a.getShiftName() : "";
         
         String specialty = "Khám Bệnh Chung";
+        String serviceSummary = "Chưa chọn dịch vụ";
         if (a.getServices() != null && !a.getServices().isEmpty()) {
             var firstService = a.getServices().iterator().next();
             if (firstService.getDepartment() != null) {
                 specialty = firstService.getDepartment().getName();
+            }
+            java.util.List<String> serviceNames = a.getServices().stream()
+                    .map(service -> service.getName())
+                    .filter(name -> name != null && !name.isBlank())
+                    .sorted()
+                    .toList();
+            if (!serviceNames.isEmpty()) {
+                serviceSummary = serviceNames.size() == 1
+                        ? serviceNames.get(0)
+                        : serviceNames.get(0) + " + " + (serviceNames.size() - 1) + " dịch vụ khác";
             }
         }
         
@@ -60,7 +72,8 @@ public record CustomerAppointmentResponse(
                 shift,
                 specialty,
                 queueNum,
-                statusStr
+                statusStr,
+                serviceSummary
         );
     }
 }

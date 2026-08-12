@@ -8,8 +8,10 @@ import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.dto.invoice.InvoiceCreateRequest;
 import org.example.doansummer2026.dto.invoice.InvoiceResponse;
 import org.example.doansummer2026.dto.invoice.InvoiceUpdateRequest;
+import org.example.doansummer2026.dto.invoice.InvoiceInsuranceRequest;
 import org.example.doansummer2026.dto.invoice.PaymentHistoryResponse;
 import org.example.doansummer2026.dto.invoice.ReceiptDetailResponse;
+import org.example.doansummer2026.dto.invoice.ReceiptPrintResponse;
 import org.example.doansummer2026.dto.payment.PayOSPaymentResponse;
 import org.example.doansummer2026.enums.InvoiceStatus;
 import org.example.doansummer2026.enums.PaymentMethod;
@@ -78,6 +80,15 @@ public class InvoiceController {
         return RestResponses.ok(service.update(id, req));
     }
 
+    @PostMapping("/api/v1/invoices/{id}/insurance")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "Invoice", idParamName = "id")
+    public ResponseEntity<InvoiceResponse> applyInsurance(
+            @PathVariable UUID id,
+            @Valid @RequestBody InvoiceInsuranceRequest req) {
+        return RestResponses.ok(service.applyInsurance(id, req));
+    }
+
     @PostMapping("/api/v1/invoices/{id}/issue")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Invoice", idParamName = "id")
@@ -119,8 +130,8 @@ public class InvoiceController {
 
     @GetMapping("/api/v1/invoices/{id}/print")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
-    public ResponseEntity<InvoiceResponse> getPrintData(@PathVariable UUID id) {
-        return RestResponses.ok(service.get(id));
+    public ResponseEntity<ReceiptPrintResponse> getPrintData(@PathVariable UUID id) {
+        return RestResponses.ok(service.getReceiptPrintData(id));
     }
 
     @DeleteMapping("/api/v1/invoices/{id}")

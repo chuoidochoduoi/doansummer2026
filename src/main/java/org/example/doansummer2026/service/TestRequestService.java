@@ -22,6 +22,7 @@ import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.model.TestRequest;
 import org.example.doansummer2026.model.InvoiceItem;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
+import org.example.doansummer2026.enums.DepartmentStatus;
 import org.example.doansummer2026.enums.QueueStatus;
 import org.example.doansummer2026.enums.TestRequestStatus;
 import org.example.doansummer2026.model.TestResult;
@@ -53,6 +54,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     private final TestRequestRepository repo;
     private final TestResultRepository resultRepo;
     private final MedicalRecordRepository recordRepo;
+    private final org.example.doansummer2026.repository.CustomerVisitRepository visitRepo;
     private final MedicalServiceRepository serviceRepo;
     private final StaffInfoRepository staffRepo;
     private final QueueTicketRepository queueTicketRepo;
@@ -62,6 +64,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     private final PatientJourneyService patientJourneyService;
     private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
     private final NotificationService notificationService;
+    private final AuthService authService;
 
     public PageResponse<TestRequestResponse> search(UUID recordId, UUID departmentId,
                                                      TestRequestStatus status, String search,
@@ -85,33 +88,6 @@ public class TestRequestService implements TestRequestServiceInterface {
                     repo.save(test);
                 });
         // Phiếu khám WAITING_FOR_TEST là bước tạm treo, không được chặn bệnh nhân sang phòng lab.
-        page.getContent().stream()
-                .map(TestRequest::getQueueTicket)
-                .filter(java.util.Objects::nonNull)
-                .collect(java.util.stream.Collectors.toMap(
-                        QueueTicket::getTicketId, queue -> queue, (left, right) -> left))
-                .values().forEach(queue -> {
-                    List<TestRequest> groupedTests = repo.findAllByQueueTicket_TicketId(queue.getTicketId());
-                    boolean inProgress = groupedTests.stream()
-                            .anyMatch(test -> test.getStatus() == TestRequestStatus.IN_PROGRESS);
-                    boolean available = inProgress || groupedTests.stream()
-                            .anyMatch(test -> test.getStatus() == TestRequestStatus.PENDING);
-                    if (queue.getStatus() == QueueStatus.BLOCKED && available) {
-                        queue.setStatus(inProgress ? QueueStatus.IN_PROGRESS : QueueStatus.WAITING);
-                        queueTicketRepo.save(queue);
-                        groupedTests.stream()
-                                .filter(test -> test.getStatus() == TestRequestStatus.BLOCKED)
-                                .forEach(test -> {
-                                    test.setStatus(TestRequestStatus.PENDING);
-                                    repo.save(test);
-                                });
-                    }
-                });
-        page.getContent().stream()
-                .filter(test -> test.getStatus() == TestRequestStatus.BLOCKED)
-                .filter(test -> test.getMedicalRecord() != null && test.getMedicalRecord().getVisit() != null)
-                .map(test -> test.getMedicalRecord().getVisit().getVisitId()).distinct()
-                .forEach(patientJourneyService::activateNext);
         return PageResponse.from(page, TestRequestResponse::from);
     }
 
@@ -131,6 +107,16 @@ public class TestRequestService implements TestRequestServiceInterface {
                 .toList();
     }
 
+    /** Bat dau xu ly cac yeu cau sau khi QueueTicket da chuyen sang IN_PROGRESS. */
+    public void startRequestsForQueue(UUID ticketId) {
+        repo.findAllByQueueTicket_TicketId(ticketId).stream()
+                .filter(request -> request.getStatus() == TestRequestStatus.PENDING)
+                .forEach(request -> {
+                    request.setStatus(TestRequestStatus.IN_PROGRESS);
+                    repo.save(request);
+                });
+    }
+
     public TestRequestResponse create(TestRequestCreateRequest req) {
         if (req.invoiceItemId() != null) {
             List<TestRequest> existing = repo.findByInvoiceItem_ItemId(req.invoiceItemId());
@@ -141,6 +127,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                         "Ho so benh an khong ton tai: " + req.medicalRecordId()));
         MedicalService service = serviceRepo.findById(req.serviceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + req.serviceId()));
+        ensureServiceNotAlreadyRequested(record, service.getServiceId());
         Department dept = selectPerformingDepartment(service);
         StaffInfo requestedBy = staffRepo.findById(req.requestedById())
                 .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai: " + req.requestedById()));
@@ -176,43 +163,157 @@ public class TestRequestService implements TestRequestServiceInterface {
         return TestRequestResponse.from(saved);
     }
 
+    /** Dung cho cac luong tao hoa don tu man kham, noi TestRequest chi duoc sinh sau thanh toan. */
+    public void ensureServiceNotAlreadyRequested(UUID medicalRecordId, UUID serviceId) {
+        MedicalRecord record = recordRepo.findById(medicalRecordId)
+                .orElseThrow(() -> new ResourceNotFoundException("Ho so benh an khong ton tai: " + medicalRecordId));
+        ensureServiceNotAlreadyRequested(record, serviceId);
+    }
+
     /** Tao hang cho sau thanh toan, ke ca luot chi co dich vu can lam sang chua co ho so. */
     public TestRequestResponse createFromPaidInvoice(UUID visitId, UUID medicalRecordId, UUID serviceId,
                                                      UUID requestedById, String notes, UUID invoiceItemId) {
-        if (invoiceItemId != null) {
-            List<TestRequest> existing = repo.findByInvoiceItem_ItemId(invoiceItemId);
-            if (!existing.isEmpty()) return TestRequestResponse.from(existing.get(0));
-        }
         MedicalService service = serviceRepo.findById(serviceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
-        Department dept = selectPerformingDepartment(service);
-        StaffInfo requester = requestedById != null ? staffRepo.findById(requestedById).orElse(null) : null;
-        if (requester == null) requester = dept.getHeadDoctor();
+
+        /*
+         * Idempotency khong dong nghia voi return ngay lap tuc.
+         * Mot so luong cu/luong dat dich vu co the da tao TestRequest truoc khi
+         * hoa don duoc thanh toan. Ban ghi do chua co QueueTicket; neu return o
+         * day thi PAID thanh cong nhung benh nhan khong bao gio vao hang cho.
+         */
+        TestRequest existingRequest = invoiceItemId == null ? null : repo.findByInvoiceItem_ItemId(invoiceItemId)
+                .stream().findFirst().orElse(null);
+
+        Department dept = existingRequest != null && existingRequest.getPerformingDepartment() != null
+                ? existingRequest.getPerformingDepartment()
+                : selectPerformingDepartment(service);
+        StaffInfo requester = resolvePaymentRequester(requestedById, dept);
         if (requester == null) {
-            throw new BadRequestException("Phong " + dept.getName() + " chua co bac si phu trach de tiep nhan dich vu");
+            throw new BadRequestException("Phong " + dept.getName()
+                    + " chua co nhan su phu trach de tiep nhan dich vu");
         }
 
-        MedicalRecord record = medicalRecordId != null ? recordRepo.findById(medicalRecordId).orElse(null) : null;
-        if (record == null && visitId != null)
-            record = recordRepo.findFirstByVisit_VisitIdOrderByCreatedAtDesc(visitId).orElse(null);
-        if (record == null) {
-            var created = medicalRecordService.create(new org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest(
-                    visitId, dept.getHeadDoctor() != null ? dept.getHeadDoctor().getStaffId() : requester.getStaffId(),
-                    "Dich vu can lam sang", null, null, null, null, null, null));
-            record = recordRepo.findById(created.recordId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Khong the tao ho so cho luot kham"));
+        /*
+         * medicalRecordId duoc giu de tuong thich interface cu, nhung khong duoc
+         * dung de chon record cho CLS. Moi TestRequest trong mot CustomerVisit
+         * phai dung mot standalone record (queueTicket = null), tach hoan toan
+        * voi cac MedicalRecord cua tung phong kham.
+         */
+        MedicalRecord record = existingRequest != null ? existingRequest.getMedicalRecord() : null;
+        boolean migratedToStandaloneRecord = false;
+        if (record == null || record.getQueueTicket() != null) {
+            record = getOrCreateStandaloneRecord(visitId, requester, dept);
+            // Chi migrate request da tim duoc theo invoice item (idempotent payment).
+            // Day la request sinh tu hoa don, nen khong can giu quan he "bac si chi dinh".
+            if (existingRequest != null) {
+                existingRequest.setMedicalRecord(record);
+                migratedToStandaloneRecord = true;
+            }
         }
+
+        if (existingRequest != null) {
+            boolean changed = migratedToStandaloneRecord;
+            if (existingRequest.getQueueTicket() == null) {
+                QueueTicket repairedQueue = ensureParaclinicalQueue(record, service, dept);
+                existingRequest.setQueueTicket(repairedQueue);
+                changed = true;
+                // Khong doi trang thai cua ket qua da hoan thanh/huy. Cac yeu cau
+                // dang cho phai phan anh dung trang thai cua queue vua gan.
+                if (existingRequest.getStatus() != TestRequestStatus.COMPLETED
+                        && existingRequest.getStatus() != TestRequestStatus.CANCELLED) {
+                    existingRequest.setStatus(repairedQueue.getStatus() == QueueStatus.BLOCKED
+                            ? TestRequestStatus.BLOCKED : TestRequestStatus.PENDING);
+                    changed = true;
+                }
+            } else if (existingRequest.getStatus() != TestRequestStatus.COMPLETED
+                    && existingRequest.getStatus() != TestRequestStatus.CANCELLED) {
+                // Du lieu cu co the da gan ticket nhung lech trang thai do ticket
+                // bi block/mo sau khi TestRequest duoc tao. Dong bo lai tai diem
+                // thanh toan ma khong lam song lai ket qua da xong.
+                QueueStatus queueStatus = existingRequest.getQueueTicket().getStatus();
+                if (queueStatus == QueueStatus.BLOCKED
+                        && existingRequest.getStatus() != TestRequestStatus.BLOCKED) {
+                    existingRequest.setStatus(TestRequestStatus.BLOCKED);
+                    changed = true;
+                } else if (queueStatus != QueueStatus.BLOCKED
+                        && existingRequest.getStatus() == TestRequestStatus.BLOCKED) {
+                    existingRequest.setStatus(TestRequestStatus.PENDING);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                existingRequest = repo.save(existingRequest);
+                publishLabQueueUpdated(dept.getDepartmentId());
+            }
+            return TestRequestResponse.from(existingRequest);
+        }
+
         InvoiceItem invoiceItem = invoiceItemId != null ? invoiceItemRepo.findById(invoiceItemId).orElse(null) : null;
         QueueTicket labQueueTicket = ensureParaclinicalQueue(record, service, dept);
         TestRequest request = TestRequest.builder().medicalRecord(record).service(service)
                 .performingDepartment(dept).description(notes).requestedBy(requester)
-                .status(TestRequestStatus.PENDING).invoiceItem(invoiceItem).queueTicket(labQueueTicket).build();
+                .status(labQueueTicket.getStatus() == QueueStatus.BLOCKED
+                        ? TestRequestStatus.BLOCKED : TestRequestStatus.PENDING)
+                .invoiceItem(invoiceItem).queueTicket(labQueueTicket).build();
         TestRequest saved = repo.save(request);
-        try {
-            messagingTemplate.convertAndSend("/topic/department-" + dept.getDepartmentId() + "-lab-queue", "LAB_UPDATED");
-        } catch (Exception e) {}
+        publishLabQueueUpdated(dept.getDepartmentId());
         notifyNurses(saved);
         return TestRequestResponse.from(saved);
+    }
+
+    /**
+     * TestRequest sinh tu hoa don la yeu cau he thong sau khi thu ngan xac nhan
+     * thanh toan; no khong phai chi dinh cua bac si. Vi vay khong duoc chan luong
+     * chi vi phong CLS chua gan headDoctor. Uu tien dung nhan vien thu ngan/nguoi
+     * lap hoa don, sau do moi dung bac si phu trach hoac bat ky nhan su cua phong.
+     */
+    private StaffInfo resolvePaymentRequester(UUID requestedById, Department department) {
+        if (requestedById != null) {
+            StaffInfo requestedBy = staffRepo.findById(requestedById).orElse(null);
+            if (requestedBy != null) return requestedBy;
+        }
+        if (department.getHeadDoctor() != null) return department.getHeadDoctor();
+        return staffRepo.findByDepartment_DepartmentId(department.getDepartmentId()).stream()
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Mot visit chi co duy nhat mot MedicalRecord khong gan QueueTicket de chua
+     * toan bo CLS. Khoa visit truoc khi tim/tao de cac InvoiceItem xu ly dong
+     * thoi khong sinh ra hai standalone record.
+     */
+    private MedicalRecord getOrCreateStandaloneRecord(UUID visitId, StaffInfo requester, Department department) {
+        if (visitId == null) {
+            throw new BadRequestException("Khong the tao yeu cau can lam sang khi chua co luot kham");
+        }
+        visitRepo.findByIdForUpdate(visitId)
+                .orElseThrow(() -> new ResourceNotFoundException("Luot kham khong ton tai: " + visitId));
+
+        MedicalRecord standalone = recordRepo
+                .findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId)
+                .orElse(null);
+        if (standalone != null) return standalone;
+
+        StaffInfo responsibleStaff = department.getHeadDoctor() != null
+                ? department.getHeadDoctor() : requester;
+        var created = medicalRecordService.create(
+                new org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest(
+                        visitId,
+                        responsibleStaff.getStaffId(),
+                        "Dich vu can lam sang",
+                        null, null, null, null, null, null));
+        return recordRepo.findById(created.recordId())
+                .orElseThrow(() -> new ResourceNotFoundException("Khong the tao ho so CLS cho luot kham"));
+    }
+
+    private void publishLabQueueUpdated(UUID departmentId) {
+        try {
+            messagingTemplate.convertAndSend("/topic/department-" + departmentId + "-lab-queue", "LAB_UPDATED");
+        } catch (Exception ignored) {
+            // Khong de WebSocket lam huy giao dich nghiep vu.
+        }
     }
     
     private void notifyNurses(TestRequest t) {
@@ -251,7 +352,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                 long totalTestRequests = repo.countByMedicalRecord_MedicalRecordId(t.getMedicalRecord().getRecordId());
                 long incompleteCount = repo.countByMedicalRecordAndStatusIn(
                         t.getMedicalRecord().getRecordId(),
-                        java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS));
+                        java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS, TestRequestStatus.BLOCKED));
                 completeStandaloneRecordIfReady(t.getMedicalRecord(), totalTestRequests, incompleteCount);
 
                 QueueTicket queueTicket = queueTicketRepo
@@ -349,6 +450,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                 .performedBy(performedBy)
                 .performedAt(LocalDateTime.now())
                 .build();
+        applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         resultRepo.save(r);
 
         if (t.getStatus() == TestRequestStatus.PENDING) {
@@ -373,9 +475,10 @@ public class TestRequestService implements TestRequestServiceInterface {
 
         TestResult r = resultRepo.findByTestRequest_TestRequestId(t.getTestRequestId())
                 .orElseThrow(() -> new ResourceNotFoundException("Chua co ket qua de cap nhat"));
-        if (req.imageUrl() != null) r.setImageUrl(req.imageUrl());
+        updateResultFileUrl(r, req.imageUrl());
         if (req.conclusion() != null) r.setConclusion(req.conclusion());
         if (req.sampleId() != null) r.setSampleId(req.sampleId());
+        applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
 
         if (t.getStatus() == TestRequestStatus.PENDING) {
             t.setStatus(TestRequestStatus.IN_PROGRESS);
@@ -399,14 +502,20 @@ public class TestRequestService implements TestRequestServiceInterface {
         if (t.getStatus() == TestRequestStatus.COMPLETED) {
             throw new ConflictException("Yeu cau xet nghiem da hoan thanh, khong the thay doi ket qua");
         }
+        QueueTicket executionQueue = t.getQueueTicket();
+        if (executionQueue == null || (executionQueue.getStatus() != QueueStatus.IN_PROGRESS
+                && executionQueue.getStatus() != QueueStatus.DONE)) {
+            throw new BadRequestException("Chi co the hoan thanh ket qua sau khi benh nhan da vao phong thuc hien");
+        }
         TestResult r;
 
         if (t.getTestResult() != null) {
             // Neu da co ket qua, cap nhat
             r = t.getTestResult();
-            if (req.imageUrl() != null) r.setImageUrl(req.imageUrl());
+            updateResultFileUrl(r, req.imageUrl());
             if (req.conclusion() != null) r.setConclusion(req.conclusion());
             if (req.sampleId() != null) r.setSampleId(req.sampleId());
+            applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         } else {
             // Tao moi
             StaffInfo performedBy = staffRepo.findById(req.performedById())
@@ -419,6 +528,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                     .performedBy(performedBy)
                     .performedAt(LocalDateTime.now())
                     .build();
+            applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         }
 
         if (r.getConclusion() == null || r.getConclusion().isBlank()) {
@@ -471,7 +581,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                 long totalTestRequests = repo.countByMedicalRecord_MedicalRecordId(t.getMedicalRecord().getRecordId());
                 long incompleteCount = repo.countByMedicalRecordAndStatusIn(
                         t.getMedicalRecord().getRecordId(),
-                        java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS));
+                        java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS, TestRequestStatus.BLOCKED));
 
                 completeStandaloneRecordIfReady(t.getMedicalRecord(), totalTestRequests, incompleteCount);
                 if (totalTestRequests > 0 && incompleteCount == 0) {
@@ -487,6 +597,53 @@ public class TestRequestService implements TestRequestServiceInterface {
         }
 
         return TestResultResponse.from(r);
+    }
+
+    /**
+     * Chi ap dung mau vat cho dich vu duoc admin cau hinh requiresSpecimen. Thoi gian va
+     * nguoi lay mau chi duoc ghi o lan luu dau tien va luon lay tu tai khoan dang dang nhap.
+     */
+    private void applySpecimenInformation(TestRequest request, TestResult result,
+                                          String sampleId,
+                                          org.example.doansummer2026.enums.SpecimenType sampleType,
+                                          org.example.doansummer2026.enums.SpecimenStatus sampleStatus) {
+        String normalizedSampleId = sampleId == null || sampleId.isBlank() ? null : sampleId.trim();
+        boolean hasSpecimenInput = normalizedSampleId != null || sampleType != null || sampleStatus != null;
+        boolean specimenService = request.getService() != null
+                && Boolean.TRUE.equals(request.getService().getRequiresSpecimen());
+        if (!specimenService) {
+            if (hasSpecimenInput) {
+                throw new BadRequestException("Dich vu nay khong su dung mau vat");
+            }
+            result.setSampleId(null);
+            result.setSampleType(null);
+            result.setSampleStatus(null);
+            return;
+        }
+        if (normalizedSampleId != null) result.setSampleId(normalizedSampleId);
+        if (sampleType != null) result.setSampleType(sampleType);
+        if (sampleStatus != null) result.setSampleStatus(sampleStatus);
+        if (hasSpecimenInput && result.getCollectedAt() == null) {
+            StaffInfo collector = authService.currentStaffId() == null ? null
+                    : staffRepo.findById(authService.currentStaffId()).orElse(null);
+            if (collector == null) {
+                throw new BadRequestException("Khong tim thay nhan vien dang lay mau");
+            }
+            result.setCollectedAt(LocalDateTime.now());
+            result.setCollectedBy(collector);
+        }
+    }
+
+    /**
+     * TestResultResponse tra URL xem PDF qua endpoint bao ve. Khi frontend gui lai URL nay
+     * trong luc luu nhap/ky ket qua, giu nguyen duong dan tep goc thay vi ghi de bang URL xem.
+     */
+    private void updateResultFileUrl(TestResult result, String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) return;
+        String protectedFileUrl = "/api/v1/test-results/" + result.getResultId() + "/file";
+        if (!protectedFileUrl.equals(imageUrl)) {
+            result.setImageUrl(imageUrl);
+        }
     }
 
     /** Lượt chỉ làm cận lâm sàng không quay lại phòng khám, nên tự đóng hồ sơ khi đủ kết quả. */
@@ -581,17 +738,13 @@ public class TestRequestService implements TestRequestServiceInterface {
                             "InvoiceItem khong ton tai: " + req.invoiceItemId()));
         }
 
-        // Lay cac service da ton tai de loai bo
-        Set<UUID> existingServiceIds = record.getTestRequests().stream()
-                .map(t -> t.getService().getServiceId())
-                .collect(java.util.stream.Collectors.toSet());
-
         InvoiceItem finalInvoiceItem = invoiceItem;
         java.util.List<TestRequest> toCreate = req.serviceIds().stream()
-                .filter(serviceId -> !existingServiceIds.contains(serviceId))
+                .distinct()
                 .map((java.util.function.Function<java.util.UUID, TestRequest>) serviceId -> {
                     MedicalService service = serviceRepo.findById(serviceId)
                             .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
+                    ensureServiceNotAlreadyRequested(record, serviceId);
                     Department dept = selectPerformingDepartment(service);
                     return TestRequest.builder()
                             .medicalRecord(record)
@@ -609,6 +762,17 @@ public class TestRequestService implements TestRequestServiceInterface {
         return repo.saveAll(toCreate).stream()
                 .map(TestRequestResponse::from)
                 .toList();
+    }
+
+    /** Chan chi dinh lap dich vu trong cung CustomerVisit, ke ca khi y lenh truoc do
+     * nam o mot MedicalRecord khac cua cung luot kham. */
+    private void ensureServiceNotAlreadyRequested(MedicalRecord record, UUID serviceId) {
+        if (record == null || record.getVisit() == null) return;
+        UUID visitId = record.getVisit().getVisitId();
+        if (repo.existsByMedicalRecord_Visit_VisitIdAndService_ServiceIdAndStatusNot(
+                visitId, serviceId, TestRequestStatus.CANCELLED)) {
+            throw new ConflictException("Dich vu nay da duoc chi dinh trong luot kham hien tai.");
+        }
     }
 
     /** Tim TestRequest da hoan thanh theo profileId (cho hien thi trong profile). */
@@ -636,7 +800,14 @@ public class TestRequestService implements TestRequestServiceInterface {
     /** Điểm mở rộng cho AI: hiện dùng rule cứng + tải hàng đợi, sau này có thể thay bộ xếp hạng. */
     private Department selectPerformingDepartment(MedicalService service) {
         if (service.getRequiredCapability() == null) {
-            if (service.getDepartment() != null) return service.getDepartment();
+            if (service.getDepartment() != null) {
+                Department configuredDepartment = service.getDepartment();
+                if (configuredDepartment.getStatus() == DepartmentStatus.MAINTENANCE) {
+                    throw new BadRequestException("Phong thuc hien dich vu " + service.getName()
+                            + " hien khong san sang");
+                }
+                return configuredDepartment;
+            }
             throw new ResourceNotFoundException("Dich vu chua chon nang luc thuc hien: " + service.getServiceId());
         }
         List<Department> candidates = departmentRepo.findEligibleByCapability(
@@ -664,10 +835,16 @@ public class TestRequestService implements TestRequestServiceInterface {
                 .orElse(null);
         // Tat ca yeu cau can lam sang cung phong trong cung dot dung chung mot so goi.
         if (existing != null) return existing;
+
+        // Chi buoc dau tien cua luot kham duoc mo. Cac phong con lai giu
+        // BLOCKED va se duoc PatientJourneyService.activateNext() mo tuan tu.
+        boolean hasActiveWorkflowStep = patientJourneyService.hasActiveStep(visitId);
         java.time.LocalDate workDate = java.time.LocalDate.now();
         int nextNumber = queueTicketRepo.findMaxQueueNumberForDay(department.getDepartmentId(), workDate).orElse(0) + 1;
         return queueTicketRepo.save(QueueTicket.builder()
                 .visit(record.getVisit()).department(department).service(service)
-                .workDate(workDate).queueNumber(nextNumber).status(QueueStatus.WAITING).build());
+                .workDate(workDate).queueNumber(nextNumber)
+                .status(hasActiveWorkflowStep ? QueueStatus.BLOCKED : QueueStatus.WAITING)
+                .build());
     }
 }

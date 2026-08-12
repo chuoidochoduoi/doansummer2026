@@ -8,6 +8,8 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
@@ -50,6 +52,9 @@ public class Profile extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "profile_id")
     private UUID profileId;
+
+    @Column(name = "patient_code", unique = true, length = 20)
+    private String patientCode;
 
     /** Owning side cua quan he 1-1 voi Account (nullable cho khach vang lai). */
     @OneToOne(fetch = FetchType.LAZY, optional = true)
@@ -96,8 +101,23 @@ public class Profile extends BaseEntity {
     /** Danh sach di ung (JSON array). */
     @Column(columnDefinition = "TEXT")
     private String allergies;
-}
 
+    @PrePersist
+    @PreUpdate
+    private void ensurePatientCode() {
+        if (patientCode == null || patientCode.isBlank()) {
+            patientCode = "BN-" + UUID.randomUUID().toString().replace("-", "")
+                    .substring(0, 8).toUpperCase();
+        }
+    }
+
+    public String getPatientCode() {
+        if (patientCode != null && !patientCode.isBlank()) return patientCode;
+        // Dữ liệu cũ chưa được backfill vẫn có mã ổn định theo profile_id.
+        return profileId == null ? null : "BN-" + profileId.toString().replace("-", "")
+                .substring(0, 8).toUpperCase();
+    }
+}
 
 
 

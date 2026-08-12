@@ -62,6 +62,12 @@ public class MedicalRecordController {
         return RestResponses.ok(service.get(id));
     }
 
+    @GetMapping("/api/v1/medical-records/{id}/previous-history")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    public ResponseEntity<java.util.List<MedicalHistoryResponse>> previousHistory(@PathVariable UUID id) {
+        return RestResponses.ok(service.getPreviousHistoryForDoctor(id));
+    }
+
     @PostMapping("/api/v1/medical-records")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     @Auditable(action = AuditAction.CREATE, entityName = "MedicalRecord")
@@ -92,6 +98,16 @@ public class MedicalRecordController {
     public ResponseEntity<MedicalRecordResponse> complete(@PathVariable UUID id,
                                                           @Valid @RequestBody(required = false) MedicalRecordUpdateRequest req) {
         return RestResponses.ok(service.complete(id, req));
+    }
+
+    /** Bac si dat lich tai kham truc tiep cho benh nhan dang kham. */
+    @PostMapping("/api/v1/medical-records/{id}/follow-up-appointment")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "Appointment", idParamName = "id", description = "Tao lich tai kham")
+    public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> createFollowUpAppointment(
+            @PathVariable UUID id,
+            @Valid @RequestBody org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {
+        return RestResponses.ok(service.scheduleFollowUp(id, req));
     }
 
     @DeleteMapping("/api/v1/medical-records/{id}")
@@ -151,19 +167,20 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/v1/feedbacks")
-    @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER','ROLE_DOCTOR')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER','ROLE_RECEPTIONIST','ROLE_DOCTOR')")
     public ResponseEntity<org.example.doansummer2026.common.PageResponse<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse>> feedbacks(
             Pageable pageable) {
-        UUID doctorId = authService.getCurrentSystemRole() == org.example.doansummer2026.enums.SystemRole.CLINIC_MANAGER
+        UUID doctorId = (authService.getCurrentSystemRole() == org.example.doansummer2026.enums.SystemRole.CLINIC_MANAGER
+                || authService.getCurrentSystemRole() == org.example.doansummer2026.enums.SystemRole.RECEPTIONIST)
                 ? null : authService.currentStaffId();
         return RestResponses.ok(service.listFeedbacks(doctorId, pageable));
     }
 
     @PutMapping("/api/v1/feedbacks/{id}/respond")
-    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER','ROLE_RECEPTIONIST')")
     public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse> respond(
             @PathVariable UUID id, @RequestBody java.util.Map<String,String> body) {
-        return RestResponses.ok(service.respondFeedback(id, authService.currentStaffId(), body.get("response"), body.get("internalNote"), body.get("status")));
+        return RestResponses.ok(service.respondFeedback(id, authService.currentStaffId(), body.get("response")));
     }
 
     @PutMapping("/api/v1/feedbacks/{id}/explain")

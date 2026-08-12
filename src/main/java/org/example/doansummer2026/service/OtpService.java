@@ -104,6 +104,26 @@ public class OtpService {
         return true;
     }
 
+    public void markOtpAsVerified(String identifier, String code) {
+        if (!verifyOtp(identifier, code)) {
+            throw new BadRequestException("OTP khong hop le hoac da het han");
+        }
+        String key = "otp_verified:" + normalize(identifier);
+        redisTemplate.opsForValue().set(key, "true", 15, TimeUnit.MINUTES);
+        System.out.println("DEBUG: markOtpAsVerified saved key [" + key + "] successfully.");
+    }
+
+    public boolean isOtpVerified(String identifier) {
+        String key = "otp_verified:" + normalize(identifier);
+        Boolean hasKey = redisTemplate.hasKey(key);
+        System.out.println("DEBUG: isOtpVerified check for key [" + key + "] -> " + hasKey);
+        return Boolean.TRUE.equals(hasKey);
+    }
+
+    public void consumeVerifiedOtp(String identifier) {
+        redisTemplate.delete("otp_verified:" + normalize(identifier));
+    }
+
     private String normalize(String identifier) {
         return identifier == null ? "" : identifier.trim().toLowerCase();
     }

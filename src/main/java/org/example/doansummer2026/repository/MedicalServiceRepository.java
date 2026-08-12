@@ -21,6 +21,8 @@ public interface MedicalServiceRepository extends JpaRepository<MedicalService, 
 
     boolean existsByServiceCode(String serviceCode);
 
+    Optional<MedicalService> findByServiceCode(String serviceCode);
+
     @EntityGraph("MedicalService.withDepartmentAndSpecialization")
     Optional<MedicalService> findById(UUID id);
 

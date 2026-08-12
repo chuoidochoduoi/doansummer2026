@@ -2,6 +2,8 @@ package org.example.doansummer2026.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -22,6 +24,8 @@ import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+import org.example.doansummer2026.enums.SpecimenStatus;
+import org.example.doansummer2026.enums.SpecimenType;
 
 /**
  * Ket qua xet nghiem - luu duong dan anh ket qua (khong con luu JSON key-value).
@@ -60,6 +64,21 @@ public class TestResult extends BaseEntity {
     @Column(name = "sample_id", length = 100)
     private String sampleId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sample_type", length = 30)
+    private SpecimenType sampleType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sample_status", length = 30)
+    private SpecimenStatus sampleStatus;
+
+    @Column(name = "collected_at")
+    private LocalDateTime collectedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "collected_by")
+    private StaffInfo collectedBy;
+
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "performed_by", nullable = false)
@@ -78,5 +97,4 @@ public class TestResult extends BaseEntity {
     @Column(name = "verified_at")
     private LocalDateTime verifiedAt;
 }
-
 

@@ -32,7 +32,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID>, JpaSpec
     @org.springframework.data.jpa.repository.Query("SELECT i FROM Invoice i LEFT JOIN FETCH i.items it LEFT JOIN FETCH it.service WHERE i.invoiceId = :id")
     Optional<Invoice> findById(@org.springframework.data.repository.query.Param("id") UUID id);
 
-    @org.springframework.data.jpa.repository.Query("SELECT i FROM Invoice i LEFT JOIN FETCH i.items it LEFT JOIN FETCH it.service LEFT JOIN FETCH i.visit LEFT JOIN FETCH i.medicalRecord LEFT JOIN FETCH i.issuedBy WHERE i.invoiceId = :id")
+    @org.springframework.data.jpa.repository.Query("SELECT i FROM Invoice i LEFT JOIN FETCH i.customer LEFT JOIN FETCH i.items it LEFT JOIN FETCH it.service LEFT JOIN FETCH i.visit LEFT JOIN FETCH i.medicalRecord LEFT JOIN FETCH i.issuedBy WHERE i.invoiceId = :id")
     Optional<Invoice> getWithDetailsByInvoiceId(@org.springframework.data.repository.query.Param("id") UUID id);
 
     // Search dung Specification vi filter paymentMethod qua Transaction phuc tap

@@ -13,7 +13,7 @@ import java.util.UUID;
  */
 public record ReceptionistCustomerResponse(
         UUID customerId,
-        String patientCode,       // Phone
+        String patientCode,
         String fullName,
         Gender gender,
         LocalDate dateOfBirth,
@@ -25,7 +25,7 @@ public record ReceptionistCustomerResponse(
     public static ReceptionistCustomerResponse from(Profile p) {
         return new ReceptionistCustomerResponse(
                 p.getProfileId(),
-                p.getPhone(),
+                p.getPatientCode(),
                 p.getFullName(),
                 p.getGender(),
                 p.getDateOfBirth(),

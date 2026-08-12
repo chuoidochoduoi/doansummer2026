@@ -117,7 +117,7 @@ public class StaffScheduleController {
      * - action: add hoặc remove
      */
     @PostMapping("/api/v1/clinic-manager/schedules/assign")
-    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.UPDATE, entityName = "StaffSchedule")
     public ResponseEntity<Void> assign(@Valid @RequestBody ScheduleAssignRequest req) {
         service.assignStaff(req);
@@ -128,7 +128,7 @@ public class StaffScheduleController {
      * Sao chep lich sang tuan moi.
      */
     @PostMapping("/api/v1/clinic-manager/schedules/copy")
-    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule")
     public ResponseEntity<ClinicManagerScheduleResponse> copy(@Valid @RequestBody ScheduleCopyRequest req) {
         LocalDate weekStart = req.week().with(DayOfWeek.MONDAY);
@@ -144,13 +144,10 @@ public class StaffScheduleController {
      * Luu ca truc (shift template).
      */
     @PutMapping("/api/v1/clinic-manager/schedules/shifts")
-    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<Void> updateShifts(@Valid @RequestBody ScheduleShiftUpdateRequest req) {
         // Hien tai chi co 3 shift co ban, khong cho sua
         // Neu can them shift moi, sua logic o day
         return RestResponses.noContent();
     }
 }
-
-
-

@@ -14,6 +14,9 @@ public record InvoiceItemResponse(
         BigDecimal unitPrice,
         Integer quantity,
         BigDecimal lineTotal,
+        BigDecimal bhytRate,
+        BigDecimal bhytAmount,
+        BigDecimal patientAmount,
         String note
 ) {
     public static InvoiceItemResponse from(InvoiceItem i) {
@@ -21,7 +24,7 @@ public record InvoiceItemResponse(
         String serviceName = i.getService() != null ? i.getService().getName() : i.getServiceSnapshot();
         return new InvoiceItemResponse(i.getItemId(), serviceId, serviceName, i.getServiceSnapshot(),
                 i.getServiceCodeSnapshot(), i.getUnitPrice(), i.getQuantity(),
-                i.getLineTotal(), i.getNote());
+                i.getLineTotal(), i.getDiscountPercent(), i.getBhytFund(), i.getFinalPrice(), i.getNote());
     }
 }
 

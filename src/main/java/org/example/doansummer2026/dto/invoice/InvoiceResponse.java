@@ -13,7 +13,9 @@ public record InvoiceResponse(
         UUID invoiceId,
         String invoiceCode,
         UUID customerId,
+        String customerCode,
         String customerName,
+        String bhytCode,
         UUID visitId,
         UUID medicalRecordId,
         LocalDate issueDate,
@@ -39,6 +41,7 @@ public record InvoiceResponse(
 
     public static InvoiceResponse from(Invoice i, List<UUID> transactionIds) {
         UUID customerId = i.getCustomer() != null ? i.getCustomer().getProfileId() : null;
+        String customerCode = i.getCustomer() != null ? i.getCustomer().getPatientCode() : null;
         String customerName = i.getCustomer() != null ? i.getCustomer().getFullName() : null;
         UUID visitId = i.getVisit() != null ? i.getVisit().getVisitId() : null;
         UUID recordId = i.getMedicalRecord() != null ? i.getMedicalRecord().getRecordId() : null;
@@ -46,7 +49,8 @@ public record InvoiceResponse(
         String issuedByName = i.getIssuedBy() != null ? i.getIssuedBy().getStaffCode() : null;
         BigDecimal balance = i.getTotalAmount().subtract(i.getPaidAmount());
         List<InvoiceItemResponse> items = i.getItems().stream().map(InvoiceItemResponse::from).toList();
-        return new InvoiceResponse(i.getInvoiceId(), i.getInvoiceCode(), customerId, customerName,
+        return new InvoiceResponse(i.getInvoiceId(), i.getInvoiceCode(), customerId, customerCode, customerName,
+                i.getCustomer() != null ? i.getCustomer().getInsuranceId() : null,
                 visitId, recordId, i.getIssueDate(), i.getCreatedAt(),
                 i.getVisit() != null ? i.getVisit().getCheckInTime() : null, i.getDueDate(),
                 i.getSubtotal(), i.getDiscount(), i.getTax(), i.getTotalAmount(), i.getPaidAmount(),

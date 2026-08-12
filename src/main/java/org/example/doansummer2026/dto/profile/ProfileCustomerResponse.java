@@ -37,7 +37,7 @@ public record ProfileCustomerResponse(
             allergyList = List.of(profile.getAllergies().split(";"));
         }
 
-        String customerCode = profile.getPhone(); // phone lam ma khach hang
+        String customerCode = profile.getPatientCode();
 
         return new ProfileCustomerResponse(
                 account.getAccountId(),

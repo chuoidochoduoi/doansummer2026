@@ -27,7 +27,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.util.UUID;
-import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.aop.Auditable;
 import org.example.doansummer2026.enums.AuditAction;
 
@@ -91,6 +90,13 @@ public class QueueTicketController {
         return RestResponses.ok(service.completeAndReturnRecord(id, req));
     }
 
+    @PostMapping("/api/v1/queue-tickets/{id}/finish-service")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket", idParamName = "id", description = "Hoan thanh thao tac tai phong can lam sang")
+    public ResponseEntity<QueueTicketResponse> finishParaclinicalService(@PathVariable UUID id) {
+        return RestResponses.ok(service.finishParaclinicalQueue(id));
+    }
+
     @PostMapping("/api/v1/queue-tickets/{id}/skip")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN')")
     @Auditable(action = AuditAction.QUEUE_SKIPPED, entityName = "QueueTicket", idParamName = "id", description = "Bỏ lượt bệnh nhân")
@@ -115,14 +121,14 @@ public class QueueTicketController {
     /**
      * API dong bo trang kham benh - lay thong tin benh nhan tu queue ticket dang IN_PROGRESS.
      * - Chi co 1 benh nhan dang kham moi phong (da kiem tra).
-     * - Tra ve 404 neu phong trong.
+     * - Phòng trống là trạng thái bình thường, trả về 204 thay vì 404.
      */
     @GetMapping("/api/v1/queue-tickets/in-progress/{departmentId}")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<QueueTicketResponse> getInprogress(@PathVariable UUID departmentId) {
         QueueTicketResponse result = service.getInprogressByDepartment(departmentId);
         if (result == null) {
-            throw new ResourceNotFoundException("Phong chua co benh nhan dang kham");
+            return ResponseEntity.noContent().build();
         }
         return RestResponses.ok(result);
     }

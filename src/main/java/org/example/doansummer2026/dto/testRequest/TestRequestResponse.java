@@ -17,6 +17,7 @@ public record TestRequestResponse(
         UUID serviceId,
         String serviceName,
         DepartmentType serviceType,
+        Boolean requiresSpecimen,
         UUID performingDepartmentId,
         String performingDepartmentName,
         String description,
@@ -40,6 +41,7 @@ public record TestRequestResponse(
         UUID serviceId = t.getService() != null ? t.getService().getServiceId() : null;
         String serviceName = t.getService() != null ? t.getService().getName() : null;
         DepartmentType serviceType = t.getService() != null ? t.getService().getDepartmentType() : null;
+        Boolean requiresSpecimen = t.getService() != null && Boolean.TRUE.equals(t.getService().getRequiresSpecimen());
         UUID deptId = t.getPerformingDepartment() != null ? t.getPerformingDepartment().getDepartmentId() : null;
         String deptName = t.getPerformingDepartment() != null ? t.getPerformingDepartment().getName() : null;
         UUID reqById = t.getRequestedBy() != null ? t.getRequestedBy().getStaffId() : null;
@@ -53,13 +55,13 @@ public record TestRequestResponse(
         if (t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null) {
             var visit = t.getMedicalRecord().getVisit();
             if (visit.getCustomer() != null) {
-                patientCode = visit.getCustomer().getPhone(); // Phone lam ma benh nhan
+                patientCode = visit.getCustomer().getPatientCode();
                 patientName = visit.getCustomer().getFullName();
             }
         }
 
         return new TestRequestResponse(t.getTestRequestId(), recordId, serviceId, serviceName,
-                serviceType, deptId, deptName, t.getDescription(), t.getStatus(), reqById, reqByName,
+                serviceType, requiresSpecimen, deptId, deptName, t.getDescription(), t.getStatus(), reqById, reqByName,
                 t.getCompletedAt(), t.getCancelReason(), t.getCreatedAt(), resultId, invoiceItemId,
                 patientCode, patientName,
                 t.getQueueTicket() != null ? t.getQueueTicket().getTicketId() : null,
@@ -67,6 +69,4 @@ public record TestRequestResponse(
                 t.getQueueTicket() != null ? t.getQueueTicket().getStatus() : null);
     }
 }
-
-
 

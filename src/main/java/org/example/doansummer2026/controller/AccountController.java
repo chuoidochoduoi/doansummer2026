@@ -38,7 +38,7 @@ public class AccountController {
     private final StaffInfoRepository staffRepo;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_STAFF')")
     public ResponseEntity<PageResponse<AccountResponse>> list(
             @RequestParam(required = false) Role role,
             Pageable pageable) {
@@ -49,7 +49,7 @@ public class AccountController {
      * API danh sach tai khoan nhan su (staff) - CHỉ ADMIN vaf CLINIC_MANAGER.
      */
     @GetMapping("/staff")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<PageResponse<AccountManagementResponse>> listStaff(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) SystemRole systemRole,
@@ -61,7 +61,7 @@ public class AccountController {
      * API danh sach tai khoan khach hang (customer) - CHỉ ADMIN vaf CLINIC_MANAGER.
      */
     @GetMapping("/customers")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<PageResponse<AccountManagementResponse>> listCustomers(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String status,
@@ -70,7 +70,7 @@ public class AccountController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<AccountResponse> get(@PathVariable UUID id) {
         var account = accountService.findById(id);
         SystemRole systemRole = staffRepo.findFirstByProfile_Account_Username(account.getUsername())
@@ -117,13 +117,12 @@ public class AccountController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @Auditable(action = AuditAction.DELETE, entityName = "Account", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         accountService.softDelete(id);
         return RestResponses.noContent();
     }
 }
-
 
 

@@ -109,6 +109,10 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     }
     
     private void notifyDoctors(QueueTicket q) {
+        if (q.getDepartment() == null || q.getDepartment().getHeadDoctor() == null
+                || q.getDepartment().getHeadDoctor().getProfile() == null) {
+            return;
+        }
         String patientName = q.getVisit() != null && q.getVisit().getAppointment() != null ? q.getVisit().getAppointment().getGuestFullName() : "Khach";
         if (q.getVisit() != null && q.getVisit().getCustomer() != null) {
             patientName = q.getVisit().getCustomer().getFullName();
@@ -116,28 +120,19 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         String roomName = q.getDepartment() != null ? q.getDepartment().getName() : "";
         String content = String.format("Co benh nhan moi (Ten: %s) xep hang cho kham tai phong %s", patientName, roomName);
         
-        List<StaffInfo> roomStaff = staffRepo.findByDepartment_DepartmentId(q.getDepartment().getDepartmentId());
-        List<org.example.doansummer2026.enums.SystemRole> docRoles = List.of(
-            org.example.doansummer2026.enums.SystemRole.DOCTOR,
-            org.example.doansummer2026.enums.SystemRole.GENERAL_DOCTOR,
-            org.example.doansummer2026.enums.SystemRole.SPECIALIST_DOCTOR
-        );
-        for (StaffInfo staff : roomStaff) {
-            if (docRoles.contains(staff.getSystemRole()) && staff.getProfile() != null) {
-                try {
-                    notificationService.create(new org.example.doansummer2026.dto.notification.NotificationCreateRequest(
-                            staff.getProfile().getProfileId(),
-                            org.example.doansummer2026.enums.NotificationType.GENERAL,
-                            org.example.doansummer2026.enums.NotificationChannel.IN_APP,
-                            "Benh nhan moi",
-                            content,
-                            "QueueTicket",
-                            q.getTicketId()
-                    ));
-                } catch (Exception e) {
-                    // Ignore
-                }
-            }
+        StaffInfo doctor = q.getDepartment().getHeadDoctor();
+        try {
+            notificationService.create(new org.example.doansummer2026.dto.notification.NotificationCreateRequest(
+                    doctor.getProfile().getProfileId(),
+                    org.example.doansummer2026.enums.NotificationType.GENERAL,
+                    org.example.doansummer2026.enums.NotificationChannel.IN_APP,
+                    "Benh nhan moi",
+                    content,
+                    "QueueTicket",
+                    q.getTicketId()
+            ));
+        } catch (Exception e) {
+            // Thong bao khong lam anh huong viec tao hang cho.
         }
     }
 
@@ -189,6 +184,15 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             throw new BadRequestException("Phong da co benh nhan dang kham, chi duoc 1 benh nhan/phong");
         }
 
+        if (q.getDepartment().getDepartmentType() != null
+                && q.getDepartment().getDepartmentType().isParaclinical()) {
+            q.setStatus(QueueStatus.IN_PROGRESS);
+            QueueTicket saved = repo.save(q);
+            testRequestService.startRequestsForQueue(q.getTicketId());
+            updateDepartmentStatus(q.getDepartment().getDepartmentId());
+            return QueueTicketResponse.from(saved, null, getWaitingCount(q), null);
+        }
+
         // Lay staffId tu SecurityContext (JWT token)
         UUID currentStaffId = getCurrentStaffId();
         if (currentStaffId == null) {
@@ -236,8 +240,14 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         UUID completingStaffId = getCurrentStaffId();
         boolean admin = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ADMIN"));
-        if (!admin && (completingStaffId == null || record.getDoctor() == null
-                || !record.getDoctor().getStaffId().equals(completingStaffId)))
+        // Quyen ket thuc ca kham thuoc ve bac si phu trach phong da duoc cau hinh.
+        // record.doctor chi la bac si da tao/ghi benh an, co the khac khi y ta ho tro
+        // hoac bac si khac bat dau ca, nen khong dung lam dieu kien uu tien.
+        UUID responsibleDoctorId = q.getDepartment() != null && q.getDepartment().getHeadDoctor() != null
+                ? q.getDepartment().getHeadDoctor().getStaffId()
+                : (record.getDoctor() != null ? record.getDoctor().getStaffId() : null);
+        if (!admin && (completingStaffId == null || responsibleDoctorId == null
+                || !responsibleDoctorId.equals(completingStaffId)))
             throw new BadRequestException("Chi bac si phu trach moi duoc hoan thanh ca kham");
 
         if (req != null && req.version() != null && !java.util.Objects.equals(req.version(), record.getVersion()))
@@ -285,7 +295,14 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             
             // Thay vi tao truc tiep TestRequest -> Tao Invoice (hoa don) truoc
             java.util.List<org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest> invoiceItems = new java.util.ArrayList<>();
+            java.util.Set<UUID> selectedServiceIds = new java.util.HashSet<>();
             for (org.example.doansummer2026.dto.medicalRecord.TestRequestInExaminationRequest testReq : req.testRequests()) {
+                if (!selectedServiceIds.add(testReq.serviceId())) {
+                    throw new ConflictException("Dich vu nay dang duoc chon trung trong chi dinh.");
+                }
+                // TestRequest cua dich vu cu chi duoc tao sau khi hoa don PAID, do do
+                // phai kiem tra truoc khi tao Invoice o day, khong chi o TestRequestService.create().
+                testRequestService.ensureServiceNotAlreadyRequested(record.getRecordId(), testReq.serviceId());
                 org.example.doansummer2026.model.MedicalService svc = serviceRepo.findById(testReq.serviceId())
                         .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + testReq.serviceId()));
                 invoiceItems.add(new org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest(
@@ -483,10 +500,31 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         return QueueTicketResponse.from(saved);
     }
 
+    /** Ket thuc thao tac tai phong can lam sang; ket qua van co the dang duoc xu ly/ky. */
+    public QueueTicketResponse finishParaclinicalQueue(UUID id) {
+        QueueTicket q = findById(id);
+        if (q.getDepartment().getDepartmentType() == null
+                || !q.getDepartment().getDepartmentType().isParaclinical()) {
+            throw new BadRequestException("Chi ap dung thao tac nay cho phong can lam sang");
+        }
+        if (q.getStatus() != QueueStatus.IN_PROGRESS) {
+            throw new BadRequestException("Chi ket thuc khi benh nhan dang duoc thuc hien tai phong");
+        }
+        q.setStatus(QueueStatus.DONE);
+        q.setCompletedAt(LocalDateTime.now());
+        QueueTicket saved = repo.save(q);
+        if (q.getVisit() != null) patientJourneyService.activateNext(q.getVisit().getVisitId());
+        updateDepartmentStatus(q.getDepartment().getDepartmentId());
+        return QueueTicketResponse.from(saved);
+    }
+
     public QueueTicketResponse skip(UUID id) {
         QueueTicket q = findById(id);
         q.setStatus(QueueStatus.SKIPPED);
         QueueTicket saved = repo.save(q);
+        if (q.getVisit() != null) {
+            patientJourneyService.activateNext(q.getVisit().getVisitId());
+        }
         updateDepartmentStatus(q.getDepartment().getDepartmentId());
         return QueueTicketResponse.from(saved);
     }
@@ -528,8 +566,19 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         if (auth == null || auth.getPrincipal() == null) return null;
         Object principal = auth.getPrincipal();
         if (principal instanceof Map<?, ?> map) {
-            String sid = (String) map.get("staffId");
-            return sid != null ? UUID.fromString(sid) : null;
+            Object staffId = map.get("staffId");
+            if (staffId instanceof String sid && !sid.isBlank()) {
+                try {
+                    return UUID.fromString(sid);
+                } catch (IllegalArgumentException ignored) {
+                    // Fall through to username lookup for an old token.
+                }
+            }
+            Object username = map.get("username");
+            if (username instanceof String value && !value.isBlank()) {
+                return staffRepo.findFirstByProfile_Account_Username(value)
+                        .map(staff -> staff.getStaffId()).orElse(null);
+            }
         }
         return null;
     }

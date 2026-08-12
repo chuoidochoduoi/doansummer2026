@@ -49,6 +49,13 @@ public class AuthController {
         return RestResponses.ok(new SendOtpResponse(exposeOtpCode ? code : null, 300));
     }
 
+    /** Public: xac thuc OTP cho dang ky (khong consume). */
+    @PostMapping("/verify-register-otp")
+    public ResponseEntity<Void> verifyRegisterOtp(@Valid @RequestBody org.example.doansummer2026.dto.auth.VerifyOtpRequest req) {
+        otpService.markOtpAsVerified(req.identifier(), req.otp());
+        return RestResponses.ok(null);
+    }
+
     /** Public: reset mat khau bang OTP -> 200 OK. */
     @PostMapping("/reset-password")
     public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest req) {

@@ -8,7 +8,11 @@ import java.util.UUID;
  */
 public record TestResponse(
         String id,
+        String testRequestId,
         String name,
+        String status,
+        String departmentName,
+        String createdAt,
         boolean hasAbnormal,
         List<TestResultResponse> results,
         String conclusion,
@@ -16,7 +20,11 @@ public record TestResponse(
         String performedBy,
         UUID performedById,
         String performedAt,
-        String sampleId
+        String sampleId,
+        String sampleType,
+        String sampleStatus,
+        String collectedAt,
+        String collectedBy
 ) {
     public record TestResultResponse(
             String name,

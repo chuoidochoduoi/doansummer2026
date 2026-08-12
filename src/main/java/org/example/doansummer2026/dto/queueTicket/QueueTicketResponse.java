@@ -63,7 +63,7 @@ public record QueueTicketResponse(
         String history = null;
         if (q.getVisit() != null && q.getVisit().getCustomer() != null) {
             var customer = q.getVisit().getCustomer();
-            patientCode = customer.getPhone();
+            patientCode = customer.getPatientCode();
             patientName = customer.getFullName();
             patientPhone = customer.getPhone();
             patientEmail = customer.getEmail();
@@ -77,7 +77,9 @@ public record QueueTicketResponse(
             var appointment = q.getVisit().getAppointment();
             patientName = appointment.getGuestFullName();
             patientPhone = appointment.getGuestPhone();
-            patientCode = appointment.getGuestPhone();
+            patientCode = appointment.getAppointmentId() != null
+                    ? "BN-TAM-" + appointment.getAppointmentId().toString().replace("-", "").substring(0, 6).toUpperCase()
+                    : null;
         }
 
         UUID deptId = q.getDepartment() != null ? q.getDepartment().getDepartmentId() : null;
@@ -94,5 +96,3 @@ public record QueueTicketResponse(
                 q.getWorkDate(), q.getQueueNumber(), q.getStatus(), q.getCalledAt(), q.getCompletedAt());
     }
 }
-
-

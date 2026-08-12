@@ -50,42 +50,129 @@ public class AuthService implements AuthServiceInterface {
     private final CustomerVisitRepository visitRepository;
     private final InvoiceRepository invoiceRepository;
     public AuthResponse register(RegisterRequest req) {
-        // Xac thuc OTP truoc khi dang ky
-        if (!otpService.verifyOtp(req.identifier(), req.otp())) {
-            throw new BadRequestException("OTP khong hop le hoac da het han");
+
+        // 1. OTP phải được xác thực trước
+        if (!otpService.isOtpVerified(req.identifier())) {
+            throw new BadRequestException("Vui lòng xác thực OTP trước khi đăng ký");
         }
 
-        // Tao account voi role CUSTOMER
-        Account account = accountService.create(req.identifier(), req.password(), Role.CUSTOMER);
+        String identifier = req.identifier().trim();
+
+        boolean registerByEmail = identifier.contains("@");
+
+        String email = null;
+        String phone = null;
+
+        if (registerByEmail) {
+            email = identifier.toLowerCase();
+        } else {
+            phone = normalizePhone(identifier);
+        }
 
         Profile profile;
-        if (req.identifier().contains("@")) {
-            profile = profileRepository.findFirstByEmail(req.identifier()).orElse(null);
-            if (profile != null && profile.getAccount() != null) {
-                throw new BadRequestException("Email da duoc lien ket voi tai khoan khac");
+
+        // =========================================================
+        // ĐĂNG KÝ BẰNG EMAIL
+        // =========================================================
+        if (registerByEmail) {
+
+            Profile emailProfile = profileRepository
+                    .findFirstByEmail(email)
+                    .orElse(null);
+
+            if (emailProfile != null && emailProfile.getAccount() != null) {
+                throw new BadRequestException(
+                        "Email đã được liên kết với tài khoản khác"
+                );
             }
-            if (profile == null) {
-                profile = Profile.builder().account(account).email(req.identifier()).build();
+
+            if (emailProfile != null) {
+                profile = emailProfile;
             } else {
-                profile.setAccount(account);
+                profile = new Profile();
             }
-            linkGuestHistory(profile, profile.getPhone() != null ? phoneVariants(profile.getPhone()) : Set.of("INVALID_DUMMY_PHONE"), Set.of(req.identifier()));
-        } else {
-            Set<String> phoneVariants = phoneVariants(req.identifier());
-            profile = profileRepository.findFirstByPhoneIn(phoneVariants).orElse(null);
-            if (profile != null && profile.getAccount() != null) {
-                throw new BadRequestException("So dien thoai da duoc lien ket voi tai khoan khac");
-            }
-            if (profile == null) {
-                profile = Profile.builder().account(account).phone(normalizePhone(req.identifier())).build();
-            } else {
-                profile.setAccount(account);
-                profile.setPhone(normalizePhone(req.identifier()));
-            }
-            linkGuestHistory(profile, phoneVariants, profile.getEmail() != null ? Set.of(profile.getEmail()) : Set.of("INVALID_DUMMY_EMAIL"));
+
         }
-        
+        // =========================================================
+        // ĐĂNG KÝ BẰNG SỐ ĐIỆN THOẠI
+        // =========================================================
+        else {
+
+            Set<String> phones = phoneVariants(phone);
+
+            Profile phoneProfile = profileRepository
+                    .findFirstByPhoneIn(phones)
+                    .orElse(null);
+
+            if (phoneProfile != null && phoneProfile.getAccount() != null) {
+                throw new BadRequestException(
+                        "Số điện thoại đã được liên kết với tài khoản khác"
+                );
+            }
+
+            if (phoneProfile != null) {
+                profile = phoneProfile;
+            } else {
+                profile = new Profile();
+            }
+        }
+
+        // =========================================================
+        // 2. TẠO ACCOUNT
+        // identifier chính là email hoặc số điện thoại đã verify OTP
+        // =========================================================
+        Account account = accountService.create(
+                identifier,
+                req.password(),
+                Role.CUSTOMER
+        );
+
+        // =========================================================
+        // 3. GÁN ACCOUNT + THÔNG TIN HỒ SƠ
+        // =========================================================
+        profile.setAccount(account);
+
+        if (registerByEmail) {
+            profile.setEmail(email);
+        } else {
+            profile.setPhone(phone);
+        }
+
+        profile.setFullName(req.fullName());
+        profile.setDateOfBirth(req.dob());
+        profile.setGender(req.gender());
+        profile.setAddress(req.address());
+
         profile = profileRepository.save(profile);
+
+        // =========================================================
+        // 4. LINK LỊCH SỬ GUEST
+        // =========================================================
+        if (registerByEmail) {
+
+            linkGuestHistory(
+                    profile,
+                    Set.of("INVALID_DUMMY_PHONE"),
+                    Set.of(email)
+            );
+
+        } else {
+
+            linkGuestHistory(
+                    profile,
+                    phoneVariants(phone),
+                    Set.of("INVALID_DUMMY_EMAIL")
+            );
+        }
+
+        // =========================================================
+        // 5. OTP CHỈ DÙNG 1 LẦN
+        // =========================================================
+        otpService.consumeVerifiedOtp(identifier);
+
+        // =========================================================
+        // 6. AUTO LOGIN
+        // =========================================================
         return buildAuthResponse(account);
     }
 
@@ -106,20 +193,35 @@ public class AuthService implements AuthServiceInterface {
     }
 
     private String normalizePhone(String phone) {
-        String digits = phone == null ? "" : phone.replaceAll("\\D", "");
-        if (digits.startsWith("84") && digits.length() >= 11) digits = "0" + digits.substring(2);
+
+        if (phone == null || phone.isBlank()) {
+            return "";
+        }
+        String digits = phone.replaceAll("\\D", "");
+        if (digits.startsWith("84") && digits.length() >= 11) {
+            return "0" + digits.substring(2);
+        }
         return digits;
     }
 
     private Set<String> phoneVariants(String phone) {
         String normalized = normalizePhone(phone);
+
         Set<String> variants = new LinkedHashSet<>();
-        variants.add(phone);
-        variants.add(normalized);
-        if (normalized.startsWith("0")) {
+
+        if (phone != null && !phone.isBlank()) {
+            variants.add(phone.trim());
+        }
+
+        if (!normalized.isBlank()) {
+            variants.add(normalized);
+        }
+
+        if (normalized.startsWith("0") && normalized.length() > 1) {
             variants.add("84" + normalized.substring(1));
             variants.add("+84" + normalized.substring(1));
         }
+
         return variants;
     }
 
@@ -198,8 +300,19 @@ public class AuthService implements AuthServiceInterface {
         }
         Object principal = auth.getPrincipal();
         if (principal instanceof Map<?, ?> map) {
-            String sid = (String) map.get("staffId");
-            return sid != null ? UUID.fromString(sid) : null;
+            Object staffId = map.get("staffId");
+            if (staffId instanceof String sid && !sid.isBlank()) {
+                try {
+                    return UUID.fromString(sid);
+                } catch (IllegalArgumentException ignored) {
+                    // Token cu/khong hop le: tra lai theo username ben duoi.
+                }
+            }
+            Object username = map.get("username");
+            if (username instanceof String value && !value.isBlank()) {
+                return staffRepo.findFirstByProfile_Account_Username(value)
+                        .map(staff -> staff.getStaffId()).orElse(null);
+            }
         }
         return null;
     }
@@ -262,4 +375,3 @@ public class AuthService implements AuthServiceInterface {
         accountService.adminResetPassword(account.getAccountId(), req.newPassword());
     }
 }
-

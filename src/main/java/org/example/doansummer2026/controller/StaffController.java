@@ -11,6 +11,7 @@ import org.example.doansummer2026.dto.staff.StaffUpdateRequest;
 import org.example.doansummer2026.dto.staff.StaffProfessionalUpdateRequest;
 import org.example.doansummer2026.dto.staff.StaffCapabilityRequest;
 import org.example.doansummer2026.dto.staff.StaffCapabilityResponse;
+import org.example.doansummer2026.dto.staff.ClinicManagerStaffResponse;
 import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.service.StaffScheduleService;
@@ -46,14 +47,27 @@ public class StaffController {
     private final StaffScheduleService staffScheduleService;
     private final ShiftConfigRepository shiftConfigRepo;
 
+    @GetMapping("/clinic-manager")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<PageResponse<ClinicManagerStaffResponse>> searchForClinicManager(
+            @RequestParam(required = false) String search, Pageable pageable) {
+        return RestResponses.ok(staffService.searchForClinicManager(search, pageable));
+    }
+
+    @GetMapping("/clinic-manager/{id}")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<ClinicManagerStaffResponse> getForClinicManager(@PathVariable UUID id) {
+        return RestResponses.ok(staffService.getForClinicManager(id));
+    }
+
     @GetMapping("/{staffId}/capabilities")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER','ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_STAFF')")
     public List<StaffCapabilityResponse> listCapabilities(@PathVariable UUID staffId) {
         return staffService.listCapabilities(staffId);
     }
 
     @PutMapping("/{staffId}/capabilities")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public List<StaffCapabilityResponse> replaceCapabilities(@PathVariable UUID staffId,
             @RequestBody List<StaffCapabilityRequest> requests) {
         return staffService.replaceCapabilities(staffId, requests);
@@ -61,7 +75,7 @@ public class StaffController {
 
     /** ADMIN vaf CLINIC_MANAGER xem danh sach. */
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_STAFF')")
     public ResponseEntity<PageResponse<StaffResponse>> search(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) UUID specializationId,
@@ -80,7 +94,7 @@ public class StaffController {
 
     /** Nhan su xem lich ca nhan. */
     @GetMapping("/my-schedule")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_STAFF')")
     public ResponseEntity<MyScheduleResponse> mySchedule(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate week) {
         LocalDate weekStart = week.with(DayOfWeek.MONDAY);
@@ -105,13 +119,13 @@ public class StaffController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_STAFF')")
     public ResponseEntity<StaffResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(staffService.get(id));
     }
 
     @GetMapping("/account/{accountId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR', 'ROLE_NURSE', 'ROLE_RECEPTIONIST', 'ROLE_CASHIER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_STAFF', 'ROLE_DOCTOR', 'ROLE_NURSE', 'ROLE_RECEPTIONIST', 'ROLE_CASHIER')")
     public ResponseEntity<StaffResponse> getByAccount(@PathVariable UUID accountId) {
         return RestResponses.ok(staffService.getByAccountId(accountId));
     }
@@ -147,7 +161,7 @@ public class StaffController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @Auditable(action = AuditAction.DELETE, entityName = "StaffInfo", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         staffService.delete(id);
@@ -156,7 +170,7 @@ public class StaffController {
 
     /** ADMIN vaf CLINIC_MANAGER khoa tai khoan (KHONG cho phep khoa ADMIN/CLINIC_MANAGER). */
     @PatchMapping("/{id}/lock")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "StaffInfo", idParamName = "id")
     public ResponseEntity<StaffResponse> lock(@PathVariable UUID id) {
         StaffResponse locked = staffService.lock(id);

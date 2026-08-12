@@ -1,5 +1,8 @@
 package org.example.doansummer2026.dto.appointment;
 
+import org.example.doansummer2026.enums.Gender;
+
+import java.time.LocalDate;
 import java.util.Set;
 import java.util.UUID;
 
@@ -13,7 +16,13 @@ public record AppointmentCheckInRequest(
         java.util.UUID appointmentId,
         Set<UUID> serviceIds,
         UUID issuedById,
-        UUID insuranceId
+        String patientFullName,
+        String patientPhone,
+        String patientEmail,
+        String patientAddress,
+        LocalDate patientDateOfBirth,
+        Integer patientAge,
+        Gender patientGender
 ) {}
 
 

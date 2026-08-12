@@ -110,7 +110,20 @@ class AttendanceServiceTest {
                 .build();
     }
 
+    private StaffInfo testStaff(UUID staffId) {
+        Profile profile = Profile.builder()
+                .profileId(UUID.randomUUID())
+                .fullName("Nguyen Van Test")
+                .phone("0912345678")
+                .build();
 
+        return StaffInfo.builder()
+                .staffId(staffId)
+                .staffCode("STF-TEST")
+                .profile(profile)
+                .systemRole(SystemRole.NURSE)
+                .build();
+    }
     // =========================================================
     // ISSUE TOKEN
     // =========================================================
@@ -136,7 +149,7 @@ class AttendanceServiceTest {
         assertNotNull(result.value());
         assertTrue(result.value().startsWith("ATTENDANCE:"));
         assertNotNull(result.expiresAt());
-        assertEquals(30L, result.validSeconds());
+        assertEquals(30L, result.expiresInSeconds());
 
         verify(tokens).deactivateAll();
 
@@ -763,6 +776,7 @@ class AttendanceServiceTest {
                 StaffAttendance.builder()
                         .attendanceId(UUID.randomUUID())
                         .schedule(schedule)
+                        .staff(schedule.getStaff())
                         .build();
 
         AttendanceQrToken token =
@@ -836,9 +850,8 @@ class AttendanceServiceTest {
                 StaffAttendance.builder()
                         .attendanceId(UUID.randomUUID())
                         .schedule(schedule)
-                        .checkInAt(
-                                LocalDateTime.now().minusHours(1)
-                        )
+                        .staff(schedule.getStaff())
+                        .checkInAt(LocalDateTime.now().minusHours(1))
                         .status(AttendanceStatus.WORKING)
                         .build();
 
@@ -1411,6 +1424,8 @@ class AttendanceServiceTest {
         StaffAttendance attendance =
                 StaffAttendance.builder()
                         .attendanceId(UUID.randomUUID())
+                        .schedule(schedule)
+                        .staff(schedule.getStaff())
                         .status(AttendanceStatus.WORKING)
                         .build();
 
@@ -1535,16 +1550,18 @@ class AttendanceServiceTest {
 
         UUID id = UUID.randomUUID();
         UUID managerId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
 
-        LocalDateTime checkIn =
-                LocalDateTime.now().minusHours(8);
+        StaffInfo employee = testStaff(employeeId);
+        StaffInfo manager = testStaff(managerId);
 
-        LocalDateTime checkOut =
-                LocalDateTime.now();
+        LocalDateTime checkIn = LocalDateTime.now().minusHours(8);
+        LocalDateTime checkOut = LocalDateTime.now();
 
         StaffAttendance attendance =
                 StaffAttendance.builder()
                         .attendanceId(UUID.randomUUID())
+                        .staff(employee)
                         .build();
 
         AttendanceAdjustment adjustment =
@@ -1553,13 +1570,8 @@ class AttendanceServiceTest {
                         .attendance(attendance)
                         .requestedCheckIn(checkIn)
                         .requestedCheckOut(checkOut)
-                        .status(
-                                AttendanceAdjustmentStatus.PENDING
-                        )
+                        .status(AttendanceAdjustmentStatus.PENDING)
                         .build();
-
-        StaffInfo manager =
-                staff(managerId, "QL01", "Manager");
 
         when(adjustments.findById(id))
                 .thenReturn(Optional.of(adjustment));
@@ -1570,13 +1582,12 @@ class AttendanceServiceTest {
         when(adjustments.save(adjustment))
                 .thenReturn(adjustment);
 
-        var result =
-                attendanceService.review(
-                        id,
-                        managerId,
-                        true,
-                        "Approved"
-                );
+        var result = attendanceService.review(
+                id,
+                managerId,
+                true,
+                "Approved"
+        );
 
         assertNotNull(result);
 
@@ -1585,29 +1596,16 @@ class AttendanceServiceTest {
                 adjustment.getStatus()
         );
 
-        assertEquals(
-                checkIn,
-                attendance.getCheckInAt()
-        );
-
-        assertEquals(
-                checkOut,
-                attendance.getCheckOutAt()
-        );
+        assertEquals(checkIn, attendance.getCheckInAt());
+        assertEquals(checkOut, attendance.getCheckOutAt());
 
         assertEquals(
                 AttendanceStatus.COMPLETED,
                 attendance.getStatus()
         );
 
-        assertSame(
-                manager,
-                adjustment.getReviewedBy()
-        );
-
-        assertNotNull(
-                adjustment.getReviewedAt()
-        );
+        assertSame(manager, adjustment.getReviewedBy());
+        assertNotNull(adjustment.getReviewedAt());
     }
 
 
@@ -1617,27 +1615,23 @@ class AttendanceServiceTest {
         UUID id = UUID.randomUUID();
         UUID managerId = UUID.randomUUID();
 
+        StaffInfo employee = testStaff(UUID.randomUUID());
+        StaffInfo manager = testStaff(managerId);
+
         StaffAttendance attendance =
                 StaffAttendance.builder()
-                        .checkInAt(
-                                LocalDateTime.now().minusHours(1)
-                        )
+                        .attendanceId(UUID.randomUUID())
+                        .staff(employee)
+                        .checkInAt(LocalDateTime.now().minusHours(1))
                         .build();
 
         AttendanceAdjustment adjustment =
                 AttendanceAdjustment.builder()
                         .adjustmentId(id)
                         .attendance(attendance)
-                        .requestedCheckOut(
-                                LocalDateTime.now()
-                        )
-                        .status(
-                                AttendanceAdjustmentStatus.PENDING
-                        )
+                        .requestedCheckOut(LocalDateTime.now())
+                        .status(AttendanceAdjustmentStatus.PENDING)
                         .build();
-
-        StaffInfo manager =
-                staff(managerId, "QL01", "Manager");
 
         when(adjustments.findById(id))
                 .thenReturn(Optional.of(adjustment));
@@ -1660,9 +1654,7 @@ class AttendanceServiceTest {
                 adjustment.getStatus()
         );
 
-        assertNull(
-                attendance.getCheckOutAt()
-        );
+        assertNull(attendance.getCheckOutAt());
 
         assertEquals(
                 AttendanceStatus.WORKING,
@@ -1681,32 +1673,27 @@ class AttendanceServiceTest {
         UUID id = UUID.randomUUID();
         UUID managerId = UUID.randomUUID();
 
+        StaffInfo employee = testStaff(UUID.randomUUID());
+        StaffInfo manager = testStaff(managerId);
+
         StaffAttendance attendance =
                 StaffAttendance.builder()
+                        .attendanceId(UUID.randomUUID())
+                        .staff(employee)
                         .build();
 
         AttendanceAdjustment adjustment =
                 AttendanceAdjustment.builder()
                         .adjustmentId(id)
                         .attendance(attendance)
-                        .status(
-                                AttendanceAdjustmentStatus.PENDING
-                        )
+                        .status(AttendanceAdjustmentStatus.PENDING)
                         .build();
 
         when(adjustments.findById(id))
                 .thenReturn(Optional.of(adjustment));
 
         when(staffRepo.findById(managerId))
-                .thenReturn(
-                        Optional.of(
-                                staff(
-                                        managerId,
-                                        "QL",
-                                        "Manager"
-                                )
-                        )
-                );
+                .thenReturn(Optional.of(manager));
 
         when(adjustments.save(adjustment))
                 .thenReturn(adjustment);
@@ -1722,6 +1709,11 @@ class AttendanceServiceTest {
                 AttendanceStatus.ABSENT,
                 attendance.getStatus()
         );
+
+        assertEquals(
+                AttendanceAdjustmentStatus.REJECTED,
+                adjustment.getStatus()
+        );
     }
 
 
@@ -1734,50 +1726,78 @@ class AttendanceServiceTest {
 
         UUID id = UUID.randomUUID();
         UUID managerId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+
+        Profile employeeProfile = Profile.builder()
+                .profileId(UUID.randomUUID())
+                .fullName("Nhan vien test")
+                .build();
+
+        StaffInfo employee = StaffInfo.builder()
+                .staffId(employeeId)
+                .staffCode("STF-EMP")
+                .profile(employeeProfile)
+                .systemRole(SystemRole.NURSE)
+                .build();
+
+        Profile managerProfile = Profile.builder()
+                .profileId(UUID.randomUUID())
+                .fullName("Quan ly")
+                .build();
+
+        StaffInfo manager = StaffInfo.builder()
+                .staffId(managerId)
+                .staffCode("STF-MANAGER")
+                .profile(managerProfile)
+                .systemRole(SystemRole.CLINIC_MANAGER)
+                .build();
 
         StaffAttendance attendance =
                 StaffAttendance.builder()
-                        .checkInAt(
-                                LocalDateTime.now()
-                        )
+                        .attendanceId(UUID.randomUUID())
+                        .staff(employee) // QUAN TRỌNG
+                        .checkInAt(LocalDateTime.now().minusHours(1))
                         .build();
 
         AttendanceAdjustment adjustment =
                 AttendanceAdjustment.builder()
                         .adjustmentId(id)
                         .attendance(attendance)
-                        .status(
-                                AttendanceAdjustmentStatus.PENDING
-                        )
+                        .reason("Dieu chinh")
+                        .status(AttendanceAdjustmentStatus.PENDING)
                         .build();
 
         when(adjustments.findById(id))
                 .thenReturn(Optional.of(adjustment));
 
         when(staffRepo.findById(managerId))
-                .thenReturn(
-                        Optional.of(
-                                staff(
-                                        managerId,
-                                        "QL",
-                                        "Manager"
-                                )
-                        )
-                );
+                .thenReturn(Optional.of(manager));
 
         when(adjustments.save(adjustment))
                 .thenReturn(adjustment);
 
-        attendanceService.review(
+        var result = attendanceService.review(
                 id,
                 managerId,
                 false,
                 null
         );
 
+        assertNotNull(result);
+
         assertEquals(
                 AttendanceStatus.WORKING,
                 attendance.getStatus()
+        );
+
+        assertEquals(
+                AttendanceAdjustmentStatus.REJECTED,
+                adjustment.getStatus()
+        );
+
+        assertEquals(
+                "Nhan vien test",
+                result.staffName()
         );
     }
 

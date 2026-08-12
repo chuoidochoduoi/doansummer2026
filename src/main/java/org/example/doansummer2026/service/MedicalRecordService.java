@@ -38,6 +38,7 @@ import org.example.doansummer2026.repository.Icd10CodeRepository;
 import org.example.doansummer2026.repository.TestRequestRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
 import org.example.doansummer2026.repository.InvoiceRepository;
+import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.enums.InvoiceStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -66,6 +67,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     private final TestRequestRepository testRequestRepo;
     private final ProfileRepository profileRepo;
     private final InvoiceRepository invoiceRepo;
+    private final MedicalServiceRepository medicalServiceRepo;
     private final org.example.doansummer2026.repository.ShiftConfigRepository shiftConfigRepository;
     private final NotificationService notificationService;
 
@@ -131,14 +133,14 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 var role = p.getAccount().getRole();
                 if (role == org.example.doansummer2026.enums.Role.CUSTOMER) {
                     result.add(ReceptionistAllCustomerResponse.forRegistered(
-                            p.getProfileId(), p.getPhone(), p.getFullName(), p.getGender(),
+                            p.getProfileId(), p.getPatientCode(), p.getPhone(), p.getFullName(), p.getGender(),
                             p.getDateOfBirth(), p.getBloodType(), p.getEmail(), p.getAddress()
                     ));
                 }
             } else {
                 // Guest profile khong co account - them vao
                 result.add(ReceptionistAllCustomerResponse.forGuest(
-                        p.getProfileId(), p.getPhone(), p.getFullName(), p.getGender(),
+                        p.getProfileId(), p.getPatientCode(), p.getPhone(), p.getFullName(), p.getGender(),
                         p.getDateOfBirth(), p.getBloodType(), p.getEmail(), p.getAddress()
                 ));
             }
@@ -152,6 +154,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 var key = a.getGuestPhone() + "_" + a.getGuestFullName();
                 if (!seenGuestInfo.contains(key)) {
                     result.add(ReceptionistAllCustomerResponse.forGuest(
+                            null,
                             null,
                             a.getGuestPhone(),
                             a.getGuestFullName(),
@@ -186,7 +189,8 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 String searchLower = "%" + search.toLowerCase() + "%";
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("fullName")), searchLower),
-                        cb.like(cb.lower(root.get("phone")), searchLower)
+                        cb.like(cb.lower(root.get("phone")), searchLower),
+                        cb.like(cb.lower(root.get("patientCode")), searchLower)
                 ));
             }
 
@@ -503,7 +507,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         }
         long incompleteCount = testRequestRepo.countByMedicalRecordAndStatusIn(
                 record.getRecordId(),
-                java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS));
+                java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS, TestRequestStatus.BLOCKED));
         return incompleteCount > 0;
     }
 
@@ -517,8 +521,16 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         MedicalRecord r = findById(id);
         validateVersion(r, req);
         var actor = currentStaff().orElse(null);
-        if (actor != null && actor.getSystemRole().isDoctor() && r.getDoctor()!=null
-                && !r.getDoctor().getStaffId().equals(actor.getStaffId()))
+        // Bac si phu trach duoc cau hinh cho phong co quyen ket thuc ca kham.
+        // Bac si luu trong record co the la nguoi tao benh an ban dau, nen chi
+        // dung lam du phong khi queue/phong chua duoc cau hinh bac si phu trach.
+        UUID responsibleDoctorId = r.getQueueTicket() != null
+                && r.getQueueTicket().getDepartment() != null
+                && r.getQueueTicket().getDepartment().getHeadDoctor() != null
+                ? r.getQueueTicket().getDepartment().getHeadDoctor().getStaffId()
+                : (r.getDoctor() != null ? r.getDoctor().getStaffId() : null);
+        if (actor != null && actor.getSystemRole().isDoctor()
+                && (responsibleDoctorId == null || !responsibleDoctorId.equals(actor.getStaffId())))
             throw new BadRequestException("Chi bac si phu trach moi duoc hoan thanh ca kham");
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
             throw new BadRequestException("Ho so da duoc dong truoc do");
@@ -621,6 +633,20 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return PageResponse.from(page, MedicalHistoryResponse::from);
     }
 
+    /** Lich su de bac si tham khao trong luc dang kham; khong tra lai ho so hien tai. */
+    @Transactional(readOnly = true)
+    public java.util.List<MedicalHistoryResponse> getPreviousHistoryForDoctor(UUID currentRecordId) {
+        MedicalRecord current = findById(currentRecordId);
+        if (current.getVisit() == null || current.getVisit().getCustomer() == null) {
+            return java.util.List.of();
+        }
+        return repo.findCompletedHistoryByProfileIdExcludingRecord(
+                        current.getVisit().getCustomer().getProfileId(), currentRecordId)
+                .stream()
+                .map(MedicalHistoryResponse::from)
+                .toList();
+    }
+
     private org.springframework.data.jpa.domain.Specification<MedicalRecord> searchMedicalHistorySpec(
             UUID profileId, String search) {
         return (root, query, cb) -> {
@@ -663,8 +689,10 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             throw new ResourceNotFoundException("Khong tim thay ho so");
         }
 
+        UUID resolvedVisitId = record.getVisit().getVisitId();
         return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
-                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(record.getVisit().getVisitId()));
+                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(resolvedVisitId),
+                testRequestRepo.findAllByVisitIdWithDetails(resolvedVisitId));
     }
 
     /**
@@ -681,8 +709,10 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             throw new ResourceNotFoundException("Khong tim thay ho so");
         }
 
+        UUID resolvedVisitId = record.getVisit().getVisitId();
         return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
-                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(record.getVisit().getVisitId()));
+                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(resolvedVisitId),
+                testRequestRepo.findAllByVisitIdWithDetails(resolvedVisitId));
     }
 
     /**
@@ -725,12 +755,11 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     }
 
     public org.example.doansummer2026.dto.medicalRecord.FeedbackResponse respondFeedback(
-            UUID id, UUID staffId, String response, String internalNote, String status) {
+            UUID id, UUID staffId, String response) {
         MedicalRecord r = findById(id);
         if (response != null) { r.setManagerResponse(response); r.setRespondedAt(LocalDateTime.now());
             if (staffId != null) r.setRespondedBy(staffRepo.findById(staffId).orElse(null)); }
-        if (internalNote != null) r.setInternalNote(internalNote);
-        r.setFeedbackStatus(status != null ? status : (response != null ? "RESPONDED" : "IN_REVIEW"));
+        r.setFeedbackStatus(response != null ? "RESPONDED" : "IN_REVIEW");
         return org.example.doansummer2026.dto.medicalRecord.FeedbackResponse.from(repo.save(r));
     }
 
@@ -753,9 +782,6 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     /** Tạo lịch hẹn từ yêu cầu tái khám và cập nhật vào hồ sơ bệnh án */
     public org.example.doansummer2026.dto.medicalRecord.FollowUpResponse scheduleFollowUp(UUID recordId, org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {
         MedicalRecord record = findById(recordId);
-        if (record.getFollowUpDate() == null && (record.getFollowUpNote() == null || record.getFollowUpNote().trim().isEmpty())) {
-            throw new BadRequestException("Hồ sơ này không có yêu cầu tái khám");
-        }
         if (record.getFollowUpAppointment() != null) {
             throw new ConflictException("Yêu cầu tái khám này đã được đặt lịch hẹn");
         }
@@ -793,8 +819,24 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
         // Tái khám quay lại đúng dịch vụ/phòng khám đã đưa ra chỉ định.
         // Không tạo lượt khám hay hàng chờ tại thời điểm lễ tân đặt lịch.
-        if (record.getQueueTicket() != null && record.getQueueTicket().getService() != null) {
-            appointment.getServices().add(record.getQueueTicket().getService());
+        if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
+            for (UUID serviceId : req.serviceIds()) {
+                var service = medicalServiceRepo.findById(serviceId)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Dich vu khong ton tai: " + serviceId
+                                )
+                        );
+
+                appointment.getServices().add(service);
+            }
+        } else if (
+                record.getQueueTicket() != null
+                        && record.getQueueTicket().getService() != null
+        ) {
+            appointment.getServices().add(
+                    record.getQueueTicket().getService()
+            );
         }
 
         appointment = appointmentRepo.save(appointment);

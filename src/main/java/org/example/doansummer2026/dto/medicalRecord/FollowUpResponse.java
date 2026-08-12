@@ -26,7 +26,7 @@ public record FollowUpResponse(
                 r.getRecordId(),
                 r.getRecordCode(),
                 customer != null ? customer.getProfileId() : null,
-                null, // customer code not available directly in Profile
+                customer != null ? customer.getPatientCode() : null,
                 customer != null ? customer.getFullName() : (r.getVisit().getAppointment() != null ? r.getVisit().getAppointment().getGuestFullName() : "Khách vãng lai"),
                 customer != null ? customer.getPhone() : (r.getVisit().getAppointment() != null ? r.getVisit().getAppointment().getGuestPhone() : ""),
                 customer != null ? customer.getGender() : null,

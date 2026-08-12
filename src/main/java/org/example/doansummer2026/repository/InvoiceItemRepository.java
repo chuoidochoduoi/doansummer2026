@@ -14,6 +14,13 @@ public interface InvoiceItemRepository extends JpaRepository<InvoiceItem, UUID> 
 
     List<InvoiceItem> findByInvoice_InvoiceId(UUID invoiceId);
 
+    /**
+     * Nguon dong dich vu chinh thuc cua hoa don khi dieu phoi sau thanh toan.
+     * Khong phu thuoc collection Invoice.items dang LAZY hoac entity vua save.
+     */
+    @Query("SELECT ii FROM InvoiceItem ii LEFT JOIN FETCH ii.service WHERE ii.invoice.invoiceId = :invoiceId")
+    List<InvoiceItem> findAllWithServiceByInvoiceId(@Param("invoiceId") UUID invoiceId);
+
     /** Tính tong BHYT theo serviceId (cho ServiceStat). */
     @Query("SELECT SUM(ii.bhytFund) FROM InvoiceItem ii WHERE ii.service.serviceId = :serviceId")
     java.math.BigDecimal sumBhytFundByServiceId(@Param("serviceId") UUID serviceId);
@@ -26,6 +33,5 @@ public interface InvoiceItemRepository extends JpaRepository<InvoiceItem, UUID> 
     @Query("SELECT COUNT(ii) FROM InvoiceItem ii WHERE ii.service.serviceId = :serviceId AND ii.bhytFund > 0")
     long countBhytUsageByServiceId(@Param("serviceId") UUID serviceId);
 }
-
 
 

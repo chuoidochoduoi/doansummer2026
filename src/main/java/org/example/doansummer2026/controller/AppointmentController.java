@@ -57,11 +57,10 @@ public class AppointmentController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST', 'ROLE_STAFF')")
     public ResponseEntity<AppointmentResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
-
     @PostMapping
     @PreAuthorize("isAuthenticated()")
     @Auditable(action = AuditAction.CREATE, entityName = "Appointment")
@@ -112,7 +111,11 @@ public class AppointmentController {
             @PathVariable UUID id,
             @Valid @RequestBody AppointmentCheckInRequest req) {
         UUID issuedById = req.issuedById() != null ? req.issuedById() : authService.currentStaffId();
-        return RestResponses.ok(service.checkIn(new AppointmentCheckInRequest(id, req.serviceIds(), issuedById, req.insuranceId())));
+        return RestResponses.ok(service.checkIn(new AppointmentCheckInRequest(
+                id, req.serviceIds(), issuedById,
+                req.patientFullName(), req.patientPhone(), req.patientEmail(), req.patientAddress(),
+                req.patientDateOfBirth(), req.patientAge(), req.patientGender()
+        )));
     }
 
     /**
@@ -173,4 +176,3 @@ public class AppointmentController {
         return RestResponses.noContent();
     }
 }
-
