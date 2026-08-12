@@ -44,6 +44,8 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
             jpql.append(" AND a.scheduledAt <= :to");
             countJpql.append(" AND a.scheduledAt <= :to");
         }
+        
+        jpql.append(" ORDER BY a.createdAt DESC");
 
         TypedQuery<Appointment> query = em.createQuery(jpql.toString(), Appointment.class);
         TypedQuery<Long> countQuery = em.createQuery(countJpql.toString(), Long.class);
@@ -53,8 +55,9 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
             countQuery.setParameter("customerId", customerId);
         }
         if (status != null && !status.isEmpty()) {
-            query.setParameter("status", status);
-            countQuery.setParameter("status", status);
+            org.example.doansummer2026.enums.AppointmentStatus enumStatus = org.example.doansummer2026.enums.AppointmentStatus.valueOf(status);
+            query.setParameter("status", enumStatus);
+            countQuery.setParameter("status", enumStatus);
         }
         if (from != null) {
             query.setParameter("from", from);

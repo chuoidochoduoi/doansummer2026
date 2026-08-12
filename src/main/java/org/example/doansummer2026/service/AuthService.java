@@ -51,7 +51,18 @@ public class AuthService implements AuthServiceInterface {
     private final InvoiceRepository invoiceRepository;
     public AuthResponse register(RegisterRequest req) {
 
-        // 1. OTP phải được xác thực trước
+        // 1. Kiểm tra ngày sinh hợp lệ
+        if (req.dob() != null) {
+            java.time.LocalDate today = java.time.LocalDate.now();
+            if (req.dob().isAfter(today)) {
+                throw new BadRequestException("Ngày sinh không thể ở trong tương lai");
+            }
+            if (java.time.temporal.ChronoUnit.YEARS.between(req.dob(), today) > 150) {
+                throw new BadRequestException("Tuổi không hợp lệ (lớn hơn 150 tuổi)");
+            }
+        }
+
+        // 2. OTP phải được xác thực trước
         if (!otpService.isOtpVerified(req.identifier())) {
             throw new BadRequestException("Vui lòng xác thực OTP trước khi đăng ký");
         }

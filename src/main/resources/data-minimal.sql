@@ -80,7 +80,7 @@ INSERT INTO medical_service (
 -- Dịch vụ cận lâm sàng được chọn phòng theo năng lực thực hiện.
 ('40000001-1111-1111-1111-111111111111', 'XN001', NOW(), NOW(), false,
  'Xét nghiệm công thức máu (CBC)', 'ACTIVE', false, 'Xét nghiệm công thức máu', 120000, 'PARACLINICAL',
- 20, 1, false, false, true, 30, true, 0, 120, NULL,
+ 20, 1, false, false, false, 30, true, 0, 120, NULL,
  NULL, NULL, 'ca000001-0000-0000-0000-000000000001'),
 ('40000004-4444-4444-4444-444444444444', 'CDHA001', NOW(), NOW(), false,
  'Siêu âm ổ bụng', 'ACTIVE', false, 'Siêu âm ổ bụng', 250000, 'PARACLINICAL',

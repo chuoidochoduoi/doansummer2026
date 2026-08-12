@@ -196,6 +196,10 @@ public class AppointmentService implements AppointmentServiceInterface {
         Appointment a = findById(id);
         AppointmentStatus oldStatus = a.getStatus();
 
+        if (oldStatus == AppointmentStatus.CANCELLED || oldStatus == AppointmentStatus.CHECKED_IN) {
+            throw new BadRequestException("Không thể sửa lịch hẹn đã Hủy hoặc đã Check-In");
+        }
+
         if (req.scheduledAt() != null) {
             validateRescheduleConflict(a, req.scheduledAt());
             a.setScheduledAt(req.scheduledAt());
@@ -305,6 +309,15 @@ public class AppointmentService implements AppointmentServiceInterface {
         if (a.getStatus() != AppointmentStatus.PENDING) {
             throw new BadRequestException("Chi co the check-in lich hen dang cho tiep nhan");
         }
+        
+        if (!a.getScheduledAt().toLocalDate().equals(LocalDate.now())) {
+            throw new BadRequestException("Chỉ có thể check-in lịch hẹn đúng ngày (hôm nay). Lịch hẹn này vào ngày " + a.getScheduledAt().toLocalDate());
+        }
+
+        if (a.getScheduledAt() != null && !a.getScheduledAt().toLocalDate().equals(java.time.LocalDate.now())) {
+            throw new BadRequestException("Chỉ có thể check-in đúng ngày đã hẹn");
+        }
+
         if (req.issuedById() == null) {
             throw new BadRequestException("Khong tim thay nhan vien le tan dang thuc hien check-in");
         }

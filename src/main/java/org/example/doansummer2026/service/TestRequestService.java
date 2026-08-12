@@ -531,6 +531,10 @@ public class TestRequestService implements TestRequestServiceInterface {
             applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         }
 
+        if (req.sampleStatus() == org.example.doansummer2026.enums.SpecimenStatus.REJECTED || req.sampleStatus() == org.example.doansummer2026.enums.SpecimenStatus.RECOLLECT) {
+            throw new BadRequestException("Khong the hoan thanh ket qua xet nghiem khi mau vat bi hong hoac can lay lai");
+        }
+
         if (r.getConclusion() == null || r.getConclusion().isBlank()) {
             throw new BadRequestException("Vui long nhap ket luan cua bac si");
         }
@@ -596,6 +600,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                 patientJourneyService.activateNext(t.getMedicalRecord().getVisit().getVisitId());
         }
 
+        publishLabQueueUpdated(t.getPerformingDepartment().getDepartmentId());
         return TestResultResponse.from(r);
     }
 

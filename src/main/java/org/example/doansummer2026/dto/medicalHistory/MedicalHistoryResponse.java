@@ -40,10 +40,14 @@ public record MedicalHistoryResponse(
                         .map(s -> s.getDepartmentType() != null ? s.getDepartmentType().name() : "Khám bệnh")
                         .orElse("Khám bệnh");
             }
-            // Doctor từ medicalRecord
-            if (record.getDoctor() != null) {
-                doctor = "BS. " + record.getDoctor().getStaffCode();
-            }
+        }
+        if (specialty == null) {
+            if (record.getQueueTicket() == null) specialty = "PARACLINICAL";
+            else specialty = "EXAMINATION";
+        }
+
+        if (record.getDoctor() != null && record.getDoctor().getProfile() != null && record.getDoctor().getProfile().getFullName() != null) {
+            doctor = "BS. " + record.getDoctor().getProfile().getFullName();
         }
 
         String statusStr = "pending";
