@@ -47,7 +47,7 @@ public class OtpService {
         String cooldownKey = SEND_COOLDOWN_PREFIX + identifier;
         if (Boolean.TRUE.equals(redisTemplate.hasKey(cooldownKey))) {
             Long ttl = redisTemplate.getExpire(cooldownKey, TimeUnit.SECONDS);
-            throw new BadRequestException("Vui long cho " + Math.max(ttl == null ? 1 : ttl, 1) + " giay truoc khi gui lai OTP");
+            throw new BadRequestException("Vui lòng chờ " + Math.max(ttl == null ? 1 : ttl, 1) + " giây trước khi gửi lại OTP");
         }
         String sendCountKey = SEND_COUNT_PREFIX + identifier;
         Long sendCount = redisTemplate.opsForValue().increment(sendCountKey);
@@ -55,7 +55,7 @@ public class OtpService {
             redisTemplate.expire(sendCountKey, 1, TimeUnit.HOURS);
         }
         if (sendCount != null && sendCount > maxSendsPerHour) {
-            throw new BadRequestException("Da vuot qua so lan gui OTP cho phep trong mot gio");
+            throw new BadRequestException("Đã vượt quá số lần gửi OTP cho phép trong một giờ");
         }
 
         String key = OTP_PREFIX + identifier;
@@ -94,9 +94,9 @@ public class OtpService {
             }
             if (attempts != null && attempts >= maxVerifyAttempts) {
                 redisTemplate.delete(key);
-                throw new BadRequestException("Da nhap sai OTP qua so lan cho phep; vui long gui ma moi");
+                throw new BadRequestException("Đã nhập sai OTP quá số lần cho phép; vui lòng gửi mã mới");
             }
-            throw new BadRequestException("Ma otp khong chinh xac");
+            throw new BadRequestException("Mã OTP không chính xác");
         }
         // One-time: xóa luôn sau khi dùng
         redisTemplate.delete(key);
@@ -106,7 +106,7 @@ public class OtpService {
 
     public void markOtpAsVerified(String identifier, String code) {
         if (!verifyOtp(identifier, code)) {
-            throw new BadRequestException("OTP khong hop le hoac da het han");
+            throw new BadRequestException("OTP không hợp lệ hoặc đã hết hạn");
         }
         String key = "otp_verified:" + normalize(identifier);
         redisTemplate.opsForValue().set(key, "true", 15, TimeUnit.MINUTES);

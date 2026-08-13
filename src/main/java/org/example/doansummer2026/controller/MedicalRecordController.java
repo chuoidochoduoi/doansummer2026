@@ -145,7 +145,7 @@ public class MedicalRecordController {
     public ResponseEntity<VisitDetailResponse> getVisitDetail(@PathVariable UUID recordId) {
         UUID profileId = authService.currentProfileId();
         if (profileId == null) {
-            throw new org.example.doansummer2026.exception.ResourceNotFoundException("Khong tim thay profile");
+            throw new org.example.doansummer2026.exception.ResourceNotFoundException("Không tìm thấy hồ sơ cá nhân");
         }
         VisitDetailResponse response = service.getVisitDetailByRecordId(recordId, profileId);
         return RestResponses.ok(response);

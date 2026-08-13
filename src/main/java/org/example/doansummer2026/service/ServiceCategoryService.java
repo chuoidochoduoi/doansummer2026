@@ -37,7 +37,7 @@ public class ServiceCategoryService implements ServiceCategoryServiceInterface {
 
     public ServiceCategoryResponse create(ServiceCategoryCreateRequest req) {
         if (repo.existsByName(req.name())) {
-            throw new ConflictException("Ten danh muc da ton tai: " + req.name());
+            throw new ConflictException("Tên danh mục đã tồn tại: " + req.name());
         }
         ServiceCategory parent = null;
         if (req.parentId() != null) {
@@ -55,7 +55,7 @@ public class ServiceCategoryService implements ServiceCategoryServiceInterface {
         ServiceCategory c = findById(id);
         if (req.name() != null && !req.name().equals(c.getName())) {
             if (repo.existsByName(req.name())) {
-                throw new ConflictException("Ten danh muc da ton tai: " + req.name());
+                throw new ConflictException("Tên danh mục đã tồn tại: " + req.name());
             }
             c.setName(req.name());
         }
@@ -63,7 +63,7 @@ public class ServiceCategoryService implements ServiceCategoryServiceInterface {
         if (req.parentId() != null) {
             if (req.parentId().equals(id)) {
                 throw new org.example.doansummer2026.exception.BadRequestException(
-                        "Khong the dat parent = chinh no");
+                        "Không thể đặt danh mục cha là chính nó");
             }
             c.setParentCategory(findById(req.parentId()));
         }
@@ -72,14 +72,14 @@ public class ServiceCategoryService implements ServiceCategoryServiceInterface {
 
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Danh muc khong ton tai: " + id);
+            throw new ResourceNotFoundException("Danh mục không tồn tại: " + id);
         }
         repo.deleteById(id);
     }
 
     public ServiceCategory findById(UUID id) {
         return repo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Danh muc khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Danh mục không tồn tại: " + id));
     }
 }
 

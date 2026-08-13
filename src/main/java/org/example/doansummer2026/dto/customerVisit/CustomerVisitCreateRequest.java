@@ -22,7 +22,7 @@ public record CustomerVisitCreateRequest(
         String guestFullName,
         String guestPhone,
         String guestAddress,
-        @PastOrPresent(message = "Ngay sinh khong hop le") LocalDate guestDateOfBirth,
+        @PastOrPresent(message = "Ngày sinh không hợp lệ") LocalDate guestDateOfBirth,
         Gender guestGender,
         // Bao hiem y te
         UUID insuranceId

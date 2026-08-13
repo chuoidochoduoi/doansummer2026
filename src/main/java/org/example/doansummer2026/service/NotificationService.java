@@ -53,7 +53,7 @@ public class NotificationService implements NotificationServiceInterface {
 
     public NotificationResponse create(NotificationCreateRequest req) {
         Profile recipient = profileRepo.findById(req.recipientId())
-                .orElseThrow(() -> new ResourceNotFoundException("Nguoi nhan khong ton tai: " + req.recipientId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Người nhận không tồn tại: " + req.recipientId()));
         Notification n = Notification.builder()
                 .recipient(recipient)
                 .notificationType(req.notificationType())
@@ -91,7 +91,7 @@ public class NotificationService implements NotificationServiceInterface {
     public NotificationResponse send(UUID id) {
         Notification n = findById(id);
         if (n.getStatus() != NotificationStatus.PENDING) {
-            throw new BadRequestException("Chi gui notification PENDING; hien tai: " + n.getStatus());
+            throw new BadRequestException("Chỉ có thể gửi thông báo đang chờ gửi; trạng thái hiện tại: " + n.getStatus());
         }
         n.setStatus(NotificationStatus.SENT);
         n.setSentAt(LocalDateTime.now());
@@ -114,14 +114,14 @@ public class NotificationService implements NotificationServiceInterface {
 
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Thong bao khong ton tai: " + id);
+            throw new ResourceNotFoundException("Thông báo không tồn tại: " + id);
         }
         repo.deleteById(id);
     }
 
     public Notification findById(UUID id) {
         return repo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Thong bao khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Thông báo không tồn tại: " + id));
     }
 
     @Transactional(readOnly = true)

@@ -39,7 +39,7 @@ public class ChatService {
             return active.get();
         }
 
-        Profile customer = profileRepo.findById(customerId).orElseThrow(() -> new RuntimeException("Profile not found"));
+        Profile customer = profileRepo.findById(customerId).orElseThrow(() -> new RuntimeException("Không tìm thấy hồ sơ khách hàng"));
         ChatSession newSession = ChatSession.builder()
                 .customer(customer)
                 .status(ChatSessionStatus.BOT_HANDLING)

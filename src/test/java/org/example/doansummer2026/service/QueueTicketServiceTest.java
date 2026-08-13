@@ -1551,29 +1551,17 @@ class QueueTicketServiceTest {
         );
     }
 
-
 // =========================================================
 // NOTIFY DOCTORS
-//
-// notifyDoctors() là private.
-// Ta cover đúng cách thông qua create()
-// DepartmentType.EXAMINATION.
 // =========================================================
 
     @Test
-    void create_ShouldNotifyDoctor_WhenDepartmentIsExamination() {
+    void notifyDoctors_ShouldCreateNotification_ForHeadDoctor() {
 
-        UUID visitId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
         UUID departmentId = UUID.randomUUID();
         UUID doctorProfileId = UUID.randomUUID();
 
-        QueueTicketCreateRequest request =
-                mock(QueueTicketCreateRequest.class);
-
-        /*
-         * Registered customer.
-         */
         Profile customer = mock(Profile.class);
 
         when(customer.getFullName())
@@ -1584,120 +1572,83 @@ class QueueTicketServiceTest {
         when(visit.getCustomer())
                 .thenReturn(customer);
 
-        /*
-         * Department thật để tránh unnecessary stubbing.
-         */
+        Profile doctorProfile = mock(Profile.class);
+
+        when(doctorProfile.getProfileId())
+                .thenReturn(doctorProfileId);
+
+        StaffInfo headDoctor = mock(StaffInfo.class);
+
+        when(headDoctor.getProfile())
+                .thenReturn(doctorProfile);
+
         Department department =
                 Department.builder()
                         .departmentId(departmentId)
                         .name("Phong Kham 01")
                         .departmentType(DepartmentType.EXAMINATION)
                         .status(DepartmentStatus.AVAILABLE)
+                        .headDoctor(headDoctor)
                         .build();
 
-        MedicalService service =
-                mock(MedicalService.class);
+        QueueTicket ticket =
+                QueueTicket.builder()
+                        .ticketId(ticketId)
+                        .visit(visit)
+                        .department(department)
+                        .status(QueueStatus.WAITING)
+                        .workDate(LocalDate.now())
+                        .queueNumber(1)
+                        .build();
 
-        Profile doctorProfile =
-                mock(Profile.class);
-
-        when(doctorProfile.getProfileId())
-                .thenReturn(doctorProfileId);
-
-        StaffInfo doctor =
-                mock(StaffInfo.class);
-
-        when(doctor.getSystemRole())
-                .thenReturn(SystemRole.DOCTOR);
-
-        when(doctor.getProfile())
-                .thenReturn(doctorProfile);
-
-        when(request.visitId())
-                .thenReturn(visitId);
-
-        when(request.serviceId())
-                .thenReturn(serviceId);
-
-        when(request.departmentId())
-                .thenReturn(departmentId);
-
-        when(visitRepo.findById(visitId))
-                .thenReturn(Optional.of(visit));
-
-        when(
-                repo.findByVisit_VisitIdAndService_ServiceId(
-                        visitId,
-                        serviceId
-                )
-        ).thenReturn(Optional.empty());
-
-        when(departmentRepo.findByIdForUpdate(departmentId))
-                .thenReturn(Optional.of(department));
-
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
-
-        when(
-                repo.findMaxQueueNumberForDay(
-                        eq(departmentId),
-                        any(LocalDate.class)
-                )
-        ).thenReturn(Optional.of(0));
-
-        when(repo.save(any(QueueTicket.class)))
-                .thenAnswer(invocation -> {
-
-                    QueueTicket q = invocation.getArgument(0);
-
-                    q.setTicketId(UUID.randomUUID());
-
-                    return q;
-                });
-
-        /*
-         * updateDepartmentStatus()
-         */
-        when(departmentRepo.findById(departmentId))
-                .thenReturn(Optional.of(department));
-
-        when(repo.countActiveTicketsByDepartment(departmentId))
-                .thenReturn(1L);
-
-        /*
-         * notifyDoctors()
-         */
-        when(
-                staffRepo.findByDepartment_DepartmentId(departmentId)
-        ).thenReturn(List.of(doctor));
-
-        var result =
-                queueTicketService.create(request);
-
-        assertNotNull(result);
+        ReflectionTestUtils.invokeMethod(
+                queueTicketService,
+                "notifyDoctors",
+                ticket
+        );
 
         verify(notificationService)
-                .create(argThat(notification ->
-                        doctorProfileId.equals(notification.recipientId())
-                                && "Benh nhan moi".equals(notification.title())
-                                && "QueueTicket".equals(notification.relatedEntity())
-                ));
+                .create(
+                        argThat(notification ->
+                                doctorProfileId.equals(
+                                        notification.recipientId()
+                                )
+                                        && notification.notificationType()
+                                        == NotificationType.GENERAL
+
+                                        && notification.channel()
+                                        == NotificationChannel.IN_APP
+
+                                        && "Benh nhan moi".equals(
+                                        notification.title()
+                                )
+
+                                        && notification.content() != null
+
+                                        && notification.content()
+                                        .contains("Nguyen Van A")
+
+                                        && notification.content()
+                                        .contains("Phong Kham 01")
+
+                                        && "QueueTicket".equals(
+                                        notification.relatedEntity()
+                                )
+
+                                        && ticketId.equals(
+                                        notification.relatedEntityId()
+                                )
+                        )
+                );
     }
 
 
-// =========================================================
-// NOTIFY DOCTORS - GUEST NAME
-// =========================================================
-
     @Test
-    void create_ShouldUseGuestName_WhenVisitHasNoCustomer() {
+    void notifyDoctors_ShouldUseGuestName_WhenVisitHasNoCustomer() {
 
-        UUID visitId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
         UUID departmentId = UUID.randomUUID();
-
-        QueueTicketCreateRequest request =
-                mock(QueueTicketCreateRequest.class);
+        UUID doctorProfileId = UUID.randomUUID();
 
         Appointment appointment =
                 mock(Appointment.class);
@@ -1711,107 +1662,74 @@ class QueueTicketServiceTest {
         when(visit.getAppointment())
                 .thenReturn(appointment);
 
-        Department department =
-                Department.builder()
-                        .departmentId(departmentId)
-                        .name("Phong Kham")
-                        .departmentType(DepartmentType.EXAMINATION)
-                        .status(DepartmentStatus.AVAILABLE)
-                        .build();
-
-        MedicalService service =
-                mock(MedicalService.class);
-
         Profile doctorProfile =
                 mock(Profile.class);
 
         when(doctorProfile.getProfileId())
-                .thenReturn(UUID.randomUUID());
+                .thenReturn(doctorProfileId);
 
-        StaffInfo doctor =
+        StaffInfo headDoctor =
                 mock(StaffInfo.class);
 
-        when(doctor.getSystemRole())
-                .thenReturn(SystemRole.DOCTOR);
-
-        when(doctor.getProfile())
+        when(headDoctor.getProfile())
                 .thenReturn(doctorProfile);
 
-        when(request.visitId())
-                .thenReturn(visitId);
+        Department department =
+                Department.builder()
+                        .departmentId(departmentId)
+                        .name("Phong Kham Guest")
+                        .departmentType(DepartmentType.EXAMINATION)
+                        .status(DepartmentStatus.AVAILABLE)
+                        .headDoctor(headDoctor)
+                        .build();
 
-        when(request.serviceId())
-                .thenReturn(serviceId);
+        QueueTicket ticket =
+                QueueTicket.builder()
+                        .ticketId(ticketId)
+                        .visit(visit)
+                        .department(department)
+                        .status(QueueStatus.WAITING)
+                        .workDate(LocalDate.now())
+                        .queueNumber(1)
+                        .build();
 
-        when(request.departmentId())
-                .thenReturn(departmentId);
-
-        when(visitRepo.findById(visitId))
-                .thenReturn(Optional.of(visit));
-
-        when(
-                repo.findByVisit_VisitIdAndService_ServiceId(
-                        visitId,
-                        serviceId
-                )
-        ).thenReturn(Optional.empty());
-
-        when(departmentRepo.findByIdForUpdate(departmentId))
-                .thenReturn(Optional.of(department));
-
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
-
-        when(
-                repo.findMaxQueueNumberForDay(
-                        eq(departmentId),
-                        any(LocalDate.class)
-                )
-        ).thenReturn(Optional.of(0));
-
-        when(repo.save(any(QueueTicket.class)))
-                .thenAnswer(invocation -> {
-
-                    QueueTicket q = invocation.getArgument(0);
-
-                    q.setTicketId(UUID.randomUUID());
-
-                    return q;
-                });
-
-        when(departmentRepo.findById(departmentId))
-                .thenReturn(Optional.of(department));
-
-        when(repo.countActiveTicketsByDepartment(departmentId))
-                .thenReturn(1L);
-
-        when(
-                staffRepo.findByDepartment_DepartmentId(departmentId)
-        ).thenReturn(List.of(doctor));
-
-        queueTicketService.create(request);
+        ReflectionTestUtils.invokeMethod(
+                queueTicketService,
+                "notifyDoctors",
+                ticket
+        );
 
         verify(notificationService)
-                .create(argThat(notification ->
-                        notification.content()
-                                .contains("Tran Van Guest")
-                ));
+                .create(
+                        argThat(notification ->
+                                doctorProfileId.equals(
+                                        notification.recipientId()
+                                )
+                                        && notification.content() != null
+
+                                        && notification.content()
+                                        .contains("Tran Van Guest")
+
+                                        && notification.content()
+                                        .contains("Phong Kham Guest")
+
+                                        && "QueueTicket".equals(
+                                        notification.relatedEntity()
+                                )
+
+                                        && ticketId.equals(
+                                        notification.relatedEntityId()
+                                )
+                        )
+                );
     }
 
 
-// =========================================================
-// NOTIFY DOCTORS - IGNORE NON DOCTOR
-// =========================================================
-
     @Test
-    void create_ShouldNotNotifyStaff_WhenStaffIsNotDoctor() {
+    void notifyDoctors_ShouldNotCreateNotification_WhenDepartmentHasNoHeadDoctor() {
 
-        UUID visitId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
         UUID departmentId = UUID.randomUUID();
-
-        QueueTicketCreateRequest request =
-                mock(QueueTicketCreateRequest.class);
 
         CustomerVisit visit =
                 mock(CustomerVisit.class);
@@ -1822,92 +1740,37 @@ class QueueTicketServiceTest {
                         .name("Phong Kham")
                         .departmentType(DepartmentType.EXAMINATION)
                         .status(DepartmentStatus.AVAILABLE)
+                        .headDoctor(null)
                         .build();
 
-        MedicalService service =
-                mock(MedicalService.class);
+        QueueTicket ticket =
+                QueueTicket.builder()
+                        .ticketId(ticketId)
+                        .visit(visit)
+                        .department(department)
+                        .status(QueueStatus.WAITING)
+                        .workDate(LocalDate.now())
+                        .queueNumber(1)
+                        .build();
 
-        StaffInfo nurse =
-                mock(StaffInfo.class);
+        ReflectionTestUtils.invokeMethod(
+                queueTicketService,
+                "notifyDoctors",
+                ticket
+        );
 
-        when(nurse.getSystemRole())
-                .thenReturn(SystemRole.NURSE);
-
-        when(request.visitId())
-                .thenReturn(visitId);
-
-        when(request.serviceId())
-                .thenReturn(serviceId);
-
-        when(request.departmentId())
-                .thenReturn(departmentId);
-
-        when(visitRepo.findById(visitId))
-                .thenReturn(Optional.of(visit));
-
-        when(
-                repo.findByVisit_VisitIdAndService_ServiceId(
-                        visitId,
-                        serviceId
-                )
-        ).thenReturn(Optional.empty());
-
-        when(departmentRepo.findByIdForUpdate(departmentId))
-                .thenReturn(Optional.of(department));
-
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
-
-        when(
-                repo.findMaxQueueNumberForDay(
-                        eq(departmentId),
-                        any(LocalDate.class)
-                )
-        ).thenReturn(Optional.of(0));
-
-        when(repo.save(any(QueueTicket.class)))
-                .thenAnswer(invocation -> {
-
-                    QueueTicket q = invocation.getArgument(0);
-
-                    q.setTicketId(UUID.randomUUID());
-
-                    return q;
-                });
-
-        when(departmentRepo.findById(departmentId))
-                .thenReturn(Optional.of(department));
-
-        when(repo.countActiveTicketsByDepartment(departmentId))
-                .thenReturn(1L);
-
-        when(
-                staffRepo.findByDepartment_DepartmentId(departmentId)
-        ).thenReturn(List.of(nurse));
-
-        queueTicketService.create(request);
-
-        verify(notificationService, never())
-                .create(any());
+        verifyNoInteractions(notificationService);
     }
 
 
-// =========================================================
-// NOTIFY DOCTORS - DOCTOR WITHOUT PROFILE
-// =========================================================
-
     @Test
-    void create_ShouldNotNotifyDoctor_WhenDoctorHasNoProfile() {
+    void notifyDoctors_ShouldNotCreateNotification_WhenHeadDoctorHasNoProfile() {
 
-        UUID visitId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
+        UUID ticketId = UUID.randomUUID();
         UUID departmentId = UUID.randomUUID();
 
-        QueueTicketCreateRequest request =
-                mock(QueueTicketCreateRequest.class);
-
-        CustomerVisit visit =
-                mock(CustomerVisit.class);
+        StaffInfo headDoctor =
+                mock(StaffInfo.class);
 
         Department department =
                 Department.builder()
@@ -1915,77 +1778,21 @@ class QueueTicketServiceTest {
                         .name("Phong Kham")
                         .departmentType(DepartmentType.EXAMINATION)
                         .status(DepartmentStatus.AVAILABLE)
+                        .headDoctor(headDoctor)
                         .build();
 
-        MedicalService service =
-                mock(MedicalService.class);
+        QueueTicket ticket =
+                QueueTicket.builder()
+                        .ticketId(ticketId)
+                        .visit(mock(CustomerVisit.class))
+                        .department(department)
+                        .status(QueueStatus.WAITING)
+                        .workDate(LocalDate.now())
+                        .queueNumber(1)
+                        .build();
 
-        StaffInfo doctor =
-                mock(StaffInfo.class);
-
-        when(doctor.getSystemRole())
-                .thenReturn(SystemRole.DOCTOR);
-
-        /*
-         * getProfile() mặc định null.
-         */
-
-        when(request.visitId())
-                .thenReturn(visitId);
-
-        when(request.serviceId())
-                .thenReturn(serviceId);
-
-        when(request.departmentId())
-                .thenReturn(departmentId);
-
-        when(visitRepo.findById(visitId))
-                .thenReturn(Optional.of(visit));
-
-        when(
-                repo.findByVisit_VisitIdAndService_ServiceId(
-                        visitId,
-                        serviceId
-                )
-        ).thenReturn(Optional.empty());
-
-        when(departmentRepo.findByIdForUpdate(departmentId))
-                .thenReturn(Optional.of(department));
-
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
-
-        when(
-                repo.findMaxQueueNumberForDay(
-                        eq(departmentId),
-                        any(LocalDate.class)
-                )
-        ).thenReturn(Optional.of(0));
-
-        when(repo.save(any(QueueTicket.class)))
-                .thenAnswer(invocation -> {
-
-                    QueueTicket q = invocation.getArgument(0);
-
-                    q.setTicketId(UUID.randomUUID());
-
-                    return q;
-                });
-
-        when(departmentRepo.findById(departmentId))
-                .thenReturn(Optional.of(department));
-
-        when(repo.countActiveTicketsByDepartment(departmentId))
-                .thenReturn(1L);
-
-        when(
-                staffRepo.findByDepartment_DepartmentId(departmentId)
-        ).thenReturn(List.of(doctor));
-
-        queueTicketService.create(request);
-
-        verify(notificationService, never())
-                .create(any());
+        ReflectionTestUtils.invokeMethod(queueTicketService, "notifyDoctors", ticket);
+        verifyNoInteractions(notificationService);
     }
 
 

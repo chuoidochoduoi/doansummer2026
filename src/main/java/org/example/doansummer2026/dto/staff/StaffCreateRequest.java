@@ -15,8 +15,9 @@ public record StaffCreateRequest(
         @NotBlank @Size(min = 4, max = 50) String username,
         @NotBlank @Size(min = 8, max = 64) String password,
         // Profile
-        @NotBlank @Size(max = 100) String fullName,
-        @Pattern(regexp = "^(\\+84|0)\\d{9,10}$", message = "So dien thoai khong hop le (VN)") String phone,
+        @NotBlank @Size(min = 2, max = 100)
+        @Pattern(regexp = "^(?!.*\\p{N}).*$", message = "Họ tên không được chứa chữ số") String fullName,
+        @Pattern(regexp = "^(\\+84|0)\\d{9,10}$", message = "Số điện thoại Việt Nam không hợp lệ") String phone,
         @NotBlank @Email String email,
         LocalDate dateOfBirth,
         String gender,
@@ -32,5 +33,3 @@ public record StaffCreateRequest(
         @Size(max = 200) String university,
         @Size(max = 50) String licenseNumber
 ) {}
-
-

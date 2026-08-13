@@ -138,7 +138,7 @@ public class StaffController {
             @Valid @RequestBody StaffProfessionalUpdateRequest req) {
         UUID staffId = getCurrentStaffId();
         if (staffId == null) {
-            throw new org.example.doansummer2026.exception.BadRequestException("Khong xac dinh duoc nhan vien hien tai");
+            throw new org.example.doansummer2026.exception.BadRequestException("Không xác định được nhân viên hiện tại");
         }
         return RestResponses.ok(staffService.updateOwnProfessionalInfo(staffId, req));
     }

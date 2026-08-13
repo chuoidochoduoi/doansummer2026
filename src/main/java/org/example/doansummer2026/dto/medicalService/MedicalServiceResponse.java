@@ -1,5 +1,6 @@
 package org.example.doansummer2026.dto.medicalService;
 
+import jakarta.persistence.EntityNotFoundException;
 import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.enums.ServiceStatus;
 import org.example.doansummer2026.enums.DepartmentType;
@@ -44,6 +45,18 @@ public record MedicalServiceResponse(
         String deptName = s.getDepartment() != null ? s.getDepartment().getName() : null;
         UUID specId = s.getRequiredSpecialization() != null ? s.getRequiredSpecialization().getSpecializationId() : null;
         String specName = s.getRequiredSpecialization() != null ? s.getRequiredSpecialization().getName() : null;
+        UUID capabilityId = null;
+        String capabilityName = null;
+        if (s.getRequiredCapability() != null) {
+            capabilityId = s.getRequiredCapability().getCapabilityId();
+            try {
+                capabilityName = s.getRequiredCapability().getName();
+            } catch (EntityNotFoundException exception) {
+                // Du lieu cu co the da soft-delete capability trong khi dich vu
+                // van giu FK. Van tra danh sach de admin co the gan lai ky thuat.
+                capabilityName = "Danh mục kỹ thuật đã bị xóa";
+            }
+        }
 
         return new MedicalServiceResponse(
                 s.getServiceId(),
@@ -68,8 +81,8 @@ public record MedicalServiceResponse(
                 deptName,
                 specId,
                 specName,
-                s.getRequiredCapability() != null ? s.getRequiredCapability().getCapabilityId() : null,
-                s.getRequiredCapability() != null ? s.getRequiredCapability().getName() : null
+                capabilityId,
+                capabilityName
         );
     }
 }

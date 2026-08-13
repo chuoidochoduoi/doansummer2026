@@ -65,6 +65,9 @@ class TestRequestServiceTest {
     private MedicalRecordRepository recordRepo;
 
     @Mock
+    private CustomerVisitRepository visitRepo;
+
+    @Mock
     private MedicalServiceRepository serviceRepo;
 
     @Mock
@@ -90,6 +93,9 @@ class TestRequestServiceTest {
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock
+    private AuthService authService;
 
     @InjectMocks
     private TestRequestService testRequestService;
@@ -895,9 +901,6 @@ class TestRequestServiceTest {
         when(req.conclusion())
                 .thenReturn("Binh thuong");
 
-        when(req.sampleId())
-                .thenReturn("SAMPLE-001");
-
         when(repo.findById(id))
                 .thenReturn(Optional.of(t));
 
@@ -906,9 +909,6 @@ class TestRequestServiceTest {
 
         when(staffRepo.findById(staffId))
                 .thenReturn(Optional.of(staff));
-
-        when(resultRepo.save(any(TestResult.class)))
-                .thenAnswer(i -> i.getArgument(0));
 
         var result =
                 testRequestService.createResult(id, req);
@@ -1070,9 +1070,6 @@ class TestRequestServiceTest {
         when(req.conclusion())
                 .thenReturn("New conclusion");
 
-        when(req.sampleId())
-                .thenReturn("NEW");
-
         when(repo.findById(id))
                 .thenReturn(Optional.of(t));
 
@@ -1089,7 +1086,11 @@ class TestRequestServiceTest {
 
         assertEquals("new.pdf", r.getImageUrl());
         assertEquals("New conclusion", r.getConclusion());
-        assertEquals("NEW", r.getSampleId());
+
+        /*
+         * Service hien tai xoa specimen fields neu dich vu khong cau hinh requiresSpecimen.
+         */
+        assertNull(r.getSampleId());
 
         verify(resultRepo).save(r);
     }
@@ -1366,31 +1367,30 @@ class TestRequestServiceTest {
     void completeResult_ShouldRejectBlankConclusion() {
 
         UUID id = UUID.randomUUID();
-        UUID performedById = UUID.randomUUID();
+
+        QueueTicket executionQueue = QueueTicket.builder()
+                .ticketId(UUID.randomUUID())
+                .status(QueueStatus.IN_PROGRESS)
+                .build();
+
+        TestResult existingResult = TestResult.builder()
+                .imageUrl("result.pdf")
+                .conclusion("   ")
+                .build();
 
         TestRequest t =
                 TestRequest.builder()
                         .testRequestId(id)
                         .status(TestRequestStatus.IN_PROGRESS)
+                        .queueTicket(executionQueue)
+                        .testResult(existingResult)
                         .build();
-
-        StaffInfo performedBy =
-                mock(StaffInfo.class);
 
         TestResultCreateRequest req =
                 mock(TestResultCreateRequest.class);
 
-        when(req.performedById())
-                .thenReturn(performedById);
-
-        when(req.imageUrl())
-                .thenReturn("result.pdf");
-
         when(repo.findByIdWithResult(id))
                 .thenReturn(Optional.of(t));
-
-        when(staffRepo.findById(performedById))
-                .thenReturn(Optional.of(performedBy));
 
         assertThrows(
                 BadRequestException.class,
@@ -1411,34 +1411,30 @@ class TestRequestServiceTest {
     void completeResult_ShouldRejectNonPdfResult() {
 
         UUID id = UUID.randomUUID();
-        UUID performedById = UUID.randomUUID();
+
+        QueueTicket executionQueue = QueueTicket.builder()
+                .ticketId(UUID.randomUUID())
+                .status(QueueStatus.IN_PROGRESS)
+                .build();
+
+        TestResult existingResult = TestResult.builder()
+                .imageUrl("image.jpg")
+                .conclusion("Binh thuong")
+                .build();
 
         TestRequest t =
                 TestRequest.builder()
                         .testRequestId(id)
                         .status(TestRequestStatus.IN_PROGRESS)
+                        .queueTicket(executionQueue)
+                        .testResult(existingResult)
                         .build();
-
-        StaffInfo performedBy =
-                mock(StaffInfo.class);
 
         TestResultCreateRequest req =
                 mock(TestResultCreateRequest.class);
 
-        when(req.performedById())
-                .thenReturn(performedById);
-
-        when(req.conclusion())
-                .thenReturn("Binh thuong");
-
-        when(req.imageUrl())
-                .thenReturn("image.jpg");
-
         when(repo.findByIdWithResult(id))
                 .thenReturn(Optional.of(t));
-
-        when(staffRepo.findById(performedById))
-                .thenReturn(Optional.of(performedBy));
 
         assertThrows(
                 BadRequestException.class,
@@ -1459,35 +1455,31 @@ class TestRequestServiceTest {
     void completeResult_ShouldThrow_WhenVerifierDoesNotExist() {
 
         UUID id = UUID.randomUUID();
-        UUID performedById = UUID.randomUUID();
         UUID verifierId = UUID.randomUUID();
+
+        QueueTicket executionQueue = QueueTicket.builder()
+                .ticketId(UUID.randomUUID())
+                .status(QueueStatus.IN_PROGRESS)
+                .build();
+
+        TestResult existingResult = TestResult.builder()
+                .imageUrl("result.pdf")
+                .conclusion("OK")
+                .build();
 
         TestRequest t =
                 TestRequest.builder()
                         .testRequestId(id)
                         .status(TestRequestStatus.IN_PROGRESS)
+                        .queueTicket(executionQueue)
+                        .testResult(existingResult)
                         .build();
-
-        StaffInfo performedBy =
-                mock(StaffInfo.class);
 
         TestResultCreateRequest req =
                 mock(TestResultCreateRequest.class);
 
-        when(req.performedById())
-                .thenReturn(performedById);
-
-        when(req.conclusion())
-                .thenReturn("OK");
-
-        when(req.imageUrl())
-                .thenReturn("result.pdf");
-
         when(repo.findByIdWithResult(id))
                 .thenReturn(Optional.of(t));
-
-        when(staffRepo.findById(performedById))
-                .thenReturn(Optional.of(performedBy));
 
         when(staffRepo.findById(verifierId))
                 .thenReturn(Optional.empty());
@@ -1511,41 +1503,35 @@ class TestRequestServiceTest {
     void completeResult_ShouldRejectVerifier_WhenNotDoctor() {
 
         UUID id = UUID.randomUUID();
-        UUID performedById = UUID.randomUUID();
         UUID verifierId = UUID.randomUUID();
+
+        QueueTicket executionQueue = QueueTicket.builder()
+                .ticketId(UUID.randomUUID())
+                .status(QueueStatus.IN_PROGRESS)
+                .build();
+
+        TestResult existingResult = TestResult.builder()
+                .imageUrl("result.pdf")
+                .conclusion("OK")
+                .build();
+
+        StaffInfo verifier = mock(StaffInfo.class);
+        when(verifier.getSystemRole())
+                .thenReturn(SystemRole.NURSE);
 
         TestRequest t =
                 TestRequest.builder()
                         .testRequestId(id)
                         .status(TestRequestStatus.IN_PROGRESS)
+                        .queueTicket(executionQueue)
+                        .testResult(existingResult)
                         .build();
-
-        StaffInfo performedBy =
-                mock(StaffInfo.class);
-
-        StaffInfo verifier =
-                mock(StaffInfo.class);
-
-        when(verifier.getSystemRole())
-                .thenReturn(SystemRole.NURSE);
 
         TestResultCreateRequest req =
                 mock(TestResultCreateRequest.class);
 
-        when(req.performedById())
-                .thenReturn(performedById);
-
-        when(req.conclusion())
-                .thenReturn("OK");
-
-        when(req.imageUrl())
-                .thenReturn("result.pdf");
-
         when(repo.findByIdWithResult(id))
                 .thenReturn(Optional.of(t));
-
-        when(staffRepo.findById(performedById))
-                .thenReturn(Optional.of(performedBy));
 
         when(staffRepo.findById(verifierId))
                 .thenReturn(Optional.of(verifier));
@@ -1569,30 +1555,30 @@ class TestRequestServiceTest {
     void completeResult_ShouldRejectDoctor_WhenNotDepartmentHead() {
 
         UUID id = UUID.randomUUID();
-        UUID performedById = UUID.randomUUID();
         UUID verifierId = UUID.randomUUID();
+        UUID headDoctorId = UUID.randomUUID();
 
-        StaffInfo performedBy =
-                mock(StaffInfo.class);
+        QueueTicket executionQueue = QueueTicket.builder()
+                .ticketId(UUID.randomUUID())
+                .status(QueueStatus.IN_PROGRESS)
+                .build();
 
-        StaffInfo verifier =
-                mock(StaffInfo.class);
+        TestResult existingResult = TestResult.builder()
+                .imageUrl("result.pdf")
+                .conclusion("OK")
+                .build();
 
-        StaffInfo headDoctor =
-                mock(StaffInfo.class);
-
+        StaffInfo verifier = mock(StaffInfo.class);
         when(verifier.getSystemRole())
                 .thenReturn(SystemRole.DOCTOR);
-
         when(verifier.getStaffId())
                 .thenReturn(verifierId);
 
+        StaffInfo headDoctor = mock(StaffInfo.class);
         when(headDoctor.getStaffId())
-                .thenReturn(UUID.randomUUID());
+                .thenReturn(headDoctorId);
 
-        Department dept =
-                mock(Department.class);
-
+        Department dept = mock(Department.class);
         when(dept.getHeadDoctor())
                 .thenReturn(headDoctor);
 
@@ -1600,26 +1586,16 @@ class TestRequestServiceTest {
                 TestRequest.builder()
                         .testRequestId(id)
                         .status(TestRequestStatus.IN_PROGRESS)
+                        .queueTicket(executionQueue)
                         .performingDepartment(dept)
+                        .testResult(existingResult)
                         .build();
 
         TestResultCreateRequest req =
                 mock(TestResultCreateRequest.class);
 
-        when(req.performedById())
-                .thenReturn(performedById);
-
-        when(req.conclusion())
-                .thenReturn("OK");
-
-        when(req.imageUrl())
-                .thenReturn("result.pdf");
-
         when(repo.findByIdWithResult(id))
                 .thenReturn(Optional.of(t));
-
-        when(staffRepo.findById(performedById))
-                .thenReturn(Optional.of(performedBy));
 
         when(staffRepo.findById(verifierId))
                 .thenReturn(Optional.of(verifier));
@@ -1643,60 +1619,54 @@ class TestRequestServiceTest {
     void completeResult_ShouldCompleteRequest_WhenVerifierIsDepartmentHead() {
 
         UUID id = UUID.randomUUID();
-        UUID performedById = UUID.randomUUID();
         UUID verifierId = UUID.randomUUID();
+        UUID deptId = UUID.randomUUID();
+        UUID labTicketId = UUID.randomUUID();
 
-        StaffInfo performedBy =
-                mock(StaffInfo.class);
-
-        StaffInfo verifier =
-                mock(StaffInfo.class);
-
+        StaffInfo verifier = mock(StaffInfo.class);
         when(verifier.getSystemRole())
                 .thenReturn(SystemRole.DOCTOR);
-
         when(verifier.getStaffId())
                 .thenReturn(verifierId);
 
-        Department dept =
-                mock(Department.class);
-
+        Department dept = mock(Department.class);
+        when(dept.getDepartmentId())
+                .thenReturn(deptId);
         when(dept.getHeadDoctor())
                 .thenReturn(verifier);
+
+        QueueTicket executionQueue = QueueTicket.builder()
+                .ticketId(labTicketId)
+                .status(QueueStatus.IN_PROGRESS)
+                .build();
+
+        TestResult existingResult = TestResult.builder()
+                .imageUrl("/uploads/result.pdf")
+                .conclusion("Ket qua binh thuong")
+                .build();
 
         TestRequest t =
                 TestRequest.builder()
                         .testRequestId(id)
                         .status(TestRequestStatus.IN_PROGRESS)
                         .performingDepartment(dept)
+                        .queueTicket(executionQueue)
+                        .testResult(existingResult)
                         .build();
 
         TestResultCreateRequest req =
                 mock(TestResultCreateRequest.class);
 
-        when(req.performedById())
-                .thenReturn(performedById);
-
-        when(req.conclusion())
-                .thenReturn("Ket qua binh thuong");
-
-        when(req.imageUrl())
-                .thenReturn("/uploads/result.pdf");
-
         when(repo.findByIdWithResult(id))
                 .thenReturn(Optional.of(t));
-
-        when(staffRepo.findById(performedById))
-                .thenReturn(Optional.of(performedBy));
 
         when(staffRepo.findById(verifierId))
                 .thenReturn(Optional.of(verifier));
 
-        when(resultRepo.save(any(TestResult.class)))
-                .thenAnswer(i -> i.getArgument(0));
-
-        when(repo.save(t))
-                .thenReturn(t);
+        when(repo.countByQueueTicket_TicketIdAndStatusIn(
+                eq(labTicketId),
+                anyList()
+        )).thenReturn(0L);
 
         var result =
                 testRequestService.completeResult(
@@ -1716,13 +1686,28 @@ class TestRequestServiceTest {
                 t.getCompletedAt()
         );
 
-        verify(resultRepo)
-                .save(argThat(r ->
-                        r.getVerifiedBy() == verifier
-                                && r.getVerifiedAt() != null
-                ));
+        assertSame(
+                verifier,
+                existingResult.getVerifiedBy()
+        );
 
-        verify(repo).save(t);
+        assertNotNull(
+                existingResult.getVerifiedAt()
+        );
+
+        assertEquals(
+                QueueStatus.DONE,
+                executionQueue.getStatus()
+        );
+
+        verify(resultRepo)
+                .save(existingResult);
+
+        verify(repo)
+                .save(t);
+
+        verify(queueTicketRepo)
+                .save(executionQueue);
     }
 
 
@@ -2022,36 +2007,26 @@ class TestRequestServiceTest {
 // =========================================================
 
     @Test
-    void createBatch_ShouldSkipServicesThatAlreadyExist() {
+    void createBatch_ShouldThrowConflict_WhenServiceAlreadyRequestedInVisit() {
 
         UUID recordId = UUID.randomUUID();
+        UUID visitId = UUID.randomUUID();
         UUID staffId = UUID.randomUUID();
+        UUID serviceId = UUID.randomUUID();
 
-        UUID existingServiceId = UUID.randomUUID();
-
-        MedicalService existingService =
-                mock(MedicalService.class);
-
-        when(existingService.getServiceId())
-                .thenReturn(existingServiceId);
-
-        TestRequest existingRequest =
-                TestRequest.builder()
-                        .service(existingService)
-                        .build();
+        CustomerVisit visit = mock(CustomerVisit.class);
+        when(visit.getVisitId())
+                .thenReturn(visitId);
 
         MedicalRecord record =
                 MedicalRecord.builder()
                         .recordId(recordId)
-                        .testRequests(
-                                new LinkedHashSet<>(
-                                        List.of(existingRequest)
-                                )
-                        )
+                        .visit(visit)
                         .build();
 
-        StaffInfo staff =
-                mock(StaffInfo.class);
+        StaffInfo staff = mock(StaffInfo.class);
+
+        MedicalService service = mock(MedicalService.class);
 
         TestRequestBatchCreateRequest req =
                 mock(TestRequestBatchCreateRequest.class);
@@ -2063,7 +2038,7 @@ class TestRequestServiceTest {
                 .thenReturn(staffId);
 
         when(req.serviceIds())
-                .thenReturn(List.of(existingServiceId));
+                .thenReturn(List.of(serviceId));
 
         when(recordRepo.findById(recordId))
                 .thenReturn(Optional.of(record));
@@ -2071,20 +2046,22 @@ class TestRequestServiceTest {
         when(staffRepo.findById(staffId))
                 .thenReturn(Optional.of(staff));
 
-        when(repo.saveAll(anyList()))
-                .thenReturn(List.of());
+        when(serviceRepo.findById(serviceId))
+                .thenReturn(Optional.of(service));
 
-        var result =
-                testRequestService.createBatch(req);
+        when(repo.existsByMedicalRecord_Visit_VisitIdAndService_ServiceIdAndStatusNot(
+                visitId,
+                serviceId,
+                TestRequestStatus.CANCELLED
+        )).thenReturn(true);
 
-        assertTrue(result.isEmpty());
-
-        verify(serviceRepo, never())
-                .findById(existingServiceId);
-
-        verify(repo).saveAll(
-                argThat(iterable -> !iterable.iterator().hasNext())
+        assertThrows(
+                ConflictException.class,
+                () -> testRequestService.createBatch(req)
         );
+
+        verify(repo, never())
+                .saveAll(anyList());
     }
     // =========================================================
 // COVERAGE BOOST - TEST REQUEST SERVICE
@@ -2099,20 +2076,49 @@ class TestRequestServiceTest {
     @Test
     void createFromPaidInvoice_ShouldReturnExisting_WhenInvoiceItemAlreadyHasRequest() {
 
+        UUID visitId = UUID.randomUUID();
+        UUID serviceId = UUID.randomUUID();
         UUID invoiceItemId = UUID.randomUUID();
+        UUID deptId = UUID.randomUUID();
+
+        StaffInfo headDoctor = mock(StaffInfo.class);
+
+        Department dept = mock(Department.class);
+        when(dept.getDepartmentId())
+                .thenReturn(deptId);
+        when(dept.getHeadDoctor())
+                .thenReturn(headDoctor);
+
+        MedicalService service = mock(MedicalService.class);
+
+        MedicalRecord standaloneRecord = MedicalRecord.builder()
+                .recordId(UUID.randomUUID())
+                .build();
+
+        QueueTicket existingQueue = QueueTicket.builder()
+                .ticketId(UUID.randomUUID())
+                .status(QueueStatus.WAITING)
+                .build();
 
         TestRequest existing = TestRequest.builder()
                 .testRequestId(UUID.randomUUID())
+                .medicalRecord(standaloneRecord)
+                .service(service)
+                .performingDepartment(dept)
+                .queueTicket(existingQueue)
                 .status(TestRequestStatus.PENDING)
                 .build();
+
+        when(serviceRepo.findById(serviceId))
+                .thenReturn(Optional.of(service));
 
         when(repo.findByInvoiceItem_ItemId(invoiceItemId))
                 .thenReturn(List.of(existing));
 
         var result = testRequestService.createFromPaidInvoice(
-                UUID.randomUUID(),
+                visitId,
                 null,
-                UUID.randomUUID(),
+                serviceId,
                 null,
                 "notes",
                 invoiceItemId
@@ -2120,8 +2126,10 @@ class TestRequestServiceTest {
 
         assertNotNull(result);
 
-        verifyNoInteractions(serviceRepo);
-        verify(repo, never()).save(any(TestRequest.class));
+        verify(repo, never())
+                .save(existing);
+
+        verifyNoInteractions(visitRepo);
     }
 
 
@@ -2179,7 +2187,7 @@ class TestRequestServiceTest {
         CustomerVisit visit = mock(CustomerVisit.class);
         when(visit.getVisitId()).thenReturn(visitId);
 
-        MedicalRecord record = MedicalRecord.builder()
+        MedicalRecord standaloneRecord = MedicalRecord.builder()
                 .recordId(recordId)
                 .visit(visit)
                 .build();
@@ -2189,33 +2197,28 @@ class TestRequestServiceTest {
                 .status(QueueStatus.WAITING)
                 .build();
 
-        Profile nurseProfile = mock(Profile.class);
-        when(nurseProfile.getProfileId()).thenReturn(UUID.randomUUID());
-
-        StaffInfo nurse = mock(StaffInfo.class);
-        when(nurse.getSystemRole()).thenReturn(SystemRole.NURSE);
-        when(nurse.getProfile()).thenReturn(nurseProfile);
-
         when(serviceRepo.findById(serviceId))
                 .thenReturn(Optional.of(service));
 
-        when(recordRepo.findById(recordId))
-                .thenReturn(Optional.of(record));
+        when(visitRepo.findByIdForUpdate(visitId))
+                .thenReturn(Optional.of(visit));
+
+        when(recordRepo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId))
+                .thenReturn(Optional.of(standaloneRecord));
 
         when(departmentRepo.findByIdForUpdate(deptId))
                 .thenReturn(Optional.of(dept));
 
-        when(
-                queueTicketRepo
-                        .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
-                                eq(visitId),
-                                eq(deptId),
-                                anyList()
-                        )
-        ).thenReturn(Optional.of(existingQueue));
+        when(queueTicketRepo
+                .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
+                        eq(visitId),
+                        eq(deptId),
+                        anyList()
+                ))
+                .thenReturn(Optional.of(existingQueue));
 
         when(staffRepo.findByDepartment_DepartmentId(deptId))
-                .thenReturn(List.of(nurse));
+                .thenReturn(List.of());
 
         when(repo.save(any(TestRequest.class)))
                 .thenAnswer(invocation -> {
@@ -2236,15 +2239,12 @@ class TestRequestServiceTest {
         assertNotNull(result);
 
         verify(repo).save(argThat(t ->
-                t.getMedicalRecord() == record
+                t.getMedicalRecord() == standaloneRecord
                         && t.getService() == service
                         && t.getRequestedBy() == headDoctor
                         && t.getQueueTicket() == existingQueue
                         && t.getStatus() == TestRequestStatus.PENDING
         ));
-
-        verify(notificationService)
-                .create(any());
     }
 
 
@@ -2308,7 +2308,7 @@ class TestRequestServiceTest {
         CustomerVisit visit = mock(CustomerVisit.class);
         when(visit.getVisitId()).thenReturn(visitId);
 
-        MedicalRecord record = MedicalRecord.builder()
+        MedicalRecord standaloneRecord = MedicalRecord.builder()
                 .recordId(recordId)
                 .visit(visit)
                 .build();
@@ -2324,20 +2324,22 @@ class TestRequestServiceTest {
         when(staffRepo.findById(requestedById))
                 .thenReturn(Optional.empty());
 
-        when(recordRepo.findById(recordId))
-                .thenReturn(Optional.of(record));
+        when(visitRepo.findByIdForUpdate(visitId))
+                .thenReturn(Optional.of(visit));
+
+        when(recordRepo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId))
+                .thenReturn(Optional.of(standaloneRecord));
 
         when(departmentRepo.findByIdForUpdate(deptId))
                 .thenReturn(Optional.of(dept));
 
-        when(
-                queueTicketRepo
-                        .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
-                                eq(visitId),
-                                eq(deptId),
-                                anyList()
-                        )
-        ).thenReturn(Optional.of(queue));
+        when(queueTicketRepo
+                .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
+                        eq(visitId),
+                        eq(deptId),
+                        anyList()
+                ))
+                .thenReturn(Optional.of(queue));
 
         when(staffRepo.findByDepartment_DepartmentId(deptId))
                 .thenReturn(List.of());
@@ -2388,7 +2390,7 @@ class TestRequestServiceTest {
         CustomerVisit visit = mock(CustomerVisit.class);
         when(visit.getVisitId()).thenReturn(visitId);
 
-        MedicalRecord record = MedicalRecord.builder()
+        MedicalRecord standaloneRecord = MedicalRecord.builder()
                 .recordId(recordId)
                 .visit(visit)
                 .build();
@@ -2396,27 +2398,30 @@ class TestRequestServiceTest {
         when(serviceRepo.findById(serviceId))
                 .thenReturn(Optional.of(service));
 
-        when(recordRepo.findById(recordId))
-                .thenReturn(Optional.of(record));
+        when(visitRepo.findByIdForUpdate(visitId))
+                .thenReturn(Optional.of(visit));
+
+        when(recordRepo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId))
+                .thenReturn(Optional.of(standaloneRecord));
 
         when(departmentRepo.findByIdForUpdate(deptId))
                 .thenReturn(Optional.of(dept));
 
-        when(
-                queueTicketRepo
-                        .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
-                                eq(visitId),
-                                eq(deptId),
-                                anyList()
-                        )
-        ).thenReturn(Optional.empty());
-
-        when(
-                queueTicketRepo.findMaxQueueNumberForDay(
+        when(queueTicketRepo
+                .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
+                        eq(visitId),
                         eq(deptId),
-                        any(LocalDate.class)
-                )
-        ).thenReturn(Optional.of(4));
+                        anyList()
+                ))
+                .thenReturn(Optional.empty());
+
+        when(patientJourneyService.hasActiveStep(visitId))
+                .thenReturn(false);
+
+        when(queueTicketRepo.findMaxQueueNumberForDay(
+                eq(deptId),
+                any(LocalDate.class)
+        )).thenReturn(Optional.of(4));
 
         when(queueTicketRepo.save(any(QueueTicket.class)))
                 .thenAnswer(i -> {
@@ -2475,9 +2480,8 @@ class TestRequestServiceTest {
         when(service.getDepartment()).thenReturn(dept);
 
         CustomerVisit visit = mock(CustomerVisit.class);
-        when(visit.getVisitId()).thenReturn(visitId);
 
-        MedicalRecord record = MedicalRecord.builder()
+        MedicalRecord standaloneRecord = MedicalRecord.builder()
                 .recordId(recordId)
                 .visit(visit)
                 .build();
@@ -2485,8 +2489,11 @@ class TestRequestServiceTest {
         when(serviceRepo.findById(serviceId))
                 .thenReturn(Optional.of(service));
 
-        when(recordRepo.findById(recordId))
-                .thenReturn(Optional.of(record));
+        when(visitRepo.findByIdForUpdate(visitId))
+                .thenReturn(Optional.of(visit));
+
+        when(recordRepo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId))
+                .thenReturn(Optional.of(standaloneRecord));
 
         when(departmentRepo.findByIdForUpdate(deptId))
                 .thenReturn(Optional.empty());
@@ -2503,7 +2510,8 @@ class TestRequestServiceTest {
                 )
         );
 
-        verify(repo, never()).save(any());
+        verify(repo, never())
+                .save(any(TestRequest.class));
     }
 
 
@@ -2552,7 +2560,10 @@ class TestRequestServiceTest {
         when(serviceRepo.findById(serviceId))
                 .thenReturn(Optional.of(service));
 
-        when(recordRepo.findFirstByVisit_VisitIdOrderByCreatedAtDesc(visitId))
+        when(visitRepo.findByIdForUpdate(visitId))
+                .thenReturn(Optional.of(visit));
+
+        when(recordRepo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId))
                 .thenReturn(Optional.empty());
 
         when(medicalRecordService.create(any()))
@@ -2564,14 +2575,13 @@ class TestRequestServiceTest {
         when(departmentRepo.findByIdForUpdate(deptId))
                 .thenReturn(Optional.of(dept));
 
-        when(
-                queueTicketRepo
-                        .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
-                                eq(visitId),
-                                eq(deptId),
-                                anyList()
-                        )
-        ).thenReturn(Optional.of(queue));
+        when(queueTicketRepo
+                .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
+                        eq(visitId),
+                        eq(deptId),
+                        anyList()
+                ))
+                .thenReturn(Optional.of(queue));
 
         when(staffRepo.findByDepartment_DepartmentId(deptId))
                 .thenReturn(List.of());
@@ -2794,57 +2804,33 @@ class TestRequestServiceTest {
 // =========================================================
 
     @Test
-    void search_ShouldReactivateBlockedQueue_WhenGroupedTestIsInProgress() {
-
-        UUID ticketId = UUID.randomUUID();
+    void search_ShouldKeepExistingBlockedQueue_WhenRequestAlreadyHasQueue() {
 
         QueueTicket queue = QueueTicket.builder()
-                .ticketId(ticketId)
+                .ticketId(UUID.randomUUID())
                 .status(QueueStatus.BLOCKED)
                 .build();
 
         TestRequest displayed = TestRequest.builder()
                 .testRequestId(UUID.randomUUID())
                 .queueTicket(queue)
-                .status(TestRequestStatus.PENDING)
-                .build();
-
-        TestRequest groupedInProgress = TestRequest.builder()
-                .testRequestId(UUID.randomUUID())
-                .queueTicket(queue)
                 .status(TestRequestStatus.IN_PROGRESS)
-                .build();
-
-        TestRequest groupedBlocked = TestRequest.builder()
-                .testRequestId(UUID.randomUUID())
-                .queueTicket(queue)
-                .status(TestRequestStatus.BLOCKED)
                 .build();
 
         var pageable = PageRequest.of(0, 10);
 
-        when(
-                repo.search(
-                        null,
-                        null,
-                        null,
-                        "",
-                        null,
-                        pageable
-                )
-        ).thenReturn(
+        when(repo.search(
+                null,
+                null,
+                null,
+                "",
+                null,
+                pageable
+        )).thenReturn(
                 new PageImpl<>(List.of(displayed))
         );
 
-        when(repo.findAllByQueueTicket_TicketId(ticketId))
-                .thenReturn(
-                        List.of(
-                                groupedInProgress,
-                                groupedBlocked
-                        )
-                );
-
-        testRequestService.search(
+        var result = testRequestService.search(
                 null,
                 null,
                 null,
@@ -2853,21 +2839,22 @@ class TestRequestServiceTest {
                 pageable
         );
 
+        assertNotNull(result);
+
+        /*
+         * search() hien tai chi tao bu queue cho TestRequest chua co queueTicket.
+         * Request da co queue BLOCKED se duoc giu nguyen.
+         */
         assertEquals(
-                QueueStatus.IN_PROGRESS,
+                QueueStatus.BLOCKED,
                 queue.getStatus()
         );
 
-        assertEquals(
-                TestRequestStatus.PENDING,
-                groupedBlocked.getStatus()
-        );
-
-        verify(queueTicketRepo)
+        verify(queueTicketRepo, never())
                 .save(queue);
 
-        verify(repo)
-                .save(groupedBlocked);
+        verify(repo, never())
+                .save(displayed);
     }
 
 
@@ -2876,12 +2863,10 @@ class TestRequestServiceTest {
 // =========================================================
 
     @Test
-    void search_ShouldSetBlockedQueueWaiting_WhenOnlyPendingTestsAvailable() {
-
-        UUID ticketId = UUID.randomUUID();
+    void search_ShouldKeepBlockedQueue_WhenPendingRequestAlreadyHasQueue() {
 
         QueueTicket queue = QueueTicket.builder()
-                .ticketId(ticketId)
+                .ticketId(UUID.randomUUID())
                 .status(QueueStatus.BLOCKED)
                 .build();
 
@@ -2891,29 +2876,18 @@ class TestRequestServiceTest {
                 .status(TestRequestStatus.PENDING)
                 .build();
 
-        TestRequest groupedPending = TestRequest.builder()
-                .testRequestId(UUID.randomUUID())
-                .queueTicket(queue)
-                .status(TestRequestStatus.PENDING)
-                .build();
-
         var pageable = PageRequest.of(0, 10);
 
-        when(
-                repo.search(
-                        null,
-                        null,
-                        null,
-                        "",
-                        null,
-                        pageable
-                )
-        ).thenReturn(
+        when(repo.search(
+                null,
+                null,
+                null,
+                "",
+                null,
+                pageable
+        )).thenReturn(
                 new PageImpl<>(List.of(displayed))
         );
-
-        when(repo.findAllByQueueTicket_TicketId(ticketId))
-                .thenReturn(List.of(groupedPending));
 
         testRequestService.search(
                 null,
@@ -2925,12 +2899,15 @@ class TestRequestServiceTest {
         );
 
         assertEquals(
-                QueueStatus.WAITING,
+                QueueStatus.BLOCKED,
                 queue.getStatus()
         );
 
-        verify(queueTicketRepo)
+        verify(queueTicketRepo, never())
                 .save(queue);
+
+        verify(repo, never())
+                .save(displayed);
     }
 
 
@@ -2943,25 +2920,32 @@ class TestRequestServiceTest {
 
         UUID id = UUID.randomUUID();
         UUID verifierId = UUID.randomUUID();
+        UUID deptId = UUID.randomUUID();
+        UUID labTicketId = UUID.randomUUID();
 
         StaffInfo verifier = mock(StaffInfo.class);
-
         when(verifier.getStaffId()).thenReturn(verifierId);
         when(verifier.getSystemRole()).thenReturn(SystemRole.DOCTOR);
 
         Department dept = mock(Department.class);
+        when(dept.getDepartmentId()).thenReturn(deptId);
         when(dept.getHeadDoctor()).thenReturn(verifier);
+
+        QueueTicket executionQueue = QueueTicket.builder()
+                .ticketId(labTicketId)
+                .status(QueueStatus.IN_PROGRESS)
+                .build();
 
         TestResult existingResult = TestResult.builder()
                 .imageUrl("old.pdf")
                 .conclusion("Old")
-                .sampleId("OLD")
                 .build();
 
         TestRequest t = TestRequest.builder()
                 .testRequestId(id)
                 .status(TestRequestStatus.IN_PROGRESS)
                 .performingDepartment(dept)
+                .queueTicket(executionQueue)
                 .testResult(existingResult)
                 .build();
 
@@ -2974,20 +2958,16 @@ class TestRequestServiceTest {
         when(req.conclusion())
                 .thenReturn("New conclusion");
 
-        when(req.sampleId())
-                .thenReturn("NEW");
-
         when(repo.findByIdWithResult(id))
                 .thenReturn(Optional.of(t));
 
         when(staffRepo.findById(verifierId))
                 .thenReturn(Optional.of(verifier));
 
-        when(resultRepo.save(existingResult))
-                .thenReturn(existingResult);
-
-        when(repo.save(t))
-                .thenReturn(t);
+        when(repo.countByQueueTicket_TicketIdAndStatusIn(
+                eq(labTicketId),
+                anyList()
+        )).thenReturn(1L);
 
         var result =
                 testRequestService.completeResult(
@@ -3000,12 +2980,14 @@ class TestRequestServiceTest {
 
         assertEquals("new.pdf", existingResult.getImageUrl());
         assertEquals("New conclusion", existingResult.getConclusion());
-        assertEquals("NEW", existingResult.getSampleId());
 
         assertEquals(
                 TestRequestStatus.COMPLETED,
                 t.getStatus()
         );
+
+        assertSame(verifier, existingResult.getVerifiedBy());
+        assertNotNull(existingResult.getVerifiedAt());
     }
 
 
@@ -3017,29 +2999,32 @@ class TestRequestServiceTest {
     void completeResult_ShouldRejectVerifier_WhenSystemRoleIsNull() {
 
         UUID id = UUID.randomUUID();
-        UUID performedById = UUID.randomUUID();
         UUID verifierId = UUID.randomUUID();
 
-        StaffInfo performedBy = mock(StaffInfo.class);
+        QueueTicket executionQueue = QueueTicket.builder()
+                .ticketId(UUID.randomUUID())
+                .status(QueueStatus.IN_PROGRESS)
+                .build();
+
+        TestResult existingResult = TestResult.builder()
+                .imageUrl("result.pdf")
+                .conclusion("OK")
+                .build();
+
         StaffInfo verifier = mock(StaffInfo.class);
 
         TestRequest t = TestRequest.builder()
                 .testRequestId(id)
                 .status(TestRequestStatus.IN_PROGRESS)
+                .queueTicket(executionQueue)
+                .testResult(existingResult)
                 .build();
 
         TestResultCreateRequest req =
                 mock(TestResultCreateRequest.class);
 
-        when(req.performedById()).thenReturn(performedById);
-        when(req.conclusion()).thenReturn("OK");
-        when(req.imageUrl()).thenReturn("result.pdf");
-
         when(repo.findByIdWithResult(id))
                 .thenReturn(Optional.of(t));
-
-        when(staffRepo.findById(performedById))
-                .thenReturn(Optional.of(performedBy));
 
         when(staffRepo.findById(verifierId))
                 .thenReturn(Optional.of(verifier));
@@ -3063,10 +3048,17 @@ class TestRequestServiceTest {
     void completeResult_ShouldReject_WhenPerformingDepartmentIsNull() {
 
         UUID id = UUID.randomUUID();
-        UUID performedById = UUID.randomUUID();
         UUID verifierId = UUID.randomUUID();
 
-        StaffInfo performedBy = mock(StaffInfo.class);
+        QueueTicket executionQueue = QueueTicket.builder()
+                .ticketId(UUID.randomUUID())
+                .status(QueueStatus.IN_PROGRESS)
+                .build();
+
+        TestResult existingResult = TestResult.builder()
+                .imageUrl("result.pdf")
+                .conclusion("OK")
+                .build();
 
         StaffInfo verifier = mock(StaffInfo.class);
         when(verifier.getSystemRole())
@@ -3075,20 +3067,15 @@ class TestRequestServiceTest {
         TestRequest t = TestRequest.builder()
                 .testRequestId(id)
                 .status(TestRequestStatus.IN_PROGRESS)
+                .queueTicket(executionQueue)
+                .testResult(existingResult)
                 .build();
 
         TestResultCreateRequest req =
                 mock(TestResultCreateRequest.class);
 
-        when(req.performedById()).thenReturn(performedById);
-        when(req.conclusion()).thenReturn("OK");
-        when(req.imageUrl()).thenReturn("result.pdf");
-
         when(repo.findByIdWithResult(id))
                 .thenReturn(Optional.of(t));
-
-        when(staffRepo.findById(performedById))
-                .thenReturn(Optional.of(performedBy));
 
         when(staffRepo.findById(verifierId))
                 .thenReturn(Optional.of(verifier));

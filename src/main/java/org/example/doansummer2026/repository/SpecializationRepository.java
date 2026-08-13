@@ -12,6 +12,10 @@ public interface SpecializationRepository extends JpaRepository<Specialization, 
 
     boolean existsByName(String name);
 
+    boolean existsByNameIgnoreCase(String name);
+
+    boolean existsByNameIgnoreCaseAndSpecializationIdNot(String name, UUID specializationId);
+
     Optional<Specialization> findByName(String name);
 }
 

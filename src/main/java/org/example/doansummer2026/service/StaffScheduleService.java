@@ -47,7 +47,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     public ScheduleResponse create(ScheduleCreateRequest req) {
         StaffInfo staff = staffService.findById(req.staffId());
         ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
-                .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai: " + req.shiftId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Ca làm việc không tồn tại: " + req.shiftId()));
         StaffSchedule schedule = StaffSchedule.builder()
                 .staff(staff)
                 .workDate(req.workDate())
@@ -81,7 +81,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         StaffSchedule s = findById(id);
         if (req.shiftId() != null) {
             ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai: " + req.shiftId()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Ca làm việc không tồn tại: " + req.shiftId()));
             s.setShift(shift);
         }
         if (req.status() != null) s.setStatus(req.status());
@@ -108,7 +108,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     }
 
     public void delete(UUID id) {
-        StaffSchedule s = scheduleRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Lich khong ton tai: " + id));
+        StaffSchedule s = scheduleRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Lịch làm việc không tồn tại: " + id));
         
         if (s.getStaff() != null && s.getStaff().getProfile() != null) {
             try {
@@ -196,7 +196,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
 
     public StaffSchedule findById(UUID id) {
         return scheduleRepo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Lich khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Lịch làm việc không tồn tại: " + id));
     }
 
     private LocalDate dateForDayOfWeek(LocalDate weekStart, DayOfWeek dow) {
@@ -227,7 +227,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     public void assignStaff(ScheduleAssignRequest req) {
         LocalDate date = parseDateFromDayOfWeek(req.week(), req.dayKey());
         ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
-                .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai: " + req.shiftId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Ca làm việc không tồn tại: " + req.shiftId()));
 
         StaffInfo staff = staffService.findById(req.staffId());
 
@@ -290,11 +290,9 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         );
         DayOfWeek dow = dayMap.get(dayKey.toLowerCase());
         if (dow == null) {
-            throw new IllegalArgumentException("Invalid dayKey: " + dayKey);
+            throw new IllegalArgumentException("Ngày trong tuần không hợp lệ: " + dayKey);
         }
         return weekStart.with(dow);
     }
 }
-
-
 

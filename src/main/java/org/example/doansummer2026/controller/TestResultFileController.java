@@ -45,18 +45,18 @@ public class TestResultFileController {
                                              @RequestParam(defaultValue = "inline") String disposition)
             throws MalformedURLException {
         TestResult result = resultRepository.findById(resultId)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay phieu ket qua"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phiếu kết quả"));
         verifyAccess(result, authService.currentAccount());
 
         String stored = result.getImageUrl();
         if (stored == null || stored.isBlank()) {
-            throw new ResourceNotFoundException("Phieu ket qua chua co tep PDF");
+            throw new ResourceNotFoundException("Phiếu kết quả chưa có tệp PDF");
         }
         String fileName = Paths.get(stored).getFileName().toString();
         Path root = Paths.get(uploadRoot).toAbsolutePath().normalize();
         Path file = root.resolve("test-results").resolve(fileName).normalize();
         if (!file.startsWith(root) || !file.toFile().isFile()) {
-            throw new ResourceNotFoundException("Tep ket qua khong ton tai");
+            throw new ResourceNotFoundException("Tệp kết quả không tồn tại");
         }
 
         Resource resource = new UrlResource(file.toUri());
@@ -78,7 +78,7 @@ public class TestResultFileController {
                 ? customer.getAccount().getAccountId()
                 : null;
         if (!account.getAccountId().equals(ownerAccountId)) {
-            throw new BadRequestException("Ban khong co quyen xem phieu ket qua nay");
+            throw new BadRequestException("Bạn không có quyền xem phiếu kết quả này");
         }
     }
 }

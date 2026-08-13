@@ -118,7 +118,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     @Transactional(readOnly = true)
     public ReceptionistCustomerResponse getCustomerForReceptionist(UUID customerId) {
         Profile profile = profileRepo.findById(customerId)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay benh nhan"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bệnh nhân"));
         return ReceptionistCustomerResponse.from(profile);
     }
 
@@ -326,12 +326,12 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
     public MedicalRecordResponse create(MedicalRecordCreateRequest req) {
         CustomerVisit visit = visitRepo.findById(req.visitId())
-                .orElseThrow(() -> new ResourceNotFoundException("Luot kham khong ton tai: " + req.visitId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + req.visitId()));
         if (repo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(req.visitId()).isPresent()) {
-            throw new ConflictException("Luot kham da co ho so benh an doc lap");
+            throw new ConflictException("Lượt khám đã có hồ sơ bệnh án độc lập");
         }
         StaffInfo doctor = staffRepo.findById(req.doctorId())
-                .orElseThrow(() -> new ResourceNotFoundException("Bac si khong ton tai: " + req.doctorId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Bác sĩ không tồn tại: " + req.doctorId()));
         MedicalRecord r = MedicalRecord.builder()
                 .visit(visit)
                 .doctor(doctor)
@@ -343,7 +343,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         // Tao vital signs neu co du lieu
         if (hasVitalSigns(req)) {
             StaffInfo recordedBy = staffRepo.findById(req.recordedById())
-                    .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai: " + req.recordedById()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + req.recordedById()));
             VitalSigns v = VitalSigns.builder()
                     .medicalRecord(r)
                     .bloodPressure(req.bloodPressure())
@@ -367,7 +367,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     public MedicalRecordResponse update(UUID id, MedicalRecordUpdateRequest req) {
         MedicalRecord r = findById(id);
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
-            throw new ConflictException("Khong the cap nhat ho so da hoan thanh");
+            throw new ConflictException("Không thể cập nhật hồ sơ đã hoàn thành");
         }
         validateVersion(r, req);
         updateMedicalRecordFields(r, req);
@@ -381,7 +381,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     public MedicalRecordResponse saveDraft(UUID id, MedicalRecordUpdateRequest req) {
         MedicalRecord r = findById(id);
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
-            throw new ConflictException("Khong the cap nhat ho so da hoan thanh");
+            throw new ConflictException("Không thể cập nhật hồ sơ đã hoàn thành");
         }
         validateVersion(r, req);
         boolean nurse = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication()
@@ -389,10 +389,10 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         var actor = currentStaff().orElse(null);
         if (nurse && actor != null && r.getQueueTicket() != null
                 && (actor.getDepartment() == null || !actor.getDepartment().getDepartmentId().equals(r.getQueueTicket().getDepartment().getDepartmentId())))
-            throw new BadRequestException("Y ta chi duoc cap nhat ho so tai phong duoc phan cong");
+            throw new BadRequestException("Y tá chỉ được cập nhật hồ sơ tại phòng được phân công");
         if (!nurse && actor != null && actor.getSystemRole().isDoctor()
                 && r.getDoctor() != null && !r.getDoctor().getStaffId().equals(actor.getStaffId()))
-            throw new BadRequestException("Ca kham nay thuoc bac si phu trach khac");
+            throw new BadRequestException("Ca khám này thuộc bác sĩ phụ trách khác");
         if (nurse) {
             updateNursingDraftFields(r, req);
             if (actor != null) { r.setNursingUpdatedBy(actor); r.setNursingUpdatedAt(LocalDateTime.now()); }
@@ -419,7 +419,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
     private void validateVersion(MedicalRecord record, MedicalRecordUpdateRequest req) {
         if (req != null && req.version() != null && !java.util.Objects.equals(req.version(), record.getVersion()))
-            throw new ConflictException("Ho so da duoc nhan vien khac cap nhat. Vui long tai lai du lieu truoc khi luu");
+            throw new ConflictException("Hồ sơ đã được nhân viên khác cập nhật. Vui lòng tải lại dữ liệu trước khi lưu");
     }
 
     private java.util.Optional<StaffInfo> currentStaff() {
@@ -531,21 +531,21 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 : (r.getDoctor() != null ? r.getDoctor().getStaffId() : null);
         if (actor != null && actor.getSystemRole().isDoctor()
                 && (responsibleDoctorId == null || !responsibleDoctorId.equals(actor.getStaffId())))
-            throw new BadRequestException("Chi bac si phu trach moi duoc hoan thanh ca kham");
+            throw new BadRequestException("Chỉ bác sĩ phụ trách mới được hoàn thành ca khám");
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
-            throw new BadRequestException("Ho so da duoc dong truoc do");
+            throw new BadRequestException("Hồ sơ đã được đóng trước đó");
         }
 
         // Kiem tra tat ca TestRequest deu phai COMPLETED (neu co)
         // Neu co TestRequest chua COMPLETED -> tra loi loi
         boolean hasIncompleteTestRequests = checkTestRequestsCompletion(r);
         if (hasIncompleteTestRequests) {
-            throw new BadRequestException("Con yeu cau xet nghiem chua hoan thanh");
+            throw new BadRequestException("Còn yêu cầu cận lâm sàng chưa hoàn thành");
         }
 
         // Kiem tra xem co hoa don nao chua thanh toan khong
         if (checkUnpaidInvoices(r)) {
-            throw new BadRequestException("Benh nhan chua thanh toan hoa don xet nghiem/dich vu");
+            throw new BadRequestException("Bệnh nhân chưa thanh toán hóa đơn cận lâm sàng/dịch vụ");
         }
 
         // Cap nhat thong tin medical record (icd-10, prescription, vitals, ...)
@@ -559,7 +559,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         boolean hasIcd10 = r.getIcdSelections() != null && !r.getIcdSelections().isEmpty();
 
         if (!hasDiagnosis && !hasConclusion && !hasIcd10) {
-            throw new BadRequestException("Vui long nhap chan doan, ket luan hoac chon ma ICD-10 truoc khi hoan thanh ho so");
+            throw new BadRequestException("Vui lòng nhập chẩn đoán, kết luận hoặc chọn mã ICD-10 trước khi hoàn thành hồ sơ");
         }
 
         r.setStatus(MedicalRecordStatus.COMPLETED);
@@ -603,14 +603,14 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Ho so khong ton tai: " + id);
+            throw new ResourceNotFoundException("Hồ sơ không tồn tại: " + id);
         }
         repo.deleteById(id);
     }
 
     public MedicalRecord findById(UUID id) {
         return repo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Ho so khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ không tồn tại: " + id));
     }
 
     /**
@@ -681,12 +681,12 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     @Transactional(readOnly = true)
     public org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse getVisitDetail(UUID visitId, UUID profileId) {
         org.example.doansummer2026.model.MedicalRecord record = repo.findFirstByVisit_VisitIdOrderByCreatedAtDesc(visitId)
-                .orElseThrow(() -> new ResourceNotFoundException("Ho so khong ton tai: " + visitId));
+                .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ không tồn tại: " + visitId));
 
         // Kiem tra quyen so huu
         if (record.getVisit() == null || record.getVisit().getCustomer() == null
                 || !record.getVisit().getCustomer().getProfileId().equals(profileId)) {
-            throw new ResourceNotFoundException("Khong tim thay ho so");
+            throw new ResourceNotFoundException("Không tìm thấy hồ sơ");
         }
 
         UUID resolvedVisitId = record.getVisit().getVisitId();
@@ -701,12 +701,12 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     @Transactional(readOnly = true)
     public org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse getVisitDetailByRecordId(UUID recordId, UUID profileId) {
         org.example.doansummer2026.model.MedicalRecord record = repo.findById(recordId)
-                .orElseThrow(() -> new ResourceNotFoundException("Ho so khong ton tai: " + recordId));
+                .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ không tồn tại: " + recordId));
 
         // Kiem tra quyen so huu
         if (record.getVisit() == null || record.getVisit().getCustomer() == null
                 || !record.getVisit().getCustomer().getProfileId().equals(profileId)) {
-            throw new ResourceNotFoundException("Khong tim thay ho so");
+            throw new ResourceNotFoundException("Không tìm thấy hồ sơ");
         }
 
         UUID resolvedVisitId = record.getVisit().getVisitId();
@@ -720,11 +720,11 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
      */
     public MedicalRecordResponse rate(UUID id, int ratingScore) {
         if (ratingScore < 1 || ratingScore > 5) {
-            throw new BadRequestException("Diem danh gia phai tu 1-5 sao");
+            throw new BadRequestException("Điểm đánh giá phải từ 1 đến 5 sao");
         }
         MedicalRecord r = findById(id);
         if (r.getStatus() != MedicalRecordStatus.COMPLETED) {
-            throw new BadRequestException("Chi co the danh gia phieu da hoan thanh (COMPLETED), hien tai: " + r.getStatus());
+            throw new BadRequestException("Chỉ có thể đánh giá phiếu đã hoàn thành; trạng thái hiện tại: " + r.getStatus());
         }
         r.setRatingScore(ratingScore);
         r.setRatedAt(LocalDateTime.now());
@@ -736,9 +736,9 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         MedicalRecord r = findById(id);
         if (r.getVisit() == null || r.getVisit().getCustomer() == null
                 || !r.getVisit().getCustomer().getProfileId().equals(profileId)) {
-            throw new ResourceNotFoundException("Khong tim thay ho so");
+            throw new ResourceNotFoundException("Không tìm thấy hồ sơ");
         }
-        if (r.getStatus() != MedicalRecordStatus.COMPLETED) throw new BadRequestException("Chi danh gia dich vu da hoan thanh");
+        if (r.getStatus() != MedicalRecordStatus.COMPLETED) throw new BadRequestException("Chỉ có thể đánh giá dịch vụ đã hoàn thành");
         r.setRatingScore(req.overallRating());
         r.setDoctorRating(null); r.setWaitingRating(null); r.setStaffRating(null);
         r.setRatingComment(req.comment()); r.setContactRequested(false);
@@ -767,7 +767,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         MedicalRecord r = findById(id);
         boolean related = r.getDoctor() != null && r.getDoctor().getStaffId().equals(doctorId)
                 || r.getFeedbackTargets().stream().anyMatch(t -> t.getStaff() != null && t.getStaff().getStaffId().equals(doctorId));
-        if (!related) throw new ResourceNotFoundException("Danh gia khong thuoc bac si nay");
+        if (!related) throw new ResourceNotFoundException("Đánh giá không thuộc bác sĩ này");
         r.setDoctorExplanation(explanation); r.setFeedbackStatus("WAITING_INTERNAL");
         return org.example.doansummer2026.dto.medicalRecord.FeedbackResponse.from(repo.save(r));
     }
@@ -793,7 +793,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
         org.example.doansummer2026.model.ShiftConfig shift = req.shiftId() != null 
                 ? shiftConfigRepository.findById(req.shiftId())
-                    .orElseThrow(() -> new org.example.doansummer2026.exception.ResourceNotFoundException("Ca kham khong ton tai"))
+                    .orElseThrow(() -> new org.example.doansummer2026.exception.ResourceNotFoundException("Ca khám không tồn tại"))
                 : null;
 
         org.example.doansummer2026.model.Appointment appointment = org.example.doansummer2026.model.Appointment.builder()
@@ -824,7 +824,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 var service = medicalServiceRepo.findById(serviceId)
                         .orElseThrow(() ->
                                 new ResourceNotFoundException(
-                                        "Dich vu khong ton tai: " + serviceId
+                                        "Dịch vụ không tồn tại: " + serviceId
                                 )
                         );
 

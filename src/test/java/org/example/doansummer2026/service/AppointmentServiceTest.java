@@ -108,6 +108,29 @@ class AppointmentServiceTest {
                 .build();
     }
 
+    /**
+     * Appointment riêng cho các test check-in.
+     *
+     * AppointmentService.checkIn() hiện chỉ cho phép check-in
+     * lịch hẹn đúng ngày hôm nay.
+     *
+     * Không sửa helper appointment() phía trên vì các test create/update
+     * vẫn cần lịch hẹn ở tương lai.
+     */
+    private Appointment appointmentForToday(
+            UUID id,
+            AppointmentStatus status,
+            Profile customer
+    ) {
+        return Appointment.builder()
+                .appointmentId(id)
+                .customer(customer)
+                .scheduledAt(LocalDate.now().atTime(9, 0))
+                .status(status)
+                .services(new HashSet<>())
+                .build();
+    }
+
 
     // =========================================================
     // FIND BY ID
@@ -1206,7 +1229,6 @@ class AppointmentServiceTest {
 
     // =========================================================
     // UPDATE - GUEST SKIPS RESCHEDULE CHECK
-    // customer == null
     // =========================================================
 
     @Test
@@ -1252,7 +1274,7 @@ class AppointmentServiceTest {
 
 
     // =========================================================
-    // UPDATE - CANCELLED -> notify receptionist
+    // UPDATE - CANCELLED
     // =========================================================
 
     @Test
@@ -1370,7 +1392,7 @@ class AppointmentServiceTest {
                 mock(AppointmentCheckInRequest.class);
 
         Appointment a =
-                appointment(
+                appointmentForToday(
                         appointmentId,
                         AppointmentStatus.CHECKED_IN,
                         customer(UUID.randomUUID())
@@ -1402,7 +1424,7 @@ class AppointmentServiceTest {
                 mock(AppointmentCheckInRequest.class);
 
         Appointment a =
-                appointment(
+                appointmentForToday(
                         appointmentId,
                         AppointmentStatus.CANCELLED,
                         customer(UUID.randomUUID())
@@ -1434,11 +1456,21 @@ class AppointmentServiceTest {
                 mock(AppointmentCheckInRequest.class);
 
         Appointment a =
-                appointment(
+                appointmentForToday(
                         appointmentId,
                         AppointmentStatus.PENDING,
                         customer(UUID.randomUUID())
                 );
+
+        /*
+         * Service must not be empty here.
+         * Otherwise checkIn() stops at "no services" before it checks issuedById.
+         */
+        a.setServices(
+                new HashSet<>(List.of(
+                        service(UUID.randomUUID(), "Kham tong quat")
+                ))
+        );
 
         when(req.appointmentId())
                 .thenReturn(appointmentId);
@@ -1467,11 +1499,20 @@ class AppointmentServiceTest {
                 mock(AppointmentCheckInRequest.class);
 
         Appointment a =
-                appointment(
+                appointmentForToday(
                         appointmentId,
                         AppointmentStatus.PENDING,
                         customer(UUID.randomUUID())
                 );
+
+        /*
+         * Add a service so the test reaches staffRepo.findById().
+         */
+        a.setServices(
+                new HashSet<>(List.of(
+                        service(UUID.randomUUID(), "Kham tong quat")
+                ))
+        );
 
         when(req.appointmentId())
                 .thenReturn(appointmentId);
@@ -1500,13 +1541,12 @@ class AppointmentServiceTest {
     void checkIn_ShouldReject_WhenAppointmentHasNoServices() {
 
         UUID appointmentId = UUID.randomUUID();
-        UUID staffId = UUID.randomUUID();
 
         Profile customer =
                 customer(UUID.randomUUID());
 
         Appointment a =
-                appointment(
+                appointmentForToday(
                         appointmentId,
                         AppointmentStatus.PENDING,
                         customer
@@ -1520,19 +1560,19 @@ class AppointmentServiceTest {
         when(req.appointmentId())
                 .thenReturn(appointmentId);
 
-        when(req.issuedById())
-                .thenReturn(staffId);
-
         when(repo.findByIdForUpdate(appointmentId))
                 .thenReturn(Optional.of(a));
-
-        when(staffRepo.findById(staffId))
-                .thenReturn(Optional.of(mock(StaffInfo.class)));
 
         assertThrows(
                 BadRequestException.class,
                 () -> appointmentService.checkIn(req)
         );
+
+        /*
+         * No issuedById/staff stubbing here.
+         * The method rejects the empty service list before staff lookup.
+         */
+        verifyNoInteractions(staffRepo);
     }
 
 
@@ -1555,7 +1595,7 @@ class AppointmentServiceTest {
                 service(UUID.randomUUID(), "Kham");
 
         Appointment a =
-                appointment(
+                appointmentForToday(
                         appointmentId,
                         AppointmentStatus.PENDING,
                         customer
@@ -1631,7 +1671,7 @@ class AppointmentServiceTest {
                 );
 
         Appointment a =
-                appointment(
+                appointmentForToday(
                         appointmentId,
                         AppointmentStatus.PENDING,
                         customer

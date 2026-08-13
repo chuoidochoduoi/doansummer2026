@@ -40,7 +40,7 @@ public class JwtService {
         byte[] keyBytes = Decoders.BASE64.decode(base64Secret);
         if (keyBytes.length < 32) {
             throw new IllegalStateException(
-                    "app.jwt.secret phai giau ma ra it nhat 32 bytes (256-bit) cho HMAC-SHA256");
+                    "app.jwt.secret phải giải mã được ít nhất 32 byte (256-bit) cho HMAC-SHA256");
         }
         this.key = Keys.hmacShaKeyFor(keyBytes);
         this.accessExpirationMs = accessExpirationMs;

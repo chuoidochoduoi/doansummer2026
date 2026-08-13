@@ -62,13 +62,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String type = claims.get("type", String.class);
 
             if (username == null || role == null || !"access".equals(type)) {
-                writeError(response, "Token khong hop le", request.getRequestURI());
+                writeError(response, "Token không hợp lệ", request.getRequestURI());
                 return;
             }
 
             Account account = accountRepository.findFirstByUsername(username).orElse(null);
             if (account == null || !Boolean.TRUE.equals(account.getIsActive())) {
-                writeError(response, "Tai khoan khong ton tai hoac da bi khoa", request.getRequestURI());
+                writeError(response, "Tài khoản không tồn tại hoặc đã bị khóa", request.getRequestURI());
                 return;
             }
 
@@ -103,7 +103,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(auth);
             chain.doFilter(request, response);
         } catch (JwtException | IllegalArgumentException ex) {
-            writeError(response, "Token khong hop le hoac het han", request.getRequestURI());
+            writeError(response, "Token không hợp lệ hoặc đã hết hạn", request.getRequestURI());
         }
     }
 
@@ -116,4 +116,3 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         response.getWriter().write(objectMapper.writeValueAsString(body));
     }
 }
-

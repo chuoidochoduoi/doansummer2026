@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public record AppointmentCreateRequest(
         @NotNull UUID customerId,
-        @NotNull @FutureOrPresent(message = "Thoi gian dat lich phai tu hien tai tro di") LocalDateTime scheduledAt,
+        @NotNull @FutureOrPresent(message = "Thời gian đặt lịch phải từ hiện tại trở đi") LocalDateTime scheduledAt,
         String cancelReason,
         UUID shiftId,
         Set<UUID> serviceIds

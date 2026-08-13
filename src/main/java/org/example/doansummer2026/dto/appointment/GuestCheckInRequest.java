@@ -17,7 +17,7 @@ import org.example.doansummer2026.enums.Gender;
  */
 public record GuestCheckInRequest(
         @NotBlank @Size(max = 100) String guestFullName,
-        @NotBlank @Pattern(regexp = "^(\\+84|0)\\d{9,10}$", message = "So dien thoai khong hop le (VN)") String guestPhone,
+        @NotBlank @Pattern(regexp = "^(\\+84|0)\\d{9,10}$", message = "Số điện thoại Việt Nam không hợp lệ") String guestPhone,
         @Size(max = 255) String guestAddress,
         Integer guestAge,
         Gender guestGender,

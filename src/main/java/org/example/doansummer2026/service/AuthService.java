@@ -240,7 +240,7 @@ public class AuthService implements AuthServiceInterface {
         Account account = accountService.findByUsername(req.username());
 
         if (!passwordEncoder.matches(req.password(), account.getPasswordHash())) {
-            throw new BadRequestException("Username hoặc Password không đúng");
+            throw new BadRequestException("Tên đăng nhập hoặc mật khẩu không đúng");
         }
 
         if (!account.getIsActive()) {
@@ -255,7 +255,7 @@ public class AuthService implements AuthServiceInterface {
             Claims claims = jwtService.parseClaims(req.refreshToken());
             String type = claims.get("type", String.class);
             if (!"refresh".equals(type)) {
-                throw new BadRequestException("Token Không phải refresh token");
+                throw new BadRequestException("Token không phải là refresh token");
             }
             String username = claims.getSubject();
             Account account = accountService.findByUsername(username);
@@ -264,7 +264,7 @@ public class AuthService implements AuthServiceInterface {
             }
             return buildAuthResponse(account);
         } catch (JwtException | IllegalArgumentException ex) {
-            throw new BadRequestException("Refresh token khong hop le hoac het han");
+            throw new BadRequestException("Refresh token không hợp lệ hoặc đã hết hạn");
         }
     }
 
@@ -272,7 +272,7 @@ public class AuthService implements AuthServiceInterface {
     public Account currentAccount() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || auth.getPrincipal() == null) {
-            throw new BadRequestException("Chua xac thuc");
+            throw new BadRequestException("Chưa xác thực");
         }
         String username;
         Object principal = auth.getPrincipal();
@@ -282,7 +282,7 @@ public class AuthService implements AuthServiceInterface {
             username = auth.getName();
         }
         if (username == null) {
-            throw new BadRequestException("Chua xac thuc");
+            throw new BadRequestException("Chưa xác thực");
         }
         return accountService.findByUsername(username);
     }
@@ -376,12 +376,12 @@ public class AuthService implements AuthServiceInterface {
     public void resetPassword(org.example.doansummer2026.dto.auth.ResetPasswordRequest req) {
         // Xac thuc OTP
         if (!otpService.verifyOtp(req.identifier(), req.otp())) {
-            throw new BadRequestException("OTP khong hop le hoac da het han");
+            throw new BadRequestException("OTP không hợp lệ hoặc đã hết hạn");
         }
         // Tim tai khoan
         Account account = accountService.findByUsername(req.identifier());
         if (account == null) {
-            throw new BadRequestException("Tai khoan khong ton tai");
+            throw new BadRequestException("Tài khoản không tồn tại");
         }
         accountService.adminResetPassword(account.getAccountId(), req.newPassword());
     }

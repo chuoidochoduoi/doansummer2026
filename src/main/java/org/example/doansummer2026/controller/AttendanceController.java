@@ -30,5 +30,5 @@ public class AttendanceController {
  public ResponseEntity<List<AdjustmentResponse>> pending(){return RestResponses.ok(service.pending());}
  @PutMapping("/adjustments/{id}/review") @PreAuthorize("hasRole('CLINIC_MANAGER')")
  public ResponseEntity<AdjustmentResponse> review(@PathVariable UUID id,@RequestBody Map<String,Object> body){return RestResponses.ok(service.review(id,staffId(),Boolean.TRUE.equals(body.get("approved")),body.get("note")==null?null:body.get("note").toString()));}
- private UUID staffId(){UUID id=authService.currentStaffId();if(id==null)throw new BadRequestException("Khong tim thay thong tin nhan vien dang dang nhap");return id;}
+ private UUID staffId(){UUID id=authService.currentStaffId();if(id==null)throw new BadRequestException("Không tìm thấy thông tin nhân viên đang đăng nhập");return id;}
 }

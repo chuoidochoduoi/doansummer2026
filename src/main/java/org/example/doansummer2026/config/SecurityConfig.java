@@ -67,9 +67,9 @@ public class SecurityConfig {
                 )
                 .exceptionHandling(eh -> eh
                         .authenticationEntryPoint((req, res, ex) -> writeError(res, 401, "Unauthorized",
-                                "Can xac thuc", req.getRequestURI()))
+                                "Cần xác thực", req.getRequestURI()))
                         .accessDeniedHandler((req, res, ex) -> writeError(res, 403, "Forbidden",
-                                "Khong co quyen truy cap", req.getRequestURI()))
+                                "Không có quyền truy cập", req.getRequestURI()))
                 )
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

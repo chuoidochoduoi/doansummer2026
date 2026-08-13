@@ -97,7 +97,7 @@ public class TestRequestController {
                 .anyMatch(a -> a.getAuthority().equals("ROLE_DOCTOR") || a.getAuthority().equals("ADMIN") 
                             || a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("GENERAL_DOCTOR") || a.getAuthority().equals("SPECIALIST_DOCTOR"));
             if (!isDoctorOrAdmin) {
-                throw new org.springframework.security.access.AccessDeniedException("Chi co Bac si moi duoc quyen hoan thanh xet nghiem");
+                throw new org.springframework.security.access.AccessDeniedException("Chỉ bác sĩ mới có quyền hoàn thành kết quả cận lâm sàng");
             }
         }
         return RestResponses.ok(service.update(id, req));

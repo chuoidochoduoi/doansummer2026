@@ -78,31 +78,32 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
     public MedicalServiceResponse create(MedicalServiceCreateRequest req) {
         validateDemographicRules(req.minimumAge(), req.maximumAge());
         if (req.allowedGender() == org.example.doansummer2026.enums.Gender.OTHER) {
-            throw new BadRequestException("He thong chi ho tro gioi tinh MALE hoac FEMALE");
+            throw new BadRequestException("Hệ thống chỉ hỗ trợ giới tính Nam hoặc Nữ");
         }
-        if (repo.existsByName(req.name())) {
-            throw new ConflictException("Ten dich vu da ton tai: " + req.name());
+        String normalizedName = normalizeName(req.name());
+        if (repo.existsByNameIgnoreCase(normalizedName)) {
+            throw new ConflictException("Tên dịch vụ đã tồn tại: " + normalizedName);
         }
         if (repo.existsByServiceCode(req.serviceCode())) {
-            throw new ConflictException("Ma dich vu da ton tai: " + req.serviceCode());
+            throw new ConflictException("Mã dịch vụ đã tồn tại: " + req.serviceCode());
         }
 
         DepartmentType departmentType = req.departmentType().normalized();
         if (departmentType == DepartmentType.EXAMINATION && req.requiredSpecializationId() == null) {
-            throw new BadRequestException("Dich vu phong kham bat buoc chon chuyen khoa phuc vu");
+            throw new BadRequestException("Dịch vụ khám bệnh bắt buộc chọn chuyên khoa phục vụ");
         }
         if (departmentType != DepartmentType.EXAMINATION && req.requiredCapabilityId() == null) {
-            throw new BadRequestException("Dich vu can lam sang bat buoc chon nang luc thuc hien");
+            throw new BadRequestException("Dịch vụ cận lâm sàng bắt buộc chọn danh mục kỹ thuật");
         }
         Specialization spec = null;
         if (departmentType == DepartmentType.EXAMINATION && req.requiredSpecializationId() != null) {
             spec = specializationRepo.findById(req.requiredSpecializationId())
                     .orElseThrow(() -> new ResourceNotFoundException(
-                            "Chuyen khoa khong ton tai: " + req.requiredSpecializationId()));
+                            "Chuyên khoa không tồn tại: " + req.requiredSpecializationId()));
         }
         MedicalService s = MedicalService.builder()
                 .serviceCode(req.serviceCode())
-                .name(req.name())
+                .name(normalizedName)
                 .description(req.description())
                 .departmentType(departmentType)
                 .price(req.price() != null ? req.price() : BigDecimal.ZERO)
@@ -123,7 +124,7 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
                 .requiredSpecialization(spec)
                 .requiredCapability(departmentType != DepartmentType.EXAMINATION && req.requiredCapabilityId() != null
                         ? capabilityRepo.findById(req.requiredCapabilityId()).orElseThrow(() ->
-                        new ResourceNotFoundException("Nang luc thuc hien khong ton tai: " + req.requiredCapabilityId())) : null)
+                        new ResourceNotFoundException("Danh mục kỹ thuật không tồn tại: " + req.requiredCapabilityId())) : null)
                 .build();
         return MedicalServiceResponse.from(repo.save(s));
     }
@@ -132,15 +133,16 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
     public MedicalServiceResponse update(UUID id, MedicalServiceUpdateRequest req) {
         validateDemographicRules(req.minimumAge(), req.maximumAge());
         if (req.allowedGender() == org.example.doansummer2026.enums.Gender.OTHER) {
-            throw new BadRequestException("He thong chi ho tro gioi tinh MALE hoac FEMALE");
+            throw new BadRequestException("Hệ thống chỉ hỗ trợ giới tính Nam hoặc Nữ");
         }
         MedicalService s = findById(id);
         validateStatusTransition(s.getStatus(), req.status());
-        if (req.name() != null && !req.name().equals(s.getName())) {
-            if (repo.existsByName(req.name())) {
-                throw new ConflictException("Ten dich vu da ton tai: " + req.name());
+        if (req.name() != null) {
+            String normalizedName = normalizeName(req.name());
+            if (repo.existsByNameIgnoreCaseAndServiceIdNot(normalizedName, id)) {
+                throw new ConflictException("Tên dịch vụ đã tồn tại: " + normalizedName);
             }
-            s.setName(req.name());
+            s.setName(normalizedName);
         }
         if (req.description() != null) s.setDescription(req.description());
         if (req.departmentType() != null) s.setDepartmentType(req.departmentType().normalized());
@@ -168,10 +170,10 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
             if (req.requiredSpecializationId() != null) {
                 s.setRequiredSpecialization(specializationRepo.findById(req.requiredSpecializationId())
                         .orElseThrow(() -> new ResourceNotFoundException(
-                                "Chuyen khoa khong ton tai: " + req.requiredSpecializationId())));
+                                "Chuyên khoa không tồn tại: " + req.requiredSpecializationId())));
             }
             if (s.getRequiredSpecialization() == null) {
-                throw new BadRequestException("Dich vu phong kham bat buoc chon chuyen khoa phuc vu");
+                throw new BadRequestException("Dịch vụ khám bệnh bắt buộc chọn chuyên khoa phục vụ");
             }
         } else {
             // Dich vu CLS chi dung nang luc; gan nang luc moi truoc khi kiem tra bat buoc.
@@ -179,10 +181,10 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
             if (req.requiredCapabilityId() != null) {
                 s.setRequiredCapability(capabilityRepo.findById(req.requiredCapabilityId())
                         .orElseThrow(() -> new ResourceNotFoundException(
-                                "Nang luc thuc hien khong ton tai: " + req.requiredCapabilityId())));
+                                "Danh mục kỹ thuật không tồn tại: " + req.requiredCapabilityId())));
             }
             if (s.getRequiredCapability() == null) {
-                throw new BadRequestException("Dich vu can lam sang bat buoc chon nang luc thuc hien");
+                throw new BadRequestException("Dịch vụ cận lâm sàng bắt buộc chọn danh mục kỹ thuật");
             }
         }
 
@@ -195,7 +197,13 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
     public void delete(UUID id) {
         MedicalService s = findById(id);
         if (s.getStatus() != ServiceStatus.DRAFT) {
-            throw new ConflictException("Chi duoc xoa dich vu o trang thai DRAFT");
+            throw new ConflictException("Chỉ được xóa dịch vụ ở trạng thái bản nháp");
+        }
+        long operationalReferences = repo.countOperationalReferences(id);
+        if (operationalReferences > 0) {
+            throw new ConflictException(
+                    "Không thể xóa dịch vụ đã phát sinh lịch hẹn, hóa đơn, hàng chờ hoặc yêu cầu cận lâm sàng (" +
+                    operationalReferences + " liên kết). Hãy chuyển dịch vụ sang trạng thái ngừng hoạt động.");
         }
         repo.deleteById(id);
     }
@@ -206,7 +214,7 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
     public MedicalServiceResponse deactivate(UUID id) {
         MedicalService s = findById(id);
         if (s.getStatus() != ServiceStatus.ACTIVE) {
-            throw new ConflictException("Chi duoc ngung dich vu o trang thai ACTIVE");
+            throw new ConflictException("Chỉ được tạm ngừng dịch vụ đang áp dụng");
         }
         s.setStatus(ServiceStatus.INACTIVE);
         return MedicalServiceResponse.from(repo.save(s));
@@ -218,13 +226,13 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
     public MedicalServiceResponse publish(UUID id) {
         MedicalService s = findById(id);
         if (s.getStatus() != ServiceStatus.DRAFT) {
-            throw new ConflictException("Chi duoc phat hanh dich vu o trang thai DRAFT");
+            throw new ConflictException("Chỉ được phát hành dịch vụ ở trạng thái bản nháp");
         }
         if (s.getDepartmentType() == DepartmentType.EXAMINATION && s.getRequiredSpecialization() == null) {
-            throw new BadRequestException("Khong the phat hanh dich vu phong kham chua co chuyen khoa phuc vu");
+            throw new BadRequestException("Không thể phát hành dịch vụ khám bệnh chưa có chuyên khoa phục vụ");
         }
         if (s.getDepartmentType() != DepartmentType.EXAMINATION && s.getRequiredCapability() == null) {
-            throw new BadRequestException("Khong the phat hanh dich vu chua co nang luc thuc hien");
+            throw new BadRequestException("Không thể phát hành dịch vụ chưa có danh mục kỹ thuật");
         }
         s.setStatus(ServiceStatus.ACTIVE);
         return MedicalServiceResponse.from(repo.save(s));
@@ -232,23 +240,27 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
 
     public MedicalService findById(UUID id) {
         return repo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + id));
     }
 
     private void validateDemographicRules(Integer minimumAge, Integer maximumAge) {
         if (minimumAge != null && maximumAge != null && minimumAge > maximumAge) {
-            throw new BadRequestException("Tuoi toi thieu khong duoc lon hon tuoi toi da");
+            throw new BadRequestException("Tuổi tối thiểu không được lớn hơn tuổi tối đa");
         }
+    }
+
+    private String normalizeName(String value) {
+        return value.trim().replaceAll("\\s+", " ");
     }
 
     /** DRAFT chi co the phat hanh sang ACTIVE; ACTIVE va INACTIVE co the chuyen qua lai. */
     private void validateStatusTransition(ServiceStatus current, ServiceStatus requested) {
         if (requested == null || requested == current) return;
         if (current == ServiceStatus.DRAFT && requested != ServiceStatus.ACTIVE) {
-            throw new ConflictException("Dich vu ban nhap chi co the chuyen sang trang thai dang ap dung");
+            throw new ConflictException("Dịch vụ bản nháp chỉ có thể chuyển sang trạng thái đang áp dụng");
         }
         if (current != ServiceStatus.DRAFT && requested == ServiceStatus.DRAFT) {
-            throw new ConflictException("Dich vu da ap dung hoac tam ngung khong the quay lai ban nhap");
+            throw new ConflictException("Dịch vụ đã áp dụng hoặc tạm ngừng không thể quay lại bản nháp");
         }
     }
 }

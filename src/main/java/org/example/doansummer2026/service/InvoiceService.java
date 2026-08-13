@@ -141,7 +141,7 @@ public class InvoiceService implements InvoiceServiceInterface {
     @Transactional(readOnly = true)
     public InvoiceResponse get(UUID id) {
         Invoice i = repo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
         List<UUID> txIds = transactionRepo.findByInvoice_InvoiceId(id).stream()
                 .map(t -> t.getTransactionId())
                 .toList();
@@ -157,13 +157,13 @@ public class InvoiceService implements InvoiceServiceInterface {
         CustomerVisit visit = null;
         if (req.visitId() != null) {
             visit = visitRepo.findById(req.visitId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Luot kham khong ton tai: " + req.visitId()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + req.visitId()));
         }
         MedicalRecord record = null;
         if (req.medicalRecordId() != null) {
             record = recordRepo.findById(req.medicalRecordId())
                     .orElseThrow(() -> new ResourceNotFoundException(
-                            "Ho so benh an khong ton tai: " + req.medicalRecordId()));
+                            "Hồ sơ bệnh án không tồn tại: " + req.medicalRecordId()));
         }
         StaffInfo issuedBy = null;
         if (req.issuedById() != null) {
@@ -236,7 +236,7 @@ public class InvoiceService implements InvoiceServiceInterface {
     public InvoiceResponse update(UUID id, InvoiceUpdateRequest req) {
         Invoice i = findById(id);
         if (i.getStatus() != InvoiceStatus.PENDING) {
-            throw new ConflictException("Chi sua duoc hoa don o trang thai PENDING; hien tai: " + i.getStatus());
+            throw new ConflictException("Chỉ có thể sửa hóa đơn đang chờ thanh toán; trạng thái hiện tại: " + i.getStatus());
         }
         if (req.dueDate() != null) i.setDueDate(req.dueDate());
         if (req.discount() != null) i.setDiscount(req.discount());
@@ -255,20 +255,20 @@ public class InvoiceService implements InvoiceServiceInterface {
 
     public InvoiceResponse applyInsurance(UUID id, InvoiceInsuranceRequest req) {
         Invoice invoice = repo.findByIdForUpdate(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
         if (invoice.getStatus() != InvoiceStatus.PENDING) {
-            throw new ConflictException("Chi co the ap dung BHYT khi hoa don dang cho thanh toan");
+            throw new ConflictException("Chỉ có thể áp dụng bảo hiểm y tế khi hóa đơn đang chờ thanh toán");
         }
 
         var insurance = insuranceRepository.findById(req.insuranceId())
-                .orElseThrow(() -> new ResourceNotFoundException("Bao hiem khong ton tai: " + req.insuranceId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Bảo hiểm không tồn tại: " + req.insuranceId()));
         var verification = bhxhIntegrationService.checkBhytCard(req.bhytCode().trim());
         if (!verification.isValid()) {
             throw new BadRequestException(verification.message());
         }
         if (verification.insuranceId() != null
                 && !verification.insuranceId().equals(insurance.getInsuranceId())) {
-            throw new BadRequestException("Ma the khong thuoc loai bao hiem da chon");
+            throw new BadRequestException("Mã thẻ không thuộc loại bảo hiểm đã chọn");
         }
 
         var rules = insuranceRuleRepository.findByInsurance_InsuranceId(insurance.getInsuranceId());
@@ -300,10 +300,10 @@ public class InvoiceService implements InvoiceServiceInterface {
     public InvoiceResponse issue(UUID id) {
         Invoice i = findById(id);
         if (i.getStatus() != InvoiceStatus.PENDING) {
-            throw new ConflictException("Chi xuat hoa don o trang thai PENDING; hien tai: " + i.getStatus());
+            throw new ConflictException("Chỉ có thể xuất hóa đơn đang chờ thanh toán; trạng thái hiện tại: " + i.getStatus());
         }
         if (i.getItems().isEmpty()) {
-            throw new BadRequestException("Khong the xuat hoa don khong co dong nao");
+            throw new BadRequestException("Không thể xuất hóa đơn không có dịch vụ nào");
         }
         i.setStatus(InvoiceStatus.PENDING);
         return InvoiceResponse.from(repo.save(i));
@@ -311,14 +311,14 @@ public class InvoiceService implements InvoiceServiceInterface {
 
     public InvoiceResponse cancel(UUID id) {
         Invoice i = repo.findByIdForUpdate(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
         if (i.getStatus() == InvoiceStatus.PAID) {
-            throw new ConflictException("Khong the huy hoa don da thanh toan: " + i.getStatus());
+            throw new ConflictException("Không thể hủy hóa đơn đã thanh toán; trạng thái hiện tại: " + i.getStatus());
         }
         boolean hasSuccess = transactionRepo.findByInvoice_InvoiceId(id).stream()
                 .anyMatch(t -> t.getStatus() == TransactionStatus.SUCCESS);
         if (hasSuccess) {
-            throw new ConflictException("Khong the huy - da co giao dich thanh cong");
+            throw new ConflictException("Không thể hủy vì hóa đơn đã có giao dịch thành công");
         }
         i.setStatus(InvoiceStatus.CANCELLED);
         return InvoiceResponse.from(repo.save(i));
@@ -326,7 +326,7 @@ public class InvoiceService implements InvoiceServiceInterface {
 
     public InvoiceResponse pay(UUID id, UUID receivedById) {
         Invoice i = repo.findByIdForUpdate(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
         if (i.getStatus() == InvoiceStatus.PAID) {
             /*
              * Thanh toan la thao tac idempotent. Cac hoa don da PAID tu phien
@@ -337,7 +337,7 @@ public class InvoiceService implements InvoiceServiceInterface {
             return InvoiceResponse.from(i);
         }
         if (i.getStatus() == InvoiceStatus.CANCELLED) {
-            throw new ConflictException("Khong the thanh toan hoa don da huy: " + i.getStatus());
+            throw new ConflictException("Không thể thanh toán hóa đơn đã hủy; trạng thái hiện tại: " + i.getStatus());
         }
         i.setPaidAmount(i.getTotalAmount());
         i.setStatus(InvoiceStatus.PAID);
@@ -359,22 +359,22 @@ public class InvoiceService implements InvoiceServiceInterface {
 
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Hoa don khong ton tai: " + id);
+            throw new ResourceNotFoundException("Hóa đơn không tồn tại: " + id);
         }
         repo.deleteById(id);
     }
 
     public Invoice findById(UUID id) {
         return repo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
     }
 
     @Transactional(readOnly = true)
     public ReceiptPrintResponse getReceiptPrintData(UUID id) {
         Invoice invoice = repo.getWithDetailsByInvoiceId(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
         if (invoice.getStatus() != InvoiceStatus.PAID) {
-            throw new ConflictException("Chi in phieu thu sau khi hoa don da thanh toan");
+            throw new ConflictException("Chỉ có thể in phiếu thu sau khi hóa đơn đã thanh toán");
         }
         var payment = transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
                 id, TransactionStatus.SUCCESS).orElse(null);
@@ -384,7 +384,7 @@ public class InvoiceService implements InvoiceServiceInterface {
     /** Recalculate paidAmount + status tuyen tu cac transaction SUCCESS. */
     public void recalculatePaidAmount(UUID invoiceId) {
         Invoice i = repo.findByIdForUpdate(invoiceId)
-                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + invoiceId));
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + invoiceId));
         BigDecimal paid = transactionRepo.findByInvoice_InvoiceId(invoiceId).stream()
                 .filter(t -> t.getStatus() == TransactionStatus.SUCCESS)
                 .map(t -> t.getAmount())
@@ -446,12 +446,12 @@ public class InvoiceService implements InvoiceServiceInterface {
         var workflowItems = new ArrayList<>(itemRepo.findAllWithServiceByInvoiceId(loaded.getInvoiceId()));
         if (workflowItems.isEmpty()) {
             if (visitId != null) {
-                throw new BadRequestException("Hoa don cua luot kham chua co dich vu. Vui long them dich vu truoc khi thanh toan");
+                throw new BadRequestException("Hóa đơn của lượt khám chưa có dịch vụ. Vui lòng thêm dịch vụ trước khi thanh toán");
             }
             return;
         }
         if (visitId == null) {
-            throw new BadRequestException("Hoa don co dich vu nhung chua gan voi luot kham; khong the tao hang cho");
+            throw new BadRequestException("Hóa đơn có dịch vụ nhưng chưa gắn với lượt khám; không thể tạo hàng chờ");
         }
         workflowItems.sort(java.util.Comparator
                 .comparing((InvoiceItem item) -> item.getService() != null && item.getService().getWorkflowPriority() != null ? item.getService().getWorkflowPriority() : 1, java.util.Comparator.reverseOrder())
@@ -468,7 +468,7 @@ public class InvoiceService implements InvoiceServiceInterface {
             // Dich vu can lam sang duoc xep phong dong theo danh muc ky thuat,
             // nen khong bat buoc gan san department tren dich vu.
             if (service == null) {
-                throw new BadRequestException("Khong xac dinh duoc dich vu cua dong hoa don: "
+                throw new BadRequestException("Không xác định được dịch vụ của dòng hóa đơn: "
                         + item.getServiceSnapshot());
             }
 
@@ -512,12 +512,12 @@ public class InvoiceService implements InvoiceServiceInterface {
                 workflowActivated = true;
                 dispatchedItemCount++;
             } else {
-                throw new BadRequestException("Dich vu '" + service.getName()
-                        + "' chua co nhom dieu phoi hop le");
+                throw new BadRequestException("Dịch vụ '" + service.getName()
+                        + "' chưa có nhóm điều phối hợp lệ");
             }
         }
         if (dispatchedItemCount == 0) {
-            throw new BadRequestException("Khong co dich vu nao duoc dieu phoi sau thanh toan");
+            throw new BadRequestException("Không có dịch vụ nào được điều phối sau thanh toán");
         }
     }
 
@@ -537,8 +537,8 @@ public class InvoiceService implements InvoiceServiceInterface {
         }
 
         if (service.getRequiredSpecialization() == null) {
-            throw new BadRequestException("Dich vu kham benh '" + service.getName()
-                    + "' chua duoc cau hinh chuyen khoa phuc vu");
+            throw new BadRequestException("Dịch vụ khám bệnh '" + service.getName()
+                    + "' chưa được cấu hình chuyên khoa phục vụ");
         }
 
         return departmentRepo.findEligibleExaminationRoomsBySpecialization(
@@ -550,7 +550,7 @@ public class InvoiceService implements InvoiceServiceInterface {
                         .comparing((Department room) -> room.getHeadDoctor() == null)
                         .thenComparingLong(room -> queueTicketRepo
                                 .countActiveTicketsByDepartment(room.getDepartmentId())))
-                .orElseThrow(() -> new BadRequestException("Chua co phong kham san sang "
+                .orElseThrow(() -> new BadRequestException("Chưa có phòng khám sẵn sàng "
                         + "cho chuyen khoa '" + service.getRequiredSpecialization().getName()
                         + "' cua dich vu '" + service.getName() + "'"));
     }
@@ -583,7 +583,7 @@ public class InvoiceService implements InvoiceServiceInterface {
         i.setSubtotal(subtotal);
         BigDecimal total = subtotal.subtract(i.getDiscount()).add(i.getTax());
         if (total.compareTo(BigDecimal.ZERO) < 0) {
-            throw new BadRequestException("Tong tien am - kiem tra discount/tax");
+            throw new BadRequestException("Tổng tiền không hợp lệ; vui lòng kiểm tra giảm giá và thuế");
         }
         i.setTotalAmount(total);
     }
@@ -596,7 +596,7 @@ public class InvoiceService implements InvoiceServiceInterface {
             String code = prefix + suffix;
             if (!repo.existsByInvoiceCode(code)) return code;
         }
-        throw new ConflictException("Khong the sinh invoice code sau 3 lan thu");
+        throw new ConflictException("Không thể tạo mã hóa đơn sau 3 lần thử");
     }
 
     /**
@@ -662,13 +662,13 @@ public class InvoiceService implements InvoiceServiceInterface {
     @Transactional(readOnly = true)
     public ReceiptDetailResponse getReceiptDetail(UUID invoiceId, UUID customerId) {
         Invoice invoice = repo.findById(invoiceId)
-                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + invoiceId));
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + invoiceId));
         // Kiem tra quyen: invoice phai thuoc ve khach hang nay
         if (invoice.getCustomer() == null || !invoice.getCustomer().getProfileId().equals(customerId)) {
-            throw new ResourceNotFoundException("Khong tim thay hoa don");
+            throw new ResourceNotFoundException("Không tìm thấy hóa đơn");
         }
         if (invoice.getStatus() != InvoiceStatus.PAID) {
-            throw new ConflictException("Chi co the xem phieu thu cua hoa don da thanh toan");
+            throw new ConflictException("Chỉ có thể xem phiếu thu của hóa đơn đã thanh toán");
         }
         return ReceiptDetailResponse.from(invoice);
     }

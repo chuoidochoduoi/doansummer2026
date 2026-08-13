@@ -70,4 +70,31 @@ public interface DepartmentRepository extends JpaRepository<Department, UUID> {
 
     /** Tim phong theo y ta. */
     Optional<Department> findFirstByNurses_StaffId(UUID staffId);
+
+    @Query(value = "SELECT COUNT(*) FROM department_capability dc " +
+            "JOIN department d ON d.department_id = dc.department_id " +
+            "WHERE dc.capability_id = :capabilityId AND d.deleted = false", nativeQuery = true)
+    long countReferencesToCapability(@Param("capabilityId") UUID capabilityId);
+
+    @Query(value = "SELECT " +
+            "(SELECT COUNT(*) FROM queue_ticket WHERE department_id = :departmentId) + " +
+            "(SELECT COUNT(*) FROM test_request WHERE performing_department = :departmentId)",
+            nativeQuery = true)
+    long countOperationalReferences(@Param("departmentId") UUID departmentId);
+
+    @Query(value = "SELECT " +
+            "(SELECT COUNT(*) FROM staff_info WHERE department_id = :departmentId AND deleted = false) + " +
+            "(SELECT COUNT(*) FROM medical_service WHERE department_id = :departmentId AND deleted = false)",
+            nativeQuery = true)
+    long countActiveConfigurationReferences(@Param("departmentId") UUID departmentId);
+
+    @Query(value = "SELECT COUNT(*) FROM queue_ticket " +
+            "WHERE department_id = :departmentId AND deleted = false " +
+            "AND status NOT IN ('DONE', 'SKIPPED')", nativeQuery = true)
+    long countOpenQueueTickets(@Param("departmentId") UUID departmentId);
+
+    @Query(value = "SELECT COUNT(*) FROM test_request " +
+            "WHERE performing_department = :departmentId AND deleted = false " +
+            "AND status NOT IN ('COMPLETED', 'CANCELLED')", nativeQuery = true)
+    long countOpenTestRequests(@Param("departmentId") UUID departmentId);
 }

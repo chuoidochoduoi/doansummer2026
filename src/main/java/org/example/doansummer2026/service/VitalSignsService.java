@@ -36,14 +36,14 @@ public class VitalSignsService implements VitalSignsServiceInterface {
     public VitalSignsResponse create(VitalSignsCreateRequest req) {
         MedicalRecord record = medicalRecordRepo.findById(req.medicalRecordId())
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Ho so benh an khong ton tai: " + req.medicalRecordId()));
+                        "Hồ sơ bệnh án không tồn tại: " + req.medicalRecordId()));
         if (repo.findByMedicalRecord_RecordId(req.medicalRecordId()).isPresent()) {
-            throw new ConflictException("Ho so da co chi so sinh hieu; dung PUT de cap nhat");
+            throw new ConflictException("Hồ sơ đã có chỉ số sinh hiệu; vui lòng dùng chức năng cập nhật");
         }
         StaffInfo recordedBy = null;
         if (req.recordedById() != null) {
             recordedBy = staffRepo.findById(req.recordedById())
-                    .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai: " + req.recordedById()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + req.recordedById()));
         }
         VitalSigns v = VitalSigns.builder()
                 .medicalRecord(record)
@@ -73,14 +73,14 @@ public class VitalSignsService implements VitalSignsServiceInterface {
 
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Chi so khong ton tai: " + id);
+            throw new ResourceNotFoundException("Chỉ số sinh hiệu không tồn tại: " + id);
         }
         repo.deleteById(id);
     }
 
     public VitalSigns findById(UUID id) {
         return repo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Chi so khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Chỉ số sinh hiệu không tồn tại: " + id));
     }
 }
 

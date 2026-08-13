@@ -81,11 +81,11 @@ public class PatientJourneyService {
     }
 
     @Transactional(readOnly=true)
-    public PatientJourneyResponse get(UUID id) { return build(visitRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Khong tim thay luot kham"))); }
+    public PatientJourneyResponse get(UUID id) { return build(visitRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lượt khám"))); }
 
     /** Phuc hoi luot cu bi ket o BLOCKED theo dung quy tac dieu phoi hien tai. */
     public PatientJourneyResponse advanceBlockedStep(UUID visitId) {
-        visitRepo.findById(visitId).orElseThrow(() -> new ResourceNotFoundException("Khong tim thay luot kham"));
+        visitRepo.findById(visitId).orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lượt khám"));
         List<QueueTicket> queues = queueRepo.findAllByVisit_VisitId(visitId);
         boolean hasPhysicalActiveQueue = queues.stream().anyMatch(queue ->
                 queue.getStatus() == QueueStatus.WAITING || queue.getStatus() == QueueStatus.CALLED

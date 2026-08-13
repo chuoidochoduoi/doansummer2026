@@ -12,10 +12,11 @@ import java.util.UUID;
 
 public record ProfileCreateRequest(
         @NotNull UUID accountId,
-        @NotBlank @Size(max = 100) String fullName,
+        @NotBlank @Size(min = 2, max = 100)
+        @Pattern(regexp = "^(?!.*\\p{N}).*$", message = "Họ tên không được chứa chữ số") String fullName,
         @Past LocalDate dateOfBirth,
         String gender,
-        @NotBlank @Pattern(regexp = "^(\\+84|0)\\d{9,10}$", message = "So dien thoai khong hop le (VN)") String phone,
+        @NotBlank @Pattern(regexp = "^(\\+84|0)\\d{9,10}$", message = "Số điện thoại Việt Nam không hợp lệ") String phone,
         @NotBlank @Email String email,
         @Size(max = 255) String address
 ) {}

@@ -21,12 +21,12 @@ import org.example.doansummer2026.enums.Gender;
  */
 public record AppointmentGuestCreateRequest(
         @NotBlank @Size(max = 100) String guestFullName,
-        @Pattern(regexp = "^$|^(\\+84|0)\\d{9,10}$", message = "So dien thoai khong hop le (VN)") String guestPhone,
+        @Pattern(regexp = "^$|^(\\+84|0)\\d{9,10}$", message = "Số điện thoại Việt Nam không hợp lệ") String guestPhone,
         @jakarta.validation.constraints.Email String guestEmail,
         @Size(max = 255) String guestAddress,
-        @Positive(message = "Tuoi khong hop le") Integer guestAge,
+        @Positive(message = "Tuổi không hợp lệ") Integer guestAge,
         Gender guestGender,
-        @NotNull @FutureOrPresent(message = "Thoi gian dat lich phai tu hien tai tro di") LocalDateTime scheduledAt,
+        @NotNull @FutureOrPresent(message = "Thời gian đặt lịch phải từ hiện tại trở đi") LocalDateTime scheduledAt,
         UUID shiftId,
         Set<UUID> serviceIds
 ) {}

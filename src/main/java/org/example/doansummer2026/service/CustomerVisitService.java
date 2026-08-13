@@ -63,13 +63,13 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
 
     public CustomerVisitResponse create(CustomerVisitCreateRequest req) {
         if (req.serviceIds() == null || req.serviceIds().isEmpty()) {
-            throw new org.example.doansummer2026.exception.BadRequestException("Vui long chon it nhat 1 dich vu kham");
+            throw new org.example.doansummer2026.exception.BadRequestException("Vui lòng chọn ít nhất một dịch vụ khám");
         }
 
         Profile customer;
         if (req.customerId() != null) {
             customer = profileRepo.findById(req.customerId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Khach hang khong ton tai: " + req.customerId()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Khách hàng không tồn tại: " + req.customerId()));
         } else {
             String guestPhone = req.guestPhone() == null ? null : req.guestPhone().trim();
             // Bệnh nhân từng khám có thể là hồ sơ khách vãng lai chưa có account.
@@ -89,20 +89,20 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
             }
         }
         customer = profileRepo.findByIdForUpdate(customer.getProfileId())
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay ho so benh nhan"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
         UUID customerIdForCheck = customer.getProfileId();
         repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
                 customerIdForCheck, List.of(VisitStatus.CHECKED_IN, VisitStatus.IN_PROGRESS))
                 .ifPresent(active -> {
                     String code = "VIS-" + active.getVisitId().toString().substring(0, 8).toUpperCase();
-                    throw new ConflictException("Benh nhan dang co luot kham " + code
-                            + " chua hoan thanh. Khong the tao them luot kham dong thoi");
+                    throw new ConflictException("Bệnh nhân đang có lượt khám " + code
+                            + " chưa hoàn thành. Không thể tạo thêm lượt khám đồng thời");
                 });
         Appointment appointment = null;
         if (req.appointmentId() != null) {
             appointment = appointmentRepo.findById(req.appointmentId())
                     .orElseThrow(() -> new ResourceNotFoundException(
-                            "Lich hen khong ton tai: " + req.appointmentId()));
+                            "Lịch hẹn không tồn tại: " + req.appointmentId()));
         }
 
         CustomerVisit v = CustomerVisit.builder()
@@ -125,7 +125,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
         if (serviceIds != null && !serviceIds.isEmpty()) {
             for (UUID serviceId : serviceIds) {
                 MedicalService service = serviceRepo.findById(serviceId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
+                        .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
                         
                 BigDecimal unitPrice = service.getPrice();
                 BigDecimal discountPercent = BigDecimal.ZERO;
@@ -183,14 +183,14 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
 
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Luot kham khong ton tai: " + id);
+            throw new ResourceNotFoundException("Lượt khám không tồn tại: " + id);
         }
         repo.deleteById(id);
     }
 
     public CustomerVisit findById(UUID id) {
         return repo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Luot kham khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + id));
     }
 
     private CustomerVisitResponse toResponse(CustomerVisit visit) {

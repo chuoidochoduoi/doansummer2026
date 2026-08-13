@@ -4,6 +4,7 @@ import org.example.doansummer2026.dto.appointment.AppointmentCreateRequest;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
+import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
@@ -455,33 +456,80 @@ class MedicalRecordServiceTest {
     // =========================================================
 
     @Test
-    void scheduleFollowUp_ShouldThrowBadRequest_WhenRecordHasNoFollowUpRequest() {
+    void scheduleFollowUp_ShouldCreateAppointment_WhenNoFollowUpDateOrNote() {
 
         UUID recordId = UUID.randomUUID();
 
-        MedicalRecord record =
-                mock(MedicalRecord.class);
+        Profile customer = mock(Profile.class);
+        CustomerVisit originalVisit = mock(CustomerVisit.class);
+
+        when(originalVisit.getCustomer())
+                .thenReturn(customer);
+
+        when(originalVisit.getAppointment())
+                .thenReturn(null);
+
+        MedicalRecord record = MedicalRecord.builder()
+                .recordId(recordId)
+                .visit(originalVisit)
+                .followUpDate(null)
+                .followUpNote(null)
+                .build();
 
         AppointmentCreateRequest request =
                 mock(AppointmentCreateRequest.class);
 
+        LocalDateTime scheduledAt =
+                LocalDateTime.now().plusDays(7);
+
+        when(request.scheduledAt())
+                .thenReturn(scheduledAt);
+
+        when(request.shiftId())
+                .thenReturn(null);
+
+        when(request.serviceIds())
+                .thenReturn(null);
+
         when(medicalRecordRepository.findById(recordId))
                 .thenReturn(Optional.of(record));
 
-        when(record.getFollowUpDate())
-                .thenReturn(null);
+        when(appointmentRepository.save(any(Appointment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
-        when(record.getFollowUpNote())
-                .thenReturn(null);
+        when(medicalRecordRepository.save(record))
+                .thenReturn(record);
 
-        assertThrows(
-                BadRequestException.class,
-                () -> medicalRecordService
-                        .scheduleFollowUp(recordId, request)
+        var result =
+                medicalRecordService.scheduleFollowUp(
+                        recordId,
+                        request
+                );
+
+        assertNotNull(result);
+
+        assertNotNull(record.getFollowUpAppointment());
+
+        assertSame(
+                customer,
+                record.getFollowUpAppointment().getCustomer()
         );
 
-        verify(appointmentRepository, never())
-                .save(any());
+        assertEquals(
+                scheduledAt,
+                record.getFollowUpAppointment().getScheduledAt()
+        );
+
+        assertEquals(
+                AppointmentStatus.PENDING,
+                record.getFollowUpAppointment().getStatus()
+        );
+
+        verify(appointmentRepository)
+                .save(any(Appointment.class));
+
+        verify(medicalRecordRepository)
+                .save(record);
     }
 
 
@@ -490,6 +538,9 @@ class MedicalRecordServiceTest {
 
         UUID recordId = UUID.randomUUID();
 
+        Appointment existingAppointment =
+                mock(Appointment.class);
+
         MedicalRecord record =
                 mock(MedicalRecord.class);
 
@@ -499,23 +550,24 @@ class MedicalRecordServiceTest {
         when(medicalRecordRepository.findById(recordId))
                 .thenReturn(Optional.of(record));
 
-        // Có yêu cầu tái khám
-        when(record.getFollowUpNote())
-                .thenReturn("Tai kham sau 7 ngay");
-
         when(record.getFollowUpAppointment())
-                .thenReturn(
-                        mock(org.example.doansummer2026.model.Appointment.class)
-                );
+                .thenReturn(existingAppointment);
 
         assertThrows(
                 ConflictException.class,
-                () -> medicalRecordService
-                        .scheduleFollowUp(recordId, request)
+                () -> medicalRecordService.scheduleFollowUp(
+                        recordId,
+                        request
+                )
         );
 
         verify(appointmentRepository, never())
-                .save(any());
+                .save(any(Appointment.class));
+
+        verify(medicalRecordRepository, never())
+                .save(record);
+
+        verifyNoInteractions(shiftConfigRepository);
     }
 
     // =========================================================
@@ -1643,25 +1695,17 @@ class MedicalRecordServiceTest {
         when(medicalRecordRepository.save(record))
                 .thenReturn(record);
 
-        var result =
-                medicalRecordService.respondFeedback(
-                        recordId,
-                        staffId,
-                        "Da tiep nhan phan hoi",
-                        "Can theo doi",
-                        null
-                );
+        var result = medicalRecordService.respondFeedback(
+                recordId,
+                staffId,
+                "Da tiep nhan phan hoi"
+        );
 
         assertNotNull(result);
 
         assertEquals(
                 "Da tiep nhan phan hoi",
                 record.getManagerResponse()
-        );
-
-        assertEquals(
-                "Can theo doi",
-                record.getInternalNote()
         );
 
         assertEquals(
@@ -1697,8 +1741,6 @@ class MedicalRecordServiceTest {
 
         medicalRecordService.respondFeedback(
                 recordId,
-                null,
-                null,
                 null,
                 null
         );

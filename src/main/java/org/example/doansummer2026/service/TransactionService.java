@@ -52,15 +52,15 @@ public class TransactionService implements TransactionServiceInterface {
 
     public TransactionResponse create(TransactionCreateRequest req) {
         Invoice invoice = invoiceRepo.findByIdForUpdate(req.invoiceId())
-                .orElseThrow(() -> new ResourceNotFoundException("Hoa don khong ton tai: " + req.invoiceId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + req.invoiceId()));
         if (invoice.getStatus() != InvoiceStatus.PENDING) {
-            throw new ConflictException("Chi tao giao dich cho hoa don PENDING; hien tai: "
+            throw new ConflictException("Chỉ có thể tạo giao dịch cho hóa đơn đang chờ thanh toán; trạng thái hiện tại: "
                     + invoice.getStatus());
         }
         StaffInfo receivedBy = null;
         if (req.receivedById() != null) {
             receivedBy = staffRepo.findById(req.receivedById())
-                    .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai: " + req.receivedById()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + req.receivedById()));
         }
         Transaction t = Transaction.builder()
                 .invoice(invoice)
@@ -77,7 +77,7 @@ public class TransactionService implements TransactionServiceInterface {
 
     public TransactionResponse update(UUID id, TransactionUpdateRequest req) {
         Transaction t = repo.findByIdForUpdate(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Giao dich khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Giao dịch không tồn tại: " + id));
         if (req.status() != null) {
             validateStatusTransition(t.getStatus(), req.status());
             t.setStatus(req.status());
@@ -104,7 +104,7 @@ public class TransactionService implements TransactionServiceInterface {
     
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Giao dich khong ton tai: " + id);
+            throw new ResourceNotFoundException("Giao dịch không tồn tại: " + id);
         }
         UUID invoiceId = findById(id).getInvoice().getInvoiceId();
         repo.deleteById(id);
@@ -113,7 +113,7 @@ public class TransactionService implements TransactionServiceInterface {
 
     public Transaction findById(UUID id) {
         return repo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Giao dich khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Giao dịch không tồn tại: " + id));
     }
 
     private void validateStatusTransition(TransactionStatus from, TransactionStatus to) {
@@ -122,7 +122,7 @@ public class TransactionService implements TransactionServiceInterface {
                     || to == TransactionStatus.CANCELLED;
             default -> false;
         };
-        if (!ok) throw new BadRequestException("Khong the chuyen trang thai tu " + from + " sang " + to);
+        if (!ok) throw new BadRequestException("Không thể chuyển trạng thái từ " + from + " sang " + to);
     }
 
     private String generateTransactionCode(String invoiceCode) {
@@ -133,7 +133,7 @@ public class TransactionService implements TransactionServiceInterface {
             String code = prefix + suffix;
             if (!repo.existsByTransactionCode(code)) return code;
         }
-        throw new ConflictException("Khong the sinh transaction code");
+        throw new ConflictException("Không thể tạo mã giao dịch");
     }
 }
 

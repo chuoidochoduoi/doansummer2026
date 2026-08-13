@@ -1,28 +1,25 @@
 package org.example.doansummer2026.service;
 
+import org.example.doansummer2026.dto.medicalService.MedicalServiceCreateRequest;
+import org.example.doansummer2026.dto.medicalService.MedicalServiceUpdateRequest;
 import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.enums.Gender;
 import org.example.doansummer2026.enums.ServiceStatus;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
-import org.example.doansummer2026.dto.medicalService.MedicalServiceCreateRequest;
-import org.example.doansummer2026.dto.medicalService.MedicalServiceUpdateRequest;
 import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.Specialization;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
+import org.example.doansummer2026.repository.ServiceCapabilityRepository;
 import org.example.doansummer2026.repository.ServiceCategoryRepository;
 import org.example.doansummer2026.repository.SpecializationRepository;
-import org.example.doansummer2026.repository.ServiceCapabilityRepository;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
@@ -79,6 +76,7 @@ class MedicalServiceServiceTest {
                 .workflowPriority(1)
                 .requiresDoctorOrder(false)
                 .requiresReturnToDoctor(false)
+                .requiresSpecimen(false)
                 .resultWaitMinutes(0)
                 .allowCustomerBooking(true)
                 .minimumAge(0)
@@ -583,9 +581,6 @@ class MedicalServiceServiceTest {
         when(req.price())
                 .thenReturn(new BigDecimal("200000"));
 
-        when(req.status())
-                .thenReturn(ServiceStatus.DRAFT);
-
         when(req.isPointOfCare())
                 .thenReturn(true);
 
@@ -632,9 +627,13 @@ class MedicalServiceServiceTest {
 
         when(repo.save(any(MedicalService.class)))
                 .thenAnswer(i -> {
-                    MedicalService s = i.getArgument(0);
 
-                    s.setServiceId(UUID.randomUUID());
+                    MedicalService s =
+                            i.getArgument(0);
+
+                    s.setServiceId(
+                            UUID.randomUUID()
+                    );
 
                     return s;
                 });
@@ -644,34 +643,69 @@ class MedicalServiceServiceTest {
 
         assertNotNull(result);
 
-        verify(repo).save(argThat(s ->
-                "KN01".equals(s.getServiceCode())
-                        && "Kham Noi".equals(s.getName())
-                        && s.getDepartmentType()
-                        == DepartmentType.EXAMINATION
-                        && s.getRequiredSpecialization()
-                        == specialization
-                        && s.getDepartment() == null
-                        && Boolean.TRUE.equals(
-                        s.getIsPointOfCare()
-                )
-                        && s.getDurationMinutes() == 30
-                        && s.getWorkflowPriority() == 2
-                        && Boolean.TRUE.equals(
-                        s.getRequiresDoctorOrder()
-                )
-                        && Boolean.TRUE.equals(
-                        s.getRequiresReturnToDoctor()
-                )
-                        && s.getResultWaitMinutes() == 10
-                        && Boolean.FALSE.equals(
-                        s.getAllowCustomerBooking()
-                )
-                        && s.getMinimumAge() == 18
-                        && s.getMaximumAge() == 70
-                        && s.getAllowedGender()
-                        == Gender.MALE
-        ));
+        verify(repo)
+                .save(
+                        argThat(s ->
+                                "KN01".equals(
+                                        s.getServiceCode()
+                                )
+                                        && "Kham Noi".equals(
+                                        s.getName()
+                                )
+                                        && s.getDepartmentType()
+                                        == DepartmentType.EXAMINATION
+
+                                        && s.getRequiredSpecialization()
+                                        == specialization
+
+                                        && s.getRequiredCapability()
+                                        == null
+
+                                        && s.getDepartment()
+                                        == null
+
+                                        && s.getStatus()
+                                        == ServiceStatus.DRAFT
+
+                                        && Boolean.TRUE.equals(
+                                        s.getIsPointOfCare()
+                                )
+
+                                        && s.getDurationMinutes()
+                                        == 30
+
+                                        && s.getWorkflowPriority()
+                                        == 2
+
+                                        && Boolean.TRUE.equals(
+                                        s.getRequiresDoctorOrder()
+                                )
+
+                                        && Boolean.TRUE.equals(
+                                        s.getRequiresReturnToDoctor()
+                                )
+
+                                        && Boolean.FALSE.equals(
+                                        s.getRequiresSpecimen()
+                                )
+
+                                        && s.getResultWaitMinutes()
+                                        == 10
+
+                                        && Boolean.FALSE.equals(
+                                        s.getAllowCustomerBooking()
+                                )
+
+                                        && s.getMinimumAge()
+                                        == 18
+
+                                        && s.getMaximumAge()
+                                        == 70
+
+                                        && s.getAllowedGender()
+                                        == Gender.MALE
+                        )
+                );
     }
 
 
@@ -682,43 +716,35 @@ class MedicalServiceServiceTest {
     @Test
     void create_ShouldUseDefaultValues() {
 
-        UUID specializationId = UUID.randomUUID();
+        UUID specializationId =
+                UUID.randomUUID();
 
         Specialization specialization =
                 mock(Specialization.class);
 
-        // =====================================================
-        // DÙNG REQUEST THẬT, KHÔNG MOCK
-        // Như vậy Integer null thực sự là null
-        // =====================================================
-
         MedicalServiceCreateRequest req =
                 new MedicalServiceCreateRequest(
-                        "DEF01",                         // serviceCode
-                        "Kham mac dinh",                // name
-                        null,                            // description
-                        DepartmentType.EXAMINATION,      // departmentType
-                        BigDecimal.ZERO,                 // price
-                        null,                            // status
-                        null,                            // isPointOfCare
-                        null,                            // durationMinutes -> DEFAULT 15
-                        null,                            // workflowPriority -> DEFAULT 1
-                        null,                            // requiresDoctorOrder
-                        null,                            // requiresReturnToDoctor
-                        null,                            // requiresSpecimen
-                        null,                            // resultWaitMinutes -> DEFAULT 0
-                        null,                            // allowCustomerBooking -> DEFAULT true
-                        null,                            // minimumAge -> DEFAULT 0
-                        null,                            // maximumAge -> DEFAULT 120
-                        null,                            // allowedGender
-                        null,                            // departmentId
-                        specializationId,                // requiredSpecializationId
-                        null                             // requiredCapabilityId
+                        "DEF01",
+                        "Kham mac dinh",
+                        null,
+                        DepartmentType.EXAMINATION,
+                        BigDecimal.ZERO,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        specializationId,
+                        null
                 );
-
-        // =====================================================
-        // REPOSITORY
-        // =====================================================
 
         when(repo.existsByName("Kham mac dinh"))
                 .thenReturn(false);
@@ -726,8 +752,13 @@ class MedicalServiceServiceTest {
         when(repo.existsByServiceCode("DEF01"))
                 .thenReturn(false);
 
-        when(specializationRepo.findById(specializationId))
-                .thenReturn(Optional.of(specialization));
+        when(
+                specializationRepo.findById(
+                        specializationId
+                )
+        ).thenReturn(
+                Optional.of(specialization)
+        );
 
         when(repo.save(any(MedicalService.class)))
                 .thenAnswer(invocation -> {
@@ -736,37 +767,29 @@ class MedicalServiceServiceTest {
                             invocation.getArgument(0);
 
                     if (entity.getServiceId() == null) {
-                        entity.setServiceId(UUID.randomUUID());
+                        entity.setServiceId(
+                                UUID.randomUUID()
+                        );
                     }
 
                     return entity;
                 });
-
-        // =====================================================
-        // ACT
-        // =====================================================
 
         var result =
                 medicalServiceService.create(req);
 
         assertNotNull(result);
 
-        // =====================================================
-        // CAPTURE ENTITY
-        // =====================================================
-
         ArgumentCaptor<MedicalService> captor =
-                ArgumentCaptor.forClass(MedicalService.class);
+                ArgumentCaptor.forClass(
+                        MedicalService.class
+                );
 
         verify(repo)
                 .save(captor.capture());
 
         MedicalService saved =
                 captor.getValue();
-
-        // =====================================================
-        // BASIC
-        // =====================================================
 
         assertEquals(
                 "DEF01",
@@ -785,12 +808,10 @@ class MedicalServiceServiceTest {
 
         assertEquals(
                 0,
-                BigDecimal.ZERO.compareTo(saved.getPrice())
+                BigDecimal.ZERO.compareTo(
+                        saved.getPrice()
+                )
         );
-
-        // =====================================================
-        // DEFAULT VALUES
-        // =====================================================
 
         assertEquals(
                 ServiceStatus.DRAFT,
@@ -819,6 +840,10 @@ class MedicalServiceServiceTest {
                 saved.getRequiresReturnToDoctor()
         );
 
+        assertFalse(
+                saved.getRequiresSpecimen()
+        );
+
         assertEquals(
                 0,
                 saved.getResultWaitMinutes()
@@ -842,10 +867,6 @@ class MedicalServiceServiceTest {
                 saved.getAllowedGender()
         );
 
-        // =====================================================
-        // SPECIALIZATION / CAPABILITY
-        // =====================================================
-
         assertSame(
                 specialization,
                 saved.getRequiredSpecialization()
@@ -859,20 +880,25 @@ class MedicalServiceServiceTest {
                 saved.getDepartment()
         );
 
-        // =====================================================
-        // VERIFY
-        // =====================================================
+        verify(repo)
+                .existsByName(
+                        "Kham mac dinh"
+                );
 
         verify(repo)
-                .existsByName("Kham mac dinh");
+                .existsByServiceCode(
+                        "DEF01"
+                );
 
-        verify(repo)
-                .existsByServiceCode("DEF01");
+        verify(
+                specializationRepo
+        ).findById(
+                specializationId
+        );
 
-        verify(specializationRepo)
-                .findById(specializationId);
-
-        verifyNoInteractions(capabilityRepo);
+        verifyNoInteractions(
+                capabilityRepo
+        );
     }
 
 
@@ -901,10 +927,14 @@ class MedicalServiceServiceTest {
                 .thenReturn("XN001");
 
         when(req.departmentType())
-                .thenReturn(DepartmentType.LABORATORY);
+                .thenReturn(
+                        DepartmentType.LABORATORY
+                );
 
         when(req.requiredCapabilityId())
-                .thenReturn(capabilityId);
+                .thenReturn(
+                        capabilityId
+                );
 
         when(repo.existsByName(anyString()))
                 .thenReturn(false);
@@ -913,12 +943,20 @@ class MedicalServiceServiceTest {
                 .thenReturn(false);
 
         when(capabilityRepo.findById(capabilityId))
-                .thenReturn(Optional.of(capability));
+                .thenReturn(
+                        Optional.of(capability)
+                );
 
         when(repo.save(any()))
                 .thenAnswer(i -> {
-                    MedicalService s = i.getArgument(0);
-                    s.setServiceId(UUID.randomUUID());
+
+                    MedicalService s =
+                            i.getArgument(0);
+
+                    s.setServiceId(
+                            UUID.randomUUID()
+                    );
+
                     return s;
                 });
 
@@ -927,11 +965,19 @@ class MedicalServiceServiceTest {
 
         assertNotNull(result);
 
-        verify(repo).save(argThat(s ->
-                s.getDepartmentType() == DepartmentType.PARACLINICAL
-                        && s.getRequiredCapability() == capability
-                        && s.getRequiredSpecialization() == null
-        ));
+        verify(repo)
+                .save(
+                        argThat(s ->
+                                s.getDepartmentType()
+                                        == DepartmentType.PARACLINICAL
+
+                                        && s.getRequiredCapability()
+                                        == capability
+
+                                        && s.getRequiredSpecialization()
+                                        == null
+                        )
+                );
     }
 
 
@@ -987,13 +1033,17 @@ class MedicalServiceServiceTest {
 
 
     // =========================================================
-    // UPDATE - INACTIVE
+    // UPDATE - INACTIVE -> DRAFT IS NOT ALLOWED
     // =========================================================
 
     @Test
-    void update_ShouldRejectInactiveService() {
+    void update_ShouldRejectInactiveService_WhenTryingToReturnToDraft() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
+
+        Specialization specialization =
+                mock(Specialization.class);
 
         MedicalService s =
                 service(
@@ -1003,19 +1053,48 @@ class MedicalServiceServiceTest {
                         ServiceStatus.INACTIVE
                 );
 
+        /*
+         * Đảm bảo service hợp lệ về specialization.
+         * Test này chỉ tập trung vào status transition.
+         */
+        s.setRequiredSpecialization(
+                specialization
+        );
+
         MedicalServiceUpdateRequest req =
                 mock(MedicalServiceUpdateRequest.class);
 
-        when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+        when(req.status())
+                .thenReturn(
+                        ServiceStatus.DRAFT
+                );
 
-        assertThrows(
-                ConflictException.class,
-                () -> medicalServiceService.update(
-                        id,
-                        req
-                )
+        when(repo.findById(id))
+                .thenReturn(
+                        Optional.of(s)
+                );
+
+        ConflictException exception =
+                assertThrows(
+                        ConflictException.class,
+                        () ->
+                                medicalServiceService.update(
+                                        id,
+                                        req
+                                )
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains(
+                                "khong the quay lai ban nhap"
+                        )
         );
+
+        verify(repo, never())
+                .save(
+                        any(MedicalService.class)
+                );
     }
 
 
@@ -1026,7 +1105,11 @@ class MedicalServiceServiceTest {
     @Test
     void update_ShouldRejectDuplicateNewName() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
+
+        Specialization specialization =
+                mock(Specialization.class);
 
         MedicalService s =
                 service(
@@ -1036,6 +1119,10 @@ class MedicalServiceServiceTest {
                         ServiceStatus.DRAFT
                 );
 
+        s.setRequiredSpecialization(
+                specialization
+        );
+
         MedicalServiceUpdateRequest req =
                 mock(MedicalServiceUpdateRequest.class);
 
@@ -1043,17 +1130,20 @@ class MedicalServiceServiceTest {
                 .thenReturn("New");
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         when(repo.existsByName("New"))
                 .thenReturn(true);
 
         assertThrows(
                 ConflictException.class,
-                () -> medicalServiceService.update(
-                        id,
-                        req
-                )
+                () ->
+                        medicalServiceService.update(
+                                id,
+                                req
+                        )
         );
     }
 
@@ -1065,7 +1155,8 @@ class MedicalServiceServiceTest {
     @Test
     void update_ShouldNotCheckDuplicate_WhenNameUnchanged() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Specialization specialization =
                 mock(Specialization.class);
@@ -1089,7 +1180,9 @@ class MedicalServiceServiceTest {
                 .thenReturn("Same");
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         when(repo.save(s))
                 .thenReturn(s);
@@ -1111,7 +1204,8 @@ class MedicalServiceServiceTest {
     @Test
     void update_ShouldUpdateAllBasicFields() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Specialization specialization =
                 mock(Specialization.class);
@@ -1131,14 +1225,21 @@ class MedicalServiceServiceTest {
         MedicalServiceUpdateRequest req =
                 mock(MedicalServiceUpdateRequest.class);
 
-        when(req.name()).thenReturn("New");
-        when(req.description()).thenReturn("New desc");
-        when(req.price()).thenReturn(
-                new BigDecimal("250000")
-        );
+        when(req.name())
+                .thenReturn("New");
+
+        when(req.description())
+                .thenReturn("New desc");
+
+        when(req.price())
+                .thenReturn(
+                        new BigDecimal("250000")
+                );
 
         when(req.status())
-                .thenReturn(ServiceStatus.ACTIVE);
+                .thenReturn(
+                        ServiceStatus.ACTIVE
+                );
 
         when(req.isPointOfCare())
                 .thenReturn(true);
@@ -1168,10 +1269,14 @@ class MedicalServiceServiceTest {
                 .thenReturn(90);
 
         when(req.allowedGender())
-                .thenReturn(Gender.FEMALE);
+                .thenReturn(
+                        Gender.FEMALE
+                );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         when(repo.existsByName("New"))
                 .thenReturn(false);
@@ -1187,13 +1292,22 @@ class MedicalServiceServiceTest {
 
         assertNotNull(result);
 
-        assertEquals("New", s.getName());
-        assertEquals("New desc", s.getDescription());
+        assertEquals(
+                "New",
+                s.getName()
+        );
+
+        assertEquals(
+                "New desc",
+                s.getDescription()
+        );
 
         assertEquals(
                 0,
                 new BigDecimal("250000")
-                        .compareTo(s.getPrice())
+                        .compareTo(
+                                s.getPrice()
+                        )
         );
 
         assertEquals(
@@ -1201,9 +1315,19 @@ class MedicalServiceServiceTest {
                 s.getStatus()
         );
 
-        assertTrue(s.getIsPointOfCare());
-        assertEquals(45, s.getDurationMinutes());
-        assertEquals(5, s.getWorkflowPriority());
+        assertTrue(
+                s.getIsPointOfCare()
+        );
+
+        assertEquals(
+                45,
+                s.getDurationMinutes()
+        );
+
+        assertEquals(
+                5,
+                s.getWorkflowPriority()
+        );
 
         assertTrue(
                 s.getRequiresDoctorOrder()
@@ -1240,6 +1364,11 @@ class MedicalServiceServiceTest {
         assertNull(
                 s.getDepartment()
         );
+
+        assertSame(
+                specialization,
+                s.getRequiredSpecialization()
+        );
     }
 
 
@@ -1250,8 +1379,11 @@ class MedicalServiceServiceTest {
     @Test
     void update_ShouldSetSpecializationForExamination() {
 
-        UUID id = UUID.randomUUID();
-        UUID specId = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
+
+        UUID specId =
+                UUID.randomUUID();
 
         Specialization oldSpec =
                 mock(Specialization.class);
@@ -1267,7 +1399,9 @@ class MedicalServiceServiceTest {
                         ServiceStatus.DRAFT
                 );
 
-        s.setRequiredSpecialization(oldSpec);
+        s.setRequiredSpecialization(
+                oldSpec
+        );
 
         MedicalServiceUpdateRequest req =
                 mock(MedicalServiceUpdateRequest.class);
@@ -1276,15 +1410,25 @@ class MedicalServiceServiceTest {
                 .thenReturn(specId);
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
-        when(specializationRepo.findById(specId))
-                .thenReturn(Optional.of(newSpec));
+        when(
+                specializationRepo.findById(
+                        specId
+                )
+        ).thenReturn(
+                Optional.of(newSpec)
+        );
 
         when(repo.save(s))
                 .thenReturn(s);
 
-        medicalServiceService.update(id, req);
+        medicalServiceService.update(
+                id,
+                req
+        );
 
         assertSame(
                 newSpec,
@@ -1296,85 +1440,11 @@ class MedicalServiceServiceTest {
     @Test
     void update_ShouldThrow_WhenNewSpecializationMissing() {
 
-        UUID id = UUID.randomUUID();
-        UUID specId = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
-        MedicalService s =
-                service(
-                        id,
-                        "Service",
-                        DepartmentType.EXAMINATION,
-                        ServiceStatus.DRAFT
-                );
-
-        MedicalServiceUpdateRequest req =
-                mock(MedicalServiceUpdateRequest.class);
-
-        when(req.requiredSpecializationId())
-                .thenReturn(specId);
-
-        when(repo.findById(id))
-                .thenReturn(Optional.of(s));
-
-        when(specializationRepo.findById(specId))
-                .thenReturn(Optional.empty());
-
-        assertThrows(
-                ResourceNotFoundException.class,
-                () -> medicalServiceService.update(
-                        id,
-                        req
-                )
-        );
-    }
-
-
-    // =========================================================
-    // UPDATE EXAMINATION WITHOUT SPECIALIZATION
-    // =========================================================
-
-    @Test
-    void update_ShouldRejectExaminationWithoutSpecialization() {
-
-        UUID id = UUID.randomUUID();
-
-        MedicalService s =
-                service(
-                        id,
-                        "Service",
-                        DepartmentType.EXAMINATION,
-                        ServiceStatus.DRAFT
-                );
-
-        s.setRequiredSpecialization(null);
-
-        MedicalServiceUpdateRequest req =
-                mock(MedicalServiceUpdateRequest.class);
-
-        when(repo.findById(id))
-                .thenReturn(Optional.of(s));
-
-        assertThrows(
-                BadRequestException.class,
-                () -> medicalServiceService.update(
-                        id,
-                        req
-                )
-        );
-    }
-
-
-    // =========================================================
-    // UPDATE CHANGE TO PARACLINICAL
-    // =========================================================
-
-    @Test
-    void update_ShouldNormalizeLaboratoryToParaclinicalAndClearSpecialization() {
-
-        UUID id = UUID.randomUUID();
-
-        var capability =
-                mock(org.example.doansummer2026.model.ServiceCapability.class);
+        UUID specId =
+                UUID.randomUUID();
 
         MedicalService s =
                 service(
@@ -1388,16 +1458,120 @@ class MedicalServiceServiceTest {
                 mock(Specialization.class)
         );
 
-        s.setRequiredCapability(capability);
+        MedicalServiceUpdateRequest req =
+                mock(MedicalServiceUpdateRequest.class);
+
+        when(req.requiredSpecializationId())
+                .thenReturn(specId);
+
+        when(repo.findById(id))
+                .thenReturn(
+                        Optional.of(s)
+                );
+
+        when(
+                specializationRepo.findById(
+                        specId
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        assertThrows(
+                ResourceNotFoundException.class,
+                () ->
+                        medicalServiceService.update(
+                                id,
+                                req
+                        )
+        );
+    }
+
+
+    // =========================================================
+    // UPDATE EXAMINATION WITHOUT SPECIALIZATION
+    // =========================================================
+
+    @Test
+    void update_ShouldRejectExaminationWithoutSpecialization() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        MedicalService s =
+                service(
+                        id,
+                        "Service",
+                        DepartmentType.EXAMINATION,
+                        ServiceStatus.DRAFT
+                );
+
+        s.setRequiredSpecialization(
+                null
+        );
+
+        MedicalServiceUpdateRequest req =
+                mock(MedicalServiceUpdateRequest.class);
+
+        when(repo.findById(id))
+                .thenReturn(
+                        Optional.of(s)
+                );
+
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        medicalServiceService.update(
+                                id,
+                                req
+                        )
+        );
+    }
+
+
+    // =========================================================
+    // UPDATE CHANGE TO PARACLINICAL
+    // =========================================================
+
+    @Test
+    void update_ShouldNormalizeLaboratoryToParaclinicalAndClearSpecialization() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        var capability =
+                mock(
+                        org.example.doansummer2026.model.ServiceCapability.class
+                );
+
+        MedicalService s =
+                service(
+                        id,
+                        "Service",
+                        DepartmentType.EXAMINATION,
+                        ServiceStatus.DRAFT
+                );
+
+        s.setRequiredSpecialization(
+                mock(Specialization.class)
+        );
+
+        s.setRequiredCapability(
+                capability
+        );
 
         MedicalServiceUpdateRequest req =
                 mock(MedicalServiceUpdateRequest.class);
 
         when(req.departmentType())
-                .thenReturn(DepartmentType.LABORATORY);
+                .thenReturn(
+                        DepartmentType.LABORATORY
+                );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         when(repo.save(s))
                 .thenReturn(s);
@@ -1415,6 +1589,11 @@ class MedicalServiceServiceTest {
         assertNull(
                 s.getRequiredSpecialization()
         );
+
+        assertSame(
+                capability,
+                s.getRequiredCapability()
+        );
     }
 
 
@@ -1425,7 +1604,8 @@ class MedicalServiceServiceTest {
     @Test
     void update_ShouldRejectLaboratoryWithoutCapability() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         MedicalService s =
                 service(
@@ -1435,20 +1615,25 @@ class MedicalServiceServiceTest {
                         ServiceStatus.DRAFT
                 );
 
-        s.setRequiredCapability(null);
+        s.setRequiredCapability(
+                null
+        );
 
         MedicalServiceUpdateRequest req =
                 mock(MedicalServiceUpdateRequest.class);
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         assertThrows(
                 BadRequestException.class,
-                () -> medicalServiceService.update(
-                        id,
-                        req
-                )
+                () ->
+                        medicalServiceService.update(
+                                id,
+                                req
+                        )
         );
     }
 
@@ -1460,8 +1645,16 @@ class MedicalServiceServiceTest {
     @Test
     void update_ShouldSetCapability() {
 
-        UUID id = UUID.randomUUID();
-        UUID capabilityId = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
+
+        UUID capabilityId =
+                UUID.randomUUID();
+
+        var oldCapability =
+                mock(
+                        org.example.doansummer2026.model.ServiceCapability.class
+                );
 
         var capability =
                 mock(
@@ -1476,27 +1669,30 @@ class MedicalServiceServiceTest {
                         ServiceStatus.DRAFT
                 );
 
-        /*
-         * Cần capability cũ để vượt validation ở line 175
-         * trước khi code đi tới req.requiredCapabilityId().
-         */
         s.setRequiredCapability(
-                mock(
-                        org.example.doansummer2026.model.ServiceCapability.class
-                )
+                oldCapability
         );
 
         MedicalServiceUpdateRequest req =
                 mock(MedicalServiceUpdateRequest.class);
 
         when(req.requiredCapabilityId())
-                .thenReturn(capabilityId);
+                .thenReturn(
+                        capabilityId
+                );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
-        when(capabilityRepo.findById(capabilityId))
-                .thenReturn(Optional.of(capability));
+        when(
+                capabilityRepo.findById(
+                        capabilityId
+                )
+        ).thenReturn(
+                Optional.of(capability)
+        );
 
         when(repo.save(s))
                 .thenReturn(s);
@@ -1516,8 +1712,11 @@ class MedicalServiceServiceTest {
     @Test
     void update_ShouldThrow_WhenNewCapabilityMissing() {
 
-        UUID id = UUID.randomUUID();
-        UUID capabilityId = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
+
+        UUID capabilityId =
+                UUID.randomUUID();
 
         MedicalService s =
                 service(
@@ -1537,20 +1736,30 @@ class MedicalServiceServiceTest {
                 mock(MedicalServiceUpdateRequest.class);
 
         when(req.requiredCapabilityId())
-                .thenReturn(capabilityId);
+                .thenReturn(
+                        capabilityId
+                );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
-        when(capabilityRepo.findById(capabilityId))
-                .thenReturn(Optional.empty());
+        when(
+                capabilityRepo.findById(
+                        capabilityId
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> medicalServiceService.update(
-                        id,
-                        req
-                )
+                () ->
+                        medicalServiceService.update(
+                                id,
+                                req
+                        )
         );
     }
 
@@ -1562,7 +1771,8 @@ class MedicalServiceServiceTest {
     @Test
     void update_ShouldDefaultMinimumToZero_WhenOnlyMaximumProvided() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Specialization spec =
                 mock(Specialization.class);
@@ -1575,7 +1785,9 @@ class MedicalServiceServiceTest {
                         ServiceStatus.DRAFT
                 );
 
-        s.setRequiredSpecialization(spec);
+        s.setRequiredSpecialization(
+                spec
+        );
 
         MedicalServiceUpdateRequest req =
                 mock(MedicalServiceUpdateRequest.class);
@@ -1584,7 +1796,9 @@ class MedicalServiceServiceTest {
                 .thenReturn(50);
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         when(repo.save(s))
                 .thenReturn(s);
@@ -1605,10 +1819,12 @@ class MedicalServiceServiceTest {
         );
     }
 
+
     @Test
     void update_ShouldDefaultMaximumTo120_WhenOnlyMinimumProvided() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Specialization spec =
                 mock(Specialization.class);
@@ -1621,7 +1837,9 @@ class MedicalServiceServiceTest {
                         ServiceStatus.DRAFT
                 );
 
-        s.setRequiredSpecialization(spec);
+        s.setRequiredSpecialization(
+                spec
+        );
 
         MedicalServiceUpdateRequest req =
                 mock(MedicalServiceUpdateRequest.class);
@@ -1639,7 +1857,9 @@ class MedicalServiceServiceTest {
                 .allowedGender();
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         when(repo.save(s))
                 .thenReturn(s);
@@ -1668,7 +1888,8 @@ class MedicalServiceServiceTest {
     @Test
     void delete_ShouldDeleteDraftService() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         MedicalService s =
                 service(
@@ -1679,19 +1900,26 @@ class MedicalServiceServiceTest {
                 );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
-        medicalServiceService.delete(id);
+        medicalServiceService.delete(
+                id
+        );
 
         verify(repo)
-                .deleteById(id);
+                .deleteById(
+                        id
+                );
     }
 
 
     @Test
     void delete_ShouldRejectNonDraftService() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         MedicalService s =
                 service(
@@ -1702,15 +1930,22 @@ class MedicalServiceServiceTest {
                 );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         assertThrows(
                 ConflictException.class,
-                () -> medicalServiceService.delete(id)
+                () ->
+                        medicalServiceService.delete(
+                                id
+                        )
         );
 
         verify(repo, never())
-                .deleteById(id);
+                .deleteById(
+                        id
+                );
     }
 
 
@@ -1721,7 +1956,8 @@ class MedicalServiceServiceTest {
     @Test
     void deactivate_ShouldDeactivateActiveService() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         MedicalService s =
                 service(
@@ -1732,13 +1968,17 @@ class MedicalServiceServiceTest {
                 );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         when(repo.save(s))
                 .thenReturn(s);
 
         var result =
-                medicalServiceService.deactivate(id);
+                medicalServiceService.deactivate(
+                        id
+                );
 
         assertNotNull(result);
 
@@ -1752,7 +1992,8 @@ class MedicalServiceServiceTest {
     @Test
     void deactivate_ShouldReject_WhenNotActive() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         MedicalService s =
                 service(
@@ -1763,11 +2004,16 @@ class MedicalServiceServiceTest {
                 );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         assertThrows(
                 ConflictException.class,
-                () -> medicalServiceService.deactivate(id)
+                () ->
+                        medicalServiceService.deactivate(
+                                id
+                        )
         );
     }
 
@@ -1779,7 +2025,8 @@ class MedicalServiceServiceTest {
     @Test
     void publish_ShouldReject_WhenNotDraft() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         MedicalService s =
                 service(
@@ -1790,11 +2037,16 @@ class MedicalServiceServiceTest {
                 );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         assertThrows(
                 ConflictException.class,
-                () -> medicalServiceService.publish(id)
+                () ->
+                        medicalServiceService.publish(
+                                id
+                        )
         );
     }
 
@@ -1802,7 +2054,8 @@ class MedicalServiceServiceTest {
     @Test
     void publish_ShouldRejectExaminationWithoutSpecialization() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         MedicalService s =
                 service(
@@ -1812,14 +2065,21 @@ class MedicalServiceServiceTest {
                         ServiceStatus.DRAFT
                 );
 
-        s.setRequiredSpecialization(null);
+        s.setRequiredSpecialization(
+                null
+        );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         assertThrows(
                 BadRequestException.class,
-                () -> medicalServiceService.publish(id)
+                () ->
+                        medicalServiceService.publish(
+                                id
+                        )
         );
     }
 
@@ -1827,7 +2087,8 @@ class MedicalServiceServiceTest {
     @Test
     void publish_ShouldRejectLaboratoryWithoutCapability() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         MedicalService s =
                 service(
@@ -1837,14 +2098,21 @@ class MedicalServiceServiceTest {
                         ServiceStatus.DRAFT
                 );
 
-        s.setRequiredCapability(null);
+        s.setRequiredCapability(
+                null
+        );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         assertThrows(
                 BadRequestException.class,
-                () -> medicalServiceService.publish(id)
+                () ->
+                        medicalServiceService.publish(
+                                id
+                        )
         );
     }
 
@@ -1852,7 +2120,8 @@ class MedicalServiceServiceTest {
     @Test
     void publish_ShouldPublishExaminationService() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         MedicalService s =
                 service(
@@ -1867,13 +2136,17 @@ class MedicalServiceServiceTest {
         );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         when(repo.save(s))
                 .thenReturn(s);
 
         var result =
-                medicalServiceService.publish(id);
+                medicalServiceService.publish(
+                        id
+                );
 
         assertNotNull(result);
 
@@ -1890,7 +2163,8 @@ class MedicalServiceServiceTest {
     @Test
     void publish_ShouldPublishLaboratoryService() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         MedicalService s =
                 service(
@@ -1907,12 +2181,16 @@ class MedicalServiceServiceTest {
         );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(s));
+                .thenReturn(
+                        Optional.of(s)
+                );
 
         when(repo.save(s))
                 .thenReturn(s);
 
-        medicalServiceService.publish(id);
+        medicalServiceService.publish(
+                id
+        );
 
         assertEquals(
                 ServiceStatus.ACTIVE,

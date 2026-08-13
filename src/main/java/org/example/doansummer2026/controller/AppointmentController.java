@@ -69,7 +69,7 @@ public class AppointmentController {
         if (current.getRole() == org.example.doansummer2026.enums.Role.CUSTOMER
                 && !current.getAccountId().equals(req.customerId())) {
             throw new org.example.doansummer2026.exception.BadRequestException(
-                    "Khach hang chi co the dat lich cho chinh minh");
+                    "Khách hàng chỉ có thể đặt lịch cho chính mình");
         }
         AppointmentResponse created = service.create(req);
         return RestResponses.created("/api/v1/appointments/{id}", created.appointmentId(), created);

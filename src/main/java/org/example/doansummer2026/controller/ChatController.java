@@ -146,7 +146,7 @@ public class ChatController {
         if (session.getCustomer() == null
                 || !session.getCustomer().getProfileId().equals(guestProfileId)
                 || session.getCustomer().getAccount() != null) {
-            throw new org.example.doansummer2026.exception.BadRequestException("Khong co quyen truy cap phien chat");
+            throw new org.example.doansummer2026.exception.BadRequestException("Không có quyền truy cập phiên chat");
         }
     }
 
@@ -162,7 +162,7 @@ public class ChatController {
         Profile profile = profileRepo.findFirstByAccount_AccountId(account.getAccountId()).orElseThrow();
         ChatSession session = chatService.getSession(sessionId);
         if (session.getCustomer() == null || !session.getCustomer().getProfileId().equals(profile.getProfileId())) {
-            throw new org.example.doansummer2026.exception.BadRequestException("Khong co quyen truy cap phien chat");
+            throw new org.example.doansummer2026.exception.BadRequestException("Không có quyền truy cập phiên chat");
         }
     }
 

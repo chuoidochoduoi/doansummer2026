@@ -26,11 +26,12 @@ public class GlobalExceptionHandler {
         List<ApiError.FieldError> errors = ex.getBindingResult().getFieldErrors().stream()
                 .map(this::toFieldError)
                 .toList();
+        String message = errors.isEmpty() ? "Dữ liệu không hợp lệ" : errors.get(0).message();
         ApiError body = new ApiError(
                 Instant.now(),
                 HttpStatus.BAD_REQUEST.value(),
                 "Bad Request",
-                "Du lieu khong hop le",
+                message,
                 req.getRequestURI(),
                 errors);
         return ResponseEntity.badRequest().body(body);
@@ -55,9 +56,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleDataIntegrity(DataIntegrityViolationException ex,
                                                        HttpServletRequest req) {
         log.warn("Data integrity violation", ex);
-        String msg = ex.getMostSpecificCause() != null
+        String cause = ex.getMostSpecificCause() != null
                 ? ex.getMostSpecificCause().getMessage()
-                : "Du lieu vi pham rang buoc (unique/FK)";
+                : null;
+        String msg;
+        if (cause != null && cause.toLowerCase().contains("duplicate key")) {
+            msg = "Dữ liệu đã tồn tại, vui lòng kiểm tra lại thông tin vừa nhập";
+        } else if (cause != null && cause.toLowerCase().contains("foreign key")) {
+            msg = "Không thể thực hiện vì dữ liệu đang được sử dụng ở nơi khác";
+        } else {
+            msg = "Dữ liệu vi phạm ràng buộc, vui lòng kiểm tra lại";
+        }
         return build(HttpStatus.CONFLICT, msg, req, null);
     }
 
@@ -68,24 +77,24 @@ public class GlobalExceptionHandler {
         String msg = ex.getConstraintViolations().stream()
                 .map(v -> v.getMessage())
                 .findFirst()
-                .orElse("Du lieu khong hop le");
+                .orElse("Dữ liệu không hợp lệ");
         return build(HttpStatus.BAD_REQUEST, msg, req, null);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex, HttpServletRequest req) {
-        return build(HttpStatus.FORBIDDEN, "Khong co quyen truy cap", req, null);
+        return build(HttpStatus.FORBIDDEN, "Không có quyền truy cập", req, null);
     }
 
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ApiError> handleAuth(AuthenticationException ex, HttpServletRequest req) {
-        return build(HttpStatus.UNAUTHORIZED, "Can xac thuc", req, null);
+        return build(HttpStatus.UNAUTHORIZED, "Cần xác thực", req, null);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleAll(Exception ex, HttpServletRequest req) {
         log.error("Unhandled exception", ex);
-        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Loi he thong", req, null);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Lỗi hệ thống", req, null);
     }
 
     private ApiError.FieldError toFieldError(FieldError fe) {

@@ -35,7 +35,7 @@ public class StaffScheduleTemplateService implements StaffScheduleTemplateServic
         StaffInfo staff = staffService.findById(req.staffId());
         validateUnique(staff, req.dayOfWeek(), null);
         ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
-                .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai: " + req.shiftId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Ca làm việc không tồn tại: " + req.shiftId()));
         StaffScheduleTemplate t = StaffScheduleTemplate.builder()
                 .staff(staff)
                 .dayOfWeek(req.dayOfWeek())
@@ -55,7 +55,7 @@ public class StaffScheduleTemplateService implements StaffScheduleTemplateServic
         t.setDayOfWeek(dow);
         if (req.shiftId() != null) {
             ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Ca kham khong ton tai: " + req.shiftId()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Ca làm việc không tồn tại: " + req.shiftId()));
             t.setShift(shift);
         }
         if (req.isActive() != null) t.setIsActive(req.isActive());
@@ -64,7 +64,7 @@ public class StaffScheduleTemplateService implements StaffScheduleTemplateServic
 
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Template khong ton tai: " + id);
+            throw new ResourceNotFoundException("Mẫu lịch làm việc không tồn tại: " + id);
         }
         repo.deleteById(id);
     }
@@ -82,14 +82,14 @@ public class StaffScheduleTemplateService implements StaffScheduleTemplateServic
 
     public StaffScheduleTemplate findById(UUID id) {
         return repo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Template khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Mẫu lịch làm việc không tồn tại: " + id));
     }
 
     private void validateUnique(StaffInfo staff, DayOfWeek dow, UUID ignoreId) {
         repo.findByStaffAndDayOfWeek(staff, dow).ifPresent(existing -> {
             if (ignoreId == null || !existing.getTemplateId().equals(ignoreId)) {
                 throw new ConflictException(
-                        "Da ton tai template cho nhan vien " + staff.getStaffCode() + " vao " + dow);
+                        "Đã tồn tại mẫu lịch cho nhân viên " + staff.getStaffCode() + " vào " + dow);
             }
         });
     }

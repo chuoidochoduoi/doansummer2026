@@ -13,6 +13,7 @@ import org.example.doansummer2026.dto.staff.StaffCapabilityRequest;
 import org.example.doansummer2026.dto.staff.StaffCapabilityResponse;
 import org.example.doansummer2026.dto.staff.ClinicManagerStaffResponse;
 import org.example.doansummer2026.exception.ConflictException;
+import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.enums.Gender;
@@ -42,6 +43,7 @@ import org.example.doansummer2026.repository.DepartmentRepository;
 import org.example.doansummer2026.model.Department;
 import java.util.stream.Collectors;
 import java.util.Map;
+import java.util.Locale;
 
 /**
  * Tao / cap nhat / xoa / truy van StaffInfo.
@@ -70,26 +72,26 @@ public class StaffService implements StaffServiceInterface {
         SystemRole systemRole = req.systemRole().normalized();
         // Validate unique
         if (accountRepo.existsByUsername(req.username())) {
-            throw new ConflictException("Username da ton tai: " + req.username());
+            throw new ConflictException("Tên đăng nhập đã tồn tại: " + req.username());
         }
         if (req.nationalId() != null && !req.nationalId().isBlank() && staffRepo.existsByNationalId(req.nationalId())) {
-            throw new ConflictException("CCCD/CMND da ton tai: " + req.nationalId());
+            throw new ConflictException("CCCD/CMND đã tồn tại: " + req.nationalId());
         }
         if (req.licenseNumber() != null && !req.licenseNumber().isBlank()
                 && staffRepo.existsByLicenseNumber(req.licenseNumber())) {
-            throw new ConflictException("So giay phep hanh nghe da ton tai");
+            throw new ConflictException("Số giấy phép hành nghề đã tồn tại");
         }
         if (profileRepo.findFirstByPhone(req.phone()).isPresent()) {
-            throw new ConflictException("So dien thoai da duoc su dung");
+            throw new ConflictException("Số điện thoại đã được sử dụng");
         }
         if (profileRepo.findFirstByEmail(req.email()).isPresent()) {
-            throw new ConflictException("Email da duoc su dung");
+            throw new ConflictException("Email đã được sử dụng");
         }
 
         // Moi bac si deu phai khai bao pham vi chuyen khoa phuc vu.
         if (systemRole.isDoctor()
                 && req.specializationId() == null) {
-            throw new ConflictException("Bac si phai co specializationId; bac si da khoa chon chuyen khoa Kham tong quat");
+            throw new ConflictException("Bác sĩ phải có chuyên khoa phục vụ; bác sĩ đa khoa chọn chuyên khoa Khám tổng quát");
         }
 
         Role accountRole = mapSystemRoleToRole(systemRole);
@@ -135,35 +137,84 @@ public class StaffService implements StaffServiceInterface {
 
     public StaffResponse getByAccountId(UUID accountId) {
         StaffInfo s = staffRepo.findFirstByProfile_Account_AccountId(accountId)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay nhan su voi accountId=" + accountId));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân sự của tài khoản: " + accountId));
         return toResponse(s);
     }
 
     public StaffResponse update(UUID staffId, StaffUpdateRequest req) {
         StaffInfo s = findById(staffId);
+        Account account = s.getProfile().getAccount();
+        Profile profile = s.getProfile();
         
         // Update Account
         if (req.username() != null && !req.username().isBlank()) {
-            s.getProfile().getAccount().setUsername(req.username());
+            String username = req.username().trim();
+            accountRepo.findFirstByUsername(username).ifPresent(existing -> {
+                if (!existing.getAccountId().equals(account.getAccountId())) {
+                    throw new ConflictException("Tên đăng nhập đã được sử dụng");
+                }
+            });
+            account.setUsername(username);
         }
 
         // Update Profile
-        if (req.fullName() != null) s.getProfile().setFullName(req.fullName());
-        if (req.phone() != null) s.getProfile().setPhone(req.phone());
-        if (req.email() != null) s.getProfile().setEmail(req.email());
-        if (req.gender() != null) s.getProfile().setGender(parseGender(req.gender()));
-        if (req.address() != null) s.getProfile().setAddress(req.address());
+        if (req.fullName() != null) profile.setFullName(req.fullName().trim().replaceAll("\\s+", " "));
+        if (req.phone() != null) {
+            String phone = blankToNull(req.phone());
+            if (phone != null) {
+                profileRepo.findFirstByPhone(phone).ifPresent(existing -> {
+                    if (!existing.getProfileId().equals(profile.getProfileId())) {
+                        throw new ConflictException("Số điện thoại đã được sử dụng");
+                    }
+                });
+            }
+            profile.setPhone(phone);
+        }
+        if (req.email() != null) {
+            String email = blankToNull(req.email());
+            if (email != null) {
+                email = email.toLowerCase(Locale.ROOT);
+                String normalizedEmail = email;
+                profileRepo.findFirstByEmailIgnoreCase(normalizedEmail).ifPresent(existing -> {
+                    if (!existing.getProfileId().equals(profile.getProfileId())) {
+                        throw new ConflictException("Email đã được sử dụng");
+                    }
+                });
+            }
+            profile.setEmail(email);
+        }
+        if (req.dateOfBirth() != null) profile.setDateOfBirth(req.dateOfBirth());
+        if (req.gender() != null) profile.setGender(parseGender(req.gender()));
+        if (req.address() != null) profile.setAddress(blankToNull(req.address()));
+
+        if (profile.getFullName() == null || profile.getFullName().isBlank()) {
+            throw new BadRequestException("Họ tên không được để trống");
+        }
+        if (profile.getFullName().codePoints().anyMatch(Character::isDigit)) {
+            throw new BadRequestException("Họ tên không được chứa chữ số");
+        }
+        if (profile.getDateOfBirth() == null
+                || !profile.getDateOfBirth().isBefore(java.time.LocalDate.now())) {
+            throw new BadRequestException("Ngày sinh phải là ngày hợp lệ trong quá khứ");
+        }
+        if (profile.getGender() == null || profile.getGender() == Gender.OTHER) {
+            throw new BadRequestException("Giới tính chỉ được chọn Nam hoặc Nữ");
+        }
+        if ((profile.getPhone() == null || profile.getPhone().isBlank())
+                && (profile.getEmail() == null || profile.getEmail().isBlank())) {
+            throw new BadRequestException("Vui lòng cung cấp số điện thoại hoặc email");
+        }
 
         // Update StaffInfo
         if (req.nationalId() != null && !req.nationalId().equals(s.getNationalId())) {
             if (!req.nationalId().isBlank() && staffRepo.existsByNationalId(req.nationalId())) {
-                throw new ConflictException("CCCD/CMND da ton tai");
+                throw new ConflictException("CCCD/CMND đã tồn tại");
             }
         }
         s.setNationalId(blankToNull(req.nationalId()));
         if (req.licenseNumber() != null && !req.licenseNumber().equals(s.getLicenseNumber())) {
             if (!req.licenseNumber().isBlank() && staffRepo.existsByLicenseNumber(req.licenseNumber())) {
-                throw new ConflictException("So giay phep hanh nghe da ton tai");
+                throw new ConflictException("Số giấy phép hành nghề đã tồn tại");
             }
         }
         s.setLicenseNumber(blankToNull(req.licenseNumber()));
@@ -176,7 +227,7 @@ public class StaffService implements StaffServiceInterface {
         }
         boolean isDoctor = s.getSystemRole().isDoctor();
         if (isDoctor && s.getSpecialization() == null) {
-            throw new ConflictException("Bac si phai co chuyen khoa phuc vu");
+            throw new ConflictException("Bác sĩ phải có chuyên khoa phục vụ");
         }
         return toResponse(staffRepo.save(s));
     }
@@ -190,7 +241,7 @@ public class StaffService implements StaffServiceInterface {
 
     public void delete(UUID staffId) {
         if (!staffRepo.existsById(staffId)) {
-            throw new ResourceNotFoundException("Nhan vien khong ton tai: " + staffId);
+            throw new ResourceNotFoundException("Nhân viên không tồn tại: " + staffId);
         }
         staffRepo.deleteById(staffId);
     }
@@ -202,7 +253,7 @@ public class StaffService implements StaffServiceInterface {
     public StaffResponse lock(UUID staffId) {
         StaffInfo s = findById(staffId);
         if (s.getSystemRole() == SystemRole.ADMIN || s.getSystemRole() == SystemRole.CLINIC_MANAGER) {
-            throw new ConflictException("Khong the khoa tai khoan ADMIN hoac CLINIC_MANAGER");
+            throw new ConflictException("Không thể khóa tài khoản quản trị viên hoặc quản lý phòng khám");
         }
         Account account = s.getProfile().getAccount();
         account.setIsActive(false);
@@ -231,7 +282,7 @@ public class StaffService implements StaffServiceInterface {
 
     public StaffInfo findById(UUID id) {
         return staffRepo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + id));
     }
 
     @Transactional(readOnly = true)
@@ -243,7 +294,7 @@ public class StaffService implements StaffServiceInterface {
 
     public List<StaffCapabilityResponse> replaceCapabilities(UUID staffId, List<StaffCapabilityRequest> requests) {
         StaffInfo staff = findById(staffId);
-        if (!staff.getSystemRole().isDoctor()) throw new ConflictException("Chi bac si moi duoc cap nang luc thuc hien");
+        if (!staff.getSystemRole().isDoctor()) throw new ConflictException("Chỉ bác sĩ mới được cấp kỹ thuật chuyên môn");
         staffCapabilityRepo.deleteAllByStaff_StaffId(staffId);
         List<StaffCapabilityRequest> unique = (requests == null ? List.<StaffCapabilityRequest>of() : requests).stream()
                 .filter(request -> request.capabilityId() != null)
@@ -252,7 +303,7 @@ public class StaffService implements StaffServiceInterface {
         List<StaffCapability> values = unique.stream().map(request -> StaffCapability.builder()
                 .staff(staff)
                 .capability(capabilityRepo.findById(request.capabilityId()).orElseThrow(() ->
-                        new ResourceNotFoundException("Nang luc khong ton tai: " + request.capabilityId())))
+                        new ResourceNotFoundException("Danh mục kỹ thuật không tồn tại: " + request.capabilityId())))
                 .certificateNumber(blankToNull(request.certificateNumber()))
                 .issuedDate(request.issuedDate()).expiryDate(request.expiryDate())
                 .issuingOrganization(blankToNull(request.issuingOrganization()))
@@ -313,7 +364,7 @@ public class StaffService implements StaffServiceInterface {
             if (gender == Gender.OTHER) throw new IllegalArgumentException();
             return gender;
         } catch (IllegalArgumentException ex) {
-            throw new ConflictException("Gender khong hop le: " + raw);
+            throw new ConflictException("Giới tính không hợp lệ: " + raw);
         }
     }
 

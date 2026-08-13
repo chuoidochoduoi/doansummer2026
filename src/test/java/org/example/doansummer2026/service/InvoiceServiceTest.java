@@ -75,6 +75,12 @@ class InvoiceServiceTest {
     private TestRequestRepository testRequestRepo;
 
     @Mock
+    private DepartmentRepository departmentRepo;
+
+    @Mock
+    private BhxhIntegrationService bhxhIntegrationService;
+
+    @Mock
     private NotificationService notificationService;
 
     @Mock
@@ -409,64 +415,44 @@ class InvoiceServiceTest {
 
         UUID serviceId = UUID.randomUUID();
 
-        MedicalService service =
-                mock(MedicalService.class);
+        MedicalService service = mock(MedicalService.class);
+        InvoiceItemCreateRequest itemReq = mock(InvoiceItemCreateRequest.class);
 
-        InvoiceItemCreateRequest itemReq =
-                mock(InvoiceItemCreateRequest.class);
+        when(itemReq.serviceId()).thenReturn(serviceId);
+        when(itemReq.unitPrice()).thenReturn(new BigDecimal("100000"));
+        when(itemReq.quantity()).thenReturn(2);
+        when(itemReq.serviceSnapshot()).thenReturn("Xet nghiem mau");
+        when(itemReq.serviceCodeSnapshot()).thenReturn("XN01");
+        when(serviceRepo.findById(serviceId)).thenReturn(Optional.of(service));
 
-        when(itemReq.serviceId())
-                .thenReturn(serviceId);
+        InvoiceCreateRequest req = new InvoiceCreateRequest(
+                null, null, null, LocalDate.now(),
+                BigDecimal.ZERO, BigDecimal.ZERO,
+                null, null, List.of(itemReq)
+        );
 
-        when(itemReq.unitPrice())
-                .thenReturn(new BigDecimal("100000"));
+        when(repo.existsByInvoiceCode(anyString())).thenReturn(false);
+        when(repo.save(any(Invoice.class))).thenAnswer(i -> {
+            Invoice invoice = i.getArgument(0);
+            if (invoice.getInvoiceId() == null) {
+                invoice.setInvoiceId(UUID.randomUUID());
+            }
+            return invoice;
+        });
 
-        when(itemReq.quantity())
-                .thenReturn(2);
+        // create() now explicitly persists InvoiceItem before adding it to invoice.items.
+        when(itemRepo.save(any(InvoiceItem.class)))
+                .thenAnswer(i -> i.getArgument(0));
 
-        when(itemReq.serviceSnapshot())
-                .thenReturn("Xet nghiem mau");
+        when(staffRepo.findAllBySystemRoleIn(anyList())).thenReturn(List.of());
 
-        when(itemReq.serviceCodeSnapshot())
-                .thenReturn("XN01");
+        var result = invoiceService.create(req);
 
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
-
-        InvoiceCreateRequest req =
-                new InvoiceCreateRequest(
-                        null,
-                        null,
-                        null,
-                        LocalDate.now(),
-                        BigDecimal.ZERO,
-                        BigDecimal.ZERO,
-                        null,
-                        null,
-                        List.of(itemReq)
-                );
-
-        when(repo.existsByInvoiceCode(anyString()))
-                .thenReturn(false);
-
-        when(repo.save(any(Invoice.class)))
-                .thenAnswer(i -> {
-                    Invoice invoice = i.getArgument(0);
-                    invoice.setInvoiceId(UUID.randomUUID());
-                    return invoice;
-                });
-
-        when(staffRepo.findAllBySystemRoleIn(anyList()))
-                .thenReturn(List.of());
-
-        invoiceService.create(req);
-
+        assertNotNull(result);
+        verify(itemRepo).save(any(InvoiceItem.class));
         verify(repo, atLeastOnce()).save(argThat(invoice ->
-                new BigDecimal("200000")
-                        .compareTo(invoice.getSubtotal()) == 0
-                        &&
-                        new BigDecimal("200000")
-                                .compareTo(invoice.getTotalAmount()) == 0
+                new BigDecimal("200000").compareTo(invoice.getSubtotal()) == 0
+                        && new BigDecimal("200000").compareTo(invoice.getTotalAmount()) == 0
         ));
     }
 
@@ -808,40 +794,28 @@ class InvoiceServiceTest {
 
 
     @Test
-    void pay_ShouldRejectAlreadyPaidInvoice() {
+    void pay_ShouldReturnExistingInvoice_WhenAlreadyPaid() {
 
         UUID id = UUID.randomUUID();
 
-        Invoice invoice =
-                Invoice.builder()
-                        .invoiceId(id)
-                        .status(InvoiceStatus.PAID)
-                        .build();
+        Invoice invoice = Invoice.builder()
+                .invoiceId(id)
+                .invoiceCode("INV-PAID")
+                .status(InvoiceStatus.PAID)
+                .items(new ArrayList<>())
+                .build();
 
-        when(repo.findByIdForUpdate(id))
-                .thenReturn(Optional.of(invoice));
+        when(repo.findByIdForUpdate(id)).thenReturn(Optional.of(invoice));
+        when(repo.getWithDetailsByInvoiceId(id)).thenReturn(Optional.of(invoice));
+        when(itemRepo.findAllWithServiceByInvoiceId(id)).thenReturn(List.of());
 
-        when(
-                transactionRepo
-                        .findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
-                                id,
-                                TransactionStatus.SUCCESS
-                        )
-        ).thenReturn(Optional.empty());
+        var result = invoiceService.pay(id, null);
 
-        ConflictException ex =
-                assertThrows(
-                        ConflictException.class,
-                        () -> invoiceService.pay(
-                                id,
-                                null
-                        )
-                );
+        assertNotNull(result);
+        assertEquals(InvoiceStatus.PAID, invoice.getStatus());
 
-        assertTrue(
-                ex.getMessage()
-                        .contains("nhan vien khac")
-        );
+        // Paying an already-paid invoice is idempotent: no second cash transaction.
+        verify(transactionRepo, never()).save(any());
     }
 
 
@@ -1236,23 +1210,17 @@ class InvoiceServiceTest {
         UUID createdTicketId = UUID.randomUUID();
 
         CustomerVisit visit = mock(CustomerVisit.class);
-        when(visit.getVisitId())
-                .thenReturn(visitId);
+        when(visit.getVisitId()).thenReturn(visitId);
 
         Department department = mock(Department.class);
-        when(department.getDepartmentId())
-                .thenReturn(departmentId);
+        when(department.getDepartmentId()).thenReturn(departmentId);
+        when(department.getDepartmentType()).thenReturn(DepartmentType.EXAMINATION);
+        when(department.getHeadDoctor()).thenReturn(mock(StaffInfo.class));
 
         MedicalService service = mock(MedicalService.class);
-
-        when(service.getServiceId())
-                .thenReturn(serviceId);
-
-        when(service.getDepartmentType())
-                .thenReturn(DepartmentType.EXAMINATION);
-
-        when(service.getDepartment())
-                .thenReturn(department);
+        when(service.getServiceId()).thenReturn(serviceId);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.EXAMINATION);
+        when(service.getDepartment()).thenReturn(department);
 
         QueueTicket activeTicket = QueueTicket.builder()
                 .ticketId(UUID.randomUUID())
@@ -1278,53 +1246,23 @@ class InvoiceServiceTest {
                 .items(new ArrayList<>(List.of(item)))
                 .build();
 
-        when(repo.findByIdForUpdate(invoiceId))
-                .thenReturn(Optional.of(invoice));
+        when(repo.findByIdForUpdate(invoiceId)).thenReturn(Optional.of(invoice));
+        when(repo.save(invoice)).thenReturn(invoice);
+        when(transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                invoiceId, TransactionStatus.SUCCESS)).thenReturn(Optional.empty());
+        when(repo.getWithDetailsByInvoiceId(invoiceId)).thenReturn(Optional.of(invoice));
+        when(itemRepo.findAllWithServiceByInvoiceId(invoiceId)).thenReturn(List.of(item));
+        when(queueTicketRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of(activeTicket));
 
-        when(repo.save(invoice))
-                .thenReturn(invoice);
+        var response = mock(org.example.doansummer2026.dto.queueTicket.QueueTicketResponse.class);
+        when(response.ticketId()).thenReturn(createdTicketId);
+        when(queueTicketService.create(any())).thenReturn(response);
+        when(queueTicketRepo.findById(createdTicketId)).thenReturn(Optional.of(newlyCreated));
 
-        when(
-                transactionRepo
-                        .findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
-                                invoiceId,
-                                TransactionStatus.SUCCESS
-                        )
-        ).thenReturn(Optional.empty());
+        invoiceService.pay(invoiceId, null);
 
-        when(repo.getWithDetailsByInvoiceId(invoiceId))
-                .thenReturn(Optional.of(invoice));
-
-        /*
-         * Có queue đang active -> workflowActivated = true.
-         */
-        when(queueTicketRepo.findAllByVisit_VisitId(visitId))
-                .thenReturn(List.of(activeTicket));
-
-        var response =
-                mock(org.example.doansummer2026.dto.queueTicket.QueueTicketResponse.class);
-
-        when(response.ticketId())
-                .thenReturn(createdTicketId);
-
-        when(queueTicketService.create(any()))
-                .thenReturn(response);
-
-        when(queueTicketRepo.findById(createdTicketId))
-                .thenReturn(Optional.of(newlyCreated));
-
-        invoiceService.pay(
-                invoiceId,
-                null
-        );
-
-        assertEquals(
-                QueueStatus.BLOCKED,
-                newlyCreated.getStatus()
-        );
-
-        verify(queueTicketRepo)
-                .save(newlyCreated);
+        assertEquals(QueueStatus.BLOCKED, newlyCreated.getStatus());
+        verify(queueTicketRepo).save(newlyCreated);
     }
 
 
@@ -1333,18 +1271,19 @@ class InvoiceServiceTest {
 // =========================================================
 
     @Test
-    void pay_ShouldIgnoreInvoiceItem_WhenServiceIsNull() {
+    void pay_ShouldReject_WhenInvoiceItemServiceCannotBeResolved() {
 
         UUID invoiceId = UUID.randomUUID();
         UUID visitId = UUID.randomUUID();
 
         CustomerVisit visit = mock(CustomerVisit.class);
-        when(visit.getVisitId())
-                .thenReturn(visitId);
+        when(visit.getVisitId()).thenReturn(visitId);
 
         InvoiceItem item = InvoiceItem.builder()
                 .itemId(UUID.randomUUID())
                 .service(null)
+                .serviceSnapshot("Old Service")
+                .serviceCodeSnapshot(null)
                 .build();
 
         Invoice invoice = Invoice.builder()
@@ -1356,30 +1295,16 @@ class InvoiceServiceTest {
                 .items(new ArrayList<>(List.of(item)))
                 .build();
 
-        when(repo.findByIdForUpdate(invoiceId))
-                .thenReturn(Optional.of(invoice));
+        when(repo.findByIdForUpdate(invoiceId)).thenReturn(Optional.of(invoice));
+        when(repo.save(invoice)).thenReturn(invoice);
+        when(transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                invoiceId, TransactionStatus.SUCCESS)).thenReturn(Optional.empty());
+        when(repo.getWithDetailsByInvoiceId(invoiceId)).thenReturn(Optional.of(invoice));
+        when(itemRepo.findAllWithServiceByInvoiceId(invoiceId)).thenReturn(List.of(item));
+        when(queueTicketRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of());
+        when(testRequestRepo.findAllByMedicalRecord_Visit_VisitId(visitId)).thenReturn(List.of());
 
-        when(repo.save(invoice))
-                .thenReturn(invoice);
-
-        when(
-                transactionRepo
-                        .findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
-                                invoiceId,
-                                TransactionStatus.SUCCESS
-                        )
-        ).thenReturn(Optional.empty());
-
-        when(repo.getWithDetailsByInvoiceId(invoiceId))
-                .thenReturn(Optional.of(invoice));
-
-        when(queueTicketRepo.findAllByVisit_VisitId(visitId))
-                .thenReturn(List.of());
-
-        when(testRequestRepo.findAllByMedicalRecord_Visit_VisitId(visitId))
-                .thenReturn(List.of());
-
-        invoiceService.pay(invoiceId, null);
+        assertThrows(BadRequestException.class, () -> invoiceService.pay(invoiceId, null));
 
         verifyNoInteractions(queueTicketService);
         verifyNoInteractions(testRequestService);
@@ -1391,19 +1316,19 @@ class InvoiceServiceTest {
 // =========================================================
 
     @Test
-    void pay_ShouldSkipExaminationService_WhenDepartmentIsNull() {
+    void pay_ShouldRejectExaminationService_WhenNoRoomOrSpecializationConfigured() {
 
         UUID invoiceId = UUID.randomUUID();
         UUID visitId = UUID.randomUUID();
 
         CustomerVisit visit = mock(CustomerVisit.class);
-        when(visit.getVisitId())
-                .thenReturn(visitId);
+        when(visit.getVisitId()).thenReturn(visitId);
 
         MedicalService service = mock(MedicalService.class);
-
-        when(service.getDepartmentType())
-                .thenReturn(DepartmentType.EXAMINATION);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.EXAMINATION);
+        when(service.getName()).thenReturn("Kham noi");
+        when(service.getDepartment()).thenReturn(null);
+        when(service.getRequiredSpecialization()).thenReturn(null);
 
         InvoiceItem item = InvoiceItem.builder()
                 .itemId(UUID.randomUUID())
@@ -1419,31 +1344,16 @@ class InvoiceServiceTest {
                 .items(new ArrayList<>(List.of(item)))
                 .build();
 
-        when(repo.findByIdForUpdate(invoiceId))
-                .thenReturn(Optional.of(invoice));
+        when(repo.findByIdForUpdate(invoiceId)).thenReturn(Optional.of(invoice));
+        when(repo.save(invoice)).thenReturn(invoice);
+        when(transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                invoiceId, TransactionStatus.SUCCESS)).thenReturn(Optional.empty());
+        when(repo.getWithDetailsByInvoiceId(invoiceId)).thenReturn(Optional.of(invoice));
+        when(itemRepo.findAllWithServiceByInvoiceId(invoiceId)).thenReturn(List.of(item));
+        when(queueTicketRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of());
+        when(testRequestRepo.findAllByMedicalRecord_Visit_VisitId(visitId)).thenReturn(List.of());
 
-        when(repo.save(invoice))
-                .thenReturn(invoice);
-
-        when(
-                transactionRepo
-                        .findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
-                                invoiceId,
-                                TransactionStatus.SUCCESS
-                        )
-        ).thenReturn(Optional.empty());
-
-        when(repo.getWithDetailsByInvoiceId(invoiceId))
-                .thenReturn(Optional.of(invoice));
-
-        when(queueTicketRepo.findAllByVisit_VisitId(visitId))
-                .thenReturn(List.of());
-
-        when(testRequestRepo.findAllByMedicalRecord_Visit_VisitId(visitId))
-                .thenReturn(List.of());
-
-        invoiceService.pay(invoiceId, null);
-
+        assertThrows(BadRequestException.class, () -> invoiceService.pay(invoiceId, null));
         verifyNoInteractions(queueTicketService);
     }
 
@@ -1461,27 +1371,16 @@ class InvoiceServiceTest {
         UUID staffId = UUID.randomUUID();
 
         CustomerVisit visit = mock(CustomerVisit.class);
-        when(visit.getVisitId())
-                .thenReturn(visitId);
+        when(visit.getVisitId()).thenReturn(visitId);
 
-        MedicalRecord record = MedicalRecord.builder()
-                .recordId(recordId)
-                .build();
-
+        MedicalRecord record = MedicalRecord.builder().recordId(recordId).build();
         StaffInfo issuedBy = mock(StaffInfo.class);
-        when(issuedBy.getStaffId())
-                .thenReturn(staffId);
+        when(issuedBy.getStaffId()).thenReturn(staffId);
 
         MedicalService service = mock(MedicalService.class);
-
-        when(service.getServiceId())
-                .thenReturn(serviceId);
-
-        when(service.getDepartmentType())
-                .thenReturn(DepartmentType.LABORATORY);
-
-        when(service.getName())
-                .thenReturn("Xet nghiem mau");
+        when(service.getServiceId()).thenReturn(serviceId);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.LABORATORY);
+        when(service.getName()).thenReturn("Xet nghiem mau");
 
         InvoiceItem item = InvoiceItem.builder()
                 .itemId(UUID.randomUUID())
@@ -1500,43 +1399,20 @@ class InvoiceServiceTest {
                 .items(new ArrayList<>(List.of(item)))
                 .build();
 
-        when(repo.findByIdForUpdate(invoiceId))
-                .thenReturn(Optional.of(invoice));
+        when(repo.findByIdForUpdate(invoiceId)).thenReturn(Optional.of(invoice));
+        when(repo.save(invoice)).thenReturn(invoice);
+        when(transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                invoiceId, TransactionStatus.SUCCESS)).thenReturn(Optional.empty());
+        when(repo.getWithDetailsByInvoiceId(invoiceId)).thenReturn(Optional.of(invoice));
+        when(itemRepo.findAllWithServiceByInvoiceId(invoiceId)).thenReturn(List.of(item));
+        when(queueTicketRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of());
+        when(testRequestRepo.findAllByMedicalRecord_Visit_VisitId(visitId)).thenReturn(List.of());
 
-        when(repo.save(invoice))
-                .thenReturn(invoice);
+        invoiceService.pay(invoiceId, staffId);
 
-        when(
-                transactionRepo
-                        .findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
-                                invoiceId,
-                                TransactionStatus.SUCCESS
-                        )
-        ).thenReturn(Optional.empty());
-
-        when(repo.getWithDetailsByInvoiceId(invoiceId))
-                .thenReturn(Optional.of(invoice));
-
-        when(queueTicketRepo.findAllByVisit_VisitId(visitId))
-                .thenReturn(List.of());
-
-        when(testRequestRepo.findAllByMedicalRecord_Visit_VisitId(visitId))
-                .thenReturn(List.of());
-
-        invoiceService.pay(
-                invoiceId,
-                staffId
+        verify(testRequestService).createFromPaidInvoice(
+                eq(visitId), eq(recordId), eq(serviceId), eq(staffId), eq("XN mau"), eq(item.getItemId())
         );
-
-        verify(testRequestService)
-                .createFromPaidInvoice(
-                        eq(visitId),
-                        eq(recordId),
-                        eq(serviceId),
-                        eq(staffId),
-                        eq("XN mau"),
-                        eq(item.getItemId())
-                );
     }
 
     // =========================================================
@@ -1552,20 +1428,12 @@ class InvoiceServiceTest {
         UUID serviceId = UUID.randomUUID();
 
         CustomerVisit visit = mock(CustomerVisit.class);
-        when(visit.getVisitId())
-                .thenReturn(visitId);
+        when(visit.getVisitId()).thenReturn(visitId);
 
-        MedicalRecord record = MedicalRecord.builder()
-                .recordId(recordId)
-                .build();
-
+        MedicalRecord record = MedicalRecord.builder().recordId(recordId).build();
         MedicalService service = mock(MedicalService.class);
-
-        when(service.getServiceId())
-                .thenReturn(serviceId);
-
-        when(service.getDepartmentType())
-                .thenReturn(DepartmentType.LABORATORY);
+        when(service.getServiceId()).thenReturn(serviceId);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.LABORATORY);
 
         InvoiceItem item = InvoiceItem.builder()
                 .itemId(UUID.randomUUID())
@@ -1581,46 +1449,21 @@ class InvoiceServiceTest {
                 .items(new ArrayList<>(List.of(item)))
                 .build();
 
-        when(repo.findByIdForUpdate(invoiceId))
-                .thenReturn(Optional.of(invoice));
-
-        when(repo.save(invoice))
-                .thenReturn(invoice);
-
-        when(
-                transactionRepo
-                        .findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
-                                invoiceId,
-                                TransactionStatus.SUCCESS
-                        )
-        ).thenReturn(Optional.empty());
-
-        when(repo.getWithDetailsByInvoiceId(invoiceId))
-                .thenReturn(Optional.of(invoice));
-
-        when(
-                recordRepo.findFirstByVisit_VisitIdOrderByCreatedAtDesc(
-                        visitId
-                )
-        ).thenReturn(Optional.of(record));
-
-        when(queueTicketRepo.findAllByVisit_VisitId(visitId))
-                .thenReturn(List.of());
-
-        when(testRequestRepo.findAllByMedicalRecord_Visit_VisitId(visitId))
-                .thenReturn(List.of());
+        when(repo.findByIdForUpdate(invoiceId)).thenReturn(Optional.of(invoice));
+        when(repo.save(invoice)).thenReturn(invoice);
+        when(transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                invoiceId, TransactionStatus.SUCCESS)).thenReturn(Optional.empty());
+        when(repo.getWithDetailsByInvoiceId(invoiceId)).thenReturn(Optional.of(invoice));
+        when(itemRepo.findAllWithServiceByInvoiceId(invoiceId)).thenReturn(List.of(item));
+        when(recordRepo.findFirstByVisit_VisitIdOrderByCreatedAtDesc(visitId)).thenReturn(Optional.of(record));
+        when(queueTicketRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of());
+        when(testRequestRepo.findAllByMedicalRecord_Visit_VisitId(visitId)).thenReturn(List.of());
 
         invoiceService.pay(invoiceId, null);
 
-        verify(testRequestService)
-                .createFromPaidInvoice(
-                        eq(visitId),
-                        eq(recordId),
-                        eq(serviceId),
-                        isNull(),
-                        isNull(),
-                        eq(item.getItemId())
-                );
+        verify(testRequestService).createFromPaidInvoice(
+                eq(visitId), eq(recordId), eq(serviceId), isNull(), isNull(), eq(item.getItemId())
+        );
     }
 
     // =========================================================
@@ -1636,24 +1479,17 @@ class InvoiceServiceTest {
         UUID cashierId = UUID.randomUUID();
 
         CustomerVisit visit = mock(CustomerVisit.class);
-        when(visit.getVisitId())
-                .thenReturn(visitId);
+        when(visit.getVisitId()).thenReturn(visitId);
 
         StaffInfo cashier = mock(StaffInfo.class);
-        when(cashier.getStaffId())
-                .thenReturn(cashierId);
+        when(cashier.getStaffId()).thenReturn(cashierId);
 
         Transaction payment = mock(Transaction.class);
-        when(payment.getReceivedBy())
-                .thenReturn(cashier);
+        when(payment.getReceivedBy()).thenReturn(cashier);
 
         MedicalService service = mock(MedicalService.class);
-
-        when(service.getServiceId())
-                .thenReturn(serviceId);
-
-        when(service.getDepartmentType())
-                .thenReturn(DepartmentType.LABORATORY);
+        when(service.getServiceId()).thenReturn(serviceId);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.LABORATORY);
 
         InvoiceItem item = InvoiceItem.builder()
                 .itemId(UUID.randomUUID())
@@ -1669,39 +1505,148 @@ class InvoiceServiceTest {
                 .items(new ArrayList<>(List.of(item)))
                 .build();
 
+        var createdResponse = mock(org.example.doansummer2026.dto.testRequest.TestRequestResponse.class);
+        when(createdResponse.medicalRecordId()).thenReturn(null);
+
+        when(repo.findByIdForUpdate(invoiceId)).thenReturn(Optional.of(invoice));
+        when(repo.save(invoice)).thenReturn(invoice);
+        when(staffRepo.findById(cashierId)).thenReturn(Optional.of(cashier));
+        when(transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                invoiceId, TransactionStatus.SUCCESS)).thenReturn(Optional.empty(), Optional.of(payment));
+        when(repo.getWithDetailsByInvoiceId(invoiceId)).thenReturn(Optional.of(invoice));
+        when(itemRepo.findAllWithServiceByInvoiceId(invoiceId)).thenReturn(List.of(item));
+        when(queueTicketRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of());
+        when(testRequestRepo.findAllByMedicalRecord_Visit_VisitId(visitId)).thenReturn(List.of());
+        when(testRequestService.createFromPaidInvoice(any(), any(), any(), any(), any(), any()))
+                .thenReturn(createdResponse);
+
+        invoiceService.pay(invoiceId, cashierId);
+
+        verify(testRequestService).createFromPaidInvoice(
+                eq(visitId), isNull(), eq(serviceId), eq(cashierId), isNull(), eq(item.getItemId())
+        );
+    }
+    // =========================================================
+// WORKFLOW - BLOCK PARACLINICAL TEST WHEN WORKFLOW ACTIVE
+// =========================================================
+
+    @Test
+    void pay_ShouldDelegateParaclinicalBlockingDecisionToTestRequestService() {
+
+        UUID invoiceId = UUID.randomUUID();
+        UUID visitId = UUID.randomUUID();
+        UUID serviceId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        UUID medicalRecordId = UUID.randomUUID();
+
+        CustomerVisit visit = mock(CustomerVisit.class);
+
+        when(visit.getVisitId())
+                .thenReturn(visitId);
+
+        MedicalService service = mock(MedicalService.class);
+
+        when(service.getServiceId())
+                .thenReturn(serviceId);
+
+        when(service.getDepartmentType())
+                .thenReturn(DepartmentType.LABORATORY);
+
+        when(service.getName())
+                .thenReturn("Xet nghiem mau");
+
+        InvoiceItem item =
+                InvoiceItem.builder()
+                        .itemId(itemId)
+                        .service(service)
+                        .build();
+
+        Invoice invoice =
+                Invoice.builder()
+                        .invoiceId(invoiceId)
+                        .invoiceCode("INV-LAB-DELEGATE")
+                        .status(InvoiceStatus.PENDING)
+                        .totalAmount(BigDecimal.ONE)
+                        .paidAmount(BigDecimal.ZERO)
+                        .visit(visit)
+                        .items(new ArrayList<>(List.of(item)))
+                        .build();
+
         when(repo.findByIdForUpdate(invoiceId))
                 .thenReturn(Optional.of(invoice));
 
         when(repo.save(invoice))
                 .thenReturn(invoice);
 
-        /*
-         * Lần đầu trong pay(): chưa có success -> tạo transaction.
-         * Sau khi load workflow: trả payment để lấy receivedBy.
-         */
         when(
                 transactionRepo
                         .findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
                                 invoiceId,
                                 TransactionStatus.SUCCESS
                         )
-        ).thenReturn(
-                Optional.empty(),
-                Optional.of(payment)
-        );
+        ).thenReturn(Optional.empty());
 
         when(repo.getWithDetailsByInvoiceId(invoiceId))
                 .thenReturn(Optional.of(invoice));
 
-        when(queueTicketRepo.findAllByVisit_VisitId(visitId))
-                .thenReturn(List.of());
+        when(itemRepo.findAllWithServiceByInvoiceId(invoiceId))
+                .thenReturn(List.of(item));
 
-        when(testRequestRepo.findAllByMedicalRecord_Visit_VisitId(visitId))
-                .thenReturn(List.of());
+        /*
+         * Một workflow đã active.
+         *
+         * Vì queue này WAITING nên workflowActivated=true ngay ở vế đầu.
+         * KHÔNG mock testRequestRepo.findAllByMedicalRecord_Visit_VisitId(),
+         * vì Java sẽ short-circuit và không gọi repository đó.
+         */
+        QueueTicket existingWorkflow =
+                QueueTicket.builder()
+                        .ticketId(UUID.randomUUID())
+                        .status(QueueStatus.WAITING)
+                        .build();
+
+        when(queueTicketRepo.findAllByVisit_VisitId(visitId))
+                .thenReturn(List.of(existingWorkflow));
+
+        /*
+         * Invoice chưa có MedicalRecord.
+         *
+         * createQueueTicketsFromInvoiceItems() sẽ dùng:
+         *
+         * createdRequest.medicalRecordId()
+         *
+         * nên chỉ cần stub medicalRecordId().
+         *
+         * KHÔNG stub testRequestId(), vì InvoiceService không đọc nó.
+         */
+        var createdResponse =
+                mock(
+                        org.example.doansummer2026.dto.testRequest
+                                .TestRequestResponse.class
+                );
+
+        when(createdResponse.medicalRecordId())
+                .thenReturn(medicalRecordId);
+
+        when(
+                testRequestService.createFromPaidInvoice(
+                        eq(visitId),
+                        isNull(),
+                        eq(serviceId),
+                        isNull(),
+                        eq("Xet nghiem mau"),
+                        eq(itemId)
+                )
+        ).thenReturn(createdResponse);
 
         invoiceService.pay(
                 invoiceId,
-                cashierId
+                null
+        );
+
+        assertEquals(
+                InvoiceStatus.PAID,
+                invoice.getStatus()
         );
 
         verify(testRequestService)
@@ -1709,156 +1654,47 @@ class InvoiceServiceTest {
                         eq(visitId),
                         isNull(),
                         eq(serviceId),
-                        eq(cashierId),
                         isNull(),
-                        eq(item.getItemId())
+                        eq("Xet nghiem mau"),
+                        eq(itemId)
                 );
-    }
-    // =========================================================
-// WORKFLOW - BLOCK PARACLINICAL TEST WHEN WORKFLOW ACTIVE
-// =========================================================
 
-    @Test
-    void pay_ShouldBlockParaclinicalTest_WhenWorkflowAlreadyActive() {
+        /*
+         * InvoiceService không tự BLOCK TestRequest nữa.
+         * Việc quyết định trạng thái do TestRequestService xử lý.
+         */
+        verify(testRequestRepo, never())
+                .save(any(TestRequest.class));
 
-        UUID invoiceId = UUID.randomUUID();
-        UUID visitId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
-        UUID testRequestId = UUID.randomUUID();
-        UUID queueId = UUID.randomUUID();
-
-        CustomerVisit visit = mock(CustomerVisit.class);
-        when(visit.getVisitId())
-                .thenReturn(visitId);
-
-        QueueTicket existingActive = QueueTicket.builder()
-                .ticketId(UUID.randomUUID())
-                .status(QueueStatus.WAITING)
-                .build();
-
-        QueueTicket labQueue = QueueTicket.builder()
-                .ticketId(queueId)
-                .status(QueueStatus.WAITING)
-                .build();
-
-        MedicalService service = mock(MedicalService.class);
-
-        when(service.getServiceId())
-                .thenReturn(serviceId);
-
-        when(service.getDepartmentType())
-                .thenReturn(DepartmentType.LABORATORY);
-
-        InvoiceItem item = InvoiceItem.builder()
-                .itemId(UUID.randomUUID())
-                .service(service)
-                .build();
-
-        Invoice invoice = Invoice.builder()
-                .invoiceId(invoiceId)
-                .invoiceCode("INV-BLOCK-LAB")
-                .status(InvoiceStatus.PENDING)
-                .totalAmount(BigDecimal.ONE)
-                .visit(visit)
-                .items(new ArrayList<>(List.of(item)))
-                .build();
-
-        var testResponse =
-                mock(org.example.doansummer2026.dto.testRequest.TestRequestResponse.class);
-
-        when(testResponse.testRequestId())
-                .thenReturn(testRequestId);
-
-        TestRequest blocked = TestRequest.builder()
-                .testRequestId(testRequestId)
-                .status(TestRequestStatus.PENDING)
-                .queueTicket(labQueue)
-                .build();
-
-        when(repo.findByIdForUpdate(invoiceId))
-                .thenReturn(Optional.of(invoice));
-
-        when(repo.save(invoice))
-                .thenReturn(invoice);
-
-        when(
-                transactionRepo
-                        .findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
-                                invoiceId,
-                                TransactionStatus.SUCCESS
-                        )
-        ).thenReturn(Optional.empty());
-
-        when(repo.getWithDetailsByInvoiceId(invoiceId))
-                .thenReturn(Optional.of(invoice));
-
-        when(queueTicketRepo.findAllByVisit_VisitId(visitId))
-                .thenReturn(List.of(existingActive));
-
-        when(testRequestService.createFromPaidInvoice(
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any()
-        )).thenReturn(testResponse);
-
-        when(testRequestRepo.findById(testRequestId))
-                .thenReturn(Optional.of(blocked));
-
-        when(testRequestRepo.findAllByQueueTicket_TicketId(queueId))
-                .thenReturn(List.of(blocked));
-
-        invoiceService.pay(
-                invoiceId,
-                null
-        );
-
-        assertEquals(
-                TestRequestStatus.BLOCKED,
-                blocked.getStatus()
-        );
-
-        assertEquals(
-                QueueStatus.BLOCKED,
-                labQueue.getStatus()
-        );
-
-        verify(testRequestRepo)
-                .save(blocked);
-
-        verify(queueTicketRepo)
-                .save(labQueue);
+        verify(queueTicketRepo, never())
+                .save(any(QueueTicket.class));
     }
     // =========================================================
 // WORKFLOW - KEEP TEST ACTIVE WHEN SHARING ACTIVE QUEUE
 // =========================================================
 
     @Test
-    void pay_ShouldNotBlockTest_WhenQueueHasAnotherActiveTest() {
+    void pay_ShouldNotChangeParaclinicalQueueStateInsideInvoiceService() {
 
         UUID invoiceId = UUID.randomUUID();
         UUID visitId = UUID.randomUUID();
         UUID serviceId = UUID.randomUUID();
-        UUID testRequestId = UUID.randomUUID();
-        UUID queueId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        UUID recordId = UUID.randomUUID();
 
-        CustomerVisit visit = mock(CustomerVisit.class);
+        CustomerVisit visit =
+                mock(CustomerVisit.class);
+
         when(visit.getVisitId())
                 .thenReturn(visitId);
 
-        QueueTicket existingWorkflow = QueueTicket.builder()
-                .ticketId(UUID.randomUUID())
-                .status(QueueStatus.WAITING)
-                .build();
+        MedicalRecord record =
+                MedicalRecord.builder()
+                        .recordId(recordId)
+                        .build();
 
-        QueueTicket sharedQueue = QueueTicket.builder()
-                .ticketId(queueId)
-                .status(QueueStatus.WAITING)
-                .build();
-
-        MedicalService service = mock(MedicalService.class);
+        MedicalService service =
+                mock(MedicalService.class);
 
         when(service.getServiceId())
                 .thenReturn(serviceId);
@@ -1866,37 +1702,26 @@ class InvoiceServiceTest {
         when(service.getDepartmentType())
                 .thenReturn(DepartmentType.LABORATORY);
 
-        InvoiceItem item = InvoiceItem.builder()
-                .itemId(UUID.randomUUID())
-                .service(service)
-                .build();
+        when(service.getName())
+                .thenReturn("Xet nghiem");
 
-        Invoice invoice = Invoice.builder()
-                .invoiceId(invoiceId)
-                .invoiceCode("INV-SHARED")
-                .status(InvoiceStatus.PENDING)
-                .totalAmount(BigDecimal.ONE)
-                .visit(visit)
-                .items(new ArrayList<>(List.of(item)))
-                .build();
+        InvoiceItem item =
+                InvoiceItem.builder()
+                        .itemId(itemId)
+                        .service(service)
+                        .build();
 
-        var response =
-                mock(org.example.doansummer2026.dto.testRequest.TestRequestResponse.class);
-
-        when(response.testRequestId())
-                .thenReturn(testRequestId);
-
-        TestRequest blocked = TestRequest.builder()
-                .testRequestId(testRequestId)
-                .status(TestRequestStatus.PENDING)
-                .queueTicket(sharedQueue)
-                .build();
-
-        TestRequest otherActive = TestRequest.builder()
-                .testRequestId(UUID.randomUUID())
-                .status(TestRequestStatus.IN_PROGRESS)
-                .queueTicket(sharedQueue)
-                .build();
+        Invoice invoice =
+                Invoice.builder()
+                        .invoiceId(invoiceId)
+                        .invoiceCode("INV-LAB-STATE")
+                        .status(InvoiceStatus.PENDING)
+                        .totalAmount(BigDecimal.ONE)
+                        .paidAmount(BigDecimal.ZERO)
+                        .visit(visit)
+                        .medicalRecord(record)
+                        .items(new ArrayList<>(List.of(item)))
+                        .build();
 
         when(repo.findByIdForUpdate(invoiceId))
                 .thenReturn(Optional.of(invoice));
@@ -1915,26 +1740,51 @@ class InvoiceServiceTest {
         when(repo.getWithDetailsByInvoiceId(invoiceId))
                 .thenReturn(Optional.of(invoice));
 
+        when(itemRepo.findAllWithServiceByInvoiceId(invoiceId))
+                .thenReturn(List.of(item));
+
+        /*
+         * Workflow đang active.
+         *
+         * Vế queue đã true nên KHÔNG stub:
+         *
+         * testRequestRepo.findAllByMedicalRecord_Visit_VisitId(...)
+         */
+        QueueTicket existingWorkflow =
+                QueueTicket.builder()
+                        .ticketId(UUID.randomUUID())
+                        .status(QueueStatus.WAITING)
+                        .build();
+
         when(queueTicketRepo.findAllByVisit_VisitId(visitId))
                 .thenReturn(List.of(existingWorkflow));
 
-        when(testRequestService.createFromPaidInvoice(
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any()
-        )).thenReturn(response);
+        /*
+         * Invoice đã có MedicalRecord.
+         *
+         * Vì vậy InvoiceService KHÔNG gọi:
+         *
+         * createdResponse.medicalRecordId()
+         * createdResponse.testRequestId()
+         *
+         * Response chỉ cần tồn tại, không cần stub accessor nào.
+         */
+        var createdResponse =
+                mock(
+                        org.example.doansummer2026.dto.testRequest
+                                .TestRequestResponse.class
+                );
 
-        when(testRequestRepo.findById(testRequestId))
-                .thenReturn(Optional.of(blocked));
-
-        when(testRequestRepo.findAllByQueueTicket_TicketId(queueId))
-                .thenReturn(List.of(
-                        blocked,
-                        otherActive
-                ));
+        when(
+                testRequestService.createFromPaidInvoice(
+                        eq(visitId),
+                        eq(recordId),
+                        eq(serviceId),
+                        isNull(),
+                        eq("Xet nghiem"),
+                        eq(itemId)
+                )
+        ).thenReturn(createdResponse);
 
         invoiceService.pay(
                 invoiceId,
@@ -1942,20 +1792,34 @@ class InvoiceServiceTest {
         );
 
         assertEquals(
-                TestRequestStatus.PENDING,
-                blocked.getStatus()
+                InvoiceStatus.PAID,
+                invoice.getStatus()
         );
 
         assertEquals(
                 QueueStatus.WAITING,
-                sharedQueue.getStatus()
+                existingWorkflow.getStatus()
         );
 
+        verify(testRequestService)
+                .createFromPaidInvoice(
+                        eq(visitId),
+                        eq(recordId),
+                        eq(serviceId),
+                        isNull(),
+                        eq("Xet nghiem"),
+                        eq(itemId)
+                );
+
+        /*
+         * InvoiceService không tự sửa trạng thái
+         * TestRequest / QueueTicket sau khi tạo CLS.
+         */
         verify(testRequestRepo, never())
-                .save(blocked);
+                .save(any(TestRequest.class));
 
         verify(queueTicketRepo, never())
-                .save(sharedQueue);
+                .save(any(QueueTicket.class));
     }
     @Test
     void create_ShouldNotifyCashierWithCustomerName() {

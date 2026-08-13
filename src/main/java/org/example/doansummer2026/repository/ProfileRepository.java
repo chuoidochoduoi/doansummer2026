@@ -29,6 +29,8 @@ public interface ProfileRepository extends JpaRepository<Profile, UUID>, JpaSpec
 
     Optional<Profile> findFirstByEmail(String email);
 
+    Optional<Profile> findFirstByEmailIgnoreCase(String email);
+
     boolean existsByPhone(String phone);
 
     boolean existsByEmail(String email);

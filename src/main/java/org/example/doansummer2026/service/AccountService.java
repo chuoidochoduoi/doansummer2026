@@ -34,7 +34,7 @@ public class AccountService implements AccountServiceInterface {
 
     public Account create(String username, String rawPassword, Role role) {
         if (accountRepository.existsByUsername(username)) {
-            throw new ConflictException("Username da ton tai: " + username);
+            throw new ConflictException("Tên đăng nhập đã tồn tại: " + username);
         }
         Account a = Account.builder()
                 .username(username)
@@ -48,20 +48,20 @@ public class AccountService implements AccountServiceInterface {
     @Transactional(readOnly = true)
     public Account findById(UUID id) {
         return accountRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay account id=" + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tài khoản có mã: " + id));
     }
 
     @Transactional(readOnly = true)
     public Account findByUsername(String username) {
         return accountRepository.findFirstByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay username=" + username));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tên đăng nhập: " + username));
     }
 
     public Account update(UUID id, AccountUpdateRequest req) {
         Account a = findById(id);
         if (req.username() != null && !req.username().equals(a.getUsername())) {
             if (accountRepository.existsByUsername(req.username())) {
-                throw new ConflictException("Username da ton tai: " + req.username());
+                throw new ConflictException("Tên đăng nhập đã tồn tại: " + req.username());
             }
             a.setUsername(req.username());
         }
@@ -77,7 +77,7 @@ public class AccountService implements AccountServiceInterface {
     public void changePassword(UUID id, String oldRaw, String newRaw) {
         Account a = findById(id);
         if (!passwordEncoder.matches(oldRaw, a.getPasswordHash())) {
-            throw new ConflictException("Mat khau cu khong dung");
+            throw new ConflictException("Mật khẩu cũ không đúng");
         }
         a.setPasswordHash(passwordEncoder.encode(newRaw));
         accountRepository.save(a);
@@ -161,12 +161,11 @@ public class AccountService implements AccountServiceInterface {
         if (staffOpt.isPresent()) {
             SystemRole sr = staffOpt.get().getSystemRole();
             if (sr == SystemRole.ADMIN || sr == SystemRole.CLINIC_MANAGER) {
-                throw new ConflictException("Khong the khoa tai khoan ADMIN hoac CLINIC_MANAGER");
+                throw new ConflictException("Không thể khóa tài khoản quản trị viên hoặc quản lý phòng khám");
             }
         }
         a.setIsActive(!Boolean.TRUE.equals(a.getIsActive()));
         return accountRepository.save(a);
     }
 }
-
 

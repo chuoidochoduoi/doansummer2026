@@ -35,7 +35,7 @@ public class Icd10CodeService implements Icd10CodeServiceInterface {
 
     public ICD10Response create(ICD10CreateRequest req) {
         if (repo.existsByCode(req.code())) {
-            throw new ConflictException("Ma ICD-10 da ton tai: " + req.code());
+            throw new ConflictException("Mã ICD-10 đã tồn tại: " + req.code());
         }
         Icd10Code c = Icd10Code.builder()
                 .code(req.code())
@@ -62,13 +62,13 @@ public class Icd10CodeService implements Icd10CodeServiceInterface {
 
     public void delete(String code) {
         if (!repo.existsById(code)) {
-            throw new ResourceNotFoundException("Ma ICD-10 khong ton tai: " + code);
+            throw new ResourceNotFoundException("Mã ICD-10 không tồn tại: " + code);
         }
         repo.deleteById(code);
     }
 
     public Icd10Code findByCode(String code) {
         return repo.findById(code)
-                .orElseThrow(() -> new ResourceNotFoundException("Ma ICD-10 khong ton tai: " + code));
+                .orElseThrow(() -> new ResourceNotFoundException("Mã ICD-10 không tồn tại: " + code));
     }
 }

@@ -36,38 +36,49 @@ public class SpecializationService implements SpecializationServiceInterface {
     }
 
     public SpecializationResponse create(SpecializationCreateRequest req) {
-        if (repo.existsByName(req.name())) {
-            throw new ConflictException("Ten chuyen khoa da ton tai: " + req.name());
+        String normalizedName = normalizeName(req.name());
+        if (repo.existsByNameIgnoreCase(normalizedName)) {
+            throw new ConflictException("Tên chuyên khoa đã tồn tại: " + normalizedName);
         }
         Specialization s = Specialization.builder()
-                .name(req.name())
-                .description(req.description())
+                .name(normalizedName)
+                .description(normalizeOptional(req.description()))
                 .build();
         return SpecializationResponse.from(repo.save(s));
     }
 
     public SpecializationResponse update(UUID id, SpecializationUpdateRequest req) {
         Specialization s = findById(id);
-        if (req.name() != null && !req.name().equals(s.getName())) {
-            if (repo.existsByName(req.name())) {
-                throw new ConflictException("Ten chuyen khoa da ton tai: " + req.name());
+        if (req.name() != null) {
+            String normalizedName = normalizeName(req.name());
+            if (repo.existsByNameIgnoreCaseAndSpecializationIdNot(normalizedName, id)) {
+                throw new ConflictException("Tên chuyên khoa đã tồn tại: " + normalizedName);
             }
-            s.setName(req.name());
+            s.setName(normalizedName);
         }
-        if (req.description() != null) s.setDescription(req.description());
+        if (req.description() != null) s.setDescription(normalizeOptional(req.description()));
         return SpecializationResponse.from(repo.save(s));
+    }
+
+    private String normalizeName(String value) {
+        return value.trim().replaceAll("\\s+", " ");
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.trim().replaceAll("\\s+", " ");
     }
 
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Chuyen khoa khong ton tai: " + id);
+            throw new ResourceNotFoundException("Chuyên khoa không tồn tại: " + id);
         }
         repo.deleteById(id);
     }
 
     public Specialization findById(UUID id) {
         return repo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Chuyen khoa khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Chuyên khoa không tồn tại: " + id));
     }
 }
 

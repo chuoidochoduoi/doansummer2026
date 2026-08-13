@@ -99,7 +99,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     @Transactional(readOnly = true)
     public List<TestRequestResponse> listByQueueTicket(UUID ticketId) {
         if (!queueTicketRepo.existsById(ticketId)) {
-            throw new ResourceNotFoundException("Khong tim thay phieu so can lam sang: " + ticketId);
+            throw new ResourceNotFoundException("Không tìm thấy phiếu cận lâm sàng: " + ticketId);
         }
         return repo.findAllByQueueTicket_TicketId(ticketId).stream()
                 .sorted(java.util.Comparator.comparing(TestRequest::getCreatedAt))
@@ -124,20 +124,20 @@ public class TestRequestService implements TestRequestServiceInterface {
         }
         MedicalRecord record = recordRepo.findById(req.medicalRecordId())
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Ho so benh an khong ton tai: " + req.medicalRecordId()));
+                        "Hồ sơ bệnh án không tồn tại: " + req.medicalRecordId()));
         MedicalService service = serviceRepo.findById(req.serviceId())
-                .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + req.serviceId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + req.serviceId()));
         ensureServiceNotAlreadyRequested(record, service.getServiceId());
         Department dept = selectPerformingDepartment(service);
         StaffInfo requestedBy = staffRepo.findById(req.requestedById())
-                .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai: " + req.requestedById()));
+                .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + req.requestedById()));
 
         // Link voi InvoiceItem neu co (traceability: Invoice -> TestRequest)
         InvoiceItem invoiceItem = null;
         if (req.invoiceItemId() != null) {
             invoiceItem = invoiceItemRepo.findById(req.invoiceItemId())
                     .orElseThrow(() -> new ResourceNotFoundException(
-                            "InvoiceItem khong ton tai: " + req.invoiceItemId()));
+                            "Dòng hóa đơn không tồn tại: " + req.invoiceItemId()));
         }
 
         TestRequest t = TestRequest.builder()
@@ -166,7 +166,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     /** Dung cho cac luong tao hoa don tu man kham, noi TestRequest chi duoc sinh sau thanh toan. */
     public void ensureServiceNotAlreadyRequested(UUID medicalRecordId, UUID serviceId) {
         MedicalRecord record = recordRepo.findById(medicalRecordId)
-                .orElseThrow(() -> new ResourceNotFoundException("Ho so benh an khong ton tai: " + medicalRecordId));
+                .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ bệnh án không tồn tại: " + medicalRecordId));
         ensureServiceNotAlreadyRequested(record, serviceId);
     }
 
@@ -174,7 +174,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     public TestRequestResponse createFromPaidInvoice(UUID visitId, UUID medicalRecordId, UUID serviceId,
                                                      UUID requestedById, String notes, UUID invoiceItemId) {
         MedicalService service = serviceRepo.findById(serviceId)
-                .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
+                .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
 
         /*
          * Idempotency khong dong nghia voi return ngay lap tuc.
@@ -190,8 +190,8 @@ public class TestRequestService implements TestRequestServiceInterface {
                 : selectPerformingDepartment(service);
         StaffInfo requester = resolvePaymentRequester(requestedById, dept);
         if (requester == null) {
-            throw new BadRequestException("Phong " + dept.getName()
-                    + " chua co nhan su phu trach de tiep nhan dich vu");
+            throw new BadRequestException("Phòng " + dept.getName()
+                    + " chưa có nhân sự phụ trách để tiếp nhận dịch vụ");
         }
 
         /*
@@ -286,10 +286,10 @@ public class TestRequestService implements TestRequestServiceInterface {
      */
     private MedicalRecord getOrCreateStandaloneRecord(UUID visitId, StaffInfo requester, Department department) {
         if (visitId == null) {
-            throw new BadRequestException("Khong the tao yeu cau can lam sang khi chua co luot kham");
+            throw new BadRequestException("Không thể tạo yêu cầu cận lâm sàng khi chưa có lượt khám");
         }
         visitRepo.findByIdForUpdate(visitId)
-                .orElseThrow(() -> new ResourceNotFoundException("Luot kham khong ton tai: " + visitId));
+                .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
 
         MedicalRecord standalone = recordRepo
                 .findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId)
@@ -305,7 +305,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                         "Dich vu can lam sang",
                         null, null, null, null, null, null));
         return recordRepo.findById(created.recordId())
-                .orElseThrow(() -> new ResourceNotFoundException("Khong the tao ho so CLS cho luot kham"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không thể tạo hồ sơ cận lâm sàng cho lượt khám"));
     }
 
     private void publishLabQueueUpdated(UUID departmentId) {
@@ -409,7 +409,7 @@ public class TestRequestService implements TestRequestServiceInterface {
 
     public void delete(UUID id) {
         if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Yeu cau xet nghiem khong ton tai: " + id);
+            throw new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + id);
         }
         repo.deleteById(id);
     }
@@ -418,7 +418,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     @Override
     public TestRequest findById(UUID id) {
         return repo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Yeu cau xet nghiem khong ton tai: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + id));
     }
 
     // --- TestResult sub-resource ---
@@ -427,7 +427,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     public TestResultResponse getResult(UUID testRequestId) {
         TestRequest t = findById(testRequestId);
         TestResult r = resultRepo.findByTestRequest_TestRequestId(t.getTestRequestId())
-                .orElseThrow(() -> new ResourceNotFoundException("Chua co ket qua cho yeu cau nay"));
+                .orElseThrow(() -> new ResourceNotFoundException("Chưa có kết quả cho yêu cầu này"));
         return TestResultResponse.from(r);
     }
 
@@ -435,13 +435,13 @@ public class TestRequestService implements TestRequestServiceInterface {
         TestRequest t = findById(testRequestId);
         // Kiem tra neu da COMPLETED thi khong cho tao moi
         if (t.getStatus() == TestRequestStatus.COMPLETED) {
-            throw new ConflictException("Yeu cau xet nghiem da hoan thanh, khong the tao ket qua moi");
+            throw new ConflictException("Yêu cầu cận lâm sàng đã hoàn thành, không thể tạo kết quả mới");
         }
         if (resultRepo.findByTestRequest_TestRequestId(testRequestId).isPresent()) {
-            throw new ConflictException("Yeu cau da co ket qua; dung PUT de cap nhat");
+            throw new ConflictException("Yêu cầu đã có kết quả; vui lòng dùng chức năng cập nhật");
         }
         StaffInfo performedBy = staffRepo.findById(req.performedById())
-                .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai: " + req.performedById()));
+                .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + req.performedById()));
         TestResult r = TestResult.builder()
                 .testRequest(t)
                 .imageUrl(req.imageUrl())
@@ -465,16 +465,16 @@ public class TestRequestService implements TestRequestServiceInterface {
         TestRequest t = findById(testRequestId);
 
         if (Boolean.TRUE.equals(req.complete())) {
-            throw new BadRequestException("Vui long dung chuc nang ky xac nhan cua bac si de hoan thanh ket qua");
+            throw new BadRequestException("Vui lòng dùng chức năng ký xác nhận của bác sĩ để hoàn thành kết quả");
         }
 
         // Kiem tra neu da COMPLETED thi khong cho cap nhat (tru khi muon cap nhat lai ket qua)
         if (t.getStatus() == TestRequestStatus.COMPLETED && !Boolean.TRUE.equals(req.complete())) {
-            throw new ConflictException("Yeu cau xet nghiem da hoan thanh, khong the cap nhat ket qua");
+            throw new ConflictException("Yêu cầu cận lâm sàng đã hoàn thành, không thể cập nhật kết quả");
         }
 
         TestResult r = resultRepo.findByTestRequest_TestRequestId(t.getTestRequestId())
-                .orElseThrow(() -> new ResourceNotFoundException("Chua co ket qua de cap nhat"));
+                .orElseThrow(() -> new ResourceNotFoundException("Chưa có kết quả để cập nhật"));
         updateResultFileUrl(r, req.imageUrl());
         if (req.conclusion() != null) r.setConclusion(req.conclusion());
         if (req.sampleId() != null) r.setSampleId(req.sampleId());
@@ -496,16 +496,16 @@ public class TestRequestService implements TestRequestServiceInterface {
     public TestResultResponse completeResult(UUID testRequestId, TestResultCreateRequest req, UUID verifiedById) {
         // Dung findByIdWithResult de eager fetch testResult - tranh lazy loading
         TestRequest t = repo.findByIdWithResult(testRequestId)
-                .orElseThrow(() -> new ResourceNotFoundException("Yeu cau xet nghiem khong ton tai: " + testRequestId));
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
 
         // Kiem tra neu da COMPLETED thi khong cho tao/cap nhat nua
         if (t.getStatus() == TestRequestStatus.COMPLETED) {
-            throw new ConflictException("Yeu cau xet nghiem da hoan thanh, khong the thay doi ket qua");
+            throw new ConflictException("Yêu cầu cận lâm sàng đã hoàn thành, không thể thay đổi kết quả");
         }
         QueueTicket executionQueue = t.getQueueTicket();
         if (executionQueue == null || (executionQueue.getStatus() != QueueStatus.IN_PROGRESS
                 && executionQueue.getStatus() != QueueStatus.DONE)) {
-            throw new BadRequestException("Chi co the hoan thanh ket qua sau khi benh nhan da vao phong thuc hien");
+            throw new BadRequestException("Chỉ có thể hoàn thành kết quả sau khi bệnh nhân đã vào phòng thực hiện");
         }
         TestResult r;
 
@@ -519,7 +519,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         } else {
             // Tao moi
             StaffInfo performedBy = staffRepo.findById(req.performedById())
-                    .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai: " + req.performedById()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + req.performedById()));
             r = TestResult.builder()
                     .testRequest(t)
                     .imageUrl(req.imageUrl())
@@ -532,26 +532,26 @@ public class TestRequestService implements TestRequestServiceInterface {
         }
 
         if (req.sampleStatus() == org.example.doansummer2026.enums.SpecimenStatus.REJECTED || req.sampleStatus() == org.example.doansummer2026.enums.SpecimenStatus.RECOLLECT) {
-            throw new BadRequestException("Khong the hoan thanh ket qua xet nghiem khi mau vat bi hong hoac can lay lai");
+            throw new BadRequestException("Không thể hoàn thành kết quả khi mẫu vật bị hỏng hoặc cần lấy lại");
         }
 
         if (r.getConclusion() == null || r.getConclusion().isBlank()) {
-            throw new BadRequestException("Vui long nhap ket luan cua bac si");
+            throw new BadRequestException("Vui lòng nhập kết luận của bác sĩ");
         }
         if (r.getImageUrl() == null || r.getImageUrl().isBlank()
                 || !r.getImageUrl().toLowerCase().endsWith(".pdf")) {
-            throw new BadRequestException("Vui long tai phieu ket qua dinh dang PDF");
+            throw new BadRequestException("Vui lòng tải phiếu kết quả định dạng PDF");
         }
 
         StaffInfo verifier = staffRepo.findById(verifiedById)
-                .orElseThrow(() -> new ResourceNotFoundException("Khong tim thay bac si xac nhan ket qua"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bác sĩ xác nhận kết quả"));
         if (verifier.getSystemRole() == null || !verifier.getSystemRole().isDoctor()) {
-            throw new BadRequestException("Chi bac si moi duoc ky xac nhan va hoan thanh ket qua");
+            throw new BadRequestException("Chỉ bác sĩ mới được ký xác nhận và hoàn thành kết quả");
         }
         Department performingDepartment = t.getPerformingDepartment();
         if (performingDepartment == null || performingDepartment.getHeadDoctor() == null
                 || !performingDepartment.getHeadDoctor().getStaffId().equals(verifier.getStaffId())) {
-            throw new BadRequestException("Chi bac si phu trach phong moi duoc ky va hoan thanh ket qua");
+            throw new BadRequestException("Chỉ bác sĩ phụ trách phòng mới được ký và hoàn thành kết quả");
         }
         r.setVerifiedBy(verifier);
         r.setVerifiedAt(LocalDateTime.now());
@@ -618,7 +618,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                 && Boolean.TRUE.equals(request.getService().getRequiresSpecimen());
         if (!specimenService) {
             if (hasSpecimenInput) {
-                throw new BadRequestException("Dich vu nay khong su dung mau vat");
+                throw new BadRequestException("Dịch vụ này không sử dụng mẫu vật");
             }
             result.setSampleId(null);
             result.setSampleType(null);
@@ -632,7 +632,7 @@ public class TestRequestService implements TestRequestServiceInterface {
             StaffInfo collector = authService.currentStaffId() == null ? null
                     : staffRepo.findById(authService.currentStaffId()).orElse(null);
             if (collector == null) {
-                throw new BadRequestException("Khong tim thay nhan vien dang lay mau");
+                throw new BadRequestException("Không tìm thấy nhân viên đang lấy mẫu");
             }
             result.setCollectedAt(LocalDateTime.now());
             result.setCollectedBy(collector);
@@ -669,22 +669,22 @@ public class TestRequestService implements TestRequestServiceInterface {
         findById(testRequestId); // Kiem tra test request ton tai
 
         if (file == null || file.isEmpty()) {
-            throw new BadRequestException("Tep PDF khong duoc de trong");
+            throw new BadRequestException("Tệp PDF không được để trống");
         }
         String originalName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "result.pdf";
         boolean pdfExtension = originalName.toLowerCase().endsWith(".pdf");
         boolean pdfContentType = "application/pdf".equalsIgnoreCase(file.getContentType());
         if (!pdfExtension || !pdfContentType) {
-            throw new BadRequestException("Chi chap nhan phieu ket qua dinh dang PDF");
+            throw new BadRequestException("Chỉ chấp nhận phiếu kết quả định dạng PDF");
         }
         if (file.getSize() > 10L * 1024 * 1024) {
-            throw new BadRequestException("Tep PDF khong duoc vuot qua 10 MB");
+            throw new BadRequestException("Tệp PDF không được vượt quá 10 MB");
         }
         byte[] signature = new byte[5];
         try (var input = file.getInputStream()) {
             if (input.read(signature) != signature.length
                     || !java.util.Arrays.equals(signature, "%PDF-".getBytes(java.nio.charset.StandardCharsets.US_ASCII))) {
-                throw new BadRequestException("Noi dung tep khong phai dinh dang PDF hop le");
+                throw new BadRequestException("Nội dung tệp không phải định dạng PDF hợp lệ");
             }
         }
 
@@ -711,10 +711,10 @@ public class TestRequestService implements TestRequestServiceInterface {
 
         // Chi cho phep huy khi PENDING hoac IN_PROGRESS
         if (t.getStatus() == TestRequestStatus.COMPLETED) {
-            throw new org.example.doansummer2026.exception.ConflictException("Khong the huy yeu cau da hoan thanh");
+            throw new org.example.doansummer2026.exception.ConflictException("Không thể hủy yêu cầu đã hoàn thành");
         }
         if (t.getStatus() == TestRequestStatus.CANCELLED) {
-            throw new org.example.doansummer2026.exception.ConflictException("Yeu cau da bi huy");
+            throw new org.example.doansummer2026.exception.ConflictException("Yêu cầu đã bị hủy");
         }
 
         t.setStatus(TestRequestStatus.CANCELLED);
@@ -731,16 +731,16 @@ public class TestRequestService implements TestRequestServiceInterface {
      */
     public List<TestRequestResponse> createBatch(TestRequestBatchCreateRequest req) {
         MedicalRecord record = recordRepo.findById(req.medicalRecordId())
-                .orElseThrow(() -> new ResourceNotFoundException("Ho so benh an khong ton tai"));
+                .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ bệnh án không tồn tại"));
         StaffInfo requestedBy = staffRepo.findById(req.requestedById())
-                .orElseThrow(() -> new ResourceNotFoundException("Nhan vien khong ton tai"));
+                .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại"));
 
         // Link voi InvoiceItem neu co
         InvoiceItem invoiceItem = null;
         if (req.invoiceItemId() != null) {
             invoiceItem = invoiceItemRepo.findById(req.invoiceItemId())
                     .orElseThrow(() -> new ResourceNotFoundException(
-                            "InvoiceItem khong ton tai: " + req.invoiceItemId()));
+                            "Dòng hóa đơn không tồn tại: " + req.invoiceItemId()));
         }
 
         InvoiceItem finalInvoiceItem = invoiceItem;
@@ -748,7 +748,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                 .distinct()
                 .map((java.util.function.Function<java.util.UUID, TestRequest>) serviceId -> {
                     MedicalService service = serviceRepo.findById(serviceId)
-                            .orElseThrow(() -> new ResourceNotFoundException("Dich vu khong ton tai: " + serviceId));
+                            .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
                     ensureServiceNotAlreadyRequested(record, serviceId);
                     Department dept = selectPerformingDepartment(service);
                     return TestRequest.builder()
@@ -776,7 +776,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         UUID visitId = record.getVisit().getVisitId();
         if (repo.existsByMedicalRecord_Visit_VisitIdAndService_ServiceIdAndStatusNot(
                 visitId, serviceId, TestRequestStatus.CANCELLED)) {
-            throw new ConflictException("Dich vu nay da duoc chi dinh trong luot kham hien tai.");
+            throw new ConflictException("Dịch vụ này đã được chỉ định trong lượt khám hiện tại.");
         }
     }
 
@@ -808,12 +808,12 @@ public class TestRequestService implements TestRequestServiceInterface {
             if (service.getDepartment() != null) {
                 Department configuredDepartment = service.getDepartment();
                 if (configuredDepartment.getStatus() == DepartmentStatus.MAINTENANCE) {
-                    throw new BadRequestException("Phong thuc hien dich vu " + service.getName()
-                            + " hien khong san sang");
+                    throw new BadRequestException("Phòng thực hiện dịch vụ " + service.getName()
+                            + " hiện không sẵn sàng");
                 }
                 return configuredDepartment;
             }
-            throw new ResourceNotFoundException("Dich vu chua chon nang luc thuc hien: " + service.getServiceId());
+            throw new ResourceNotFoundException("Dịch vụ chưa chọn danh mục kỹ thuật: " + service.getServiceId());
         }
         List<Department> candidates = departmentRepo.findEligibleByCapability(
                 service.getRequiredCapability().getCapabilityId());
@@ -823,7 +823,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                                 department.getDepartmentId(),
                                 List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS))))
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Khong co phong dang hoat dong ho tro nang luc: " + service.getRequiredCapability().getName()));
+                        "Không có phòng đang hoạt động hỗ trợ danh mục kỹ thuật: " + service.getRequiredCapability().getName()));
     }
 
     /** Tạo một số gọi cho mỗi phòng/lượt; các kỹ thuật cùng phòng được gom chung số. */
@@ -831,7 +831,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         UUID visitId = record.getVisit().getVisitId();
         // Khoa phong truoc khi kiem tra/tang so de cac request dong thoi khong tao trung ticket/so goi.
         department = departmentRepo.findByIdForUpdate(department.getDepartmentId())
-                .orElseThrow(() -> new ResourceNotFoundException("Phong thuc hien khong ton tai"));
+                .orElseThrow(() -> new ResourceNotFoundException("Phòng thực hiện không tồn tại"));
         QueueTicket existing = queueTicketRepo
                 .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
                         visitId,

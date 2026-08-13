@@ -1,5 +1,6 @@
 package org.example.doansummer2026.controller;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.common.RestResponses;
@@ -65,7 +66,7 @@ public class ProfileController {
     /** Update profile cua tai khoan dang nhap (benh nhan tu sua). */
     @PutMapping("/me")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<ProfileResponse> updateMe(@RequestBody ProfileUpdateRequest req) {
+    public ResponseEntity<ProfileResponse> updateMe(@Valid @RequestBody ProfileUpdateRequest req) {
         Account me = authService.currentAccount();
         ProfileResponse current = profileService.getByAccount(me.getAccountId());
         return RestResponses.ok(profileService.update(current.profileId(), req));
@@ -90,9 +91,9 @@ public class ProfileController {
     /** ADMIN tao profile (thuong di kem StaffService.create). */
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
-    public ResponseEntity<ProfileResponse> create(@RequestBody ProfileCreateRequest req) {
+    public ResponseEntity<ProfileResponse> create(@Valid @RequestBody ProfileCreateRequest req) {
         if (req.accountId() == null) {
-            throw new BadRequestException("accountId bat buoc");
+            throw new BadRequestException("Mã tài khoản là bắt buộc");
         }
         ProfileResponse created = profileService.create(req);
         return RestResponses.created("/api/v1/profiles/{id}", created.profileId(), created);
@@ -102,7 +103,7 @@ public class ProfileController {
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<ProfileResponse> update(@PathVariable UUID id,
-                                                  @RequestBody ProfileUpdateRequest req) {
+                                                  @Valid @RequestBody ProfileUpdateRequest req) {
         return RestResponses.ok(profileService.update(id, req));
     }
 
