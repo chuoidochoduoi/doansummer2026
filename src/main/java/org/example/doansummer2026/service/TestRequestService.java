@@ -195,25 +195,26 @@ public class TestRequestService implements TestRequestServiceInterface {
         }
 
         /*
-         * medicalRecordId duoc giu de tuong thich interface cu, nhung khong duoc
-         * dung de chon record cho CLS. Moi TestRequest trong mot CustomerVisit
-         * phai dung mot standalone record (queueTicket = null), tach hoan toan
-        * voi cac MedicalRecord cua tung phong kham.
+         * Yeu cau da duoc bac si chi dinh phai giu MedicalRecord goc de sau khi
+         * co du ket qua, hanh trinh biet can dua benh nhan quay lai dung bac si.
+         * Chi dich vu CLS mua truc tiep (khong co TestRequest truoc thanh toan)
+         * moi dung standalone record va tu ket thuc sau khi co du ket qua.
          */
         MedicalRecord record = existingRequest != null ? existingRequest.getMedicalRecord() : null;
-        boolean migratedToStandaloneRecord = false;
-        if (record == null || record.getQueueTicket() != null) {
-            record = getOrCreateStandaloneRecord(visitId, requester, dept);
-            // Chi migrate request da tim duoc theo invoice item (idempotent payment).
-            // Day la request sinh tu hoa don, nen khong can giu quan he "bac si chi dinh".
-            if (existingRequest != null) {
-                existingRequest.setMedicalRecord(record);
-                migratedToStandaloneRecord = true;
+        if (record == null && medicalRecordId != null) {
+            record = recordRepo.findById(medicalRecordId)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Hồ sơ chỉ định cận lâm sàng không tồn tại: " + medicalRecordId));
+            if (record.getVisit() == null || !visitId.equals(record.getVisit().getVisitId())) {
+                throw new BadRequestException("Hồ sơ chỉ định không thuộc lượt khám của hóa đơn");
             }
+        }
+        if (record == null) {
+            record = getOrCreateStandaloneRecord(visitId, requester, dept);
         }
 
         if (existingRequest != null) {
-            boolean changed = migratedToStandaloneRecord;
+            boolean changed = false;
             if (existingRequest.getQueueTicket() == null) {
                 QueueTicket repairedQueue = ensureParaclinicalQueue(record, service, dept);
                 existingRequest.setQueueTicket(repairedQueue);

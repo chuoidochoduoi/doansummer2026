@@ -421,10 +421,11 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .orElse(invoice);
 
         UUID visitId = loaded.getVisit() != null ? loaded.getVisit().getVisitId() : null;
-        UUID medicalRecordId = loaded.getMedicalRecord() != null
-                ? loaded.getMedicalRecord().getRecordId()
-                : (visitId != null ? recordRepo.findFirstByVisit_VisitIdOrderByCreatedAtDesc(visitId)
-                        .map(record -> record.getRecordId()).orElse(null) : null);
+        // Chi hoa don duoc tao tu man kham moi mang MedicalRecord nguon. Khong
+        // fallback sang ho so gan nhat cua visit, vi dich vu mua truc tiep khong
+        // duoc hieu nham la chi dinh cua bac si va ep quay lai phong kham.
+        UUID orderingMedicalRecordId = loaded.getMedicalRecord() != null
+                ? loaded.getMedicalRecord().getRecordId() : null;
         UUID requestedById = loaded.getIssuedBy() != null ? loaded.getIssuedBy().getStaffId()
                 : transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
                         loaded.getInvoiceId(), TransactionStatus.SUCCESS)
@@ -454,8 +455,11 @@ public class InvoiceService implements InvoiceServiceInterface {
             throw new BadRequestException("Hóa đơn có dịch vụ nhưng chưa gắn với lượt khám; không thể tạo hàng chờ");
         }
         workflowItems.sort(java.util.Comparator
-                .comparing((InvoiceItem item) -> item.getService() != null && item.getService().getWorkflowPriority() != null ? item.getService().getWorkflowPriority() : 1, java.util.Comparator.reverseOrder())
-                .thenComparing((InvoiceItem item) -> item.getService() != null && Boolean.TRUE.equals(item.getService().getRequiresDoctorOrder()))
+                // Neu mot luot co ca kham benh va CLS, benh nhan phai vao phong
+                // kham truoc. workflowPriority chi sap xep ben trong cung nhom.
+                .comparing((InvoiceItem item) -> item.getService() == null
+                        || item.getService().getDepartmentType() != DepartmentType.EXAMINATION)
+                .thenComparing((InvoiceItem item) -> item.getService() != null && item.getService().getWorkflowPriority() != null ? item.getService().getWorkflowPriority() : 1, java.util.Comparator.reverseOrder())
                 .thenComparing((InvoiceItem item) -> item.getService() != null && item.getService().getResultWaitMinutes() != null ? item.getService().getResultWaitMinutes() : 0, java.util.Comparator.reverseOrder()));
         int dispatchedItemCount = 0;
         for (InvoiceItem item : workflowItems) {
@@ -494,19 +498,14 @@ public class InvoiceService implements InvoiceServiceInterface {
             } else if (departmentType != null && departmentType.isParaclinical()) {
                 // TestRequestService tim queue theo visit + phong truoc khi tao.
                 // Nhieu dich vu cung phong se dung chung mot QueueTicket.
-                var createdRequest = testRequestService.createFromPaidInvoice(
+                testRequestService.createFromPaidInvoice(
                         visitId,
-                        medicalRecordId,
+                        orderingMedicalRecordId,
                         service.getServiceId(),
                         requestedById,
                         item.getNote() != null ? item.getNote() : service.getName(),
                         item.getItemId()
                 );
-                // Luot chi co can lam sang chua co ho so. Request dau tien se tao
-                // ho so toi thieu; cac dong sau cua cung hoa don dung lai dung ho so do.
-                if (medicalRecordId == null) {
-                    medicalRecordId = createdRequest.medicalRecordId();
-                }
                 // Khong block sau khi da tao: trang thai duoc quyet dinh ngay
                 // luc TestRequestService tim/tao ticket cua phong.
                 workflowActivated = true;
