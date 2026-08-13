@@ -150,8 +150,10 @@ public class AppointmentController {
             @RequestParam(required = false) String code,
             @RequestParam(required = false) String specialty,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) LocalDateTime from,
+            @RequestParam(required = false) LocalDateTime to,
             Pageable pageable) {
-        return RestResponses.ok(service.getMyAppointments(authService.currentAccount().getAccountId(), code, specialty, status, pageable));
+        return RestResponses.ok(service.getMyAppointments(authService.currentAccount().getAccountId(), code, specialty, status, from, to, pageable));
     }
 
     @GetMapping("/my/{id}")

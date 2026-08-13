@@ -240,11 +240,11 @@ public class AuthService implements AuthServiceInterface {
         Account account = accountService.findByUsername(req.username());
 
         if (!passwordEncoder.matches(req.password(), account.getPasswordHash())) {
-            throw new BadRequestException("Username hoac password khong dung");
+            throw new BadRequestException("Username hoặc Password không đúng");
         }
 
         if (!account.getIsActive()) {
-            throw new BadRequestException("Tai khoan da bi khoa");
+            throw new BadRequestException("Tài khoản đã bị khóa");
         }
 
         return buildAuthResponse(account);
@@ -255,12 +255,12 @@ public class AuthService implements AuthServiceInterface {
             Claims claims = jwtService.parseClaims(req.refreshToken());
             String type = claims.get("type", String.class);
             if (!"refresh".equals(type)) {
-                throw new BadRequestException("Token khong phai refresh token");
+                throw new BadRequestException("Token Không phải refresh token");
             }
             String username = claims.getSubject();
             Account account = accountService.findByUsername(username);
             if (!account.getIsActive()) {
-                throw new BadRequestException("Tai khoan da bi khoa");
+                throw new BadRequestException("Tài khoản đã bị khóa");
             }
             return buildAuthResponse(account);
         } catch (JwtException | IllegalArgumentException ex) {

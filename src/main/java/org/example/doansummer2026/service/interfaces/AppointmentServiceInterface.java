@@ -34,7 +34,7 @@ public interface AppointmentServiceInterface {
     void delete(UUID id);
     Appointment findById(UUID id);
 
-    PageResponse<CustomerAppointmentResponse> getMyAppointments(UUID customerId, String code, String specialty, String status, Pageable pageable);
+    PageResponse<CustomerAppointmentResponse> getMyAppointments(UUID customerId, String code, String specialty, String status, LocalDateTime from, LocalDateTime to, Pageable pageable);
     CustomerAppointmentDetailResponse getMyAppointmentDetail(UUID customerId, UUID appointmentId);
     CustomerAppointmentDetailResponse updateMyAppointment(UUID customerId, UUID appointmentId, AppointmentUpdateRequest req);
     void cancelMyAppointment(UUID customerId, UUID appointmentId);

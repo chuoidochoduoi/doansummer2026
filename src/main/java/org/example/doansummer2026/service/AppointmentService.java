@@ -587,12 +587,12 @@ public class AppointmentService implements AppointmentServiceInterface {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<CustomerAppointmentResponse> getMyAppointments(UUID customerId, String code, String specialty, String status, Pageable pageable) {
+    public PageResponse<CustomerAppointmentResponse> getMyAppointments(UUID customerId, String code, String specialty, String status, LocalDateTime from, LocalDateTime to, Pageable pageable) {
         // Tim profile tu account
         Profile customer = profileRepo.findFirstByAccount_AccountId(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Benh nhan khong ton tai"));
 
-        Page<Appointment> page = repo.searchForCustomer(customer.getProfileId(), code, specialty, status, pageable);
+        Page<Appointment> page = repo.searchForCustomer(customer.getProfileId(), code, specialty, status, from, to, pageable);
         return PageResponse.from(page, CustomerAppointmentResponse::from);
     }
 

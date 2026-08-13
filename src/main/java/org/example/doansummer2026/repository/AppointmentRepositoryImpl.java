@@ -78,7 +78,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
     }
 
     @Override
-    public Page<Appointment> searchForCustomer(UUID customerId, String code, String specialty, String status, Pageable pageable) {
+    public Page<Appointment> searchForCustomer(UUID customerId, String code, String specialty, String status, LocalDateTime from, LocalDateTime to, Pageable pageable) {
         StringBuilder jpql = new StringBuilder(
             "SELECT DISTINCT a FROM Appointment a LEFT JOIN FETCH a.customer LEFT JOIN FETCH a.services s LEFT JOIN FETCH s.department d WHERE a.deleted = false AND a.customer.profileId = :customerId"
         );
@@ -108,6 +108,15 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
                 jpql.append(" AND a.status = :appStatus");
                 countJpql.append(" AND a.status = :appStatus");
             }
+        }
+
+        if (from != null) {
+            jpql.append(" AND a.scheduledAt >= :from");
+            countJpql.append(" AND a.scheduledAt >= :from");
+        }
+        if (to != null) {
+            jpql.append(" AND a.scheduledAt <= :to");
+            countJpql.append(" AND a.scheduledAt <= :to");
         }
 
         jpql.append(" ORDER BY a.scheduledAt DESC");
@@ -144,6 +153,15 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
                 query.setParameter("appStatus", org.example.doansummer2026.enums.AppointmentStatus.CHECKED_IN);
                 countQuery.setParameter("appStatus", org.example.doansummer2026.enums.AppointmentStatus.CHECKED_IN);
             }
+        }
+
+        if (from != null) {
+            query.setParameter("from", from);
+            countQuery.setParameter("from", from);
+        }
+        if (to != null) {
+            query.setParameter("to", to);
+            countQuery.setParameter("to", to);
         }
 
         query.setFirstResult((int) pageable.getOffset());

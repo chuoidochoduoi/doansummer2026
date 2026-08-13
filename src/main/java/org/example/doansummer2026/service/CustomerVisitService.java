@@ -11,12 +11,14 @@ import org.example.doansummer2026.model.Appointment;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.Profile;
+import org.example.doansummer2026.model.Invoice;
 import org.example.doansummer2026.enums.VisitStatus;
 import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
 import org.example.doansummer2026.repository.InsuranceRuleRepository;
+import org.example.doansummer2026.repository.InvoiceRepository;
 import org.example.doansummer2026.model.InsuranceRule;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -44,18 +46,19 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
     private final MedicalServiceRepository serviceRepo;
     private final InvoiceService invoiceService;
     private final InsuranceRuleRepository insuranceRuleRepo;
+    private final InvoiceRepository invoiceRepo;
 
     @Transactional(readOnly = true)
     public PageResponse<CustomerVisitResponse> search(UUID customerId, VisitStatus status,
                                                       LocalDateTime from, LocalDateTime to,
                                                       Pageable pageable) {
         Page<CustomerVisit> page = repo.search(customerId, status, from, to, pageable);
-        return PageResponse.from(page, CustomerVisitResponse::from);
+        return PageResponse.from(page, this::toResponse);
     }
 
     @Transactional(readOnly = true)
     public CustomerVisitResponse get(UUID id) {
-        return CustomerVisitResponse.from(findById(id));
+        return toResponse(findById(id));
     }
 
     public CustomerVisitResponse create(CustomerVisitCreateRequest req) {
@@ -188,6 +191,13 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
     public CustomerVisit findById(UUID id) {
         return repo.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Luot kham khong ton tai: " + id));
+    }
+
+    private CustomerVisitResponse toResponse(CustomerVisit visit) {
+        Invoice invoice = invoiceRepo.findAllByVisit_VisitId(visit.getVisitId()).stream()
+                .max(java.util.Comparator.comparing(Invoice::getCreatedAt))
+                .orElse(null);
+        return CustomerVisitResponse.from(visit, invoice);
     }
 }
 

@@ -172,10 +172,15 @@ public class ChatController {
             @PathVariable UUID sessionId,
             @RequestBody Map<String, String> body,
             org.springframework.security.core.Authentication auth) {
+        String content = body.get("content");
+        if (content == null || content.trim().isEmpty() || content.length() > 200) {
+            return ResponseEntity.badRequest().body("Nội dung tin nhắn không hợp lệ (trống hoặc quá 200 ký tự)");
+        }
+        
         String username = getUsername(auth);
         Account acc = accountRepo.findFirstByUsername(username).orElseThrow();
         Profile profile = profileRepo.findFirstByAccount_AccountId(acc.getAccountId()).orElseThrow();
-        chatService.processCustomerMessage(sessionId, profile.getProfileId(), body.get("content"));
+        chatService.processCustomerMessage(sessionId, profile.getProfileId(), content.trim());
         return ResponseEntity.ok().build();
     }
 
@@ -186,8 +191,8 @@ public class ChatController {
         String content = body.get("content");
         String guestProfileIdStr = body.get("guestProfileId");
         
-        if (content == null || content.trim().isEmpty() || guestProfileIdStr == null) {
-            return ResponseEntity.badRequest().body("Thiếu nội dung tin nhắn hoặc guestProfileId");
+        if (content == null || content.trim().isEmpty() || content.length() > 200 || guestProfileIdStr == null) {
+            return ResponseEntity.badRequest().body("Thiếu nội dung tin nhắn, guestProfileId hoặc tin nhắn quá 200 ký tự");
         }
         
         UUID guestProfileId = UUID.fromString(guestProfileIdStr);
@@ -202,12 +207,17 @@ public class ChatController {
             @PathVariable UUID sessionId,
             @RequestBody Map<String, String> body,
             org.springframework.security.core.Authentication auth) {
+        String content = body.get("content");
+        if (content == null || content.trim().isEmpty() || content.length() > 200) {
+            return ResponseEntity.badRequest().body("Nội dung tin nhắn không hợp lệ (trống hoặc quá 200 ký tự)");
+        }
+        
         String username = getUsername(auth);
         Account acc = accountRepo.findFirstByUsername(username).orElseThrow();
         // Cần truyền receptionistId (có thể lấy từ acc.getStaffInfo().getStaffId() nếu có mapping)
         // Tạm thời truyền accountId hoặc UUID ngẫu nhiên nếu không cần track chặt chẽ
         UUID staffId = acc.getAccountId(); 
-        chatService.processReceptionistMessage(sessionId, staffId, body.get("content"));
+        chatService.processReceptionistMessage(sessionId, staffId, content.trim());
         return ResponseEntity.ok().build();
     }
 
