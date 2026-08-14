@@ -20,6 +20,7 @@ import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.InvoiceRepository;
+import org.example.doansummer2026.repository.AccountRepository;
 import org.example.doansummer2026.service.interfaces.AuthServiceInterface;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -49,7 +50,16 @@ public class AuthService implements AuthServiceInterface {
     private final AppointmentRepository appointmentRepository;
     private final CustomerVisitRepository visitRepository;
     private final InvoiceRepository invoiceRepository;
+    private final AccountRepository accountRepository;
     public AuthResponse register(RegisterRequest req) {
+
+        ensureRegistrationIdentifierAvailable(req.identifier());
+
+        if (req.gender() == null
+                || (req.gender() != org.example.doansummer2026.enums.Gender.MALE
+                && req.gender() != org.example.doansummer2026.enums.Gender.FEMALE)) {
+            throw new BadRequestException("Giới tính chỉ được chọn Nam hoặc Nữ");
+        }
 
         // 1. Kiểm tra ngày sinh hợp lệ
         if (req.dob() != null) {
@@ -187,6 +197,38 @@ public class AuthService implements AuthServiceInterface {
         return buildAuthResponse(account);
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Boolean> registrationAvailability(String identifier) {
+        String value = identifier == null ? "" : identifier.trim();
+        boolean validPhone = value.matches("^(\\+84|0)\\d{9,10}$");
+        boolean validEmail = value.matches("^[\\w\\-.]+@([\\w-]+\\.)+[\\w-]{2,}$");
+        if (!validPhone && !validEmail) {
+            throw new BadRequestException("Email hoặc số điện thoại không hợp lệ");
+        }
+        Profile existing;
+        if (value.contains("@")) {
+            existing = profileRepository.findFirstByEmailIgnoreCase(value).orElse(null);
+        } else {
+            existing = profileRepository.findFirstByPhoneIn(phoneVariants(value)).orElse(null);
+        }
+        boolean hasProfile = existing != null;
+        boolean registered = hasProfile && existing.getAccount() != null;
+        return Map.of(
+                "exists", hasProfile,
+                "registered", registered,
+                "available", !registered
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public void ensureRegistrationIdentifierAvailable(String identifier) {
+        Map<String, Boolean> availability = registrationAvailability(identifier);
+        if (Boolean.TRUE.equals(availability.get("registered"))) {
+            String label = identifier != null && identifier.contains("@") ? "Email" : "Số điện thoại";
+            throw new BadRequestException(label + " đã được liên kết với một tài khoản");
+        }
+    }
+
     private void linkGuestHistory(Profile profile, Set<String> phones, Set<String> emails) {
         var appointments = appointmentRepository.findGuestAppointmentsByPhonesOrEmails(phones, emails);
         for (var appointment : appointments) {
@@ -236,8 +278,46 @@ public class AuthService implements AuthServiceInterface {
         return variants;
     }
 
+    /**
+     * Khách hàng đăng nhập bằng email hoặc số điện thoại hiện đang lưu trên
+     * Profile. account.username chỉ còn là định danh nội bộ sau khi thông tin
+     * liên hệ thay đổi. Nhân viên vẫn được đăng nhập bằng username nghiệp vụ.
+     */
+    private Account resolveLoginAccount(String rawIdentifier) {
+        String identifier = rawIdentifier == null ? "" : rawIdentifier.trim();
+        if (identifier.isBlank()) {
+            throw invalidCredentials();
+        }
+
+        Profile contactProfile;
+        if (identifier.contains("@")) {
+            contactProfile = profileRepository.findFirstByEmailIgnoreCase(identifier).orElse(null);
+        } else if (identifier.matches("^(\\+84|0)\\d{9,10}$")) {
+            contactProfile = profileRepository.findFirstByPhoneIn(phoneVariants(identifier)).orElse(null);
+        } else {
+            contactProfile = null;
+        }
+
+        if (contactProfile != null && contactProfile.getAccount() != null) {
+            return contactProfile.getAccount();
+        }
+
+        // Không cho tài khoản CUSTOMER tiếp tục đăng nhập bằng email/SĐT cũ
+        // còn lưu trong account.username. Fallback này chỉ dành cho username
+        // độc lập của nhân viên như admin, receptionist1, doctor1...
+        Account usernameAccount = accountRepository.findFirstByUsername(identifier).orElse(null);
+        if (usernameAccount != null && usernameAccount.getRole() == Role.STAFF) {
+            return usernameAccount;
+        }
+        throw invalidCredentials();
+    }
+
+    private BadRequestException invalidCredentials() {
+        return new BadRequestException("Tên đăng nhập hoặc mật khẩu không đúng");
+    }
+
     public AuthResponse login(LoginRequest req) {
-        Account account = accountService.findByUsername(req.username());
+        Account account = resolveLoginAccount(req.username());
 
         if (!passwordEncoder.matches(req.password(), account.getPasswordHash())) {
             throw new BadRequestException("Tên đăng nhập hoặc mật khẩu không đúng");
@@ -379,7 +459,7 @@ public class AuthService implements AuthServiceInterface {
             throw new BadRequestException("OTP không hợp lệ hoặc đã hết hạn");
         }
         // Tim tai khoan
-        Account account = accountService.findByUsername(req.identifier());
+        Account account = resolveLoginAccount(req.identifier());
         if (account == null) {
             throw new BadRequestException("Tài khoản không tồn tại");
         }

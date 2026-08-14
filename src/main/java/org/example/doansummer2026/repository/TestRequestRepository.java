@@ -86,6 +86,11 @@ public interface TestRequestRepository extends JpaRepository<TestRequest, UUID> 
            "WHERE t.testRequestId = :id")
     Optional<TestRequest> findByIdWithResult(@Param("id") UUID id);
 
+    /** Khoa yeu cau khi bac si ky ket qua, tranh hai phien cung hoan thanh mot ket qua. */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM TestRequest t WHERE t.testRequestId = :id")
+    Optional<TestRequest> findByIdForUpdate(@Param("id") UUID id);
+
     /** Dem so yeu cau xet nghiem chua hoan thanh (PENDING hoac IN_PROGRESS)
      * cua mot medical record de kiem tra khi ket luuan.
      */

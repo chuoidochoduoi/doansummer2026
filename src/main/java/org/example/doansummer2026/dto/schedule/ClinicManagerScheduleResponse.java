@@ -41,8 +41,11 @@ public record ClinicManagerScheduleResponse(
         for (StaffSchedule s : schedules) {
             DayOfWeek dayOfWeek = s.getWorkDate().getDayOfWeek();
             String key = toKey(s.getShift().getShiftId().toString(), dayOfWeek);
-            scheduleMap.computeIfAbsent(key, k -> new ArrayList<>())
-                    .add(StaffScheduleItemResponse.from(s));
+            StaffScheduleItemResponse item = StaffScheduleItemResponse.from(s);
+            List<StaffScheduleItemResponse> cell = scheduleMap.computeIfAbsent(key, k -> new ArrayList<>());
+            if (cell.stream().noneMatch(existing -> Objects.equals(existing.staffId(), item.staffId()))) {
+                cell.add(item);
+            }
             if (s.getStaff() != null) {
                 staffSet.add(s.getStaff().getStaffId());
             }

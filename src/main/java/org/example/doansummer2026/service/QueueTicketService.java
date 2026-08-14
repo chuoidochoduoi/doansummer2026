@@ -88,6 +88,10 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         if (existing.isPresent()) return QueueTicketResponse.from(existing.get());
         Department dept = departmentRepo.findByIdForUpdate(req.departmentId())
                 .orElseThrow(() -> new ResourceNotFoundException("Phòng không tồn tại: " + req.departmentId()));
+        // Kiem tra lai sau khi khoa phong. Neu hai thanh toan den cung luc,
+        // request thu hai phai tai su dung phieu request thu nhat vua tao.
+        existing = repo.findByVisit_VisitIdAndService_ServiceId(req.visitId(), req.serviceId());
+        if (existing.isPresent()) return QueueTicketResponse.from(existing.get());
         org.example.doansummer2026.model.MedicalService service = serviceRepo.findById(req.serviceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + req.serviceId()));
         LocalDate workDate = req.workDate() != null ? req.workDate() : LocalDate.now();
@@ -165,6 +169,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
     public QueueTicketResponse call(UUID id) {
         QueueTicket q = findByIdForUpdate(id);
+        ensureCallableToday(q);
         // Cho phep call tu WAITING, WAITING_FOR_TEST hoac TEST_DONE
         if (q.getStatus() != QueueStatus.WAITING && q.getStatus() != QueueStatus.CALLED && q.getStatus() != QueueStatus.WAITING_FOR_TEST && q.getStatus() != QueueStatus.TEST_DONE) {
             throw new BadRequestException("Chỉ có thể gọi phiếu đang chờ; trạng thái hiện tại: " + q.getStatus());
@@ -178,6 +183,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
     public QueueTicketResponse startExam(UUID id) {
         QueueTicket q = findByIdForUpdate(id);
+        ensureCallableToday(q);
         if (q.getStatus() != QueueStatus.CALLED && q.getStatus() != QueueStatus.WAITING_FOR_TEST && q.getStatus() != QueueStatus.TEST_DONE) {
             throw new BadRequestException("Chỉ có thể bắt đầu với phiếu đã gọi hoặc đang chờ quay lại; trạng thái hiện tại: " + q.getStatus());
         }
@@ -540,11 +546,15 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
     public QueueTicketResponse skip(UUID id) {
         QueueTicket q = findByIdForUpdate(id);
-        q.setStatus(QueueStatus.SKIPPED);
-        QueueTicket saved = repo.save(q);
-        if (q.getVisit() != null) {
-            patientJourneyService.activateNext(q.getVisit().getVisitId());
+        if (q.getStatus() != QueueStatus.CALLED) {
+            throw new BadRequestException("Chỉ có thể đánh dấu vắng sau khi đã gọi bệnh nhân");
         }
+        q.setStatus(QueueStatus.SKIPPED);
+        testRequestService.blockRequestsForQueue(q.getTicketId());
+        QueueTicket saved = repo.save(q);
+        // "Vang" la tam dung benh nhan, khong phai da hoan thanh dich vu.
+        // Khong duoc mo buoc ke tiep cho den khi benh nhan quay lai hoac nhan
+        // vien xu ly huy/reschedule ca kham.
         updateDepartmentStatus(q.getDepartment().getDepartmentId());
         return QueueTicketResponse.from(saved);
     }
@@ -557,11 +567,26 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         if (q.getWorkDate() == null || !q.getWorkDate().equals(LocalDate.now())) {
             throw new BadRequestException("Chỉ có thể đưa bệnh nhân quay lại hàng chờ trong ngày của phiếu");
         }
-        q.setStatus(QueueStatus.WAITING);
+        boolean mustWaitForCurrentStep = q.getVisit() != null
+                && patientJourneyService.hasActiveStep(q.getVisit().getVisitId());
+        q.setStatus(mustWaitForCurrentStep ? QueueStatus.BLOCKED : QueueStatus.WAITING);
         q.setCalledAt(null);
+        q.setCompletedAt(null);
+        testRequestService.restoreRequestsForQueue(q.getTicketId(), mustWaitForCurrentStep);
         QueueTicket saved = repo.save(q);
         updateDepartmentStatus(q.getDepartment().getDepartmentId());
         return QueueTicketResponse.from(saved);
+    }
+
+    private void ensureCallableToday(QueueTicket queue) {
+        if (queue.getWorkDate() == null || !LocalDate.now().equals(queue.getWorkDate())) {
+            throw new BadRequestException(
+                    "Phiếu hàng chờ đã qua ngày; vui lòng tiếp nhận hoặc xếp lịch lại thay vì gọi phiếu cũ");
+        }
+        if (queue.getDepartment() != null
+                && queue.getDepartment().getStatus() == DepartmentStatus.MAINTENANCE) {
+            throw new BadRequestException("Phòng đang bảo trì, không thể gọi hoặc bắt đầu xử lý bệnh nhân");
+        }
     }
 
     public void delete(UUID id) {

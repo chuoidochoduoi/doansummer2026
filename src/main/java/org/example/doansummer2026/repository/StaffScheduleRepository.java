@@ -1,5 +1,6 @@
 package org.example.doansummer2026.repository;
 
+import jakarta.persistence.LockModeType;
 import org.example.doansummer2026.model.ShiftConfig;
 import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.model.StaffSchedule;
@@ -9,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
@@ -44,6 +46,13 @@ public interface StaffScheduleRepository extends JpaRepository<StaffSchedule, UU
     List<StaffSchedule> findByStaffAndWorkDateBetween(StaffInfo staff, LocalDate from, LocalDate to);
 
     List<StaffSchedule> findAllByWorkDateBetween(LocalDate from, LocalDate to);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT schedule FROM StaffSchedule schedule "
+            + "WHERE schedule.workDate BETWEEN :from AND :to")
+    List<StaffSchedule> findAllByWorkDateBetweenForUpdate(
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to);
 
     Optional<StaffSchedule> findByStaffAndWorkDateAndShift(StaffInfo staff, LocalDate workDate, ShiftConfig shift);
     List<StaffSchedule> findAllByStaff_StaffIdAndWorkDate(UUID staffId, LocalDate workDate);

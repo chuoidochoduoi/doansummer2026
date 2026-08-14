@@ -34,6 +34,7 @@ import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
+import org.example.doansummer2026.repository.InvoiceRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.service.interfaces.AppointmentServiceInterface;
@@ -68,6 +69,7 @@ public class AppointmentService implements AppointmentServiceInterface {
     private final StaffInfoRepository staffRepo;
     private final NotificationService notificationService;
     private final ShiftConfigRepository shiftConfigRepository;
+    private final InvoiceRepository invoiceRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<AppointmentResponse> search(UUID customerId,
@@ -325,6 +327,13 @@ public class AppointmentService implements AppointmentServiceInterface {
         StaffInfo checkedInBy = staffRepo.findById(req.issuedById())
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên thực hiện check-in"));
 
+        String previousPhone = a.getCustomer() != null ? a.getCustomer().getPhone() : a.getGuestPhone();
+        String previousEmail = a.getCustomer() != null ? a.getCustomer().getEmail() : a.getGuestEmail();
+        Profile profileBeforeContactChange = resolveExistingPatientProfile(a, previousPhone, previousEmail);
+        if (profileBeforeContactChange != null) {
+            linkGuestHistoryBeforeContactChange(profileBeforeContactChange, previousPhone, previousEmail);
+        }
+
         updatePatientInformation(a, req.patientFullName(), req.patientPhone(), req.patientEmail(),
                 req.patientAddress(), req.patientDateOfBirth(), req.patientAge(), req.patientGender());
 
@@ -353,7 +362,9 @@ public class AppointmentService implements AppointmentServiceInterface {
         // dong thoi tao hai luot kham dang hoat dong.
         Profile visitCustomer;
         if (Boolean.TRUE.equals(a.getIsGuest())) {
-            visitCustomer = profileRepo.findFirstByPhone(a.getGuestPhone()).orElseGet(() ->
+            visitCustomer = profileBeforeContactChange != null
+                    ? profileBeforeContactChange
+                    : profileRepo.findFirstByPhone(a.getGuestPhone()).orElseGet(() ->
                     profileRepo.save(Profile.builder()
                             .fullName(a.getGuestFullName()).phone(a.getGuestPhone())
                             .email(a.getGuestEmail()).address(a.getGuestAddress())
@@ -490,6 +501,68 @@ public class AppointmentService implements AppointmentServiceInterface {
         }
 
         profileRepo.save(customer);
+    }
+
+    private Profile resolveExistingPatientProfile(Appointment appointment, String phone, String email) {
+        if (appointment.getCustomer() != null) return appointment.getCustomer();
+        if (phone != null && !phone.isBlank()) {
+            Profile byPhone = profileRepo.findFirstByPhoneIn(phoneVariants(phone)).orElse(null);
+            if (byPhone != null) return byPhone;
+        }
+        if (email != null && !email.isBlank()) {
+            return profileRepo.findFirstByEmailIgnoreCase(email).orElse(null);
+        }
+        return null;
+    }
+
+    /**
+     * Nối dữ liệu khách vãng lai theo thông tin liên hệ cũ vào cùng một hồ sơ
+     * trước khi lễ tân thay số điện thoại/email. Các lượt khám và hóa đơn vì thế
+     * tiếp tục được truy vấn bằng profileId thay vì phụ thuộc vào số cũ.
+     */
+    private void linkGuestHistoryBeforeContactChange(Profile profile, String oldPhone, String oldEmail) {
+        Set<String> phones = phoneVariants(oldPhone);
+        Set<String> emails = contactValues(oldEmail == null ? null : oldEmail.toLowerCase());
+        if (phones.isEmpty() && emails.isEmpty()) return;
+
+        List<Appointment> guestAppointments = repo.findGuestAppointmentsByPhonesOrEmails(phones, emails);
+        for (Appointment guestAppointment : guestAppointments) {
+            guestAppointment.setCustomer(profile);
+            if (profile.getAccount() != null) {
+                guestAppointment.setIsGuest(false);
+            }
+            repo.save(guestAppointment);
+
+            visitRepo.findByAppointment_AppointmentId(guestAppointment.getAppointmentId()).ifPresent(visit -> {
+                visit.setCustomer(profile);
+                visitRepo.save(visit);
+                var invoices = invoiceRepository.findAllByVisit_VisitId(visit.getVisitId());
+                invoices.forEach(invoice -> invoice.setCustomer(profile));
+                invoiceRepository.saveAll(invoices);
+            });
+        }
+    }
+
+    private Set<String> contactValues(String value) {
+        if (value == null || value.isBlank()) return Set.of();
+        return Set.of(value.trim());
+    }
+
+    private Set<String> phoneVariants(String phone) {
+        if (phone == null || phone.isBlank()) return Set.of();
+        String original = phone.trim();
+        String digits = original.replaceAll("\\D", "");
+        String normalized = digits.startsWith("84") && digits.length() >= 11
+                ? "0" + digits.substring(2)
+                : digits;
+        Set<String> values = new java.util.LinkedHashSet<>();
+        values.add(original);
+        if (!normalized.isBlank()) values.add(normalized);
+        if (normalized.startsWith("0") && normalized.length() > 1) {
+            values.add("84" + normalized.substring(1));
+            values.add("+84" + normalized.substring(1));
+        }
+        return values;
     }
 
     private boolean appointmentHasNoRegisteredCustomer(Appointment appointment) {

@@ -480,6 +480,9 @@ public class InvoiceService implements InvoiceServiceInterface {
             DepartmentType departmentType = service.getDepartmentType();
             if (departmentType == DepartmentType.EXAMINATION) {
                 Department performingRoom = selectExaminationRoom(service);
+                boolean examinationQueueAlreadyExists = queueTicketRepo
+                        .findByVisit_VisitIdAndService_ServiceId(visitId, service.getServiceId())
+                        .isPresent();
                 // CLINICAL_EXAM: tao QueueTicket cho bac si kham
                 var ticket = queueTicketService.create(new org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest(
                         visitId,
@@ -487,12 +490,15 @@ public class InvoiceService implements InvoiceServiceInterface {
                         service.getServiceId(),
                         null
                 ));
-                if (workflowActivated) {
+                // Retry thanh toan/PayOS callback co the quay lai hoa don PAID.
+                // Khong bao gio block lai QueueTicket da ton tai; chi xep BLOCKED
+                // cho mot buoc vua duoc tao sau mot buoc active khac.
+                if (!examinationQueueAlreadyExists && workflowActivated) {
                     queueTicketRepo.findById(ticket.ticketId()).ifPresent(blocked -> {
                         blocked.setStatus(org.example.doansummer2026.enums.QueueStatus.BLOCKED);
                         queueTicketRepo.save(blocked);
                     });
-                } else {
+                } else if (!examinationQueueAlreadyExists) {
                     workflowActivated = true;
                 }
                 dispatchedItemCount++;

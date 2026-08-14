@@ -1,5 +1,6 @@
 package org.example.doansummer2026.repository;
 
+import jakarta.persistence.LockModeType;
 import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.enums.SystemRole;
 import org.springframework.data.domain.Page;
@@ -9,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
@@ -25,6 +27,13 @@ public interface StaffInfoRepository extends JpaRepository<StaffInfo, UUID>, Jpa
     Optional<StaffInfo> findFirstByProfile_Account_Username(String username);
 
     Optional<StaffInfo> findFirstByProfile_Account_AccountId(UUID accountId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT staff FROM StaffInfo staff "
+            + "JOIN FETCH staff.profile profile "
+            + "LEFT JOIN FETCH profile.account "
+            + "WHERE staff.staffId = :staffId")
+    Optional<StaffInfo> findByIdForScheduleUpdate(@Param("staffId") UUID staffId);
 
     Page<StaffInfo> findBySystemRole(SystemRole systemRole, Pageable pageable);
 
@@ -79,5 +88,4 @@ public interface StaffInfoRepository extends JpaRepository<StaffInfo, UUID>, Jpa
         return findAll(spec, pageable);
     }
 }
-
 

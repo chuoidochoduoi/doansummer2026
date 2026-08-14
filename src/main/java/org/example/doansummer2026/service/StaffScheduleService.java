@@ -17,6 +17,7 @@ import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.repository.StaffScheduleRepository;
 import org.example.doansummer2026.repository.StaffScheduleTemplateRepository;
 import org.example.doansummer2026.repository.StaffAttendanceRepository;
+import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.dto.notification.NotificationCreateRequest;
 import org.example.doansummer2026.enums.NotificationType;
 import org.example.doansummer2026.enums.NotificationChannel;
@@ -28,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.*;
 
 /**
@@ -46,6 +48,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     private final StaffService staffService;
     private final NotificationService notificationService;
     private final StaffAttendanceRepository attendanceRepository;
+    private final StaffInfoRepository staffInfoRepository;
 
     public ScheduleResponse create(ScheduleCreateRequest req) {
         StaffInfo staff = staffService.findById(req.staffId());
@@ -243,56 +246,121 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
      */
     public void assignStaff(ScheduleAssignRequest req) {
         LocalDate date = parseDateFromDayOfWeek(req.week(), req.dayKey());
-        ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
+        ShiftConfig shift = shiftConfigRepo.findByIdForScheduleUpdate(req.shiftId())
                 .orElseThrow(() -> new ResourceNotFoundException("Ca làm việc không tồn tại: " + req.shiftId()));
+        StaffInfo staff = staffInfoRepository.findByIdForScheduleUpdate(req.staffId())
+                .orElseThrow(() -> new ResourceNotFoundException("Nhân sự không tồn tại: " + req.staffId()));
 
-        StaffInfo staff = staffService.findById(req.staffId());
+        if (date.isBefore(LocalDate.now())) {
+            throw new ConflictException("Không thể thay đổi phân công của ngày đã qua");
+        }
+        List<StaffSchedule> schedulesOfDay = scheduleRepo
+                .findAllByStaff_StaffIdAndWorkDate(staff.getStaffId(), date);
+        List<StaffSchedule> exactSchedules = schedulesOfDay.stream()
+                .filter(schedule -> schedule.getShift() != null
+                        && schedule.getShift().getShiftId().equals(shift.getShiftId()))
+                .toList();
 
         if ("remove".equalsIgnoreCase(req.action())) {
-            // Xoa schedule
-            scheduleRepo.deleteByStaffAndWorkDateAndShift(staff, date, shift);
-        } else {
-            // Them schedule - kiem tra neu da ton tai thi bo qua
-            if (scheduleRepo.findByStaffAndWorkDateAndShift(staff, date, shift).isEmpty()) {
-                StaffSchedule schedule = StaffSchedule.builder()
-                        .staff(staff)
-                        .workDate(date)
-                        .shift(shift)
-                        .status(org.example.doansummer2026.enums.ScheduleStatus.SCHEDULED)
-                        .isCustom(true)
-                        .build();
-                scheduleRepo.save(schedule);
+            boolean hasAttendance = exactSchedules.stream().anyMatch(schedule -> attendanceRepository
+                    .findBySchedule_ScheduleId(schedule.getScheduleId()).isPresent());
+            if (hasAttendance) {
+                throw new ConflictException("Không thể gỡ ca đã phát sinh dữ liệu điểm danh");
             }
+            // Xoa tat ca ban trung cu neu du lieu cu da tung bi lap.
+            scheduleRepo.deleteByStaffAndWorkDateAndShift(staff, date, shift);
+            return;
         }
+        if (!"add".equalsIgnoreCase(req.action())) {
+            throw new ConflictException("Thao tác phân công không hợp lệ");
+        }
+        if (!Boolean.TRUE.equals(shift.getIsActive())) {
+            throw new ConflictException("Ca làm việc đã ngừng hoạt động và không thể phân công");
+        }
+        if (staff.getProfile() == null || staff.getProfile().getAccount() == null
+                || !Boolean.TRUE.equals(staff.getProfile().getAccount().getIsActive())) {
+            throw new ConflictException("Nhân sự đã ngừng hoạt động và không thể phân công");
+        }
+
+        if (!exactSchedules.isEmpty()) return;
+
+        LocalTime newStart = LocalTime.parse(shift.getStartTime());
+        LocalTime newEnd = LocalTime.parse(shift.getEndTime());
+        boolean overlaps = schedulesOfDay.stream()
+                .filter(schedule -> schedule.getShift() != null)
+                .anyMatch(schedule -> {
+                    LocalTime existingStart = LocalTime.parse(schedule.getShift().getStartTime());
+                    LocalTime existingEnd = LocalTime.parse(schedule.getShift().getEndTime());
+                    return newStart.isBefore(existingEnd) && existingStart.isBefore(newEnd);
+                });
+        if (overlaps) {
+            throw new ConflictException("Nhân sự đã có ca làm việc trùng thời gian trong ngày này");
+        }
+
+        scheduleRepo.save(StaffSchedule.builder()
+                .staff(staff)
+                .workDate(date)
+                .shift(shift)
+                .status(org.example.doansummer2026.enums.ScheduleStatus.SCHEDULED)
+                .isCustom(true)
+                .build());
     }
 
     /**
      * Sao chep lich tu tuan cu sang tuan moi.
      */
     public List<StaffSchedule> copyWeek(LocalDate fromWeek, LocalDate toWeek) {
-        List<StaffSchedule> oldSchedules = scheduleRepo.findAllByWorkDateBetween(fromWeek, fromWeek.plusDays(6));
-        List<StaffSchedule> toCreate = new ArrayList<>();
+        LocalDate sourceStart = fromWeek.with(DayOfWeek.MONDAY);
+        LocalDate targetStart = toWeek.with(DayOfWeek.MONDAY);
+        LocalDate targetEnd = targetStart.plusDays(6);
 
-        for (StaffSchedule old : oldSchedules) {
-            LocalDate newDate = toWeek.plusDays(old.getWorkDate().getDayOfWeek().getValue() - DayOfWeek.MONDAY.getValue());
-            Optional<StaffSchedule> existing = scheduleRepo.findByStaffAndWorkDateAndShift(
-                    old.getStaff(), newDate, old.getShift());
+        // Khoa tuan nguon de hai quan ly khong the dong thoi tao hai bo lich
+        // giong nhau cho cung mot tuan dich.
+        List<StaffSchedule> sourceSchedules = scheduleRepo
+                .findAllByWorkDateBetweenForUpdate(sourceStart, sourceStart.plusDays(6));
 
-            if (existing.isEmpty()) {
-                StaffSchedule newSchedule = StaffSchedule.builder()
-                        .staff(old.getStaff())
-                        .workDate(newDate)
-                        .shift(old.getShift())
-                        .status(old.getStatus())
-                        .isCustom(true)
-                        .note(old.getNote())
-                        .build();
-                toCreate.add(newSchedule);
-            }
+        List<StaffSchedule> targetSchedules = scheduleRepo.findAllByWorkDateBetween(targetStart, targetEnd);
+        boolean hasAttendance = targetSchedules.stream()
+                .anyMatch(schedule -> attendanceRepository
+                        .findBySchedule_ScheduleId(schedule.getScheduleId()).isPresent());
+        if (hasAttendance) {
+            throw new ConflictException(
+                    "Không thể ghi đè tuần đã phát sinh dữ liệu điểm danh");
         }
-        return scheduleRepo.saveAll(toCreate).stream().map(s -> {
-            return s;
-        }).toList();
+
+        // Sao chep la thao tac thay the: xoa lich tuan dich truoc khi tao lai.
+        // Nhờ vậy gọi API nhiều lần liên tiếp vẫn cho cùng một kết quả.
+        scheduleRepo.deleteAll(targetSchedules);
+        scheduleRepo.flush();
+
+        Map<String, StaffSchedule> uniqueSourceSchedules = new LinkedHashMap<>();
+        for (StaffSchedule source : sourceSchedules) {
+            if (source.getStaff() == null || source.getShift() == null) continue;
+            if (!Boolean.TRUE.equals(source.getShift().getIsActive())
+                    || source.getStaff().getProfile() == null
+                    || source.getStaff().getProfile().getAccount() == null
+                    || !Boolean.TRUE.equals(source.getStaff().getProfile().getAccount().getIsActive())) {
+                continue;
+            }
+            String key = source.getStaff().getStaffId()
+                    + "|" + source.getWorkDate().getDayOfWeek()
+                    + "|" + source.getShift().getShiftId();
+            uniqueSourceSchedules.putIfAbsent(key, source);
+        }
+
+        List<StaffSchedule> replacements = uniqueSourceSchedules.values().stream()
+                .map(source -> StaffSchedule.builder()
+                        .staff(source.getStaff())
+                        .workDate(targetStart.plusDays(
+                                source.getWorkDate().getDayOfWeek().getValue()
+                                        - DayOfWeek.MONDAY.getValue()))
+                        .shift(source.getShift())
+                        .status(source.getStatus())
+                        .isCustom(true)
+                        .note(source.getNote())
+                        .build())
+                .toList();
+        return scheduleRepo.saveAll(replacements);
     }
 
     private LocalDate parseDateFromDayOfWeek(LocalDate weekStart, String dayKey) {

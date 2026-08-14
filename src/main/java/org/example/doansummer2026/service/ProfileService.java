@@ -143,6 +143,30 @@ public class ProfileService implements ProfileServiceInterface {
         return ProfileResponse.from(profileRepository.save(p));
     }
 
+    /**
+     * Cập nhật hồ sơ của chính người dùng. Số điện thoại và email là thông tin
+     * định danh/liên hệ do nhân viên có thẩm quyền cập nhật, không cho phép đổi
+     * qua màn hồ sơ cá nhân.
+     */
+    public ProfileResponse updateSelf(UUID id, ProfileUpdateRequest req) {
+        Profile current = findById(id);
+        String requestedPhone = req.phone() == null ? current.getPhone() : blankToNull(req.phone());
+        String requestedEmail = req.email() == null ? current.getEmail() : normalizeEmail(req.email());
+        String currentEmail = normalizeEmail(current.getEmail());
+
+        if (!Objects.equals(requestedPhone, current.getPhone())
+                || !Objects.equals(requestedEmail, currentEmail)) {
+            throw new BadRequestException(
+                    "Số điện thoại và email chỉ được cập nhật bởi nhân viên lễ tân");
+        }
+
+        ProfileUpdateRequest safeRequest = new ProfileUpdateRequest(
+                req.fullName(), req.dateOfBirth(), req.gender(),
+                null, null, req.address(), req.bloodType(), req.insuranceId(),
+                req.height(), req.weight(), req.allergies());
+        return update(id, safeRequest);
+    }
+
     private void validateUpdatedProfile(Profile profile) {
         if (profile.getFullName() == null || profile.getFullName().isBlank()
                 || profile.getFullName().length() < 2) {

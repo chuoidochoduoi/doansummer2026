@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -45,6 +46,21 @@ public class AuthController {
     /** Public: gui OTP xac thuc SĐT -> 200 OK (OTP in-memory, dev log ra console). */
     @PostMapping("/send-otp")
     public ResponseEntity<SendOtpResponse> sendOtp(@Valid @RequestBody SendOtpRequest req) {
+        String code = otpService.sendOtp(req.identifier());
+        return RestResponses.ok(new SendOtpResponse(exposeOtpCode ? code : null, 300));
+    }
+
+    /** Kiểm tra số điện thoại/email trước khi đăng ký, không chặn hồ sơ khách vãng lai chưa có tài khoản. */
+    @GetMapping("/registration-availability")
+    public ResponseEntity<java.util.Map<String, Boolean>> registrationAvailability(
+            @RequestParam String identifier) {
+        return RestResponses.ok(authService.registrationAvailability(identifier));
+    }
+
+    /** Gửi OTP riêng cho đăng ký; chặn identifier đã có tài khoản trước khi phát OTP. */
+    @PostMapping("/send-register-otp")
+    public ResponseEntity<SendOtpResponse> sendRegisterOtp(@Valid @RequestBody SendOtpRequest req) {
+        authService.ensureRegistrationIdentifierAvailable(req.identifier());
         String code = otpService.sendOtp(req.identifier());
         return RestResponses.ok(new SendOtpResponse(exposeOtpCode ? code : null, 300));
     }
@@ -92,5 +108,4 @@ public class AuthController {
         return RestResponses.noContent();
     }
 }
-
 

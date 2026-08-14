@@ -223,6 +223,18 @@ public class MedicalRecordController {
         return RestResponses.ok(pageResponse);
     }
 
+    /** Danh sách bệnh nhân chỉ đọc dành cho quản lý phòng khám. */
+    @GetMapping("/api/v1/clinic-manager/patients")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<PageResponse<ReceptionistCustomerResponse>> listPatientsForClinicManager(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String gender,
+            @RequestParam(required = false) String age,
+            @RequestParam(required = false) BloodType bloodType,
+            Pageable pageable) {
+        return RestResponses.ok(service.searchUniqueCustomers(search, gender, age, bloodType, pageable));
+    }
+
     @GetMapping("/api/receptionist/records/customers/{customerId}")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<ReceptionistCustomerResponse> getCustomerForReceptionist(

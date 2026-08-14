@@ -339,7 +339,12 @@ public class StaffService implements StaffServiceInterface {
         } else {
             staff = staffRepo.findAll();
         }
-        return staff.stream().map(StaffOptionResponse::from).toList();
+        return staff.stream()
+                .filter(item -> item.getProfile() != null
+                        && item.getProfile().getAccount() != null
+                        && Boolean.TRUE.equals(item.getProfile().getAccount().getIsActive()))
+                .map(StaffOptionResponse::from)
+                .toList();
     }
 
     /**

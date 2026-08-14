@@ -20,10 +20,17 @@ public class PatientJourneyService {
     private final QueueTicketRepository queueRepo;
     private final TestRequestRepository testRepo;
     private final InvoiceRepository invoiceRepo;
+    private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
 
     public void activateNext(UUID visitId) {
+        // Khoa visit de hai phong hoan thanh dong thoi khong mo hai buoc BLOCKED.
+        visitRepo.findByIdForUpdate(visitId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lượt khám"));
         if (hasActiveStep(visitId)) return;
         List<QueueTicket> visitQueues = queueRepo.findAllByVisit_VisitId(visitId);
+        // SKIPPED duoc dung cho trang thai benh nhan vang sau khi goi. Day la
+        // trang thai tam dung, khong phai tin hieu bo qua dich vu de mo buoc sau.
+        if (visitQueues.stream().anyMatch(queue -> queue.getStatus() == QueueStatus.SKIPPED)) return;
 
         // Khi mot phong kham dang cho ket qua CLS, benh nhan chi duoc di tiep qua
         // cac phong CLS con lai. Khong mo phong kham thu hai cho den khi bac si
@@ -51,6 +58,7 @@ public class PatientJourneyService {
             testRepo.findAllByQueueTicket_TicketId(queue.getTicketId()).stream()
                     .filter(item -> item.getStatus() == TestRequestStatus.BLOCKED)
                     .forEach(item -> { item.setStatus(TestRequestStatus.PENDING); testRepo.save(item); });
+            publishQueueActivated(queue);
         } else if (test != null) { test.setStatus(TestRequestStatus.PENDING); testRepo.save(test); }
         else if (examinationWaitingForTest) {
             // Da lam het cac phong CLS nhung ket qua chua san sang: giu nguyen
@@ -70,6 +78,22 @@ public class PatientJourneyService {
                 visit.setCheckOutTime(LocalDateTime.now());
                 visitRepo.save(visit);
             }
+        }
+    }
+
+    private void publishQueueActivated(QueueTicket queue) {
+        if (queue == null || queue.getDepartment() == null) return;
+        UUID departmentId = queue.getDepartment().getDepartmentId();
+        try {
+            messagingTemplate.convertAndSend(
+                    "/topic/department-" + departmentId + "-queue", "QUEUE_UPDATED");
+            if (queue.getDepartment().getDepartmentType() != null
+                    && queue.getDepartment().getDepartmentType().isParaclinical()) {
+                messagingTemplate.convertAndSend(
+                        "/topic/department-" + departmentId + "-lab-queue", "LAB_UPDATED");
+            }
+        } catch (Exception ignored) {
+            // Loi realtime khong duoc rollback workflow kham.
         }
     }
 
@@ -128,6 +152,10 @@ public class PatientJourneyService {
     public PatientJourneyResponse advanceBlockedStep(UUID visitId) {
         visitRepo.findById(visitId).orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lượt khám"));
         List<QueueTicket> queues = queueRepo.findAllByVisit_VisitId(visitId);
+        if (queues.stream().anyMatch(queue -> queue.getStatus() == QueueStatus.SKIPPED)) {
+            throw new org.example.doansummer2026.exception.ConflictException(
+                    "Bệnh nhân đang được đánh dấu vắng; hãy đưa bệnh nhân quay lại hàng chờ trước khi mở bước tiếp theo");
+        }
         boolean hasPhysicalActiveQueue = queues.stream().anyMatch(queue ->
                 queue.getStatus() == QueueStatus.WAITING || queue.getStatus() == QueueStatus.CALLED
                         || queue.getStatus() == QueueStatus.IN_PROGRESS);
@@ -212,6 +240,7 @@ public class PatientJourneyService {
         }
         steps.sort(Comparator.comparing(PatientJourneyResponse.Step::startedAt, Comparator.nullsLast(Comparator.naturalOrder())));
         var payment = steps.stream().filter(s -> s.status().equals("PAYMENT_PENDING")).findFirst().orElse(null);
+        var absent = steps.stream().filter(s -> s.status().equals("SKIPPED")).findFirst().orElse(null);
         // WAITING_FOR_TEST cua phong kham chi la buoc tam treo. Neu benh nhan
         // dang cho/goi/thuc hien tai phong CLS thi phong vat ly do moi la vi tri
         // hien tai. Khi da roi het cac phong, hien buoc cho ket qua; TEST_DONE
@@ -236,6 +265,7 @@ public class PatientJourneyService {
                         .contains(s.status()))
                 .findFirst().orElse(null);
         var current = payment != null ? payment
+                : absent != null ? absent
                 : physicalCurrent != null ? physicalCurrent
                 : readyToReturn != null ? readyToReturn
                 : resultPending != null ? resultPending

@@ -77,7 +77,7 @@ public class TestRequestController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
     @Auditable(action = AuditAction.CREATE, entityName = "TestRequest")
     public ResponseEntity<TestRequestResponse> create(@Valid @RequestBody TestRequestCreateRequest req) {
         TestRequestResponse created = service.create(req);
@@ -88,7 +88,7 @@ public class TestRequestController {
      * Tao nhieu TestRequest cung luc - bac si chon nhieu dich vu xet nghiem.
      */
     @PostMapping("/batch")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
     @Auditable(action = AuditAction.CREATE, entityName = "TestRequest", description = "Tạo danh sách yêu cầu cận lâm sàng")
     public ResponseEntity<List<TestRequestResponse>> createBatch(
             @Valid @RequestBody TestRequestBatchCreateRequest req) {

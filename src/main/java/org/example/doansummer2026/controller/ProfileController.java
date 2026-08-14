@@ -69,7 +69,7 @@ public class ProfileController {
     public ResponseEntity<ProfileResponse> updateMe(@Valid @RequestBody ProfileUpdateRequest req) {
         Account me = authService.currentAccount();
         ProfileResponse current = profileService.getByAccount(me.getAccountId());
-        return RestResponses.ok(profileService.update(current.profileId(), req));
+        return RestResponses.ok(profileService.updateSelf(current.profileId(), req));
     }
 
     /** ADMIN xem chi tiet profile bat ky. */

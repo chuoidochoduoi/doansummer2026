@@ -16,7 +16,8 @@ public interface AuthServiceInterface {
     SystemRole getCurrentSystemRole();
     void changeMyPassword(ChangePasswordRequest req);
     void resetPassword(org.example.doansummer2026.dto.auth.ResetPasswordRequest req);
+    java.util.Map<String, Boolean> registrationAvailability(String identifier);
+    void ensureRegistrationIdentifierAvailable(String identifier);
 }
-
 
 

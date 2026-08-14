@@ -6,13 +6,14 @@
 -- Tai khoan seed:
 --   admin         / 88888888  (BCrypt)
 --   clinicmanager / 88888888  (BCrypt)
+--   doctor_exam / doctor_lab / doctor_ultrasound / doctor_xray / 88888888
 -- ===================================================================
 
 TRUNCATE TABLE
-    attendance_adjustment, attendance_qr_token, audit_log,
+    audit_log,
     chat_messages, chat_sessions, feedback_target, icd_10_selections,
     insurance_rule, invoice_item, notification, payment_transaction,
-    prescription_item, staff_attendance, staff_schedule, staff_schedule_template,
+    prescription_item, staff_schedule, staff_schedule_template,
     test_result, test_request, vital_signs, medical_record, queue_ticket,
     invoice, customer_visit, appointment_services, appointment,
     department_capability, staff_capability, staff_info, medical_service,
@@ -205,7 +206,8 @@ INSERT INTO staff_info (staff_id, created_at, updated_at, deleted, profile_id, s
                                                                                                                                                                                                                      ('90000012-5555-5555-5555-555555555555', NOW(), NOW(), false, '20000013-3333-3333-3333-333333333333', 'STF-REC-001', 'RECEPTIONIST', '001095123456', NULL, NULL, NULL, NULL, NULL, NULL),
                                                                                                                                                                                                                      ('90000013-6666-6666-6666-666666666666', NOW(), NOW(), false, '20000014-4444-4444-4444-444444444444', 'STF-CAS-001', 'CASHIER', '001092123456', NULL, NULL, NULL, NULL, NULL, NULL);
 
--- Bo sung 14 nhan su de tong cong co 20 tai khoan nhan vien.
+-- Bo sung 14 nhan su; cung 4 bac si theo nhom phong o tren tao thanh
+-- 24 tai khoan nhan vien de phu day cac vai tro va phong demo.
 -- Tat ca tai khoan demo dung mat khau: 88888888.
 INSERT INTO account (account_id, created_at, is_active, password_hash, role, username)
 SELECT format('31000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
@@ -217,6 +219,36 @@ SELECT format('31000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
            ELSE 'cashier' || (i - 12)
        END
 FROM generate_series(1, 14) AS g(i);
+
+-- ===================================================================
+-- 4 tai khoan bac si theo nhom phong de demo luong kham/can lam sang.
+-- Dang nhap: doctor_exam / doctor_lab / doctor_ultrasound / doctor_xray
+-- Mat khau chung: 88888888.
+-- ===================================================================
+INSERT INTO account (account_id, created_at, is_active, password_hash, role, username) VALUES
+('33000000-0000-0000-0000-000000000001', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_exam'),
+('33000000-0000-0000-0000-000000000002', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_lab'),
+('33000000-0000-0000-0000-000000000003', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_ultrasound'),
+('33000000-0000-0000-0000-000000000004', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_xray');
+
+INSERT INTO profile (
+    profile_id, account_id, created_at, updated_at, deleted,
+    full_name, date_of_birth, gender, phone, email, address, blood_type
+) VALUES
+('23000000-0000-0000-0000-000000000001', '33000000-0000-0000-0000-000000000001', NOW(), NOW(), false, 'Bác sĩ Đặng Minh Đức', '1982-03-12', 'MALE', '0968000001', 'doctor.exam@cares.vn', 'Hà Nội', NULL),
+('23000000-0000-0000-0000-000000000002', '33000000-0000-0000-0000-000000000002', NOW(), NOW(), false, 'Bác sĩ Nguyễn Hải Yến', '1986-07-22', 'FEMALE', '0968000002', 'doctor.lab@cares.vn', 'Hà Nội', NULL),
+('23000000-0000-0000-0000-000000000003', '33000000-0000-0000-0000-000000000003', NOW(), NOW(), false, 'Bác sĩ Trần Hoàng Sơn', '1984-10-05', 'MALE', '0968000003', 'doctor.ultrasound@cares.vn', 'Hà Nội', NULL),
+('23000000-0000-0000-0000-000000000004', '33000000-0000-0000-0000-000000000004', NOW(), NOW(), false, 'Bác sĩ Lê Thu Phương', '1987-01-18', 'FEMALE', '0968000004', 'doctor.xray@cares.vn', 'Hà Nội', NULL);
+
+INSERT INTO staff_info (
+    staff_id, created_at, updated_at, deleted, profile_id, staff_code,
+    system_role, national_id, bank_account, highest_degree, university,
+    license_number, specialization_id, department_id
+) VALUES
+('93000000-0000-0000-0000-000000000001', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000001', 'STF-DOC-EXAM', 'DOCTOR', '001082000001', NULL, 'Bác sĩ chuyên khoa I', 'Đại học Y Hà Nội', 'CCHN-EXAM-001', '00000006-6666-6666-6666-666666666666', '33333333-3333-3333-3333-333333333333'),
+('93000000-0000-0000-0000-000000000002', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000002', 'STF-DOC-LAB', 'DOCTOR', '001086000002', NULL, 'Bác sĩ chuyên khoa xét nghiệm', 'Đại học Y Hà Nội', 'CCHN-LAB-001', NULL, '44444444-4444-4444-4444-444444444444'),
+('93000000-0000-0000-0000-000000000003', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000003', 'STF-DOC-US', 'DOCTOR', '001084000003', NULL, 'Bác sĩ chẩn đoán hình ảnh', 'Đại học Y Hà Nội', 'CCHN-US-001', '00000003-3333-3333-3333-333333333333', '55555555-5555-5555-5555-555555555555'),
+('93000000-0000-0000-0000-000000000004', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000004', 'STF-DOC-XRAY', 'DOCTOR', '001087000004', NULL, 'Bác sĩ chẩn đoán hình ảnh', 'Đại học Y Hà Nội', 'CCHN-XRAY-001', '00000003-3333-3333-3333-333333333333', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 
 INSERT INTO profile (
     profile_id, account_id, created_at, updated_at, deleted,
@@ -302,6 +334,9 @@ UPDATE department SET head_doctor_id = '91000000-0000-0000-0000-000000000003' WH
 UPDATE department SET head_doctor_id = '91000000-0000-0000-0000-000000000004' WHERE department_id = '99999999-9999-9999-9999-999999999999';
 UPDATE department SET head_doctor_id = '91000000-0000-0000-0000-000000000005' WHERE department_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 UPDATE department SET head_doctor_id = '91000000-0000-0000-0000-000000000006' WHERE department_id = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+UPDATE department SET head_doctor_id = '93000000-0000-0000-0000-000000000002' WHERE department_id IN ('44444444-4444-4444-4444-444444444444', 'cccccccc-cccc-cccc-cccc-cccccccccccc');
+UPDATE department SET head_doctor_id = '93000000-0000-0000-0000-000000000003' WHERE department_id = '55555555-5555-5555-5555-555555555555';
+UPDATE department SET head_doctor_id = '93000000-0000-0000-0000-000000000004' WHERE department_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 INSERT INTO staff_capability (
     staff_capability_id, created_at, updated_at, deleted, staff_id,
@@ -314,7 +349,19 @@ INSERT INTO staff_capability (
 ('a1000000-0000-0000-0000-000000000004', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000009', 'ca000002-0000-0000-0000-000000000002', NULL, NULL, NULL, NULL, 'ACTIVE'),
 ('a1000000-0000-0000-0000-000000000005', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000009', 'ca000005-0000-0000-0000-000000000005', NULL, NULL, NULL, NULL, 'ACTIVE'),
 ('a1000000-0000-0000-0000-000000000006', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000010', 'ca000003-0000-0000-0000-000000000003', NULL, NULL, NULL, NULL, 'ACTIVE'),
-('a1000000-0000-0000-0000-000000000007', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000007', 'ca000004-0000-0000-0000-000000000004', NULL, NULL, NULL, NULL, 'ACTIVE');
+('a1000000-0000-0000-0000-000000000007', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000007', 'ca000004-0000-0000-0000-000000000004', NULL, NULL, NULL, NULL, 'ACTIVE'),
+('a1000000-0000-0000-0000-000000000008', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000005', 'ca000006-0000-0000-0000-000000000006', NULL, NULL, NULL, NULL, 'ACTIVE');
+
+INSERT INTO staff_capability (
+    staff_capability_id, created_at, updated_at, deleted, staff_id,
+    capability_id, certificate_number, issued_date, expiry_date,
+    issuing_organization, status
+) VALUES
+('a2000000-0000-0000-0000-000000000001', NOW(), NOW(), false, '93000000-0000-0000-0000-000000000002', 'ca000001-0000-0000-0000-000000000001', NULL, NULL, NULL, NULL, 'ACTIVE'),
+('a2000000-0000-0000-0000-000000000002', NOW(), NOW(), false, '93000000-0000-0000-0000-000000000002', 'ca000002-0000-0000-0000-000000000002', NULL, NULL, NULL, NULL, 'ACTIVE'),
+('a2000000-0000-0000-0000-000000000003', NOW(), NOW(), false, '93000000-0000-0000-0000-000000000002', 'ca000005-0000-0000-0000-000000000005', NULL, NULL, NULL, NULL, 'ACTIVE'),
+('a2000000-0000-0000-0000-000000000004', NOW(), NOW(), false, '93000000-0000-0000-0000-000000000003', 'ca000003-0000-0000-0000-000000000003', NULL, NULL, NULL, NULL, 'ACTIVE'),
+('a2000000-0000-0000-0000-000000000005', NOW(), NOW(), false, '93000000-0000-0000-0000-000000000004', 'ca000004-0000-0000-0000-000000000004', NULL, NULL, NULL, NULL, 'ACTIVE');
 
 -- ===================================================================
 -- Shift Config
@@ -332,6 +379,17 @@ SELECT format('32000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
        NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m',
        'CUSTOMER', 'patient' || i
 FROM generate_series(1, 20) AS g(i);
+
+
+-- Lich truc cho 4 bac si demo theo nhom phong.
+INSERT INTO staff_schedule (
+    schedule_id, created_at, updated_at, deleted, is_custom, note,
+    status, work_date, shift_id, staff_id, template_id
+) VALUES
+('61100000-0000-0000-0000-000000000001', NOW(), NOW(), false, false, 'Trực phòng khám tổng quát', 'SCHEDULED', CURRENT_DATE, '70000001-1111-1111-1111-111111111111', '93000000-0000-0000-0000-000000000001', NULL),
+('61100000-0000-0000-0000-000000000002', NOW(), NOW(), false, false, 'Trực phòng xét nghiệm', 'SCHEDULED', CURRENT_DATE, '70000001-1111-1111-1111-111111111111', '93000000-0000-0000-0000-000000000002', NULL),
+('61100000-0000-0000-0000-000000000003', NOW(), NOW(), false, false, 'Trực phòng siêu âm', 'SCHEDULED', CURRENT_DATE, '70000002-2222-2222-2222-222222222222', '93000000-0000-0000-0000-000000000003', NULL),
+('61100000-0000-0000-0000-000000000004', NOW(), NOW(), false, false, 'Trực phòng X-quang', 'SCHEDULED', CURRENT_DATE, '70000002-2222-2222-2222-222222222222', '93000000-0000-0000-0000-000000000004', NULL);
 
 INSERT INTO profile (
     profile_id, account_id, created_at, updated_at, deleted, patient_code,
@@ -473,4 +531,329 @@ SELECT format('52000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
        CASE WHEN i <= 8 THEN format('51000000-0000-0000-0000-%s', lpad((i + 8)::text, 12, '0'))::uuid ELSE NULL END,
        '90000012-5555-5555-5555-555555555555',
        format('22000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid
+FROM generate_series(1, 20) AS g(i);
+
+-- Tao du lieu hoa don -> thanh toan -> hang cho -> ho so -> can lam sang
+-- sau khi toan bo khoa ngoai nen da ton tai.
+-- ===================================================================
+-- 20 hoa don gan voi 20 luot kham.
+-- 18 hoa don da thanh toan, 1 da huy va 1 dang cho thanh toan.
+-- ===================================================================
+INSERT INTO invoice (
+    invoice_id, invoice_code, customer_id, visit_id, medical_record_id,
+    issue_date, due_date, subtotal, discount, tax, total_amount, paid_amount,
+    status, note, issued_by, created_at, updated_at, deleted
+)
+SELECT format('53000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       'INV-' || to_char(CURRENT_DATE, 'YYYYMMDD') || '-' || lpad(i::text, 4, '0'),
+       format('22000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       format('52000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       NULL, NOW() - ((20 - i) || ' hours')::interval, CURRENT_DATE + 1,
+       ms.price, 0, 0, ms.price,
+       CASE WHEN i <= 18 THEN ms.price ELSE 0 END,
+       CASE WHEN i <= 18 THEN 'PAID' WHEN i = 19 THEN 'CANCELLED' ELSE 'PENDING' END,
+       CASE WHEN i <= 18 THEN 'Đã thu đủ chi phí dịch vụ' WHEN i = 19 THEN 'Phiếu khám đã hủy' ELSE 'Chờ khách hàng thanh toán' END,
+       '90000013-6666-6666-6666-666666666666', NOW(), NOW(), false
+FROM generate_series(1, 20) AS g(i)
+JOIN medical_service ms
+  ON ms.service_id = format('400000%s-0000-0000-0000-%s',
+       lpad((((i - 1) % 7) + 1)::text, 2, '0'),
+       lpad((((i - 1) % 7) + 1)::text, 12, '0'))::uuid;
+
+-- Moi hoa don co mot dich vu kham benh.
+INSERT INTO invoice_item (
+    item_id, invoice_id, service_id, service_snapshot, service_code_snapshot,
+    unit_price, quantity, discount_percent, discount_amount, final_price,
+    line_total, note, bhyt_fund, created_at, updated_at, deleted
+)
+SELECT format('54000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       format('53000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       ms.service_id, ms.name, ms.service_code, ms.price, 1, 0, 0,
+       ms.price, ms.price, 'Dịch vụ khám ban đầu', 0, NOW(), NOW(), false
+FROM generate_series(1, 20) AS g(i)
+JOIN medical_service ms
+  ON ms.service_id = format('400000%s-0000-0000-0000-%s',
+       lpad((((i - 1) % 7) + 1)::text, 2, '0'),
+       lpad((((i - 1) % 7) + 1)::text, 12, '0'))::uuid;
+
+-- 15 dich vu can lam sang de demo du cac phong LAB/sieu am/X-quang/dien tim.
+INSERT INTO invoice_item (
+    item_id, invoice_id, service_id, service_snapshot, service_code_snapshot,
+    unit_price, quantity, discount_percent, discount_amount, final_price,
+    line_total, note, bhyt_fund, created_at, updated_at, deleted
+)
+SELECT format('54100000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       format('53000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       ms.service_id, ms.name, ms.service_code, ms.price, 1, 0, 0,
+       ms.price, ms.price, 'Dịch vụ cận lâm sàng', 0, NOW(), NOW(), false
+FROM generate_series(1, 15) AS g(i)
+JOIN medical_service ms
+  ON ms.service_id = format('400000%s-0000-0000-0000-%s',
+       lpad((8 + ((i - 1) % 12))::text, 2, '0'),
+       lpad((8 + ((i - 1) % 12))::text, 12, '0'))::uuid;
+
+-- Cap nhat tong hoa don co them dich vu can lam sang.
+UPDATE invoice inv
+SET subtotal = inv.subtotal + ii.line_total,
+    total_amount = inv.total_amount + ii.line_total,
+    paid_amount = CASE WHEN inv.status = 'PAID' THEN inv.paid_amount + ii.line_total ELSE inv.paid_amount END,
+    updated_at = NOW()
+FROM invoice_item ii
+WHERE ii.invoice_id = inv.invoice_id
+  AND ii.item_id::text LIKE '54100000-%';
+
+-- 18 giao dich thanh toan thanh cong.
+INSERT INTO payment_transaction (
+    transaction_id, invoice_id, transaction_code, amount, payment_method,
+    status, paid_at, gateway_reference, note, received_by,
+    created_at, updated_at, deleted
+)
+SELECT format('54200000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       inv.invoice_id, 'PAY-' || to_char(CURRENT_DATE, 'YYYYMMDD') || '-' || lpad(i::text, 4, '0'),
+       inv.total_amount,
+       CASE WHEN i % 3 = 0 THEN 'BANK_TRANSFER' WHEN i % 3 = 1 THEN 'CASH' ELSE 'CARD' END,
+       'SUCCESS', inv.issue_date + INTERVAL '5 minutes',
+       CASE WHEN i % 3 = 0 THEN 'BANK-DEMO-' || lpad(i::text, 4, '0') ELSE NULL END,
+       'Giao dịch thanh toán dữ liệu mẫu',
+       '90000013-6666-6666-6666-666666666666', NOW(), NOW(), false
+FROM generate_series(1, 18) AS g(i)
+JOIN invoice inv ON inv.invoice_id = format('53000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid;
+
+-- ===================================================================
+-- Hang cho kham benh: uu tien kham truoc, sau do moi den can lam sang.
+-- ===================================================================
+INSERT INTO queue_ticket (
+    ticket_id, visit_id, department_id, work_date, queue_number, status,
+    called_at, completed_at, service_id, created_at, updated_at, deleted
+)
+SELECT format('55000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       v.visit_id,
+       (ARRAY[
+           '33333333-3333-3333-3333-333333333333'::uuid,
+           '77777777-7777-7777-7777-777777777777'::uuid,
+           '66666666-6666-6666-6666-666666666666'::uuid,
+           '88888888-8888-8888-8888-888888888888'::uuid,
+           '99999999-9999-9999-9999-999999999999'::uuid,
+           'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid,
+           'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid
+       ])[((i - 1) % 7) + 1],
+       v.check_in_time::date, i,
+       CASE WHEN i <= 4 THEN 'IN_PROGRESS' WHEN i <= 8 THEN 'WAITING' ELSE 'DONE' END,
+       CASE WHEN i <= 4 OR i >= 9 THEN v.check_in_time + INTERVAL '10 minutes' ELSE NULL END,
+       CASE WHEN i >= 9 THEN v.check_in_time + INTERVAL '50 minutes' ELSE NULL END,
+       format('400000%s-0000-0000-0000-%s',
+           lpad((((i - 1) % 7) + 1)::text, 2, '0'),
+           lpad((((i - 1) % 7) + 1)::text, 12, '0'))::uuid,
+       NOW(), NOW(), false
+FROM generate_series(1, 18) AS g(i)
+JOIN customer_visit v ON v.visit_id = format('52000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid;
+
+-- 18 ho so benh an tuong ung hang cho kham.
+INSERT INTO medical_record (
+    record_id, record_version, record_code, visit_id, queue_ticket_id, doctor_id,
+    chief_complaint, clinical_findings, diagnosis, prescription_note, conclusion,
+    patient_instruction, status, completed_at, contact_requested,
+    created_at, updated_at, deleted
+)
+SELECT format('56000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       0, 'MR-' || to_char(CURRENT_DATE, 'YYYY') || '-' || lpad(i::text, 5, '0'),
+       q.visit_id, q.ticket_id, d.head_doctor_id,
+       (ARRAY['Đau đầu và mệt mỏi','Ho và đau họng','Đau bụng','Nổi ban ngứa','Ù tai','Đau ngực khi gắng sức','Khám sức khỏe định kỳ'])[((i - 1) % 7) + 1],
+       CASE WHEN i >= 9 THEN 'Khám lâm sàng ghi nhận dấu hiệu ổn định, chưa có biểu hiện cấp cứu.' ELSE 'Đang cập nhật kết quả khám.' END,
+       CASE WHEN i >= 9 THEN 'Chẩn đoán ban đầu theo triệu chứng và kết quả khám.' ELSE NULL END,
+       CASE WHEN i >= 9 THEN 'Dùng thuốc theo đơn và tái khám khi có dấu hiệu bất thường.' ELSE NULL END,
+       CASE WHEN i >= 9 THEN 'Tình trạng ổn định, điều trị ngoại trú.' ELSE NULL END,
+       CASE WHEN i >= 9 THEN 'Nghỉ ngơi, uống đủ nước và tuân thủ hướng dẫn của bác sĩ.' ELSE NULL END,
+       CASE WHEN i <= 4 THEN 'IN_PROGRESS' WHEN i <= 8 THEN 'DRAFT' ELSE 'COMPLETED' END,
+       CASE WHEN i >= 9 THEN q.completed_at ELSE NULL END,
+       false, NOW(), NOW(), false
+FROM generate_series(1, 18) AS g(i)
+JOIN queue_ticket q ON q.ticket_id = format('55000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid
+JOIN department d ON d.department_id = q.department_id;
+
+UPDATE invoice inv
+SET medical_record_id = format('56000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+    updated_at = NOW()
+FROM generate_series(1, 18) AS g(i)
+WHERE inv.invoice_id = format('53000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid;
+
+-- 18 bo chi so sinh hieu.
+INSERT INTO vital_signs (
+    vital_id, medical_record_id, blood_pressure, heart_rate, temperature,
+    weight, height, recorded_at, recorded_by, created_at, updated_at, deleted
+)
+SELECT format('56100000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       format('56000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       (110 + (i % 20)) || '/' || (70 + (i % 10)),
+       68 + (i % 18), 36.4 + ((i % 5) * 0.1),
+       48 + (i % 28), 155 + (i % 20), NOW() - (i || ' hours')::interval,
+       '90000011-4444-4444-4444-444444444444', NOW(), NOW(), false
+FROM generate_series(1, 18) AS g(i);
+
+UPDATE medical_record mr
+SET vital_signs_id = format('56100000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+    updated_at = NOW()
+FROM generate_series(1, 18) AS g(i)
+WHERE mr.record_id = format('56000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid;
+
+-- ===================================================================
+-- 15 hang cho va yeu cau can lam sang.
+-- Cac luot chua kham xong bi BLOCKED; luot da kham se duoc xu ly tiep.
+-- ===================================================================
+INSERT INTO queue_ticket (
+    ticket_id, visit_id, department_id, work_date, queue_number, status,
+    called_at, completed_at, service_id, created_at, updated_at, deleted
+)
+SELECT format('55100000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       v.visit_id,
+       CASE service_no
+           WHEN 8 THEN '44444444-4444-4444-4444-444444444444'::uuid
+           WHEN 9 THEN 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid
+           WHEN 10 THEN 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid
+           WHEN 11 THEN 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid
+           WHEN 12 THEN 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid
+           WHEN 13 THEN 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid
+           WHEN 14 THEN '44444444-4444-4444-4444-444444444444'::uuid
+           WHEN 15 THEN '55555555-5555-5555-5555-555555555555'::uuid
+           WHEN 16 THEN '55555555-5555-5555-5555-555555555555'::uuid
+           WHEN 17 THEN 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid
+           WHEN 18 THEN 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid
+           ELSE 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid
+       END,
+       v.check_in_time::date, i,
+       CASE WHEN i <= 3 OR i BETWEEN 5 AND 8 THEN 'BLOCKED'
+            WHEN i = 4 THEN 'IN_PROGRESS' ELSE 'DONE' END,
+       CASE WHEN i = 4 OR i >= 9 THEN v.check_in_time + INTERVAL '60 minutes' ELSE NULL END,
+       CASE WHEN i >= 9 THEN v.check_in_time + INTERVAL '85 minutes' ELSE NULL END,
+       format('400000%s-0000-0000-0000-%s', lpad(service_no::text, 2, '0'), lpad(service_no::text, 12, '0'))::uuid,
+       NOW(), NOW(), false
+FROM (
+    SELECT i, 8 + ((i - 1) % 12) AS service_no
+    FROM generate_series(1, 15) AS g(i)
+) s
+JOIN customer_visit v ON v.visit_id = format('52000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid;
+
+INSERT INTO test_request (
+    test_request_id, medical_record_id, service_id, performing_department,
+    queue_ticket_id, description, status, requested_by, completed_at,
+    performed_at, cancel_reason, invoice_item_id, created_at, updated_at, deleted
+)
+SELECT format('57000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       mr.record_id, q.service_id, q.department_id, q.ticket_id,
+       'Yêu cầu cận lâm sàng dữ liệu mẫu',
+       CASE WHEN i <= 3 OR i BETWEEN 5 AND 8 THEN 'BLOCKED'
+            WHEN i = 4 THEN 'IN_PROGRESS' ELSE 'COMPLETED' END,
+       mr.doctor_id,
+       CASE WHEN i >= 9 THEN q.completed_at ELSE NULL END,
+       CASE WHEN i = 4 OR i >= 9 THEN COALESCE(q.called_at, NOW()) ELSE NULL END,
+       NULL,
+       format('54100000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       NOW(), NOW(), false
+FROM generate_series(1, 15) AS g(i)
+JOIN medical_record mr ON mr.record_id = format('56000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid
+JOIN queue_ticket q ON q.ticket_id = format('55100000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid;
+
+-- Ket qua cho cac yeu cau da hoan thanh (7 ban ghi).
+INSERT INTO test_result (
+    result_id, test_request_id, image_url, conclusion, sample_id,
+    sample_type, sample_status, collected_at, collected_by,
+    performed_by, performed_at, verified_by, verified_at,
+    created_at, updated_at, deleted
+)
+SELECT format('58000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       tr.test_request_id,
+       CASE WHEN q.department_id IN ('55555555-5555-5555-5555-555555555555'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid)
+            THEN '/uploads/demo/ket-qua-' || i || '.pdf' ELSE NULL END,
+       CASE WHEN q.department_id IN ('55555555-5555-5555-5555-555555555555'::uuid, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid)
+            THEN 'Hình ảnh chưa ghi nhận bất thường đáng kể.'
+            ELSE 'Các chỉ số trong giới hạn tham chiếu tại thời điểm thực hiện.' END,
+       CASE WHEN q.department_id IN ('44444444-4444-4444-4444-444444444444'::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid)
+            THEN 'SMP-' || to_char(CURRENT_DATE, 'YYMMDD') || '-' || lpad(i::text, 3, '0') ELSE NULL END,
+       CASE WHEN q.department_id IN ('44444444-4444-4444-4444-444444444444'::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid)
+            THEN 'BLOOD' ELSE NULL END,
+       CASE WHEN q.department_id IN ('44444444-4444-4444-4444-444444444444'::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid)
+            THEN 'ACCEPTED' ELSE NULL END,
+       CASE WHEN q.department_id IN ('44444444-4444-4444-4444-444444444444'::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid)
+            THEN q.called_at ELSE NULL END,
+       CASE WHEN q.department_id IN ('44444444-4444-4444-4444-444444444444'::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid)
+            THEN '90000011-4444-4444-4444-444444444444'::uuid ELSE NULL END,
+       CASE
+           WHEN q.department_id IN ('44444444-4444-4444-4444-444444444444'::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid) THEN '93000000-0000-0000-0000-000000000002'::uuid
+           WHEN q.department_id = '55555555-5555-5555-5555-555555555555'::uuid THEN '93000000-0000-0000-0000-000000000003'::uuid
+           WHEN q.department_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid THEN '93000000-0000-0000-0000-000000000004'::uuid
+           ELSE '91000000-0000-0000-0000-000000000005'::uuid
+       END,
+       tr.performed_at,
+       CASE
+           WHEN q.department_id IN ('44444444-4444-4444-4444-444444444444'::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid) THEN '93000000-0000-0000-0000-000000000002'::uuid
+           WHEN q.department_id = '55555555-5555-5555-5555-555555555555'::uuid THEN '93000000-0000-0000-0000-000000000003'::uuid
+           WHEN q.department_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid THEN '93000000-0000-0000-0000-000000000004'::uuid
+           ELSE '91000000-0000-0000-0000-000000000005'::uuid
+       END,
+       tr.completed_at, NOW(), NOW(), false
+FROM generate_series(9, 15) AS g(i)
+JOIN test_request tr ON tr.test_request_id = format('57000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid
+JOIN queue_ticket q ON q.ticket_id = tr.queue_ticket_id;
+
+-- 20 dong thuoc cho 10 ho so da hoan thanh.
+INSERT INTO prescription_item (
+    prescription_item_id, record_id, medicine_name, quantity, unit,
+    note, frequency_per_day, created_at, updated_at, deleted
+)
+SELECT format('59000000-0000-0000-0000-%s', lpad(n::text, 12, '0'))::uuid,
+       format('56000000-0000-0000-0000-%s', lpad((9 + ((n - 1) / 2))::text, 12, '0'))::uuid,
+       CASE WHEN n % 2 = 1 THEN 'Paracetamol 500mg' ELSE 'Vitamin C 500mg' END,
+       CASE WHEN n % 2 = 1 THEN 10 ELSE 14 END,
+       'Viên',
+       CASE WHEN n % 2 = 1 THEN 'Uống sau ăn khi đau hoặc sốt' ELSE 'Uống sau bữa sáng' END,
+       CASE WHEN n % 2 = 1 THEN 2 ELSE 1 END,
+       NOW(), NOW(), false
+FROM generate_series(1, 20) AS g(n);
+
+-- 20 thong bao trong ung dung cho benh nhan.
+INSERT INTO notification (
+    notification_id, recipient_id, notification_type, channel, title, content,
+    related_entity, related_entity_id, status, sent_at, read_at,
+    failure_reason, created_at, updated_at, deleted
+)
+SELECT format('5a000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       format('22000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       CASE WHEN i <= 8 THEN 'APPOINTMENT_CONFIRMED'
+            WHEN i <= 18 THEN 'PAYMENT_SUCCESS' ELSE 'GENERAL' END,
+       'IN_APP',
+       CASE WHEN i <= 8 THEN 'Lịch hẹn đã được xác nhận'
+            WHEN i <= 18 THEN 'Thanh toán thành công' ELSE 'Thông báo từ phòng khám' END,
+       CASE WHEN i <= 8 THEN 'Vui lòng đến trước giờ hẹn 15 phút để làm thủ tục.'
+            WHEN i <= 18 THEN 'Hóa đơn dịch vụ của bạn đã được thanh toán.'
+            ELSE 'Vui lòng kiểm tra thông tin lượt khám.' END,
+       CASE WHEN i <= 8 THEN 'Appointment' ELSE 'Invoice' END,
+       CASE WHEN i <= 8
+            THEN format('51000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid
+            ELSE format('53000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid END,
+       CASE WHEN i % 3 = 0 THEN 'READ' ELSE 'SENT' END,
+       NOW() - (i || ' hours')::interval,
+       CASE WHEN i % 3 = 0 THEN NOW() - ((i - 1) || ' hours')::interval ELSE NULL END,
+       NULL, NOW(), NOW(), false
+FROM generate_series(1, 20) AS g(i);
+
+-- 20 audit log mau cho cac moc quan trong cua luong kham.
+INSERT INTO audit_log (
+    audit_id, action, entity_name, entity_id, actor_account_id,
+    ip_address, user_agent, old_value, new_value, description,
+    created_at, deleted
+)
+SELECT format('5b000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       CASE WHEN i <= 6 THEN 'PAYMENT_CONFIRMED'
+            WHEN i <= 12 THEN 'PATIENT_CALLED'
+            WHEN i <= 16 THEN 'EXAM_STARTED' ELSE 'RECORD_COMPLETED' END,
+       CASE WHEN i <= 6 THEN 'Invoice' WHEN i <= 12 THEN 'QueueTicket'
+            WHEN i <= 16 THEN 'MedicalRecord' ELSE 'MedicalRecord' END,
+       CASE WHEN i <= 6 THEN format('53000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))
+            WHEN i <= 12 THEN format('55000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))
+            ELSE format('56000000-0000-0000-0000-%s', lpad(LEAST(i, 18)::text, 12, '0')) END,
+       CASE WHEN i <= 6 THEN '30000017-7777-7777-7777-777777777777'::uuid
+            ELSE '30000014-4444-4444-4444-444444444444'::uuid END,
+       '127.0.0.1', 'CareS demo data', NULL, NULL,
+       'Dữ liệu audit mẫu cho thao tác nghiệp vụ quan trọng',
+       NOW() - ((20 - i) || ' minutes')::interval, false
 FROM generate_series(1, 20) AS g(i);
