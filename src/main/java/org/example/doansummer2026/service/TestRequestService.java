@@ -122,8 +122,9 @@ public class TestRequestService implements TestRequestServiceInterface {
 
         MedicalRecord existingRecord = existing.getMedicalRecord();
         if (existingRecord != null && medicalRecordId.equals(existingRecord.getRecordId())) {
-            throw new org.example.doansummer2026.exception.ConflictException(
-                    "Dịch vụ cận lâm sàng đã được chỉ định trong hồ sơ khám này");
+            // Dich vu da dat truoc va da duoc gan tu dong vao dung ho so kham.
+            // Xem nhu da xu ly de bac si chon lai tren giao dien khong tao trung/thu tien lai.
+            return true;
         }
         if (existingRecord != null && existingRecord.getQueueTicket() != null) {
             throw new org.example.doansummer2026.exception.ConflictException(
@@ -167,6 +168,13 @@ public class TestRequestService implements TestRequestServiceInterface {
                     request.setStatus(TestRequestStatus.IN_PROGRESS);
                     repo.save(request);
                 });
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasIncompleteRequestsForRecord(UUID recordId) {
+        return repo.countByMedicalRecordAndStatusIn(recordId,
+                java.util.List.of(TestRequestStatus.BLOCKED, TestRequestStatus.PENDING,
+                        TestRequestStatus.IN_PROGRESS)) > 0;
     }
 
     public TestRequestResponse create(TestRequestCreateRequest req) {
@@ -408,18 +416,17 @@ public class TestRequestService implements TestRequestServiceInterface {
                         java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS, TestRequestStatus.BLOCKED));
                 completeStandaloneRecordIfReady(t.getMedicalRecord(), totalTestRequests, incompleteCount);
 
-                QueueTicket queueTicket = queueTicketRepo
-                        .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
-                                visitId,
-                                t.getPerformingDepartment().getDepartmentId(),
-                                List.of(QueueStatus.DONE, QueueStatus.SKIPPED))
-                        .orElse(null);
-                if (queueTicket != null) {
+                QueueTicket queueTicket = t.getMedicalRecord().getQueueTicket();
+                boolean sourceExaminationQueue = queueTicket != null
+                        && queueTicket.getDepartment() != null
+                        && queueTicket.getDepartment().getDepartmentType()
+                        == org.example.doansummer2026.enums.DepartmentType.EXAMINATION;
+                if (sourceExaminationQueue) {
                     if (totalTestRequests > 0 && incompleteCount == 0) {
-                        // Tat ca test da xong
+                        // Tat ca CLS da xong: dua benh nhan quay lai phong kham goc.
                         queueTicket.setStatus(QueueStatus.TEST_DONE);
                     } else {
-                        // Con test chua xong
+                        // Con CLS chua xong: phong kham goc tiep tuc tam cho ket qua.
                         queueTicket.setStatus(QueueStatus.WAITING_FOR_TEST);
                         queueTicket.setCalledAt(null);
                     }

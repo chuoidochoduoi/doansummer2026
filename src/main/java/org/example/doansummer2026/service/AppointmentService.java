@@ -124,6 +124,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                 validateServiceEligibility(service, age, customer.getGender());
                 services.add(service);
             }
+            validateSingleExaminationService(services);
             a.setServices(services);
         }
         Appointment saved = repo.save(a);
@@ -185,6 +186,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                 validateServiceEligibility(service, req.guestAge(), req.guestGender());
                 services.add(service);
             }
+            validateSingleExaminationService(services);
             a.setServices(services);
         }
         Appointment saved = repo.save(a);
@@ -224,6 +226,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                         .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
                 services.add(service);
             }
+            validateSingleExaminationService(services);
             a.setServices(services);
         }
 
@@ -334,6 +337,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                         .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
                 services.add(service);
             }
+            validateSingleExaminationService(services);
             a.setServices(services);
         } else {
             services = a.getServices();
@@ -644,6 +648,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                         .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
                 services.add(service);
             }
+            validateSingleExaminationService(services);
             a.setServices(services);
         }
         return CustomerAppointmentDetailResponse.from(repo.save(a));
@@ -659,6 +664,19 @@ public class AppointmentService implements AppointmentServiceInterface {
                 scheduledAt.plusMinutes(APPOINTMENT_CONFLICT_MINUTES + 1));
         if (conflict) {
             throw new BadRequestException("Bạn đã có lịch hẹn khác trùng hoặc quá gần thời gian này");
+        }
+    }
+
+    private void validateSingleExaminationService(java.util.Collection<MedicalService> services) {
+        long examinationCount = services == null ? 0 : services.stream()
+                .filter(service -> service.getDepartmentType() != null
+                        && service.getDepartmentType().normalized()
+                        == org.example.doansummer2026.enums.DepartmentType.EXAMINATION)
+                .count();
+        if (examinationCount > 1) {
+            throw new BadRequestException(
+                    "Mỗi lịch hẹn chỉ được chọn một dịch vụ khám bệnh. Bạn vẫn có thể chọn nhiều dịch vụ cận lâm sàng"
+            );
         }
     }
 

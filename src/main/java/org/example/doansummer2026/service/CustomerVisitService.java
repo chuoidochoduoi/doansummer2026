@@ -65,6 +65,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
         if (req.serviceIds() == null || req.serviceIds().isEmpty()) {
             throw new org.example.doansummer2026.exception.BadRequestException("Vui lòng chọn ít nhất một dịch vụ khám");
         }
+        validateSingleExaminationService(req.serviceIds());
 
         Profile customer;
         if (req.customerId() != null) {
@@ -196,6 +197,21 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
                 .max(java.util.Comparator.comparing(Invoice::getCreatedAt))
                 .orElse(null);
         return CustomerVisitResponse.from(visit, invoice);
+    }
+
+    private void validateSingleExaminationService(List<UUID> serviceIds) {
+        long examinationCount = serviceIds.stream().distinct()
+                .map(serviceId -> serviceRepo.findById(serviceId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId)))
+                .filter(service -> service.getDepartmentType() != null
+                        && service.getDepartmentType().normalized()
+                        == org.example.doansummer2026.enums.DepartmentType.EXAMINATION)
+                .count();
+        if (examinationCount > 1) {
+            throw new org.example.doansummer2026.exception.BadRequestException(
+                    "Mỗi lượt khám chỉ được chọn một dịch vụ khám bệnh. Bạn vẫn có thể chọn nhiều dịch vụ cận lâm sàng"
+            );
+        }
     }
 }
 

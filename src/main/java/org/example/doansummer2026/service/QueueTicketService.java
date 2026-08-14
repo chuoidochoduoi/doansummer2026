@@ -266,7 +266,9 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         }
 
         boolean hasTestRequests = req != null && req.testRequests() != null && !req.testRequests().isEmpty();
-        if (!hasTestRequests && record.getStatus() != MedicalRecordStatus.COMPLETED) {
+        boolean hasIncompletePrepaidTests = testRequestService.hasIncompleteRequestsForRecord(record.getRecordId());
+        boolean shouldWaitForTests = hasTestRequests || hasIncompletePrepaidTests;
+        if (!shouldWaitForTests && record.getStatus() != MedicalRecordStatus.COMPLETED) {
             
             // Validate unpaid invoices
             boolean hasUnpaidInvoices = invoiceRepo.findAllByMedicalRecord_RecordId(record.getRecordId()).stream()
@@ -351,7 +353,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         // Dat status queue ticket:
         // - Co test request -> WAITING_FOR_TEST (cho ket qua xet nghiem)
         // - Khong co -> DONE (hoan thien hoan toan)
-        if (hasTestRequests) {
+        if (shouldWaitForTests) {
             q.setStatus(QueueStatus.WAITING_FOR_TEST);
             q.setCalledAt(null);
         } else {
@@ -360,7 +362,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         }
         repo.save(q);
         if (q.getStatus() == QueueStatus.DONE
-                || (hasTestRequests && !waitingForNewTestInvoicePayment)) {
+                || (shouldWaitForTests && !waitingForNewTestInvoicePayment)) {
             patientJourneyService.activateNext(q.getVisit().getVisitId());
         }
         updateDepartmentStatus(q.getDepartment().getDepartmentId());
@@ -666,12 +668,26 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         if (existingRecord == null) {
             StaffInfo doctor = staffRepo.findById(doctorId)
                     .orElseThrow(() -> new ResourceNotFoundException("Bác sĩ không tồn tại: " + doctorId));
-            record = MedicalRecord.builder()
-                    .visit(q.getVisit())
-                    .queueTicket(q)
-                    .doctor(doctor)
-                    .status(MedicalRecordStatus.IN_PROGRESS)
-                    .build();
+            // Neu benh nhan da mua CLS kem dich vu kham, TestRequest da nam trong
+            // record tam cua visit. Tai su dung record nay lam record kham chinh
+            // de ket qua CLS tu dong quay lai dung phong kham, khong tao hai benh an.
+            record = recordRepo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId)
+                    .orElse(null);
+            if (record == null) {
+                record = MedicalRecord.builder()
+                        .visit(q.getVisit())
+                        .queueTicket(q)
+                        .doctor(doctor)
+                        .status(MedicalRecordStatus.IN_PROGRESS)
+                        .build();
+            } else {
+                record.setQueueTicket(q);
+                record.setDoctor(doctor);
+                record.setStatus(MedicalRecordStatus.IN_PROGRESS);
+                if ("Dich vu can lam sang".equals(record.getChiefComplaint())) {
+                    record.setChiefComplaint(null);
+                }
+            }
             record = recordRepo.save(record);
         } else {
             record = existingRecord;

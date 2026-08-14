@@ -27,10 +27,21 @@ public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpec
         if (keyword != null && !keyword.trim().isEmpty()) {
             String likeKeyword = "%" + keyword.trim().toLowerCase() + "%";
             spec = spec.and((r, q, cb) -> {
-                var profileJoin = r.join("profile", jakarta.persistence.criteria.JoinType.LEFT);
+                // Profile la phia so huu quan he Account -> Profile; Account khong
+                // co thuoc tinh nguoc "profile", vi vay khong the join truc tiep.
+                var profileExists = q.subquery(Integer.class);
+                var profile = profileExists.from(org.example.doansummer2026.model.Profile.class);
+                profileExists.select(cb.literal(1)).where(
+                        cb.equal(profile.get("account"), r),
+                        cb.or(
+                                cb.like(cb.lower(profile.get("fullName")), likeKeyword),
+                                cb.like(cb.lower(profile.get("phone")), likeKeyword),
+                                cb.like(cb.lower(profile.get("email")), likeKeyword)
+                        )
+                );
                 return cb.or(
-                        cb.like(cb.lower(profileJoin.get("fullName")), likeKeyword),
-                        cb.like(cb.lower(r.get("username")), likeKeyword)
+                        cb.like(cb.lower(r.get("username")), likeKeyword),
+                        cb.exists(profileExists)
                 );
             });
         }

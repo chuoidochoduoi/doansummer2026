@@ -32,6 +32,24 @@ public interface InvoiceItemRepository extends JpaRepository<InvoiceItem, UUID> 
     /** Dem so lan BHYT duoc su dung (bhytQty). */
     @Query("SELECT COUNT(ii) FROM InvoiceItem ii WHERE ii.service.serviceId = :serviceId AND ii.bhytFund > 0")
     long countBhytUsageByServiceId(@Param("serviceId") UUID serviceId);
-}
 
+    @Query(value = """
+            SELECT COUNT(*) FROM invoice_item ii
+            JOIN invoice i ON i.invoice_id = ii.invoice_id
+            JOIN medical_service ms ON ms.service_id = ii.service_id
+            WHERE i.visit_id = :visitId AND i.status <> 'CANCELLED'
+              AND ms.department_type = 'EXAMINATION'
+            """, nativeQuery = true)
+    long countExaminationItemsByVisit(@Param("visitId") UUID visitId);
+
+    @Query(value = """
+            SELECT COUNT(*) FROM invoice_item ii
+            JOIN invoice i ON i.invoice_id = ii.invoice_id
+            JOIN medical_service ms ON ms.service_id = ii.service_id
+            WHERE i.visit_id = :visitId AND i.invoice_id <> :invoiceId
+              AND i.status <> 'CANCELLED' AND ms.department_type = 'EXAMINATION'
+            """, nativeQuery = true)
+    long countExaminationItemsByVisitExcludingInvoice(
+            @Param("visitId") UUID visitId, @Param("invoiceId") UUID invoiceId);
+}
 

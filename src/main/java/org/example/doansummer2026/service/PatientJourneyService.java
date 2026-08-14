@@ -212,9 +212,35 @@ public class PatientJourneyService {
         }
         steps.sort(Comparator.comparing(PatientJourneyResponse.Step::startedAt, Comparator.nullsLast(Comparator.naturalOrder())));
         var payment = steps.stream().filter(s -> s.status().equals("PAYMENT_PENDING")).findFirst().orElse(null);
-        var current = payment != null ? payment : steps.stream()
-                .filter(s -> !List.of("BLOCKED","DONE","COMPLETED","SKIPPED","CANCELLED").contains(s.status()))
+        // WAITING_FOR_TEST cua phong kham chi la buoc tam treo. Neu benh nhan
+        // dang cho/goi/thuc hien tai phong CLS thi phong vat ly do moi la vi tri
+        // hien tai. Khi da roi het cac phong, hien buoc cho ket qua; TEST_DONE
+        // moi dua benh nhan quay lai phong kham goc.
+        var physicalCurrent = steps.stream()
+                .filter(s -> List.of("IN_PROGRESS", "CALLED", "WAITING").contains(s.status()))
+                .min(Comparator
+                        .comparingInt((PatientJourneyResponse.Step s) -> switch (s.status()) {
+                            case "IN_PROGRESS" -> 0;
+                            case "CALLED" -> 1;
+                            default -> 2;
+                        })
+                        .thenComparing(PatientJourneyResponse.Step::startedAt,
+                                Comparator.nullsLast(Comparator.naturalOrder())))
+                .orElse(null);
+        var readyToReturn = steps.stream().filter(s -> s.status().equals("TEST_DONE")).findFirst().orElse(null);
+        var resultPending = steps.stream().filter(s -> s.status().equals("RESULT_PENDING")).findFirst().orElse(null);
+        var suspendedExamination = steps.stream().filter(s -> s.status().equals("WAITING_FOR_TEST")).findFirst().orElse(null);
+        var otherActive = steps.stream()
+                .filter(s -> !List.of("PAYMENT_PENDING", "BLOCKED", "DONE", "COMPLETED", "SKIPPED", "CANCELLED",
+                        "IN_PROGRESS", "CALLED", "WAITING", "TEST_DONE", "RESULT_PENDING", "WAITING_FOR_TEST")
+                        .contains(s.status()))
                 .findFirst().orElse(null);
+        var current = payment != null ? payment
+                : physicalCurrent != null ? physicalCurrent
+                : readyToReturn != null ? readyToReturn
+                : resultPending != null ? resultPending
+                : suspendedExamination != null ? suspendedExamination
+                : otherActive;
         var next = steps.stream().filter(s -> s.status().equals("BLOCKED")).findFirst().orElse(null);
         boolean finished = current==null && next==null && !steps.isEmpty();
         String name = visit.getCustomer()!=null ? visit.getCustomer().getFullName() : visit.getAppointment()!=null ? visit.getAppointment().getGuestFullName() : "Khách vãng lai";
@@ -224,7 +250,8 @@ public class PatientJourneyService {
         boolean guest = visit.getCustomer() == null || visit.getCustomer().getAccount() == null;
         return new PatientJourneyResponse(visit.getVisitId(), toVisitCode(visit.getVisitId()), name, phone,
                 guest, current!=null?current.serviceName():finished?"Đã hoàn thành":"Chưa có lộ trình",
-                current!=null?current.roomName()+" ("+(current.roomCode()==null?"-":current.roomCode())+")":"-", state,
+                current!=null && current.roomName()!=null
+                        ? current.roomName()+" ("+(current.roomCode()==null?"-":current.roomCode())+")" : "-", state,
                 next!=null?next.serviceName():"-", visit.getCheckInTime(), waiting, waiting>=60 || "UNASSIGNED".equals(state), steps);
     }
 

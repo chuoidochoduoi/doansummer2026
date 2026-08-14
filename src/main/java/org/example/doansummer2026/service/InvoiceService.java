@@ -156,9 +156,10 @@ public class InvoiceService implements InvoiceServiceInterface {
         }
         CustomerVisit visit = null;
         if (req.visitId() != null) {
-            visit = visitRepo.findById(req.visitId())
+            visit = visitRepo.findByIdForUpdate(req.visitId())
                     .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + req.visitId()));
         }
+        validateSingleExaminationService(req.items(), req.visitId(), null);
         MedicalRecord record = null;
         if (req.medicalRecordId() != null) {
             record = recordRepo.findById(req.medicalRecordId())
@@ -243,6 +244,8 @@ public class InvoiceService implements InvoiceServiceInterface {
         if (req.tax() != null) i.setTax(req.tax());
         if (req.note() != null) i.setNote(req.note());
         if (req.items() != null && !req.items().isEmpty()) {
+            validateSingleExaminationService(req.items(),
+                    i.getVisit() != null ? i.getVisit().getVisitId() : null, i.getInvoiceId());
             itemRepo.deleteAll(i.getItems());
             i.getItems().clear();
             for (InvoiceItemCreateRequest itemReq : req.items()) {
@@ -571,6 +574,30 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .lineTotal(lineTotal)
                 .note(req.note())
                 .build();
+    }
+
+    private void validateSingleExaminationService(List<InvoiceItemCreateRequest> items,
+                                                    UUID visitId, UUID excludedInvoiceId) {
+        if (items == null || items.isEmpty()) return;
+        long requestedExaminations = items.stream()
+                .map(InvoiceItemCreateRequest::serviceId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .map(serviceRepo::findById)
+                .flatMap(java.util.Optional::stream)
+                .filter(service -> service.getDepartmentType() != null
+                        && service.getDepartmentType().normalized() == DepartmentType.EXAMINATION)
+                .count();
+        long existingExaminations = visitId == null ? 0
+                : excludedInvoiceId == null
+                ? itemRepo.countExaminationItemsByVisit(visitId)
+                : itemRepo.countExaminationItemsByVisitExcludingInvoice(visitId, excludedInvoiceId);
+        if (requestedExaminations > 1
+                || (requestedExaminations == 1 && existingExaminations > 0)) {
+            throw new BadRequestException(
+                    "Mỗi lượt khám chỉ được có một dịch vụ khám bệnh. Các dịch vụ cận lâm sàng vẫn có thể chọn nhiều"
+            );
+        }
     }
 
     private void recalculateTotals(Invoice i) {
