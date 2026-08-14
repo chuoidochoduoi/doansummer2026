@@ -29,7 +29,7 @@ public class PatientJourneyController {
     public ResponseEntity<PatientJourneyResponse> get(@PathVariable UUID visitId) { return RestResponses.ok(service.get(visitId)); }
 
     @PostMapping("/api/v1/patient-journeys/{visitId}/advance")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER','ROLE_ADMIN','ROLE_DOCTOR','ROLE_NURSE')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER','ROLE_ADMIN')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "CustomerVisit", idParamName = "visitId", description = "Phuc hoi buoc hang cho bi ket")
     public ResponseEntity<PatientJourneyResponse> advance(@PathVariable UUID visitId) {
         return RestResponses.ok(service.advanceBlockedStep(visitId));

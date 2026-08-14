@@ -68,7 +68,10 @@ public class InvoiceController {
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
     @Auditable(action = AuditAction.CREATE, entityName = "Invoice")
     public ResponseEntity<InvoiceResponse> create(@Valid @RequestBody InvoiceCreateRequest req) {
-        InvoiceResponse created = service.create(req);
+        UUID issuedById = authService.currentStaffId();
+        InvoiceResponse created = service.create(new InvoiceCreateRequest(
+                req.customerId(), req.visitId(), req.medicalRecordId(), req.dueDate(),
+                req.discount(), req.tax(), req.note(), issuedById, req.items()));
         return RestResponses.created("/api/v1/invoices/{id}", created.invoiceId(), created);
     }
 

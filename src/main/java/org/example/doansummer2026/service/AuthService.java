@@ -30,15 +30,19 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Map;
 import java.util.UUID;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Transactional
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class AuthService implements AuthServiceInterface {
 
     private final AccountService accountService;
@@ -51,6 +55,12 @@ public class AuthService implements AuthServiceInterface {
     private final CustomerVisitRepository visitRepository;
     private final InvoiceRepository invoiceRepository;
     private final AccountRepository accountRepository;
+    private final StringRedisTemplate redisTemplate;
+
+    @Value("${app.auth.max-login-attempts:5}")
+    private long maxLoginAttempts;
+    @Value("${app.auth.login-lock-minutes:15}")
+    private long loginLockMinutes;
     public AuthResponse register(RegisterRequest req) {
 
         ensureRegistrationIdentifierAvailable(req.identifier());
@@ -317,9 +327,24 @@ public class AuthService implements AuthServiceInterface {
     }
 
     public AuthResponse login(LoginRequest req) {
-        Account account = resolveLoginAccount(req.username());
+        String attemptKey = "auth:login-attempt:" + normalizeLoginIdentifier(req.username());
+        long previousAttempts = readLoginAttempts(attemptKey);
+        if (previousAttempts >= maxLoginAttempts) {
+            Long ttl = readLoginAttemptTtl(attemptKey);
+            throw new BadRequestException("Đăng nhập sai quá nhiều lần. Vui lòng thử lại sau "
+                    + Math.max(ttl == null ? 1 : ttl, 1) + " phút");
+        }
+
+        Account account;
+        try {
+            account = resolveLoginAccount(req.username());
+        } catch (BadRequestException ex) {
+            registerFailedLogin(attemptKey);
+            throw ex;
+        }
 
         if (!passwordEncoder.matches(req.password(), account.getPasswordHash())) {
+            registerFailedLogin(attemptKey);
             throw new BadRequestException("Tên đăng nhập hoặc mật khẩu không đúng");
         }
 
@@ -327,7 +352,61 @@ public class AuthService implements AuthServiceInterface {
             throw new BadRequestException("Tài khoản đã bị khóa");
         }
 
+        clearLoginAttempts(attemptKey);
         return buildAuthResponse(account);
+    }
+
+    private void registerFailedLogin(String attemptKey) {
+        try {
+            Long attempts = redisTemplate.opsForValue().increment(attemptKey);
+            if (attempts != null && attempts == 1) {
+                redisTemplate.expire(attemptKey, loginLockMinutes, TimeUnit.MINUTES);
+            }
+        } catch (org.springframework.data.redis.RedisConnectionFailureException ex) {
+            log.warn("Redis unavailable; login attempt could not be recorded");
+        }
+    }
+
+    private long readLoginAttempts(String attemptKey) {
+        try {
+            String value = redisTemplate.opsForValue().get(attemptKey);
+            if (value == null) return 0L;
+            try {
+                return Long.parseLong(value);
+            } catch (NumberFormatException ex) {
+                redisTemplate.delete(attemptKey);
+                return 0L;
+            }
+        } catch (org.springframework.data.redis.RedisConnectionFailureException ex) {
+            log.warn("Redis unavailable; login rate limit check skipped");
+            return 0L;
+        }
+    }
+
+    private Long readLoginAttemptTtl(String attemptKey) {
+        try {
+            return redisTemplate.getExpire(attemptKey, TimeUnit.MINUTES);
+        } catch (org.springframework.data.redis.RedisConnectionFailureException ex) {
+            log.warn("Redis unavailable while reading login lock TTL");
+            return 1L;
+        }
+    }
+
+    private void clearLoginAttempts(String attemptKey) {
+        try {
+            redisTemplate.delete(attemptKey);
+        } catch (org.springframework.data.redis.RedisConnectionFailureException ex) {
+            log.warn("Redis unavailable; login attempt counter was not cleared");
+        }
+    }
+
+    private String normalizeLoginIdentifier(String identifier) {
+        if (identifier == null) return "empty";
+        String normalized = identifier.trim().toLowerCase();
+        if (!normalized.contains("@") && normalized.matches("^(\\+84|0)\\d{9,10}$")) {
+            normalized = normalizePhone(normalized);
+        }
+        return normalized.isBlank() ? "empty" : normalized;
     }
 
     public AuthResponse refresh(RefreshRequest req) {

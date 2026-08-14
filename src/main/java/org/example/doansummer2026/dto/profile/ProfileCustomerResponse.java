@@ -34,7 +34,10 @@ public record ProfileCustomerResponse(
                                               List<TestResultSummary> testResults) {
         List<String> allergyList = null;
         if (profile.getAllergies() != null && !profile.getAllergies().isBlank()) {
-            allergyList = List.of(profile.getAllergies().split(";"));
+            allergyList = java.util.Arrays.stream(profile.getAllergies().split("[;\\r\\n]+"))
+                    .map(String::trim)
+                    .filter(value -> !value.isBlank())
+                    .toList();
         }
 
         String customerCode = profile.getPatientCode();

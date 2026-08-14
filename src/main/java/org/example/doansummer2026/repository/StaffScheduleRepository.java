@@ -19,6 +19,10 @@ import java.util.UUID;
 @Repository
 public interface StaffScheduleRepository extends JpaRepository<StaffSchedule, UUID>, JpaSpecificationExecutor<StaffSchedule> {
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT schedule FROM StaffSchedule schedule WHERE schedule.scheduleId = :id")
+    Optional<StaffSchedule> findByIdForUpdate(@Param("id") UUID id);
+
     Page<StaffSchedule> findByStaff_StaffId(UUID staffId, Pageable pageable);
 
     default Page<StaffSchedule> search(UUID staffId, LocalDate from,

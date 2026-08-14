@@ -70,6 +70,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     private final MedicalServiceRepository medicalServiceRepo;
     private final org.example.doansummer2026.repository.ShiftConfigRepository shiftConfigRepository;
     private final NotificationService notificationService;
+    private final AuthService authService;
 
     @Transactional(readOnly = true)
     public PageResponse<MedicalRecordResponse> search(UUID doctorId, MedicalRecordStatus status,
@@ -370,6 +371,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             throw new ConflictException("Không thể cập nhật hồ sơ đã hoàn thành");
         }
         validateVersion(r, req);
+        ensureDoctorCanEdit(r);
         updateMedicalRecordFields(r, req);
         return MedicalRecordResponse.from(repo.save(r), true);
     }
@@ -387,12 +389,16 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         boolean nurse = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication()
                 .getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_NURSE"));
         var actor = currentStaff().orElse(null);
+        if (!isCurrentAdmin() && actor == null) {
+            throw new BadRequestException("Không xác định được nhân viên đang thao tác");
+        }
+        if (nurse && r.getQueueTicket() == null) {
+            throw new BadRequestException("Y tá chỉ được lưu hồ sơ tại phòng đang được phân công");
+        }
         if (nurse && actor != null && r.getQueueTicket() != null
                 && (actor.getDepartment() == null || !actor.getDepartment().getDepartmentId().equals(r.getQueueTicket().getDepartment().getDepartmentId())))
             throw new BadRequestException("Y tá chỉ được cập nhật hồ sơ tại phòng được phân công");
-        if (!nurse && actor != null && actor.getSystemRole().isDoctor()
-                && r.getDoctor() != null && !r.getDoctor().getStaffId().equals(actor.getStaffId()))
-            throw new BadRequestException("Ca khám này thuộc bác sĩ phụ trách khác");
+        if (!nurse) ensureDoctorCanEdit(r);
         if (nurse) {
             updateNursingDraftFields(r, req);
             if (actor != null) { r.setNursingUpdatedBy(actor); r.setNursingUpdatedAt(LocalDateTime.now()); }
@@ -423,8 +429,29 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     }
 
     private java.util.Optional<StaffInfo> currentStaff() {
-        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        return auth == null ? java.util.Optional.empty() : staffRepo.findFirstByProfile_Account_Username(auth.getName());
+        UUID staffId = authService.currentStaffId();
+        return staffId == null ? java.util.Optional.empty() : staffRepo.findById(staffId);
+    }
+
+    private boolean isCurrentAdmin() {
+        return authService.getCurrentSystemRole() == org.example.doansummer2026.enums.SystemRole.ADMIN;
+    }
+
+    private void ensureDoctorCanEdit(MedicalRecord record) {
+        if (isCurrentAdmin()) return;
+        StaffInfo actor = currentStaff()
+                .orElseThrow(() -> new BadRequestException("Không xác định được bác sĩ đang thao tác"));
+        if (!actor.getSystemRole().isDoctor()) {
+            throw new BadRequestException("Chỉ bác sĩ phụ trách mới được cập nhật hồ sơ khám");
+        }
+        UUID responsibleDoctorId = record.getQueueTicket() != null
+                && record.getQueueTicket().getDepartment() != null
+                && record.getQueueTicket().getDepartment().getHeadDoctor() != null
+                ? record.getQueueTicket().getDepartment().getHeadDoctor().getStaffId()
+                : (record.getDoctor() != null ? record.getDoctor().getStaffId() : null);
+        if (responsibleDoctorId == null || !responsibleDoctorId.equals(actor.getStaffId())) {
+            throw new BadRequestException("Ca khám này thuộc bác sĩ phụ trách khác");
+        }
     }
 
     private void updateMedicalRecordFields(MedicalRecord r, MedicalRecordUpdateRequest req) {
@@ -521,6 +548,9 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         MedicalRecord r = findById(id);
         validateVersion(r, req);
         var actor = currentStaff().orElse(null);
+        if (!isCurrentAdmin() && actor == null) {
+            throw new BadRequestException("Không xác định được bác sĩ đang thao tác");
+        }
         // Bac si phu trach duoc cau hinh cho phong co quyen ket thuc ca kham.
         // Bac si luu trong record co the la nguoi tao benh an ban dau, nen chi
         // dung lam du phong khi queue/phong chua duoc cau hinh bac si phu trach.
@@ -529,9 +559,13 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 && r.getQueueTicket().getDepartment().getHeadDoctor() != null
                 ? r.getQueueTicket().getDepartment().getHeadDoctor().getStaffId()
                 : (r.getDoctor() != null ? r.getDoctor().getStaffId() : null);
-        if (actor != null && actor.getSystemRole().isDoctor()
-                && (responsibleDoctorId == null || !responsibleDoctorId.equals(actor.getStaffId())))
-            throw new BadRequestException("Chỉ bác sĩ phụ trách mới được hoàn thành ca khám");
+        if (!isCurrentAdmin()) {
+            if (!actor.getSystemRole().isDoctor()
+                    || responsibleDoctorId == null
+                    || !responsibleDoctorId.equals(actor.getStaffId())) {
+                throw new BadRequestException("Chỉ bác sĩ phụ trách mới được hoàn thành ca khám");
+            }
+        }
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
             throw new BadRequestException("Hồ sơ đã được đóng trước đó");
         }

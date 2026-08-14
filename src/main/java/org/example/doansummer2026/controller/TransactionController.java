@@ -9,6 +9,7 @@ import org.example.doansummer2026.dto.transaction.TransactionResponse;
 import org.example.doansummer2026.dto.transaction.TransactionUpdateRequest;
 import org.example.doansummer2026.enums.TransactionStatus;
 import org.example.doansummer2026.service.TransactionService;
+import org.example.doansummer2026.service.AuthService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +33,7 @@ import java.util.UUID;
 public class TransactionController {
 
     private final TransactionService service;
+    private final AuthService authService;
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
@@ -53,7 +55,10 @@ public class TransactionController {
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
     public ResponseEntity<TransactionResponse> create(@Valid @RequestBody TransactionCreateRequest req) {
-        TransactionResponse created = service.create(req);
+        UUID receivedById = authService.currentStaffId();
+        TransactionResponse created = service.create(new TransactionCreateRequest(
+                req.invoiceId(), req.amount(), req.paymentMethod(), req.gatewayReference(),
+                req.note(), receivedById));
         return RestResponses.created("/api/v1/transactions/{id}", created.transactionId(), created);
     }
 

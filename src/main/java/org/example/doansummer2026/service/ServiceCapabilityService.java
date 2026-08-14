@@ -36,8 +36,16 @@ public class ServiceCapabilityService {
 
     public ServiceCapabilityResponse update(UUID id, ServiceCapabilityRequest request) {
         ServiceCapability value = find(id);
-        value.setCode(request.code().trim().toUpperCase());
-        value.setName(request.name().trim());
+        String normalizedCode = request.code().trim().toUpperCase();
+        String normalizedName = request.name().trim().replaceAll("\\s+", " ");
+        if (repository.existsByCodeIgnoreCaseAndCapabilityIdNot(normalizedCode, id)) {
+            throw new ConflictException("Mã danh mục kỹ thuật đã tồn tại");
+        }
+        if (repository.existsByNameIgnoreCaseAndCapabilityIdNot(normalizedName, id)) {
+            throw new ConflictException("Tên danh mục kỹ thuật đã tồn tại");
+        }
+        value.setCode(normalizedCode);
+        value.setName(normalizedName);
         value.setDescription(request.description());
         if (request.active() != null) {
             if (!request.active() && !Boolean.FALSE.equals(value.getActive())) {

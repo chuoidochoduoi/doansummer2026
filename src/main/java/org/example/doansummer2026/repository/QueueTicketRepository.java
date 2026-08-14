@@ -41,7 +41,9 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
      * Dung khi can duyet de tim ticket dung (vi du: ticket dang IN_PROGRESS).
      */
     List<QueueTicket> findAllByVisit_VisitId(UUID visitId);
-    Optional<QueueTicket> findByVisit_VisitIdAndService_ServiceId(UUID visitId, UUID serviceId);
+    /** Lay ticket moi nhat de du lieu lich su tung bi trung khong lam vo luong. */
+    Optional<QueueTicket> findTopByVisit_VisitIdAndService_ServiceIdOrderByCreatedAtDesc(
+            UUID visitId, UUID serviceId);
     Optional<QueueTicket> findTopByVisit_VisitIdAndStatusOrderByCreatedAtAsc(UUID visitId, QueueStatus status);
 
     @Query("SELECT MAX(q.queueNumber) FROM QueueTicket q WHERE q.department.departmentId = :departmentId AND q.workDate = :workDate")

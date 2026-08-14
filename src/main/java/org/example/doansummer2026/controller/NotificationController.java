@@ -39,7 +39,7 @@ public class NotificationController {
     private final ProfileService profileService;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PageResponse<NotificationResponse>> list(
             @RequestParam(required = false) UUID recipientId,
             @RequestParam(required = false) NotificationStatus status,
@@ -66,11 +66,12 @@ public class NotificationController {
     @GetMapping("/unread-count")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<UnreadCountResponse> unreadCount(@RequestParam UUID recipientId) {
+        ensureCurrentRecipient(recipientId);
         return RestResponses.ok(service.unreadCount(recipientId));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<NotificationResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
@@ -98,6 +99,7 @@ public class NotificationController {
     @PostMapping("/{id}/mark-read")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<NotificationResponse> markRead(@PathVariable UUID id) {
+        ensureCurrentRecipient(service.findById(id).getRecipient().getProfileId());
         return RestResponses.ok(service.markRead(id));
     }
 
@@ -114,8 +116,14 @@ public class NotificationController {
         service.delete(id);
         return RestResponses.noContent();
     }
+
+    private void ensureCurrentRecipient(UUID recipientId) {
+        UUID currentProfileId = authService.currentProfileId();
+        if (currentProfileId == null || !currentProfileId.equals(recipientId)) {
+            throw new org.example.doansummer2026.exception.ResourceNotFoundException(
+                    "Không tìm thấy thông báo");
+        }
+    }
 }
-
-
 
 

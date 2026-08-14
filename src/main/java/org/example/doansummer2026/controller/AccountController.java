@@ -38,7 +38,7 @@ public class AccountController {
     private final StaffInfoRepository staffRepo;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_STAFF')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<PageResponse<AccountResponse>> list(
             @RequestParam(required = false) Role role,
             Pageable pageable) {
@@ -124,5 +124,4 @@ public class AccountController {
         return RestResponses.noContent();
     }
 }
-
 

@@ -16,6 +16,7 @@ import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.service.StaffScheduleService;
 import org.example.doansummer2026.service.StaffService;
+import org.example.doansummer2026.service.AuthService;
 import org.example.doansummer2026.aop.Auditable;
 import org.example.doansummer2026.enums.AuditAction;
 import org.springframework.data.domain.Pageable;
@@ -46,6 +47,7 @@ public class StaffController {
     private final StaffService staffService;
     private final StaffScheduleService staffScheduleService;
     private final ShiftConfigRepository shiftConfigRepo;
+    private final AuthService authService;
 
     @GetMapping("/clinic-manager")
     @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
@@ -61,8 +63,14 @@ public class StaffController {
     }
 
     @GetMapping("/{staffId}/capabilities")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER','ROLE_DOCTOR','ROLE_NURSE')")
     public List<StaffCapabilityResponse> listCapabilities(@PathVariable UUID staffId) {
+        if (authService.getCurrentSystemRole() != SystemRole.ADMIN
+                && authService.getCurrentSystemRole() != SystemRole.CLINIC_MANAGER
+                && !java.util.Objects.equals(authService.currentStaffId(), staffId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Không có quyền xem năng lực của nhân viên khác");
+        }
         return staffService.listCapabilities(staffId);
     }
 
@@ -75,7 +83,7 @@ public class StaffController {
 
     /** ADMIN vaf CLINIC_MANAGER xem danh sach. */
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<StaffResponse>> search(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) UUID specializationId,
@@ -112,14 +120,11 @@ public class StaffController {
     }
 
     private UUID getCurrentStaffId() {
-        return org.springframework.security.core.context.SecurityContextHolder.getContext()
-                .getAuthentication().getPrincipal() instanceof Map<?, ?> map
-                ? UUID.fromString((String) map.get("staffId"))
-                : null;
+        return authService.currentStaffId();
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
     public ResponseEntity<StaffResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(staffService.get(id));
     }
@@ -127,6 +132,13 @@ public class StaffController {
     @GetMapping("/account/{accountId}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_STAFF', 'ROLE_DOCTOR', 'ROLE_NURSE', 'ROLE_RECEPTIONIST', 'ROLE_CASHIER')")
     public ResponseEntity<StaffResponse> getByAccount(@PathVariable UUID accountId) {
+        var currentAccount = authService.currentAccount();
+        var currentRole = authService.getCurrentSystemRole();
+        if (currentRole != SystemRole.ADMIN && currentRole != SystemRole.CLINIC_MANAGER
+                && !currentAccount.getAccountId().equals(accountId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Không có quyền xem hồ sơ nhân viên khác");
+        }
         return RestResponses.ok(staffService.getByAccountId(accountId));
     }
 

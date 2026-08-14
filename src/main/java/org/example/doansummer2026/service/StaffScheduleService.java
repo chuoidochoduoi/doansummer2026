@@ -42,6 +42,8 @@ import java.util.*;
 @RequiredArgsConstructor
 public class StaffScheduleService implements StaffScheduleServiceInterface {
 
+    private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+
     private final StaffScheduleRepository scheduleRepo;
     private final StaffScheduleTemplateRepository templateRepo;
     private final ShiftConfigRepository shiftConfigRepo;
@@ -51,17 +53,25 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     private final StaffInfoRepository staffInfoRepository;
 
     public ScheduleResponse create(ScheduleCreateRequest req) {
-        StaffInfo staff = staffService.findById(req.staffId());
-        ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
+        if (req.workDate().isBefore(LocalDate.now(CLINIC_ZONE))) {
+            throw new ConflictException("Không thể tạo lịch trực cho ngày đã qua");
+        }
+        StaffInfo staff = staffInfoRepository.findByIdForScheduleUpdate(req.staffId())
+                .orElseThrow(() -> new ResourceNotFoundException("Nhân sự không tồn tại: " + req.staffId()));
+        ShiftConfig shift = shiftConfigRepo.findByIdForScheduleUpdate(req.shiftId())
                 .orElseThrow(() -> new ResourceNotFoundException("Ca làm việc không tồn tại: " + req.shiftId()));
         if (Boolean.FALSE.equals(shift.getIsActive())) {
             throw new ConflictException("Ca làm việc đã ngừng hoạt động và không thể dùng cho lịch trực mới");
         }
+        if (!findExactSchedules(staff, req.workDate(), shift).isEmpty()) {
+            throw new ConflictException("Nhân sự đã được phân công vào ca này");
+        }
+        validateNoOverlappingShift(staff, req.workDate(), shift, null);
         StaffSchedule schedule = StaffSchedule.builder()
                 .staff(staff)
                 .workDate(req.workDate())
                 .shift(shift)
-                .status(req.status() != null ? req.status() : ScheduleStatus.SCHEDULED)
+                .status(ScheduleStatus.SCHEDULED)
                 .isCustom(req.isCustom() != null && req.isCustom())
                 .note(req.note())
                 .template(req.templateId() != null
@@ -87,13 +97,22 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     }
 
     public ScheduleResponse update(UUID id, ScheduleUpdateRequest req) {
-        StaffSchedule s = findById(id);
+        StaffSchedule s = scheduleRepo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Lịch làm việc không tồn tại: " + id));
         if (req.shiftId() != null) {
-            ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
+            LocalDate today = LocalDate.now(CLINIC_ZONE);
+            if (s.getWorkDate().isBefore(today)
+                    || (s.getWorkDate().equals(today)
+                    && s.getShift() != null
+                    && !java.time.LocalTime.now(CLINIC_ZONE).isBefore(s.getShift().getStartTime()))) {
+                throw new ConflictException("Không thể đổi ca trực đã bắt đầu hoặc đã qua");
+            }
+            ShiftConfig shift = shiftConfigRepo.findByIdForScheduleUpdate(req.shiftId())
                     .orElseThrow(() -> new ResourceNotFoundException("Ca làm việc không tồn tại: " + req.shiftId()));
             if (Boolean.FALSE.equals(shift.getIsActive())) {
                 throw new ConflictException("Ca làm việc đã ngừng hoạt động và không thể gán cho lịch trực");
             }
+            validateNoOverlappingShift(s.getStaff(), s.getWorkDate(), shift, s.getScheduleId());
             s.setShift(shift);
         }
         if (req.status() != null) s.setStatus(req.status());
@@ -123,7 +142,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         StaffSchedule s = scheduleRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Lịch làm việc không tồn tại: " + id));
         if (s.getStatus() != ScheduleStatus.SCHEDULED
                 || s.getWorkDate() == null
-                || !s.getWorkDate().isAfter(LocalDate.now())) {
+                || !s.getWorkDate().isAfter(LocalDate.now(CLINIC_ZONE))) {
             throw new ConflictException("Chỉ có thể xóa lịch trực chưa diễn ra trong tương lai");
         }
         if (attendanceRepository.findBySchedule_ScheduleId(id).isPresent()) {
@@ -153,6 +172,15 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     }
 
     @Transactional(readOnly = true)
+    public ScheduleResponse getForStaff(UUID id, UUID staffId) {
+        StaffSchedule schedule = findById(id);
+        if (schedule.getStaff() == null || !schedule.getStaff().getStaffId().equals(staffId)) {
+            throw new ConflictException("Bạn không có quyền xem lịch trực của nhân viên khác");
+        }
+        return ScheduleResponse.from(schedule);
+    }
+
+    @Transactional(readOnly = true)
     public PageResponse<ScheduleResponse> search(UUID staffId, LocalDate from, LocalDate to,
                                                  UUID shiftId, Pageable pageable) {
         ShiftConfig shift = null;
@@ -170,7 +198,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
      * - overrideExisting: neu true, ghi de StaffSchedule cung (staff, workDate, shift) da ton tai.
      * Tra ve danh sach ScheduleResponse da tao/gan.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public List<ScheduleResponse> generateFromTemplates(LocalDate weekStart,
                                                         List<UUID> staffIds,
                                                         Boolean overrideExisting) {
@@ -186,12 +214,25 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
             targets = staffIds.stream().map(staffService::findById).toList();
         }
 
+        LocalDate normalizedWeekStart = weekStart.with(DayOfWeek.MONDAY);
+        scheduleRepo.findAllByWorkDateBetweenForUpdate(
+                normalizedWeekStart, normalizedWeekStart.plusDays(6));
+
         List<StaffSchedule> toCreate = new ArrayList<>();
         for (StaffInfo staff : targets) {
             List<StaffScheduleTemplate> templates = templateRepo.findByStaff(staff);
             for (StaffScheduleTemplate t : templates) {
                 if (Boolean.FALSE.equals(t.getIsActive())) continue;
-                LocalDate workDate = dateForDayOfWeek(weekStart, t.getDayOfWeek());
+                LocalDate workDate = dateForDayOfWeek(normalizedWeekStart, t.getDayOfWeek());
+                List<StaffSchedule> existing = findExactSchedules(staff, workDate, t.getShift());
+                if (!existing.isEmpty()) {
+                    if (!override) continue;
+                    // Du lieu cu co the da bi lap do thao tac sao chep truoc day.
+                    // Override phai thay the toan bo, khong chi xoa mot ban ghi.
+                    scheduleRepo.deleteAll(existing);
+                    scheduleRepo.flush();
+                }
+                validateNoOverlappingShift(staff, workDate, t.getShift(), null);
                 StaffSchedule schedule = StaffSchedule.builder()
                         .staff(staff)
                         .workDate(workDate)
@@ -200,14 +241,6 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                         .isCustom(false)
                         .template(t)
                         .build();
-                if (override) {
-                    // Tim va xoa ban ghi cu neu co
-                    scheduleRepo.findByStaffAndWorkDateBetween(staff, workDate, workDate)
-                            .stream()
-                            .filter(x -> x.getShift().getShiftId().equals(t.getShift().getShiftId()))
-                            .findFirst()
-                            .ifPresent(scheduleRepo::delete);
-                }
                 toCreate.add(schedule);
             }
         }
@@ -251,7 +284,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         StaffInfo staff = staffInfoRepository.findByIdForScheduleUpdate(req.staffId())
                 .orElseThrow(() -> new ResourceNotFoundException("Nhân sự không tồn tại: " + req.staffId()));
 
-        if (date.isBefore(LocalDate.now())) {
+        if (date.isBefore(LocalDate.now(CLINIC_ZONE))) {
             throw new ConflictException("Không thể thay đổi phân công của ngày đã qua");
         }
         List<StaffSchedule> schedulesOfDay = scheduleRepo
@@ -284,18 +317,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
 
         if (!exactSchedules.isEmpty()) return;
 
-        LocalTime newStart = LocalTime.parse(shift.getStartTime());
-        LocalTime newEnd = LocalTime.parse(shift.getEndTime());
-        boolean overlaps = schedulesOfDay.stream()
-                .filter(schedule -> schedule.getShift() != null)
-                .anyMatch(schedule -> {
-                    LocalTime existingStart = LocalTime.parse(schedule.getShift().getStartTime());
-                    LocalTime existingEnd = LocalTime.parse(schedule.getShift().getEndTime());
-                    return newStart.isBefore(existingEnd) && existingStart.isBefore(newEnd);
-                });
-        if (overlaps) {
-            throw new ConflictException("Nhân sự đã có ca làm việc trùng thời gian trong ngày này");
-        }
+        validateNoOverlappingShift(staff, date, shift, null);
 
         scheduleRepo.save(StaffSchedule.builder()
                 .staff(staff)
@@ -313,11 +335,20 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         LocalDate sourceStart = fromWeek.with(DayOfWeek.MONDAY);
         LocalDate targetStart = toWeek.with(DayOfWeek.MONDAY);
         LocalDate targetEnd = targetStart.plusDays(6);
+        if (sourceStart.equals(targetStart)) {
+            throw new ConflictException("Tuần nguồn và tuần đích không được trùng nhau");
+        }
+        if (!targetStart.isAfter(LocalDate.now(CLINIC_ZONE))) {
+            throw new ConflictException("Chỉ được sao chép lịch vào một tuần chưa bắt đầu");
+        }
 
         // Khoa tuan nguon de hai quan ly khong the dong thoi tao hai bo lich
         // giong nhau cho cung mot tuan dich.
         List<StaffSchedule> sourceSchedules = scheduleRepo
                 .findAllByWorkDateBetweenForUpdate(sourceStart, sourceStart.plusDays(6));
+        if (sourceSchedules.isEmpty()) {
+            throw new ConflictException("Tuần nguồn chưa có lịch trực để sao chép");
+        }
 
         List<StaffSchedule> targetSchedules = scheduleRepo.findAllByWorkDateBetween(targetStart, targetEnd);
         boolean hasAttendance = targetSchedules.stream()
@@ -363,6 +394,13 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         return scheduleRepo.saveAll(replacements);
     }
 
+    private List<StaffSchedule> findExactSchedules(StaffInfo staff, LocalDate workDate, ShiftConfig shift) {
+        return scheduleRepo.findAllByStaff_StaffIdAndWorkDate(staff.getStaffId(), workDate).stream()
+                .filter(schedule -> schedule.getShift() != null
+                        && schedule.getShift().getShiftId().equals(shift.getShiftId()))
+                .toList();
+    }
+
     private LocalDate parseDateFromDayOfWeek(LocalDate weekStart, String dayKey) {
         Map<String, DayOfWeek> dayMap = Map.of(
                 "mon", DayOfWeek.MONDAY,
@@ -378,5 +416,24 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
             throw new IllegalArgumentException("Ngày trong tuần không hợp lệ: " + dayKey);
         }
         return weekStart.with(dow);
+    }
+
+    private void validateNoOverlappingShift(StaffInfo staff, LocalDate date,
+                                            ShiftConfig shift, UUID excludedScheduleId) {
+        LocalTime newStart = LocalTime.parse(shift.getStartTime());
+        LocalTime newEnd = LocalTime.parse(shift.getEndTime());
+        boolean overlaps = scheduleRepo.findAllByStaff_StaffIdAndWorkDate(staff.getStaffId(), date)
+                .stream()
+                .filter(schedule -> schedule.getShift() != null)
+                .filter(schedule -> excludedScheduleId == null
+                        || !schedule.getScheduleId().equals(excludedScheduleId))
+                .anyMatch(schedule -> {
+                    LocalTime existingStart = LocalTime.parse(schedule.getShift().getStartTime());
+                    LocalTime existingEnd = LocalTime.parse(schedule.getShift().getEndTime());
+                    return newStart.isBefore(existingEnd) && existingStart.isBefore(newEnd);
+                });
+        if (overlaps) {
+            throw new ConflictException("Nhân sự đã có ca làm việc trùng thời gian trong ngày này");
+        }
     }
 }

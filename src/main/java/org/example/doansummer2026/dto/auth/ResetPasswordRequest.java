@@ -13,7 +13,7 @@ public record ResetPasswordRequest(
         String otp,
 
         @NotBlank(message = "Mật khẩu mới không được để trống")
-        @Size(min = 6, message = "Mật khẩu phải từ 6 ký tự")
+        @Size(min = 8, max = 64, message = "Mật khẩu phải từ 8 đến 64 ký tự")
         String newPassword
 ) {
 }

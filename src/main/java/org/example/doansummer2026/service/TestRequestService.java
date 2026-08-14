@@ -48,6 +48,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TestRequestService implements TestRequestServiceInterface {
 
+    private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+
     @org.springframework.beans.factory.annotation.Value("${app.upload.root:uploads}")
     private String uploadRoot;
 
@@ -66,28 +68,15 @@ public class TestRequestService implements TestRequestServiceInterface {
     private final NotificationService notificationService;
     private final AuthService authService;
 
+    @Transactional(readOnly = true)
     public PageResponse<TestRequestResponse> search(UUID recordId, UUID departmentId,
                                                      TestRequestStatus status, String search,
                                                      java.time.LocalDate workDate,
                                                      Pageable pageable) {
+        departmentId = restrictSearchScope(recordId, departmentId);
         String normalizedSearch = search == null ? "" : search.trim().toLowerCase();
         Page<TestRequest> page = repo.search(recordId, departmentId, status,
                 normalizedSearch, workDate, pageable);
-        // Tạo bù số phòng cho dữ liệu cũ được sinh trước khi có queue cận lâm sàng.
-        page.getContent().stream()
-                .filter(test -> test.getQueueTicket() == null)
-                .filter(test -> test.getStatus() == TestRequestStatus.PENDING || test.getStatus() == TestRequestStatus.IN_PROGRESS)
-                .filter(test -> test.getMedicalRecord() != null && test.getMedicalRecord().getVisit() != null && test.getPerformingDepartment() != null)
-                .forEach(test -> {
-                    QueueTicket queue = ensureParaclinicalQueue(test.getMedicalRecord(), test.getService(), test.getPerformingDepartment());
-                    if (test.getStatus() == TestRequestStatus.IN_PROGRESS && queue.getStatus() == QueueStatus.WAITING) {
-                        queue.setStatus(QueueStatus.IN_PROGRESS);
-                        queueTicketRepo.save(queue);
-                    }
-                    test.setQueueTicket(queue);
-                    repo.save(test);
-                });
-        // Phiếu khám WAITING_FOR_TEST là bước tạm treo, không được chặn bệnh nhân sang phòng lab.
         return PageResponse.from(page, TestRequestResponse::from);
     }
 
@@ -95,7 +84,9 @@ public class TestRequestService implements TestRequestServiceInterface {
     public List<TestRequestResponse> listByVisit(UUID visitId) {
         visitRepo.findById(visitId)
                 .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
-        return repo.findAllByVisitIdWithDetails(visitId).stream()
+        List<TestRequest> requests = repo.findAllByVisitIdWithDetails(visitId);
+        ensureCurrentStaffCanViewAny(requests);
+        return requests.stream()
                 .map(TestRequestResponse::from)
                 .toList();
     }
@@ -146,7 +137,9 @@ public class TestRequestService implements TestRequestServiceInterface {
 
     @Transactional(readOnly = true)
     public TestRequestResponse get(UUID id) {
-        return TestRequestResponse.from(findById(id));
+        TestRequest request = findById(id);
+        ensureCurrentStaffCanView(request);
+        return TestRequestResponse.from(request);
     }
 
     @Transactional(readOnly = true)
@@ -154,7 +147,9 @@ public class TestRequestService implements TestRequestServiceInterface {
         if (!queueTicketRepo.existsById(ticketId)) {
             throw new ResourceNotFoundException("Không tìm thấy phiếu cận lâm sàng: " + ticketId);
         }
-        return repo.findAllByQueueTicket_TicketId(ticketId).stream()
+        List<TestRequest> requests = repo.findAllByQueueTicket_TicketId(ticketId);
+        ensureCurrentStaffCanViewAny(requests);
+        return requests.stream()
                 .sorted(java.util.Comparator.comparing(TestRequest::getCreatedAt))
                 .map(TestRequestResponse::from)
                 .toList();
@@ -262,8 +257,19 @@ public class TestRequestService implements TestRequestServiceInterface {
          * hoa don duoc thanh toan. Ban ghi do chua co QueueTicket; neu return o
          * day thi PAID thanh cong nhung benh nhan khong bao gio vao hang cho.
          */
-        TestRequest existingRequest = invoiceItemId == null ? null : repo.findByInvoiceItem_ItemId(invoiceItemId)
-                .stream().findFirst().orElse(null);
+        TestRequest existingRequest = invoiceItemId == null ? null
+                : repo.findTopByInvoiceItem_ItemIdOrderByCreatedAtAsc(invoiceItemId).orElse(null);
+        if (existingRequest != null && existingRequest.getStatus() == TestRequestStatus.CANCELLED) {
+            existingRequest = null;
+        }
+        if (existingRequest == null && visitId != null) {
+            // Chan trung theo nghiep vu visit + service, khong chi theo invoice
+            // item. Request da huy khong chan chi dinh/mua lai dich vu.
+            existingRequest = repo
+                    .findTopByMedicalRecord_Visit_VisitIdAndService_ServiceIdAndStatusNotOrderByCreatedAtAsc(
+                            visitId, serviceId, TestRequestStatus.CANCELLED)
+                    .orElse(null);
+        }
 
         Department dept = existingRequest != null && existingRequest.getPerformingDepartment() != null
                 ? existingRequest.getPerformingDepartment()
@@ -295,6 +301,13 @@ public class TestRequestService implements TestRequestServiceInterface {
 
         if (existingRequest != null) {
             boolean changed = false;
+            if (existingRequest.getInvoiceItem() == null && invoiceItemId != null) {
+                InvoiceItem paidItem = invoiceItemRepo.findById(invoiceItemId).orElse(null);
+                if (paidItem != null) {
+                    existingRequest.setInvoiceItem(paidItem);
+                    changed = true;
+                }
+            }
             if (existingRequest.getQueueTicket() == null) {
                 QueueTicket repairedQueue = ensureParaclinicalQueue(record, service, dept);
                 existingRequest.setQueueTicket(repairedQueue);
@@ -423,16 +436,10 @@ public class TestRequestService implements TestRequestServiceInterface {
 
     public TestRequestResponse update(UUID id, TestRequestUpdateRequest req) {
         TestRequest t = findById(id);
+        ensureCurrentStaffCanOperate(t);
         if (req.status() != null) {
-            if (req.status() == TestRequestStatus.COMPLETED) {
-                throw new BadRequestException(
-                        "Vui lòng dùng chức năng ký và hoàn thành kết quả để bảo đảm có kết luận và phiếu PDF");
-            }
-            if (req.status() == TestRequestStatus.CANCELLED) {
-                throw new BadRequestException(
-                        "Vui lòng dùng chức năng hủy yêu cầu và nhập lý do hủy");
-            }
-            t.setStatus(req.status());
+            throw new BadRequestException(
+                    "Trạng thái yêu cầu được cập nhật tự động theo hàng chờ; vui lòng dùng đúng thao tác gọi, bắt đầu, hoàn thành hoặc hủy");
         }
         TestRequest saved = repo.save(t);
         try {
@@ -477,6 +484,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     @Transactional(readOnly = true)
     public TestResultResponse getResult(UUID testRequestId) {
         TestRequest t = findById(testRequestId);
+        ensureCurrentStaffCanView(t);
         TestResult r = resultRepo.findByTestRequest_TestRequestId(t.getTestRequestId())
                 .orElseThrow(() -> new ResourceNotFoundException("Chưa có kết quả cho yêu cầu này"));
         return TestResultResponse.from(r);
@@ -484,6 +492,8 @@ public class TestRequestService implements TestRequestServiceInterface {
 
     public TestResultResponse createResult(UUID testRequestId, TestResultCreateRequest req) {
         TestRequest t = findById(testRequestId);
+        ensureCurrentStaffCanOperate(t);
+        ensureExecutionStarted(t);
         // Kiem tra neu da COMPLETED thi khong cho tao moi
         if (t.getStatus() == TestRequestStatus.COMPLETED) {
             throw new ConflictException("Yêu cầu cận lâm sàng đã hoàn thành, không thể tạo kết quả mới");
@@ -491,8 +501,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         if (resultRepo.findByTestRequest_TestRequestId(testRequestId).isPresent()) {
             throw new ConflictException("Yêu cầu đã có kết quả; vui lòng dùng chức năng cập nhật");
         }
-        StaffInfo performedBy = staffRepo.findById(req.performedById())
-                .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + req.performedById()));
+        StaffInfo performedBy = resolveCurrentPerformer(req.performedById());
         TestResult r = TestResult.builder()
                 .testRequest(t)
                 .imageUrl(req.imageUrl())
@@ -514,6 +523,8 @@ public class TestRequestService implements TestRequestServiceInterface {
 
     public TestResultResponse updateResult(UUID testRequestId, TestResultUpdateRequest req) {
         TestRequest t = findById(testRequestId);
+        ensureCurrentStaffCanOperate(t);
+        ensureExecutionStarted(t);
 
         if (Boolean.TRUE.equals(req.complete())) {
             throw new BadRequestException("Vui lòng dùng chức năng ký xác nhận của bác sĩ để hoàn thành kết quả");
@@ -569,8 +580,7 @@ public class TestRequestService implements TestRequestServiceInterface {
             applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         } else {
             // Tao moi
-            StaffInfo performedBy = staffRepo.findById(req.performedById())
-                    .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + req.performedById()));
+            StaffInfo performedBy = resolveCurrentPerformer(req.performedById());
             r = TestResult.builder()
                     .testRequest(t)
                     .imageUrl(req.imageUrl())
@@ -717,7 +727,9 @@ public class TestRequestService implements TestRequestServiceInterface {
      * Tra ve URL de truy cap file.
      */
     public String uploadResultFile(UUID testRequestId, MultipartFile file) throws IOException {
-        findById(testRequestId); // Kiem tra test request ton tai
+        TestRequest request = findById(testRequestId);
+        ensureCurrentStaffCanOperate(request);
+        ensureExecutionStarted(request);
 
         if (file == null || file.isEmpty()) {
             throw new BadRequestException("Tệp PDF không được để trống");
@@ -760,6 +772,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     public TestRequestResponse cancel(UUID id, TestRequestCancelRequest req) {
         TestRequest t = repo.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + id));
+        ensureCanCancel(t);
 
         // Chi cho phep huy khi PENDING hoac IN_PROGRESS
         if (t.getStatus() == TestRequestStatus.COMPLETED) {
@@ -774,15 +787,20 @@ public class TestRequestService implements TestRequestServiceInterface {
         repo.save(t);
 
         QueueTicket paraclinicalQueue = t.getQueueTicket();
+        boolean closedCancelledQueue = false;
         if (paraclinicalQueue != null) {
             long remainingInQueue = repo.countByQueueTicket_TicketIdAndStatusIn(
                     paraclinicalQueue.getTicketId(),
                     java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS,
                             TestRequestStatus.BLOCKED));
             if (remainingInQueue == 0) {
-                paraclinicalQueue.setStatus(QueueStatus.SKIPPED);
+                // SKIPPED danh cho benh nhan vang va se tam khoa ca hanh trinh.
+                // Tat ca ky thuat bi huy nghia la buoc nay da ket thuc, phai mo
+                // phong ke tiep thay vi bat nguoi dung "quay lai hang cho".
+                paraclinicalQueue.setStatus(QueueStatus.DONE);
                 paraclinicalQueue.setCompletedAt(LocalDateTime.now());
                 queueTicketRepo.save(paraclinicalQueue);
+                closedCancelledQueue = true;
             }
         }
 
@@ -803,6 +821,8 @@ public class TestRequestService implements TestRequestServiceInterface {
             } else if (remainingInRecord == 0 && sourceQueue == null) {
                 completeStandaloneRecordIfReady(sourceRecord,
                         repo.countByMedicalRecord_MedicalRecordId(sourceRecord.getRecordId()), 0);
+            }
+            if (closedCancelledQueue || (remainingInRecord == 0 && sourceQueue == null)) {
                 patientJourneyService.activateNext(sourceRecord.getVisit().getVisitId());
             }
         }
@@ -870,6 +890,135 @@ public class TestRequestService implements TestRequestServiceInterface {
         }
     }
 
+    /**
+     * Danh sach tong hop chi duoc xem theo ho so do bac si phu trach, hoac theo
+     * phong ma nhan vien dang duoc phan cong. Khong tin departmentId do frontend
+     * gui len vi co the doi UUID de doc yeu cau cua phong khac.
+     */
+    private UUID restrictSearchScope(UUID recordId, UUID requestedDepartmentId) {
+        if (isCurrentAdmin()) return requestedDepartmentId;
+
+        UUID staffId = authService.currentStaffId();
+        StaffInfo staff = staffId == null ? null : staffRepo.findById(staffId).orElse(null);
+        if (staff == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Không xác định được nhân viên đang đăng nhập");
+        }
+
+        if (recordId != null) {
+            MedicalRecord record = recordRepo.findById(recordId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ khám"));
+            if (record.getDoctor() != null && staffId.equals(record.getDoctor().getStaffId())) {
+                return requestedDepartmentId;
+            }
+        }
+
+        Department assignedDepartment = staff.getDepartment();
+        if (assignedDepartment == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Nhân viên chưa được phân công phòng");
+        }
+        UUID assignedDepartmentId = assignedDepartment.getDepartmentId();
+        if (requestedDepartmentId != null && !assignedDepartmentId.equals(requestedDepartmentId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Không được xem yêu cầu cận lâm sàng của phòng khác");
+        }
+        return assignedDepartmentId;
+    }
+
+    private void ensureCurrentStaffCanViewAny(List<TestRequest> requests) {
+        if (isCurrentAdmin() || requests == null || requests.isEmpty()) return;
+        boolean allowed = requests.stream().anyMatch(this::canCurrentStaffView);
+        if (!allowed) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Không được xem yêu cầu cận lâm sàng này");
+        }
+    }
+
+    private void ensureCurrentStaffCanView(TestRequest request) {
+        if (isCurrentAdmin() || canCurrentStaffView(request)) return;
+        throw new org.springframework.security.access.AccessDeniedException(
+                "Không được xem yêu cầu cận lâm sàng này");
+    }
+
+    private boolean canCurrentStaffView(TestRequest request) {
+        UUID staffId = authService.currentStaffId();
+        if (staffId == null || request == null) return false;
+
+        boolean requester = request.getRequestedBy() != null
+                && staffId.equals(request.getRequestedBy().getStaffId());
+        boolean recordDoctor = request.getMedicalRecord() != null
+                && request.getMedicalRecord().getDoctor() != null
+                && staffId.equals(request.getMedicalRecord().getDoctor().getStaffId());
+        Department department = request.getPerformingDepartment();
+        boolean headDoctor = department != null && department.getHeadDoctor() != null
+                && staffId.equals(department.getHeadDoctor().getStaffId());
+        boolean assignedNurse = department != null && department.getNurses() != null
+                && department.getNurses().stream()
+                .anyMatch(nurse -> staffId.equals(nurse.getStaffId()));
+        return requester || recordDoctor || headDoctor || assignedNurse;
+    }
+
+    private void ensureCurrentStaffCanOperate(TestRequest request) {
+        if (isCurrentAdmin()) return;
+        UUID staffId = authService.currentStaffId();
+        Department department = request.getPerformingDepartment();
+        if (staffId == null || department == null) {
+            throw new BadRequestException("Không xác định được nhân viên hoặc phòng thực hiện");
+        }
+        boolean headDoctor = department.getHeadDoctor() != null
+                && staffId.equals(department.getHeadDoctor().getStaffId());
+        boolean assignedNurse = department.getNurses() != null && department.getNurses().stream()
+                .anyMatch(nurse -> staffId.equals(nurse.getStaffId()));
+        if (!headDoctor && !assignedNurse) {
+            throw new BadRequestException("Bạn không được phân công thực hiện tại phòng này");
+        }
+    }
+
+    private void ensureExecutionStarted(TestRequest request) {
+        QueueTicket queue = request.getQueueTicket();
+        if (queue == null || (queue.getStatus() != QueueStatus.IN_PROGRESS
+                && queue.getStatus() != QueueStatus.DONE)) {
+            throw new BadRequestException(
+                    "Chỉ được nhập hoặc tải kết quả sau khi bệnh nhân đã bắt đầu thực hiện tại phòng");
+        }
+    }
+
+    private StaffInfo resolveCurrentPerformer(UUID requestedPerformerId) {
+        if (isCurrentAdmin()) {
+            return staffRepo.findById(requestedPerformerId)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Nhân viên không tồn tại: " + requestedPerformerId));
+        }
+        UUID currentStaffId = authService.currentStaffId();
+        if (currentStaffId == null || requestedPerformerId == null
+                || !currentStaffId.equals(requestedPerformerId)) {
+            throw new BadRequestException("Người thực hiện phải là tài khoản nhân viên đang đăng nhập");
+        }
+        return staffRepo.findById(currentStaffId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên thực hiện"));
+    }
+
+    private void ensureCanCancel(TestRequest request) {
+        if (isCurrentAdmin()) return;
+        UUID staffId = authService.currentStaffId();
+        boolean requester = staffId != null && request.getRequestedBy() != null
+                && staffId.equals(request.getRequestedBy().getStaffId());
+        boolean responsibleDoctor = staffId != null && request.getPerformingDepartment() != null
+                && request.getPerformingDepartment().getHeadDoctor() != null
+                && staffId.equals(request.getPerformingDepartment().getHeadDoctor().getStaffId());
+        if (!requester && !responsibleDoctor) {
+            throw new BadRequestException("Chỉ bác sĩ chỉ định hoặc bác sĩ phụ trách phòng mới được hủy yêu cầu");
+        }
+    }
+
+    private boolean isCurrentAdmin() {
+        var authentication = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+    }
+
     /** Tim TestRequest da hoan thanh theo profileId (cho hien thi trong profile). */
     @Transactional(readOnly = true)
     public List<TestRequest> findMyCompletedTests(UUID profileId) {
@@ -879,7 +1028,9 @@ public class TestRequestService implements TestRequestServiceInterface {
     /** Tim TestRequest theo InvoiceItem (traceability: Invoice -> InvoiceItem -> TestRequest). */
     @Transactional(readOnly = true)
     public List<TestRequestResponse> findByInvoiceItem(UUID itemId) {
-        return repo.findByInvoiceItem_ItemId(itemId).stream()
+        List<TestRequest> requests = repo.findByInvoiceItem_ItemId(itemId);
+        ensureCurrentStaffCanViewAny(requests);
+        return requests.stream()
                 .map(TestRequestResponse::from)
                 .toList();
     }
@@ -887,7 +1038,9 @@ public class TestRequestService implements TestRequestServiceInterface {
     /** Tim TestRequest theo Invoice (traceability: Invoice -> InvoiceItem -> TestRequest). */
     @Transactional(readOnly = true)
     public List<TestRequestResponse> findByInvoice(UUID invoiceId) {
-        return repo.findByInvoiceId(invoiceId).stream()
+        List<TestRequest> requests = repo.findByInvoiceId(invoiceId);
+        ensureCurrentStaffCanViewAny(requests);
+        return requests.stream()
                 .map(TestRequestResponse::from)
                 .toList();
     }
@@ -919,6 +1072,10 @@ public class TestRequestService implements TestRequestServiceInterface {
     /** Tạo một số gọi cho mỗi phòng/lượt; các kỹ thuật cùng phòng được gom chung số. */
     private QueueTicket ensureParaclinicalQueue(MedicalRecord record, MedicalService service, Department department) {
         UUID visitId = record.getVisit().getVisitId();
+        // Khoa chung Visit truoc khi khoa phong. Hai phong khac nhau cua cung
+        // luot khong the cung duoc mo WAITING khi callback den dong thoi.
+        visitRepo.findByIdForUpdate(visitId)
+                .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
         // Khoa phong truoc khi kiem tra/tang so de cac request dong thoi khong tao trung ticket/so goi.
         department = departmentRepo.findByIdForUpdate(department.getDepartmentId())
                 .orElseThrow(() -> new ResourceNotFoundException("Phòng thực hiện không tồn tại"));
@@ -936,7 +1093,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         boolean hasActiveWorkflowStep = patientJourneyService.hasActiveStep(visitId)
                 || queueTicketRepo.findAllByVisit_VisitId(visitId).stream()
                 .anyMatch(queue -> queue.getStatus() == QueueStatus.SKIPPED);
-        java.time.LocalDate workDate = java.time.LocalDate.now();
+        java.time.LocalDate workDate = java.time.LocalDate.now(CLINIC_ZONE);
         int nextNumber = queueTicketRepo.findMaxQueueNumberForDay(department.getDepartmentId(), workDate).orElse(0) + 1;
         return queueTicketRepo.save(QueueTicket.builder()
                 .visit(record.getVisit()).department(department).service(service)

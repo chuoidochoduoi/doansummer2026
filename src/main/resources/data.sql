@@ -6,7 +6,7 @@
 -- Tai khoan seed:
 --   admin         / 88888888  (BCrypt)
 --   clinicmanager / 88888888  (BCrypt)
---   doctor_exam / doctor_lab / doctor_ultrasound / doctor_xray / 88888888
+--   doctor1 / doctor_lab / doctor8 / doctor_xray / 88888888
 -- ===================================================================
 
 TRUNCATE TABLE
@@ -206,8 +206,8 @@ INSERT INTO staff_info (staff_id, created_at, updated_at, deleted, profile_id, s
                                                                                                                                                                                                                      ('90000012-5555-5555-5555-555555555555', NOW(), NOW(), false, '20000013-3333-3333-3333-333333333333', 'STF-REC-001', 'RECEPTIONIST', '001095123456', NULL, NULL, NULL, NULL, NULL, NULL),
                                                                                                                                                                                                                      ('90000013-6666-6666-6666-666666666666', NOW(), NOW(), false, '20000014-4444-4444-4444-444444444444', 'STF-CAS-001', 'CASHIER', '001092123456', NULL, NULL, NULL, NULL, NULL, NULL);
 
--- Bo sung 14 nhan su; cung 4 bac si theo nhom phong o tren tao thanh
--- 24 tai khoan nhan vien de phu day cac vai tro va phong demo.
+-- Bo sung 14 nhan su; cung 2 bac si can lam sang o duoi tao thanh
+-- 22 tai khoan nhan vien de phu day cac vai tro va phong demo.
 -- Tat ca tai khoan demo dung mat khau: 88888888.
 INSERT INTO account (account_id, created_at, is_active, password_hash, role, username)
 SELECT format('31000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
@@ -215,29 +215,28 @@ SELECT format('31000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
        CASE
            WHEN i <= 7 THEN 'doctor' || (i + 1)
            WHEN i <= 10 THEN 'nurse' || (i - 6)
-           WHEN i <= 12 THEN 'receptionist' || (i - 10)
-           ELSE 'cashier' || (i - 12)
+           WHEN i <= 12 THEN 'receptionist' || (i - 9)
+           ELSE 'cashier' || (i - 11)
        END
 FROM generate_series(1, 14) AS g(i);
 
 -- ===================================================================
--- 4 tai khoan bac si theo nhom phong de demo luong kham/can lam sang.
--- Dang nhap: doctor_exam / doctor_lab / doctor_ultrasound / doctor_xray
+-- Hai tai khoan bac si can lam sang con thieu trong bo du lieu goc.
+-- Bon nhom demo: doctor1 (kham), doctor_lab (xet nghiem),
+-- doctor_biochem (sinh hoa), doctor8 (sieu am), doctor_xray (X-quang).
 -- Mat khau chung: 88888888.
 -- ===================================================================
 INSERT INTO account (account_id, created_at, is_active, password_hash, role, username) VALUES
-('33000000-0000-0000-0000-000000000001', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_exam'),
 ('33000000-0000-0000-0000-000000000002', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_lab'),
-('33000000-0000-0000-0000-000000000003', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_ultrasound'),
+('33000000-0000-0000-0000-000000000003', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_biochem'),
 ('33000000-0000-0000-0000-000000000004', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_xray');
 
 INSERT INTO profile (
     profile_id, account_id, created_at, updated_at, deleted,
     full_name, date_of_birth, gender, phone, email, address, blood_type
 ) VALUES
-('23000000-0000-0000-0000-000000000001', '33000000-0000-0000-0000-000000000001', NOW(), NOW(), false, 'Bác sĩ Đặng Minh Đức', '1982-03-12', 'MALE', '0968000001', 'doctor.exam@cares.vn', 'Hà Nội', NULL),
 ('23000000-0000-0000-0000-000000000002', '33000000-0000-0000-0000-000000000002', NOW(), NOW(), false, 'Bác sĩ Nguyễn Hải Yến', '1986-07-22', 'FEMALE', '0968000002', 'doctor.lab@cares.vn', 'Hà Nội', NULL),
-('23000000-0000-0000-0000-000000000003', '33000000-0000-0000-0000-000000000003', NOW(), NOW(), false, 'Bác sĩ Trần Hoàng Sơn', '1984-10-05', 'MALE', '0968000003', 'doctor.ultrasound@cares.vn', 'Hà Nội', NULL),
+('23000000-0000-0000-0000-000000000003', '33000000-0000-0000-0000-000000000003', NOW(), NOW(), false, 'Bác sĩ Trần Minh Sinh', '1985-09-12', 'MALE', '0968000003', 'doctor.biochem@cares.vn', 'Hà Nội', NULL),
 ('23000000-0000-0000-0000-000000000004', '33000000-0000-0000-0000-000000000004', NOW(), NOW(), false, 'Bác sĩ Lê Thu Phương', '1987-01-18', 'FEMALE', '0968000004', 'doctor.xray@cares.vn', 'Hà Nội', NULL);
 
 INSERT INTO staff_info (
@@ -245,9 +244,8 @@ INSERT INTO staff_info (
     system_role, national_id, bank_account, highest_degree, university,
     license_number, specialization_id, department_id
 ) VALUES
-('93000000-0000-0000-0000-000000000001', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000001', 'STF-DOC-EXAM', 'DOCTOR', '001082000001', NULL, 'Bác sĩ chuyên khoa I', 'Đại học Y Hà Nội', 'CCHN-EXAM-001', '00000006-6666-6666-6666-666666666666', '33333333-3333-3333-3333-333333333333'),
 ('93000000-0000-0000-0000-000000000002', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000002', 'STF-DOC-LAB', 'DOCTOR', '001086000002', NULL, 'Bác sĩ chuyên khoa xét nghiệm', 'Đại học Y Hà Nội', 'CCHN-LAB-001', NULL, '44444444-4444-4444-4444-444444444444'),
-('93000000-0000-0000-0000-000000000003', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000003', 'STF-DOC-US', 'DOCTOR', '001084000003', NULL, 'Bác sĩ chẩn đoán hình ảnh', 'Đại học Y Hà Nội', 'CCHN-US-001', '00000003-3333-3333-3333-333333333333', '55555555-5555-5555-5555-555555555555'),
+('93000000-0000-0000-0000-000000000003', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000003', 'STF-DOC-BIO', 'DOCTOR', '001085000003', NULL, 'Bác sĩ chuyên khoa xét nghiệm', 'Đại học Y Hà Nội', 'CCHN-BIO-001', NULL, 'cccccccc-cccc-cccc-cccc-cccccccccccc'),
 ('93000000-0000-0000-0000-000000000004', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000004', 'STF-DOC-XRAY', 'DOCTOR', '001087000004', NULL, 'Bác sĩ chẩn đoán hình ảnh', 'Đại học Y Hà Nội', 'CCHN-XRAY-001', '00000003-3333-3333-3333-333333333333', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 
 INSERT INTO profile (
@@ -271,8 +269,8 @@ SELECT format('21000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
        CASE
            WHEN i <= 7 THEN 'doctor' || (i + 1) || '@cares.vn'
            WHEN i <= 10 THEN 'nurse' || (i - 6) || '@cares.vn'
-           WHEN i <= 12 THEN 'receptionist' || (i - 10) || '@cares.vn'
-           ELSE 'cashier' || (i - 12) || '@cares.vn'
+           WHEN i <= 12 THEN 'receptionist' || (i - 9) || '@cares.vn'
+           ELSE 'cashier' || (i - 11) || '@cares.vn'
        END,
        (ARRAY['Hà Nội','Hà Nội','Bắc Ninh','Hà Nội','Hưng Yên','Hà Nội','Hải Dương',
               'Hà Nội','Bắc Ninh','Hà Nội','Hà Nội','Hưng Yên','Hà Nội','Bắc Ninh'])[i],
@@ -290,8 +288,8 @@ SELECT format('91000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
        CASE
            WHEN i <= 7 THEN 'STF-DOC-' || lpad((i + 1)::text, 3, '0')
            WHEN i <= 10 THEN 'STF-NUR-' || lpad((i - 6)::text, 3, '0')
-           WHEN i <= 12 THEN 'STF-REC-' || lpad((i - 10)::text, 3, '0')
-           ELSE 'STF-CAS-' || lpad((i - 12)::text, 3, '0')
+           WHEN i <= 12 THEN 'STF-REC-' || lpad((i - 9)::text, 3, '0')
+           ELSE 'STF-CAS-' || lpad((i - 11)::text, 3, '0')
        END,
        CASE WHEN i <= 7 THEN 'DOCTOR' WHEN i <= 10 THEN 'NURSE'
             WHEN i <= 12 THEN 'RECEPTIONIST' ELSE 'CASHIER' END,
@@ -334,8 +332,9 @@ UPDATE department SET head_doctor_id = '91000000-0000-0000-0000-000000000003' WH
 UPDATE department SET head_doctor_id = '91000000-0000-0000-0000-000000000004' WHERE department_id = '99999999-9999-9999-9999-999999999999';
 UPDATE department SET head_doctor_id = '91000000-0000-0000-0000-000000000005' WHERE department_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 UPDATE department SET head_doctor_id = '91000000-0000-0000-0000-000000000006' WHERE department_id = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
-UPDATE department SET head_doctor_id = '93000000-0000-0000-0000-000000000002' WHERE department_id IN ('44444444-4444-4444-4444-444444444444', 'cccccccc-cccc-cccc-cccc-cccccccccccc');
-UPDATE department SET head_doctor_id = '93000000-0000-0000-0000-000000000003' WHERE department_id = '55555555-5555-5555-5555-555555555555';
+UPDATE department SET head_doctor_id = '93000000-0000-0000-0000-000000000002' WHERE department_id = '44444444-4444-4444-4444-444444444444';
+UPDATE department SET head_doctor_id = '93000000-0000-0000-0000-000000000003' WHERE department_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+UPDATE department SET head_doctor_id = '91000000-0000-0000-0000-000000000007' WHERE department_id = '55555555-5555-5555-5555-555555555555';
 UPDATE department SET head_doctor_id = '93000000-0000-0000-0000-000000000004' WHERE department_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 INSERT INTO staff_capability (
@@ -349,7 +348,7 @@ INSERT INTO staff_capability (
 ('a1000000-0000-0000-0000-000000000004', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000009', 'ca000002-0000-0000-0000-000000000002', NULL, NULL, NULL, NULL, 'ACTIVE'),
 ('a1000000-0000-0000-0000-000000000005', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000009', 'ca000005-0000-0000-0000-000000000005', NULL, NULL, NULL, NULL, 'ACTIVE'),
 ('a1000000-0000-0000-0000-000000000006', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000010', 'ca000003-0000-0000-0000-000000000003', NULL, NULL, NULL, NULL, 'ACTIVE'),
-('a1000000-0000-0000-0000-000000000007', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000007', 'ca000004-0000-0000-0000-000000000004', NULL, NULL, NULL, NULL, 'ACTIVE'),
+('a1000000-0000-0000-0000-000000000007', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000007', 'ca000003-0000-0000-0000-000000000003', NULL, NULL, NULL, NULL, 'ACTIVE'),
 ('a1000000-0000-0000-0000-000000000008', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000005', 'ca000006-0000-0000-0000-000000000006', NULL, NULL, NULL, NULL, 'ACTIVE');
 
 INSERT INTO staff_capability (
@@ -360,7 +359,7 @@ INSERT INTO staff_capability (
 ('a2000000-0000-0000-0000-000000000001', NOW(), NOW(), false, '93000000-0000-0000-0000-000000000002', 'ca000001-0000-0000-0000-000000000001', NULL, NULL, NULL, NULL, 'ACTIVE'),
 ('a2000000-0000-0000-0000-000000000002', NOW(), NOW(), false, '93000000-0000-0000-0000-000000000002', 'ca000002-0000-0000-0000-000000000002', NULL, NULL, NULL, NULL, 'ACTIVE'),
 ('a2000000-0000-0000-0000-000000000003', NOW(), NOW(), false, '93000000-0000-0000-0000-000000000002', 'ca000005-0000-0000-0000-000000000005', NULL, NULL, NULL, NULL, 'ACTIVE'),
-('a2000000-0000-0000-0000-000000000004', NOW(), NOW(), false, '93000000-0000-0000-0000-000000000003', 'ca000003-0000-0000-0000-000000000003', NULL, NULL, NULL, NULL, 'ACTIVE'),
+('a2000000-0000-0000-0000-000000000004', NOW(), NOW(), false, '93000000-0000-0000-0000-000000000003', 'ca000002-0000-0000-0000-000000000002', NULL, NULL, NULL, NULL, 'ACTIVE'),
 ('a2000000-0000-0000-0000-000000000005', NOW(), NOW(), false, '93000000-0000-0000-0000-000000000004', 'ca000004-0000-0000-0000-000000000004', NULL, NULL, NULL, NULL, 'ACTIVE');
 
 -- ===================================================================
@@ -381,14 +380,13 @@ SELECT format('32000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
 FROM generate_series(1, 20) AS g(i);
 
 
--- Lich truc cho 4 bac si demo theo nhom phong.
+-- Lich truc bo sung cho bac si LAB va X-quang; doctor1/doctor8 da co lich mau.
 INSERT INTO staff_schedule (
     schedule_id, created_at, updated_at, deleted, is_custom, note,
     status, work_date, shift_id, staff_id, template_id
 ) VALUES
-('61100000-0000-0000-0000-000000000001', NOW(), NOW(), false, false, 'Trực phòng khám tổng quát', 'SCHEDULED', CURRENT_DATE, '70000001-1111-1111-1111-111111111111', '93000000-0000-0000-0000-000000000001', NULL),
 ('61100000-0000-0000-0000-000000000002', NOW(), NOW(), false, false, 'Trực phòng xét nghiệm', 'SCHEDULED', CURRENT_DATE, '70000001-1111-1111-1111-111111111111', '93000000-0000-0000-0000-000000000002', NULL),
-('61100000-0000-0000-0000-000000000003', NOW(), NOW(), false, false, 'Trực phòng siêu âm', 'SCHEDULED', CURRENT_DATE, '70000002-2222-2222-2222-222222222222', '93000000-0000-0000-0000-000000000003', NULL),
+('61100000-0000-0000-0000-000000000003', NOW(), NOW(), false, false, 'Trực phòng sinh hóa', 'SCHEDULED', CURRENT_DATE, '70000001-1111-1111-1111-111111111111', '93000000-0000-0000-0000-000000000003', NULL),
 ('61100000-0000-0000-0000-000000000004', NOW(), NOW(), false, false, 'Trực phòng X-quang', 'SCHEDULED', CURRENT_DATE, '70000002-2222-2222-2222-222222222222', '93000000-0000-0000-0000-000000000004', NULL);
 
 INSERT INTO profile (
@@ -778,15 +776,17 @@ SELECT format('58000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
        CASE WHEN q.department_id IN ('44444444-4444-4444-4444-444444444444'::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid)
             THEN '90000011-4444-4444-4444-444444444444'::uuid ELSE NULL END,
        CASE
-           WHEN q.department_id IN ('44444444-4444-4444-4444-444444444444'::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid) THEN '93000000-0000-0000-0000-000000000002'::uuid
-           WHEN q.department_id = '55555555-5555-5555-5555-555555555555'::uuid THEN '93000000-0000-0000-0000-000000000003'::uuid
+           WHEN q.department_id = '44444444-4444-4444-4444-444444444444'::uuid THEN '93000000-0000-0000-0000-000000000002'::uuid
+           WHEN q.department_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid THEN '93000000-0000-0000-0000-000000000003'::uuid
+           WHEN q.department_id = '55555555-5555-5555-5555-555555555555'::uuid THEN '91000000-0000-0000-0000-000000000007'::uuid
            WHEN q.department_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid THEN '93000000-0000-0000-0000-000000000004'::uuid
            ELSE '91000000-0000-0000-0000-000000000005'::uuid
        END,
        tr.performed_at,
        CASE
-           WHEN q.department_id IN ('44444444-4444-4444-4444-444444444444'::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid) THEN '93000000-0000-0000-0000-000000000002'::uuid
-           WHEN q.department_id = '55555555-5555-5555-5555-555555555555'::uuid THEN '93000000-0000-0000-0000-000000000003'::uuid
+           WHEN q.department_id = '44444444-4444-4444-4444-444444444444'::uuid THEN '93000000-0000-0000-0000-000000000002'::uuid
+           WHEN q.department_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid THEN '93000000-0000-0000-0000-000000000003'::uuid
+           WHEN q.department_id = '55555555-5555-5555-5555-555555555555'::uuid THEN '91000000-0000-0000-0000-000000000007'::uuid
            WHEN q.department_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid THEN '93000000-0000-0000-0000-000000000004'::uuid
            ELSE '91000000-0000-0000-0000-000000000005'::uuid
        END,

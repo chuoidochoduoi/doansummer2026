@@ -14,6 +14,7 @@ import org.example.doansummer2026.dto.schedule.ScheduleShiftUpdateRequest;
 import org.example.doansummer2026.dto.schedule.ScheduleUpdateRequest;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.service.StaffScheduleService;
+import org.example.doansummer2026.service.AuthService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
@@ -41,6 +42,7 @@ public class StaffScheduleController {
 
     private final StaffScheduleService service;
     private final ShiftConfigRepository shiftConfigRepo;
+    private final AuthService authService;
 
     // --- MAIN ENDPOINTS ---
 
@@ -52,13 +54,28 @@ public class StaffScheduleController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) UUID shiftId,
             Pageable pageable) {
-        return RestResponses.ok(service.search(staffId, from, to, shiftId, pageable));
+        UUID effectiveStaffId = authService.getCurrentSystemRole()
+                == org.example.doansummer2026.enums.SystemRole.ADMIN
+                ? staffId : authService.currentStaffId();
+        if (effectiveStaffId == null) {
+            throw new org.example.doansummer2026.exception.BadRequestException(
+                    "Không xác định được nhân viên đang đăng nhập");
+        }
+        return RestResponses.ok(service.search(effectiveStaffId, from, to, shiftId, pageable));
     }
 
     @GetMapping("/api/v1/schedules/{id}")
     @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
     public ResponseEntity<ScheduleResponse> get(@PathVariable UUID id) {
-        return RestResponses.ok(service.get(id));
+        if (authService.getCurrentSystemRole() == org.example.doansummer2026.enums.SystemRole.ADMIN) {
+            return RestResponses.ok(service.get(id));
+        }
+        UUID staffId = authService.currentStaffId();
+        if (staffId == null) {
+            throw new org.example.doansummer2026.exception.BadRequestException(
+                    "Không xác định được nhân viên đang đăng nhập");
+        }
+        return RestResponses.ok(service.getForStaff(id, staffId));
     }
 
     @PostMapping("/api/v1/schedules")

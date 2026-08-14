@@ -96,6 +96,7 @@ public class DepartmentService implements DepartmentServiceInterface {
         if (req.headDoctorId() != null) {
             StaffInfo headDoctor = staffRepo.findById(req.headDoctorId())
                     .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + req.headDoctorId()));
+            validateHeadDoctorRole(headDoctor);
             // Kiem tra bac si chua duoc gianh cho phong khac
             if (repo.existsByHeadDoctor_StaffId(req.headDoctorId())) {
                 throw new ConflictException("Bác sĩ này đã phụ trách phòng khác: " + req.headDoctorId());
@@ -133,7 +134,21 @@ public class DepartmentService implements DepartmentServiceInterface {
     }
 
     public DepartmentResponse update(UUID id, DepartmentUpdateRequest req) {
-        Department d = findById(id);
+        Department d = repo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Phòng không tồn tại: " + id));
+        validateStatusTransition(d, req.status());
+        boolean changesClinicalClassification = req.departmentType() != null
+                && req.departmentType().normalized() != d.getDepartmentType().normalized();
+        if (!changesClinicalClassification && req.specializationId() != null) {
+            UUID currentSpecializationId = d.getSpecialization() == null
+                    ? null : d.getSpecialization().getSpecializationId();
+            changesClinicalClassification = !java.util.Objects.equals(
+                    currentSpecializationId, req.specializationId());
+        }
+        if (changesClinicalClassification && repo.countOperationalReferences(id) > 0) {
+            throw new ConflictException(
+                    "Không thể đổi loại phòng hoặc chuyên khoa sau khi phòng đã phát sinh dữ liệu khám");
+        }
         if (req.roomCode() != null && !req.roomCode().equals(d.getRoomCode())) {
             if (repo.existsByRoomCode(req.roomCode())) {
                 throw new ConflictException("Mã phòng đã tồn tại: " + req.roomCode());
@@ -179,6 +194,7 @@ public class DepartmentService implements DepartmentServiceInterface {
             }
             StaffInfo headDoctor = staffRepo.findById(req.headDoctorId())
                     .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + req.headDoctorId()));
+            validateHeadDoctorRole(headDoctor);
             d.setHeadDoctor(headDoctor);
         }
 
@@ -211,18 +227,10 @@ public class DepartmentService implements DepartmentServiceInterface {
     }
 
     public DepartmentResponse updateStatus(UUID id, DepartmentStatus status) {
-        Department d = findById(id);
+        Department d = repo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Phòng không tồn tại: " + id));
         if (status != null) {
-            if (status == DepartmentStatus.MAINTENANCE && d.getStatus() != DepartmentStatus.MAINTENANCE) {
-                long openQueues = repo.countOpenQueueTickets(id);
-                long openTestRequests = repo.countOpenTestRequests(id);
-                if (openQueues > 0 || openTestRequests > 0) {
-                    throw new ConflictException(
-                            "Không thể chuyển phòng sang bảo trì khi còn ca chưa hoàn thành " +
-                            "(" + openQueues + " hàng chờ, " + openTestRequests +
-                            " yêu cầu cận lâm sàng). Hãy hoàn thành hoặc điều phối các ca trước.");
-                }
-            }
+            validateStatusTransition(d, status);
             d.setStatus(status);
         }
         return DepartmentResponse.from(repo.save(d));
@@ -235,6 +243,29 @@ public class DepartmentService implements DepartmentServiceInterface {
                 staffCapabilityRepo.existsByStaff_StaffIdAndCapability_CapabilityIdAndStatus(
                         department.getHeadDoctor().getStaffId(), capability.getCapabilityId(), StaffCapabilityStatus.ACTIVE));
         if (!matches) throw new BadRequestException("Bác sĩ phụ trách chưa có kỹ thuật được cấp phép đang hiệu lực phù hợp với phòng");
+    }
+
+    private void validateHeadDoctorRole(StaffInfo staff) {
+        if (staff.getSystemRole() == null || !staff.getSystemRole().isDoctor()) {
+            throw new BadRequestException("Nhân viên phụ trách phòng phải là bác sĩ");
+        }
+        if (staff.getProfile() == null || staff.getProfile().getAccount() == null
+                || !Boolean.TRUE.equals(staff.getProfile().getAccount().getIsActive())) {
+            throw new ConflictException("Bác sĩ đã ngừng hoạt động và không thể phụ trách phòng");
+        }
+    }
+
+    private void validateStatusTransition(Department department, DepartmentStatus requestedStatus) {
+        if (requestedStatus != DepartmentStatus.MAINTENANCE
+                || department.getStatus() == DepartmentStatus.MAINTENANCE) return;
+        long openQueues = repo.countOpenQueueTickets(department.getDepartmentId());
+        long openTestRequests = repo.countOpenTestRequests(department.getDepartmentId());
+        if (openQueues > 0 || openTestRequests > 0) {
+            throw new ConflictException(
+                    "Không thể chuyển phòng sang bảo trì khi còn ca chưa hoàn thành ("
+                            + openQueues + " hàng chờ, " + openTestRequests
+                            + " yêu cầu cận lâm sàng). Hãy hoàn thành hoặc điều phối các ca trước.");
+        }
     }
 
     public void delete(UUID id) {

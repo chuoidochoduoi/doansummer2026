@@ -143,6 +143,7 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
         }
         MedicalService s = findById(id);
         validateStatusTransition(s.getStatus(), req.status());
+        validateRoutingConfigurationCanChange(s, req);
         if (req.name() != null) {
             String normalizedName = normalizeName(req.name());
             if (repo.existsByNameIgnoreCaseAndServiceIdNot(normalizedName, id)) {
@@ -265,6 +266,30 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
 
     private String normalizeName(String value) {
         return value.trim().replaceAll("\\s+", " ");
+    }
+
+    private void validateRoutingConfigurationCanChange(
+            MedicalService service, MedicalServiceUpdateRequest request) {
+        DepartmentType currentType = service.getDepartmentType().normalized();
+        DepartmentType requestedType = request.departmentType() == null
+                ? currentType : request.departmentType().normalized();
+        UUID currentSpecializationId = service.getRequiredSpecialization() == null
+                ? null : service.getRequiredSpecialization().getSpecializationId();
+        UUID currentCapabilityId = service.getRequiredCapability() == null
+                ? null : service.getRequiredCapability().getCapabilityId();
+
+        boolean changesRouting = requestedType != currentType
+                || (request.requiredSpecializationId() != null
+                    && !java.util.Objects.equals(currentSpecializationId,
+                        request.requiredSpecializationId()))
+                || (request.requiredCapabilityId() != null
+                    && !java.util.Objects.equals(currentCapabilityId,
+                        request.requiredCapabilityId()));
+        if (changesRouting && repo.countOperationalReferences(service.getServiceId()) > 0) {
+            throw new ConflictException(
+                    "Không thể đổi loại, chuyên khoa hoặc danh mục kỹ thuật của dịch vụ đã phát sinh dữ liệu. "
+                            + "Hãy tạm ngừng dịch vụ cũ và tạo dịch vụ mới");
+        }
     }
 
     /** DRAFT chi co the phat hanh sang ACTIVE; ACTIVE va INACTIVE co the chuyen qua lai. */

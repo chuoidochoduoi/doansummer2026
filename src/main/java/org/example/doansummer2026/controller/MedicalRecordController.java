@@ -69,15 +69,20 @@ public class MedicalRecordController {
     }
 
     @PostMapping("/api/v1/medical-records")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
     @Auditable(action = AuditAction.CREATE, entityName = "MedicalRecord")
     public ResponseEntity<MedicalRecordResponse> create(@Valid @RequestBody MedicalRecordCreateRequest req) {
+        if (authService.getCurrentSystemRole() != org.example.doansummer2026.enums.SystemRole.ADMIN
+                && !java.util.Objects.equals(authService.currentStaffId(), req.doctorId())) {
+            throw new org.example.doansummer2026.exception.BadRequestException(
+                    "Bác sĩ tạo hồ sơ phải là bác sĩ đang đăng nhập");
+        }
         MedicalRecordResponse created = service.create(req);
         return RestResponses.created("/api/v1/medical-records/{id}", created.recordId(), created);
     }
 
     @PutMapping("/api/v1/medical-records/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
     @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "id")
     public ResponseEntity<MedicalRecordResponse> update(@PathVariable UUID id,
                                                           @Valid @RequestBody MedicalRecordUpdateRequest req) {
@@ -111,7 +116,7 @@ public class MedicalRecordController {
     }
 
     @DeleteMapping("/api/v1/medical-records/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @Auditable(action = AuditAction.DELETE, entityName = "MedicalRecord", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
@@ -120,7 +125,7 @@ public class MedicalRecordController {
 
     @PostMapping("/api/v1/medical-records/{id}/rate")
     @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "id", description = "Đánh giá lượt khám (API tương thích)")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<MedicalRecordResponse> rate(@PathVariable UUID id,
                                                      @RequestParam int ratingScore) {
         return RestResponses.ok(service.rate(id, ratingScore));
@@ -157,6 +162,13 @@ public class MedicalRecordController {
     @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "recordId", description = "Đánh giá lượt khám")
     public ResponseEntity<MedicalRecordResponse> rateVisit(@PathVariable UUID recordId,
                                                           @RequestParam int ratingScore) {
+        UUID profileId = authService.currentProfileId();
+        if (profileId == null) {
+            throw new org.example.doansummer2026.exception.ResourceNotFoundException(
+                    "Không tìm thấy hồ sơ cá nhân");
+        }
+        // Không cho khách hàng đánh giá hồ sơ của người khác chỉ bằng cách đổi recordId.
+        service.getVisitDetailByRecordId(recordId, profileId);
         return RestResponses.ok(service.rate(recordId, ratingScore));
     }
 

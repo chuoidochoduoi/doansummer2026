@@ -13,12 +13,17 @@ import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.Profile;
 import org.example.doansummer2026.model.Invoice;
 import org.example.doansummer2026.enums.VisitStatus;
+import org.example.doansummer2026.enums.AppointmentStatus;
+import org.example.doansummer2026.enums.Gender;
+import org.example.doansummer2026.enums.ServiceStatus;
+import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
 import org.example.doansummer2026.repository.InsuranceRuleRepository;
 import org.example.doansummer2026.repository.InvoiceRepository;
+import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.model.InsuranceRule;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -30,6 +35,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Period;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -47,6 +53,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
     private final InvoiceService invoiceService;
     private final InsuranceRuleRepository insuranceRuleRepo;
     private final InvoiceRepository invoiceRepo;
+    private final StaffInfoRepository staffInfoRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<CustomerVisitResponse> search(UUID customerId, VisitStatus status,
@@ -66,6 +73,9 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
             throw new org.example.doansummer2026.exception.BadRequestException("Vui lòng chọn ít nhất một dịch vụ khám");
         }
         validateSingleExaminationService(req.serviceIds());
+        if (req.insuranceId() != null) {
+            throw new BadRequestException("Bảo hiểm y tế chỉ được xác nhận và áp dụng tại quầy thu ngân");
+        }
 
         Profile customer;
         if (req.customerId() != null) {
@@ -73,6 +83,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
                     .orElseThrow(() -> new ResourceNotFoundException("Khách hàng không tồn tại: " + req.customerId()));
         } else {
             String guestPhone = req.guestPhone() == null ? null : req.guestPhone().trim();
+            validateGuestInformation(req, guestPhone);
             // Bệnh nhân từng khám có thể là hồ sơ khách vãng lai chưa có account.
             // Tái sử dụng hồ sơ theo SĐT thay vì tạo Profile trùng lặp.
             customer = guestPhone == null || guestPhone.isBlank()
@@ -84,13 +95,26 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
                         .phone(guestPhone)
                         .address(req.guestAddress())
                         .dateOfBirth(req.guestDateOfBirth())
-                        .gender(req.guestGender() != null ? req.guestGender() : org.example.doansummer2026.enums.Gender.OTHER)
+                        .gender(req.guestGender())
                         .build();
                 customer = profileRepo.save(customer);
             }
         }
         customer = profileRepo.findByIdForUpdate(customer.getProfileId())
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
+        if (req.customerId() == null) {
+            // Le tan duoc cap nhat thong tin hanh chinh khi tiep nhan, ke ca khi
+            // so dien thoai da tim thay ho so khach vang lai cu.
+            customer.setFullName(req.guestFullName().trim().replaceAll("\\s+", " "));
+            customer.setAddress(req.guestAddress() == null || req.guestAddress().isBlank()
+                    ? null : req.guestAddress().trim());
+            if (req.guestDateOfBirth() != null) customer.setDateOfBirth(req.guestDateOfBirth());
+            customer.setGender(req.guestGender());
+            profileRepo.save(customer);
+        }
+        if (customer.getGender() == null || customer.getGender() == Gender.OTHER) {
+            throw new BadRequestException("Vui lòng cập nhật giới tính Nam hoặc Nữ trước khi tạo lượt khám");
+        }
         UUID customerIdForCheck = customer.getProfileId();
         repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
                 customerIdForCheck, List.of(VisitStatus.CHECKED_IN, VisitStatus.IN_PROGRESS))
@@ -101,15 +125,18 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
                 });
         Appointment appointment = null;
         if (req.appointmentId() != null) {
-            appointment = appointmentRepo.findById(req.appointmentId())
+            appointment = appointmentRepo.findByIdForUpdate(req.appointmentId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Lịch hẹn không tồn tại: " + req.appointmentId()));
+            validateAppointmentForCheckIn(appointment, customer);
         }
 
+        org.example.doansummer2026.model.StaffInfo checkedInBy = staffInfo(req.issuedById());
         CustomerVisit v = CustomerVisit.builder()
                 .customer(customer)
                 .appointment(appointment)
                 .checkInTime(LocalDateTime.now())
+                .checkedInBy(checkedInBy)
                 .status(VisitStatus.CHECKED_IN)
                 .build();
         CustomerVisit saved = repo.save(v);
@@ -120,14 +147,15 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
 
         // Tao InvoiceItem cho moi service (gia mac dinh tu MedicalService) - optional
         List<org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest> items = new ArrayList<>();
-        List<UUID> serviceIds = req.serviceIds();
+        List<UUID> serviceIds = req.serviceIds().stream().distinct().toList();
         BigDecimal totalDiscount = BigDecimal.ZERO;
         
         if (serviceIds != null && !serviceIds.isEmpty()) {
             for (UUID serviceId : serviceIds) {
                 MedicalService service = serviceRepo.findById(serviceId)
                         .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
-                        
+                validateServiceEligibility(service, customer);
+
                 BigDecimal unitPrice = service.getPrice();
                 BigDecimal discountPercent = BigDecimal.ZERO;
                 
@@ -173,12 +201,23 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
     }
 
     public CustomerVisitResponse update(UUID id, CustomerVisitUpdateRequest req) {
-        CustomerVisit v = findById(id);
-        if (req.status() != null) v.setStatus(req.status());
-        if (req.checkOutTime() != null) v.setCheckOutTime(req.checkOutTime());
-        if (req.status() == VisitStatus.COMPLETED && v.getCheckOutTime() == null) {
-            v.setCheckOutTime(LocalDateTime.now());
+        CustomerVisit v = repo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + id));
+        if (req.checkOutTime() != null) {
+            throw new BadRequestException("Không được tự nhập thời gian kết thúc lượt khám");
         }
+        if (req.status() != VisitStatus.CANCELLED) {
+            throw new ConflictException(
+                    "Trạng thái lượt khám phải được cập nhật qua đúng thao tác hàng chờ và hoàn thành hồ sơ");
+        }
+        if (v.getStatus() != VisitStatus.CHECKED_IN) {
+            throw new ConflictException("Chỉ có thể hủy lượt khám đang chờ tiếp nhận");
+        }
+        for (Invoice invoice : invoiceRepo.findAllByVisit_VisitId(id)) {
+            invoiceService.cancel(invoice.getInvoiceId());
+        }
+        v.setStatus(VisitStatus.CANCELLED);
+        v.setCheckOutTime(LocalDateTime.now());
         return CustomerVisitResponse.from(repo.save(v));
     }
 
@@ -212,6 +251,86 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
                     "Mỗi lượt khám chỉ được chọn một dịch vụ khám bệnh. Bạn vẫn có thể chọn nhiều dịch vụ cận lâm sàng"
             );
         }
+    }
+
+    private void validateGuestInformation(CustomerVisitCreateRequest req, String phone) {
+        String fullName = req.guestFullName() == null ? "" : req.guestFullName().trim();
+        if (fullName.length() < 2) {
+            throw new BadRequestException("Vui lòng nhập họ tên bệnh nhân");
+        }
+        if (fullName.codePoints().anyMatch(Character::isDigit)) {
+            throw new BadRequestException("Họ tên không được chứa chữ số");
+        }
+        if (phone == null || !phone.matches("^(\\+84|0)\\d{9,10}$")) {
+            throw new BadRequestException("Số điện thoại Việt Nam không hợp lệ");
+        }
+        if (req.guestGender() == null || req.guestGender() == Gender.OTHER) {
+            throw new BadRequestException("Hệ thống chỉ hỗ trợ giới tính Nam hoặc Nữ");
+        }
+    }
+
+    private void validateAppointmentForCheckIn(Appointment appointment, Profile customer) {
+        if (appointment.getStatus() != AppointmentStatus.PENDING
+                && appointment.getStatus() != AppointmentStatus.RESCHEDULED) {
+            throw new ConflictException("Lịch hẹn không còn ở trạng thái chờ tiếp nhận");
+        }
+        if (repo.findByAppointment_AppointmentId(appointment.getAppointmentId()).isPresent()) {
+            throw new ConflictException("Lịch hẹn đã được check-in trước đó");
+        }
+        if (appointment.getScheduledAt() == null
+                || !appointment.getScheduledAt().toLocalDate().equals(clinicToday())) {
+            throw new BadRequestException("Chỉ có thể check-in lịch hẹn đúng ngày khám");
+        }
+        if (appointment.getCustomer() != null
+                && !appointment.getCustomer().getProfileId().equals(customer.getProfileId())) {
+            throw new ConflictException("Lịch hẹn không thuộc bệnh nhân đã chọn");
+        }
+        if (appointment.getCustomer() == null && appointment.getGuestPhone() != null
+                && !normalizePhone(appointment.getGuestPhone()).equals(normalizePhone(customer.getPhone()))) {
+            throw new ConflictException("Số điện thoại bệnh nhân không khớp với lịch hẹn");
+        }
+    }
+
+    private void validateServiceEligibility(MedicalService service, Profile customer) {
+        if (service.getStatus() != ServiceStatus.ACTIVE) {
+            throw new BadRequestException("Dịch vụ " + service.getName() + " hiện không áp dụng");
+        }
+        Integer age = customer.getDateOfBirth() == null ? null
+                : Period.between(customer.getDateOfBirth(), clinicToday()).getYears();
+        if (age == null && (service.getMinimumAge() != null || service.getMaximumAge() != null)) {
+            throw new BadRequestException("Vui lòng cập nhật ngày sinh trước khi chọn dịch vụ: " + service.getName());
+        }
+        if (age != null && service.getMinimumAge() != null && age < service.getMinimumAge()) {
+            throw new BadRequestException("Dịch vụ " + service.getName() + " chỉ áp dụng từ "
+                    + service.getMinimumAge() + " tuổi");
+        }
+        if (age != null && service.getMaximumAge() != null && age > service.getMaximumAge()) {
+            throw new BadRequestException("Dịch vụ " + service.getName() + " chỉ áp dụng đến "
+                    + service.getMaximumAge() + " tuổi");
+        }
+        if (service.getAllowedGender() != null
+                && service.getAllowedGender() != customer.getGender()) {
+            throw new BadRequestException("Dịch vụ " + service.getName()
+                    + " không phù hợp với giới tính của bệnh nhân");
+        }
+    }
+
+    private org.example.doansummer2026.model.StaffInfo staffInfo(UUID staffId) {
+        if (staffId == null) {
+            throw new BadRequestException("Không tìm thấy nhân viên đang tiếp nhận bệnh nhân");
+        }
+        return staffInfoRepository.findById(staffId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên tiếp nhận"));
+    }
+
+    private LocalDate clinicToday() {
+        return LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+    }
+
+    private String normalizePhone(String phone) {
+        if (phone == null) return "";
+        String digits = phone.replaceAll("\\D", "");
+        return digits.startsWith("84") ? "0" + digits.substring(2) : digits;
     }
 }
 

@@ -46,7 +46,7 @@ public class AppointmentController {
     private final AuthService authService;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<AppointmentResponse>> list(
             @RequestParam(required = false) UUID customerId,
             @RequestParam(required = false) AppointmentStatus status,
@@ -57,12 +57,12 @@ public class AppointmentController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST', 'ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST', 'ROLE_CLINIC_MANAGER')")
     public ResponseEntity<AppointmentResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
     @PostMapping
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER', 'ROLE_RECEPTIONIST', 'ROLE_ADMIN')")
     @Auditable(action = AuditAction.CREATE, entityName = "Appointment")
     public ResponseEntity<AppointmentResponse> create(@Valid @RequestBody AppointmentCreateRequest req) {
         var current = authService.currentAccount();
@@ -105,12 +105,12 @@ public class AppointmentController {
      * - issuedById se tu dong lay tu staff dang dang nhap neu khong truyen.
      */
     @PostMapping("/{id}/check-in")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST', 'ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Appointment", idParamName = "id")
     public ResponseEntity<AppointmentCheckInResponse> checkIn(
             @PathVariable UUID id,
             @Valid @RequestBody AppointmentCheckInRequest req) {
-        UUID issuedById = req.issuedById() != null ? req.issuedById() : authService.currentStaffId();
+        UUID issuedById = authService.currentStaffId();
         return RestResponses.ok(service.checkIn(new AppointmentCheckInRequest(
                 id, req.serviceIds(), issuedById,
                 req.patientFullName(), req.patientPhone(), req.patientEmail(), req.patientAddress(),
@@ -127,7 +127,7 @@ public class AppointmentController {
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Appointment")
     public ResponseEntity<GuestCheckInResponse> guestCheckIn(
             @Valid @RequestBody GuestCheckInRequest req) {
-        UUID staffId = req.issuedById() != null ? req.issuedById() : authService.currentStaffId();
+        UUID staffId = authService.currentStaffId();
         return RestResponses.ok(service.guestCheckIn(new GuestCheckInRequest(req.guestFullName(), req.guestPhone(),
                 req.guestAddress(), req.guestAge(), req.guestGender(), req.serviceIds(), staffId)));
     }

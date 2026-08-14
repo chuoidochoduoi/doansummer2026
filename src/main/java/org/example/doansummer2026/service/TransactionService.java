@@ -57,6 +57,12 @@ public class TransactionService implements TransactionServiceInterface {
             throw new ConflictException("Chỉ có thể tạo giao dịch cho hóa đơn đang chờ thanh toán; trạng thái hiện tại: "
                     + invoice.getStatus());
         }
+        java.math.BigDecimal successfulPaid = successfulPaidAmount(invoice.getInvoiceId(), null);
+        java.math.BigDecimal remaining = invoice.getTotalAmount().subtract(successfulPaid);
+        if (req.amount().compareTo(java.math.BigDecimal.ZERO) <= 0
+                || req.amount().compareTo(remaining) > 0) {
+            throw new BadRequestException("Số tiền giao dịch vượt quá số tiền còn phải thanh toán: " + remaining);
+        }
         StaffInfo receivedBy = null;
         if (req.receivedById() != null) {
             receivedBy = staffRepo.findById(req.receivedById())
@@ -78,14 +84,25 @@ public class TransactionService implements TransactionServiceInterface {
     public TransactionResponse update(UUID id, TransactionUpdateRequest req) {
         Transaction t = repo.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Giao dịch không tồn tại: " + id));
+        Invoice lockedInvoice = invoiceRepo.findByIdForUpdate(t.getInvoice().getInvoiceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn của giao dịch không tồn tại"));
         if (req.status() != null) {
             validateStatusTransition(t.getStatus(), req.status());
+            if (req.status() == TransactionStatus.SUCCESS) {
+                java.math.BigDecimal successfulPaid = successfulPaidAmount(
+                        lockedInvoice.getInvoiceId(), t.getTransactionId());
+                java.math.BigDecimal remaining = lockedInvoice.getTotalAmount().subtract(successfulPaid);
+                if (t.getAmount().compareTo(remaining) > 0) {
+                    throw new ConflictException(
+                            "Không thể xác nhận giao dịch vì số tiền vượt số dư hóa đơn: " + remaining);
+                }
+            }
             t.setStatus(req.status());
             if (req.status() == TransactionStatus.SUCCESS && t.getPaidAt() == null) {
                 t.setPaidAt(LocalDateTime.now());
             }
         }
-        if (req.paidAt() != null) t.setPaidAt(req.paidAt());
+        // paidAt là dấu thời gian hệ thống, không nhận giá trị tùy ý từ frontend.
         if (req.gatewayReference() != null) t.setGatewayReference(req.gatewayReference());
         if (req.note() != null) t.setNote(req.note());
         Transaction saved = repo.save(t);
@@ -119,6 +136,15 @@ public class TransactionService implements TransactionServiceInterface {
             default -> false;
         };
         if (!ok) throw new BadRequestException("Không thể chuyển trạng thái từ " + from + " sang " + to);
+    }
+
+    private java.math.BigDecimal successfulPaidAmount(UUID invoiceId, UUID excludedTransactionId) {
+        return repo.findByInvoice_InvoiceId(invoiceId).stream()
+                .filter(transaction -> transaction.getStatus() == TransactionStatus.SUCCESS)
+                .filter(transaction -> excludedTransactionId == null
+                        || !excludedTransactionId.equals(transaction.getTransactionId()))
+                .map(Transaction::getAmount)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     }
 
     private String generateTransactionCode(String invoiceCode) {

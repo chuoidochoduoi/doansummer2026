@@ -36,15 +36,16 @@ public class ServiceCategoryService implements ServiceCategoryServiceInterface {
     }
 
     public ServiceCategoryResponse create(ServiceCategoryCreateRequest req) {
-        if (repo.existsByName(req.name())) {
-            throw new ConflictException("Tên danh mục đã tồn tại: " + req.name());
+        String normalizedName = normalizeName(req.name());
+        if (repo.existsByNameIgnoreCase(normalizedName)) {
+            throw new ConflictException("Tên danh mục đã tồn tại: " + normalizedName);
         }
         ServiceCategory parent = null;
         if (req.parentId() != null) {
             parent = findById(req.parentId());
         }
         ServiceCategory c = ServiceCategory.builder()
-                .name(req.name())
+                .name(normalizedName)
                 .description(req.description())
                 .parentCategory(parent)
                 .build();
@@ -53,11 +54,12 @@ public class ServiceCategoryService implements ServiceCategoryServiceInterface {
 
     public ServiceCategoryResponse update(UUID id, ServiceCategoryUpdateRequest req) {
         ServiceCategory c = findById(id);
-        if (req.name() != null && !req.name().equals(c.getName())) {
-            if (repo.existsByName(req.name())) {
-                throw new ConflictException("Tên danh mục đã tồn tại: " + req.name());
+        if (req.name() != null) {
+            String normalizedName = normalizeName(req.name());
+            if (repo.existsByNameIgnoreCaseAndCategoryIdNot(normalizedName, id)) {
+                throw new ConflictException("Tên danh mục đã tồn tại: " + normalizedName);
             }
-            c.setName(req.name());
+            c.setName(normalizedName);
         }
         if (req.description() != null) c.setDescription(req.description());
         if (req.parentId() != null) {
@@ -95,6 +97,15 @@ public class ServiceCategoryService implements ServiceCategoryServiceInterface {
             }
             current = current.getParentCategory();
         }
+    }
+
+    private String normalizeName(String value) {
+        String normalized = value == null ? "" : value.trim().replaceAll("\\s+", " ");
+        if (normalized.isBlank()) {
+            throw new org.example.doansummer2026.exception.BadRequestException(
+                    "Tên danh mục không được để trống");
+        }
+        return normalized;
     }
 }
 

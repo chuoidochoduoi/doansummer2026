@@ -13,6 +13,8 @@ import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.example.doansummer2026.repository.DepartmentRepository;
 import org.example.doansummer2026.repository.InvoiceItemRepository;
+import org.example.doansummer2026.repository.MedicalRecordRepository;
+import org.example.doansummer2026.repository.TestRequestRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,14 +28,18 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class ReportService {
 
+    private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+
     private final InvoiceRepository invoiceRepo;
     private final MedicalServiceRepository serviceRepo;
     private final QueueTicketRepository queueTicketRepo;
     private final DepartmentRepository departmentRepo;
     private final InvoiceItemRepository invoiceItemRepo;
+    private final MedicalRecordRepository medicalRecordRepo;
+    private final TestRequestRepository testRequestRepo;
 
     public DashboardReportResponse getDashboardReport(String period, LocalDate customFrom, LocalDate customTo) {
-        LocalDate now = LocalDate.now();
+        LocalDate now = LocalDate.now(CLINIC_ZONE);
         LocalDate from, to;
 
         if (customFrom != null && customTo != null) {
@@ -71,7 +77,7 @@ public class ReportService {
     }
 
     public ServiceReportResponse getServiceReport(String period, LocalDate customFrom, LocalDate customTo) {
-        LocalDate now = LocalDate.now();
+        LocalDate now = LocalDate.now(CLINIC_ZONE);
         LocalDate from, to;
 
         if (customFrom != null && customTo != null) {
@@ -123,6 +129,9 @@ public class ReportService {
 
         // 5. Tính tổng BHYT từ tất cả InvoiceItem
         long bhytTotal = invoiceItemRepo.findAll().stream()
+                .filter(ii -> ii.getInvoice() != null && ii.getInvoice().getStatus() == InvoiceStatus.PAID)
+                .filter(ii -> !ii.getInvoice().getIssueDate().isBefore(from)
+                        && !ii.getInvoice().getIssueDate().isAfter(to))
                 .mapToLong(ii -> ii.getBhytFund() != null ? ii.getBhytFund().longValue() : 0L)
                 .sum();
 
@@ -174,20 +183,52 @@ public class ReportService {
     }
 
     private List<DashboardReportResponse.DepartmentStat> getDepartmentStats(LocalDate from, LocalDate to) {
+        List<QueueTicket> queues = queueTicketRepo.findAll().stream()
+                .filter(q -> !q.getWorkDate().isBefore(from) && !q.getWorkDate().isAfter(to))
+                .toList();
+        List<org.example.doansummer2026.model.InvoiceItem> paidItems = invoiceItemRepo.findAll().stream()
+                .filter(item -> item.getInvoice() != null && item.getInvoice().getStatus() == InvoiceStatus.PAID)
+                .filter(item -> !item.getInvoice().getIssueDate().isBefore(from)
+                        && !item.getInvoice().getIssueDate().isAfter(to))
+                .toList();
+        List<org.example.doansummer2026.model.MedicalRecord> ratedRecords = medicalRecordRepo.findAll().stream()
+                .filter(record -> record.getRatingScore() != null)
+                .filter(record -> record.getQueueTicket() != null)
+                .filter(record -> record.getCompletedAt() != null)
+                .filter(record -> !record.getCompletedAt().toLocalDate().isBefore(from)
+                        && !record.getCompletedAt().toLocalDate().isAfter(to))
+                .toList();
+        List<org.example.doansummer2026.model.TestRequest> testRequests = testRequestRepo.findAll();
+
         return departmentRepo.findAll().stream()
                 .map(d -> {
-                    // Đếm số ca DONE trong khoảng thời gian
-                    int sessions = (int) queueTicketRepo.findAll().stream()
+                    int sessions = (int) queues.stream()
                             .filter(q -> q.getDepartment().getDepartmentId().equals(d.getDepartmentId()))
                             .filter(q -> q.getStatus() == QueueStatus.DONE)
-                            .filter(q -> !q.getUpdatedAt().toLocalDate().isBefore(from) && !q.getUpdatedAt().toLocalDate().isAfter(to))
                             .count();
-                    long revenue = sessions * 300000L; // Tạm tính: trung bình 300k/ca
-                    
-                    // Mock data cho occupancy va csat
-                    int occupancy = sessions > 0 ? Math.min(100, 40 + (sessions * 5)) : 0;
-                    double csat = sessions > 0 ? Math.round((4.0 + Math.random()) * 10.0) / 10.0 : 0.0;
-                    if (csat > 5.0) csat = 5.0;
+                    long revenue = paidItems.stream()
+                            .filter(item -> item.getService() != null && item.getInvoice().getVisit() != null)
+                            .filter(item -> testRequests.stream().anyMatch(request ->
+                                    request.getInvoiceItem() != null
+                                            && request.getInvoiceItem().getItemId().equals(item.getItemId())
+                                            && request.getPerformingDepartment().getDepartmentId().equals(d.getDepartmentId()))
+                                    || queues.stream().anyMatch(queue ->
+                                    queue.getVisit().getVisitId().equals(item.getInvoice().getVisit().getVisitId())
+                                            && queue.getDepartment().getDepartmentId().equals(d.getDepartmentId())
+                                            && queue.getService() != null
+                                            && queue.getService().getServiceId().equals(item.getService().getServiceId())))
+                            .mapToLong(this::actualItemAmount)
+                            .sum();
+
+                    // Chưa có cấu hình công suất tối đa theo phòng nên không tự tạo phần trăm giả.
+                    int occupancy = 0;
+                    double csat = ratedRecords.stream()
+                            .filter(record -> record.getQueueTicket().getDepartment().getDepartmentId()
+                                    .equals(d.getDepartmentId()))
+                            .mapToInt(org.example.doansummer2026.model.MedicalRecord::getRatingScore)
+                            .average()
+                            .orElse(0.0);
+                    csat = Math.round(csat * 10.0) / 10.0;
 
                     return new DashboardReportResponse.DepartmentStat(
                             d.getRoomCode(),
@@ -222,11 +263,16 @@ public class ReportService {
                             s.getDescription() != null ? s.getDescription() : "",
                             totalOrders,
                             s.getPrice().longValue(),
-                            s.getPrice().longValue() * totalOrders,
+                            items.stream().mapToLong(this::actualItemAmount).sum(),
                             bhytQty,
                             bhytFund
                     );
                 })
                 .toList();
+    }
+
+    private long actualItemAmount(org.example.doansummer2026.model.InvoiceItem item) {
+        if (item.getFinalPrice() != null) return item.getFinalPrice().longValue();
+        return item.getLineTotal() != null ? item.getLineTotal().longValue() : 0L;
     }
 }

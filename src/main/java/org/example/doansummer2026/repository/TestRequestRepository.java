@@ -45,6 +45,8 @@ public interface TestRequestRepository extends JpaRepository<TestRequest, UUID> 
      */
     boolean existsByMedicalRecord_Visit_VisitIdAndService_ServiceIdAndStatusNot(
             UUID visitId, UUID serviceId, TestRequestStatus status);
+    Optional<TestRequest> findTopByMedicalRecord_Visit_VisitIdAndService_ServiceIdAndStatusNotOrderByCreatedAtAsc(
+            UUID visitId, UUID serviceId, TestRequestStatus status);
 
     @Query(value = """
             SELECT DISTINCT t FROM TestRequest t
@@ -118,6 +120,7 @@ public interface TestRequestRepository extends JpaRepository<TestRequest, UUID> 
 
     /** Tim TestRequest theo InvoiceItem (traceability: Invoice -> InvoiceItem -> TestRequest). */
     List<TestRequest> findByInvoiceItem_ItemId(UUID itemId);
+    Optional<TestRequest> findTopByInvoiceItem_ItemIdOrderByCreatedAtAsc(UUID itemId);
 
     /** Tim TestRequest theo Invoice (qua InvoiceItem). */
     @Query("SELECT t FROM TestRequest t " +

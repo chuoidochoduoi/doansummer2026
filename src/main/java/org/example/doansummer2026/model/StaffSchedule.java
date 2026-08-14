@@ -21,7 +21,6 @@ import org.example.doansummer2026.common.BaseEntity;
 
 import java.time.LocalDate;
 import java.util.UUID;
-import java.util.UUID;
 import org.example.doansummer2026.enums.ScheduleStatus;
 
 /**

@@ -24,6 +24,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ShiftConfigService {
 
+    private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+
     private final ShiftConfigRepository shiftConfigRepository;
     private final AppointmentRepository appointmentRepository;
     private final StaffScheduleRepository staffScheduleRepository;
@@ -64,16 +66,21 @@ public class ShiftConfigService {
     }
 
     public ShiftConfigResponse createShift(ShiftConfigCreateRequest request) {
+        String name = normalizeName(request.name());
+        if (shiftConfigRepository.existsByNameIgnoreCase(name)) {
+            throw new ConflictException("Tên ca làm đã tồn tại");
+        }
         validateTimeFormat(request.startTime());
         validateTimeFormat(request.endTime());
         validateTimeLogic(request.startTime(), request.endTime());
-        validateOverlap(request.startTime(), request.endTime(), null);
+        boolean active = request.isActive() == null || request.isActive();
+        if (active) validateOverlap(request.startTime(), request.endTime(), null);
 
         ShiftConfig shiftConfig = ShiftConfig.builder()
-                .name(request.name())
+                .name(name)
                 .startTime(request.startTime())
                 .endTime(request.endTime())
-                .isActive(request.isActive() != null ? request.isActive() : true)
+                .isActive(active)
                 .build();
         return ShiftConfigResponse.from(shiftConfigRepository.save(shiftConfig));
     }
@@ -82,17 +89,36 @@ public class ShiftConfigService {
         ShiftConfig shiftConfig = shiftConfigRepository.findById(shiftId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy ca khám"));
 
+        boolean changesDefinition = request.name() != null
+                || request.startTime() != null || request.endTime() != null;
+        if (changesDefinition && staffScheduleRepository.countByShift_ShiftId(shiftId) > 0) {
+            throw new ConflictException(
+                    "Không thể sửa tên hoặc khung giờ của ca đã phát sinh lịch trực. "
+                            + "Hãy tạo ca mới và ngừng ca cũ để giữ đúng lịch sử");
+        }
+
         String newStart = request.startTime() != null ? request.startTime() : shiftConfig.getStartTime();
         String newEnd = request.endTime() != null ? request.endTime() : shiftConfig.getEndTime();
+        boolean targetActive = request.isActive() != null ? request.isActive() : shiftConfig.getIsActive();
+
+        if (request.name() != null) {
+            String name = normalizeName(request.name());
+            if (shiftConfigRepository.existsByNameIgnoreCaseAndShiftIdNot(name, shiftId)) {
+                throw new ConflictException("Tên ca làm đã tồn tại");
+            }
+            shiftConfig.setName(name);
+        }
 
         if (request.startTime() != null || request.endTime() != null) {
             validateTimeFormat(newStart);
             validateTimeFormat(newEnd);
             validateTimeLogic(newStart, newEnd);
+        }
+        if (targetActive && (request.startTime() != null || request.endTime() != null
+                || Boolean.TRUE.equals(request.isActive()))) {
             validateOverlap(newStart, newEnd, shiftId);
         }
 
-        if (request.name() != null) shiftConfig.setName(request.name());
         if (request.startTime() != null) shiftConfig.setStartTime(request.startTime());
         if (request.endTime() != null) shiftConfig.setEndTime(request.endTime());
         if (request.isActive() != null) {
@@ -120,7 +146,7 @@ public class ShiftConfigService {
     private void validateCanDeactivate(UUID shiftId) {
         boolean hasFutureSchedule = staffScheduleRepository
                 .existsByShift_ShiftIdAndWorkDateGreaterThanEqualAndStatus(
-                        shiftId, java.time.LocalDate.now(), org.example.doansummer2026.enums.ScheduleStatus.SCHEDULED);
+                        shiftId, java.time.LocalDate.now(CLINIC_ZONE), org.example.doansummer2026.enums.ScheduleStatus.SCHEDULED);
         boolean hasActiveTemplate = staffScheduleTemplateRepository
                 .existsByShift_ShiftIdAndIsActiveTrue(shiftId);
         if (hasFutureSchedule || hasActiveTemplate) {
@@ -156,6 +182,7 @@ public class ShiftConfigService {
         List<ShiftConfig> allShifts = shiftConfigRepository.findAll();
         for (ShiftConfig shift : allShifts) {
             if (excludeId != null && shift.getShiftId().equals(excludeId)) continue;
+            if (!Boolean.TRUE.equals(shift.getIsActive())) continue;
             int sStart = toMinutes(shift.getStartTime());
             int sEnd = toMinutes(shift.getEndTime());
             if (start < sEnd && end > sStart) {
@@ -163,5 +190,13 @@ public class ShiftConfigService {
                         shift.getName(), shift.getStartTime(), shift.getEndTime()));
             }
         }
+    }
+
+    private String normalizeName(String name) {
+        String normalized = name == null ? "" : name.trim().replaceAll("\\s+", " ");
+        if (normalized.isBlank()) {
+            throw new BadRequestException("Tên ca không được để trống");
+        }
+        return normalized;
     }
 }

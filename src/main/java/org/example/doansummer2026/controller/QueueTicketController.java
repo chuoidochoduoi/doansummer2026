@@ -56,7 +56,7 @@ public class QueueTicketController {
 
     @PostMapping("/api/v1/queue-tickets")
     @Auditable(action = AuditAction.CREATE, entityName = "QueueTicket")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<QueueTicketResponse> create(@Valid @RequestBody QueueTicketCreateRequest req) {
         QueueTicketResponse created = service.create(req);
         return RestResponses.created("/api/v1/queue-tickets/{id}", created.ticketId(), created);
@@ -71,7 +71,7 @@ public class QueueTicketController {
     }
 
     @PostMapping("/api/v1/queue-tickets/{id}/call")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     @Auditable(action = AuditAction.PATIENT_CALLED, entityName = "QueueTicket", idParamName = "id", description = "Gọi bệnh nhân vào phòng")
     public ResponseEntity<QueueTicketResponse> call(@PathVariable UUID id) {
         return RestResponses.ok(service.call(id));
@@ -100,14 +100,14 @@ public class QueueTicketController {
     }
 
     @PostMapping("/api/v1/queue-tickets/{id}/skip")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     @Auditable(action = AuditAction.QUEUE_SKIPPED, entityName = "QueueTicket", idParamName = "id", description = "Bỏ lượt bệnh nhân")
     public ResponseEntity<QueueTicketResponse> skip(@PathVariable UUID id) {
         return RestResponses.ok(service.skip(id));
     }
 
     @PostMapping("/api/v1/queue-tickets/{id}/return")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket", idParamName = "id", description = "Dua benh nhan vang quay lai hang cho")
     public ResponseEntity<QueueTicketResponse> returnToQueue(@PathVariable UUID id) {
         return RestResponses.ok(service.returnToQueue(id));
@@ -115,7 +115,7 @@ public class QueueTicketController {
 
     @DeleteMapping("/api/v1/queue-tickets/{id}")
     @Auditable(action = AuditAction.UPDATE, entityName = "QueueTicketSkip", idParamName = "id")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();

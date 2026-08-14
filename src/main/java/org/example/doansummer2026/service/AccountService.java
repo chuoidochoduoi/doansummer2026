@@ -6,6 +6,7 @@ import org.example.doansummer2026.dto.account.AccountManagementResponse;
 import org.example.doansummer2026.dto.account.AccountUpdateRequest;
 import org.example.doansummer2026.dto.account.AccountResponse;
 import org.example.doansummer2026.exception.ConflictException;
+import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.enums.Role;
@@ -59,17 +60,24 @@ public class AccountService implements AccountServiceInterface {
 
     public Account update(UUID id, AccountUpdateRequest req) {
         Account a = findById(id);
+        if (a.getRole() == Role.CUSTOMER) {
+            throw new ConflictException("Tài khoản khách hàng chỉ được khóa hoặc mở khóa");
+        }
+        if (req.role() != null && req.role() != a.getRole()) {
+            throw new ConflictException("Không được đổi loại tài khoản sau khi đã tạo");
+        }
+        if (req.isActive() != null && !req.isActive().equals(a.getIsActive())) {
+            throw new ConflictException("Vui lòng dùng chức năng khóa hoặc mở khóa tài khoản");
+        }
         if (req.username() != null && !req.username().equals(a.getUsername())) {
-            if (accountRepository.existsByUsername(req.username())) {
-                throw new ConflictException("Tên đăng nhập đã tồn tại: " + req.username());
+            String username = req.username().trim();
+            if (username.isBlank()) {
+                throw new BadRequestException("Tên đăng nhập không được để trống");
             }
-            a.setUsername(req.username());
-        }
-        if (req.role() != null) {
-            a.setRole(req.role());
-        }
-        if (req.isActive() != null) {
-            a.setIsActive(req.isActive());
+            if (accountRepository.existsByUsername(username)) {
+                throw new ConflictException("Tên đăng nhập đã tồn tại: " + username);
+            }
+            a.setUsername(username);
         }
         return accountRepository.save(a);
     }
@@ -90,6 +98,7 @@ public class AccountService implements AccountServiceInterface {
     }
 
     public void adminResetPassword(UUID id, String newRaw) {
+        validateNewPassword(newRaw);
         Account a = findById(id);
         a.setPasswordHash(passwordEncoder.encode(newRaw));
         accountRepository.save(a);
@@ -97,6 +106,7 @@ public class AccountService implements AccountServiceInterface {
 
     public void softDelete(UUID id) {
         Account a = findById(id);
+        ensureNotProtectedManagementAccount(a);
         a.setIsActive(false);
         accountRepository.save(a);
     }
@@ -156,16 +166,24 @@ public class AccountService implements AccountServiceInterface {
     /** Bat/tat khoa tai khoan. Khong cho phep thay doi ADMIN hoac CLINIC_MANAGER. */
     public Account lock(UUID id) {
         Account a = findById(id);
-        // Kiem tra xem co phai admin/clinic_manager khong
-        var staffOpt = staffRepo.findFirstByProfile_Account_Username(a.getUsername());
-        if (staffOpt.isPresent()) {
-            SystemRole sr = staffOpt.get().getSystemRole();
-            if (sr == SystemRole.ADMIN || sr == SystemRole.CLINIC_MANAGER) {
-                throw new ConflictException("Không thể khóa tài khoản quản trị viên hoặc quản lý phòng khám");
-            }
-        }
+        ensureNotProtectedManagementAccount(a);
         a.setIsActive(!Boolean.TRUE.equals(a.getIsActive()));
         return accountRepository.save(a);
     }
-}
 
+    private void ensureNotProtectedManagementAccount(Account account) {
+        staffRepo.findFirstByProfile_Account_Username(account.getUsername()).ifPresent(staff -> {
+            SystemRole systemRole = staff.getSystemRole();
+            if (systemRole == SystemRole.ADMIN || systemRole == SystemRole.CLINIC_MANAGER) {
+                throw new ConflictException(
+                        "Không thể khóa tài khoản quản trị viên hoặc quản lý phòng khám");
+            }
+        });
+    }
+
+    private void validateNewPassword(String password) {
+        if (password == null || password.length() < 8) {
+            throw new BadRequestException("Mật khẩu mới phải có ít nhất 8 ký tự");
+        }
+    }
+}

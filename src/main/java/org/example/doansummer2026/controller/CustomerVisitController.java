@@ -54,7 +54,7 @@ public class CustomerVisitController {
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<CustomerVisitResponse> create(@Valid @RequestBody CustomerVisitCreateRequest req) {
-        UUID issuedById = req.issuedById() != null ? req.issuedById() : authService.currentStaffId();
+        UUID issuedById = authService.currentStaffId();
         var updatedReq = new CustomerVisitCreateRequest(
                 req.customerId(),
                 req.appointmentId(),

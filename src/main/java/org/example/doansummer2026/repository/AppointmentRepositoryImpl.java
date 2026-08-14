@@ -20,7 +20,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
     @Override
     public Page<Appointment> search(UUID customerId, String status,
                                    LocalDateTime from, LocalDateTime to, Pageable pageable) {
-        // Query chĂ­nh Ä‘á»ƒ láº¥y dá»¯ liá»‡u
+        // Query chính để lấy dữ liệu
         StringBuilder jpql = new StringBuilder(
             "SELECT DISTINCT a FROM Appointment a LEFT JOIN FETCH a.customer LEFT JOIN FETCH a.services WHERE a.deleted = false"
         );
@@ -140,7 +140,8 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
         if (status != null && !status.isEmpty()) {
             if ("upcoming".equalsIgnoreCase(status)) {
                 java.util.List<org.example.doansummer2026.enums.AppointmentStatus> statusList = java.util.List.of(
-                    org.example.doansummer2026.enums.AppointmentStatus.PENDING);
+                    org.example.doansummer2026.enums.AppointmentStatus.PENDING,
+                    org.example.doansummer2026.enums.AppointmentStatus.RESCHEDULED);
                 query.setParameter("statusList", statusList);
                 countQuery.setParameter("statusList", statusList);
             } else if ("completed".equalsIgnoreCase(status)) {
@@ -189,5 +190,3 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
                 .getResultList();
     }
 }
-
-

@@ -110,13 +110,11 @@ public class OtpService {
         }
         String key = "otp_verified:" + normalize(identifier);
         redisTemplate.opsForValue().set(key, "true", 15, TimeUnit.MINUTES);
-        System.out.println("DEBUG: markOtpAsVerified saved key [" + key + "] successfully.");
     }
 
     public boolean isOtpVerified(String identifier) {
         String key = "otp_verified:" + normalize(identifier);
         Boolean hasKey = redisTemplate.hasKey(key);
-        System.out.println("DEBUG: isOtpVerified check for key [" + key + "] -> " + hasKey);
         return Boolean.TRUE.equals(hasKey);
     }
 

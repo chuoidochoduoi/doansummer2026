@@ -41,6 +41,8 @@ import org.example.doansummer2026.model.TestRequest;
 @RequiredArgsConstructor
 public class ProfileService implements ProfileServiceInterface {
 
+    private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+
     private final ProfileRepository profileRepository;
     private final AccountRepository accountRepository;
     private final AppointmentRepository appointmentRepository;
@@ -70,9 +72,9 @@ public class ProfileService implements ProfileServiceInterface {
         List<Appointment> appointments = appointmentRepository.findByCustomerId(profile.getProfileId());
         List<ProfileCustomerResponse.AppointmentSummary> appointmentSummaries = appointments.stream()
                 .map(a -> {
-                    String doctor = a.getCustomer() != null && a.getCustomer().getFullName() != null
-                            ? a.getCustomer().getFullName()
-                            : null;
+                    // Appointment chưa gắn bác sĩ cho đến khi điều phối vào phòng.
+                    // Không dùng tên customer làm tên bác sĩ như dữ liệu cũ.
+                    String doctor = null;
                     String specialty = a.getServices() != null && !a.getServices().isEmpty()
                             ? a.getServices().stream().findFirst().map(s -> s.getName()).orElse(null)
                             : null;
@@ -153,16 +155,22 @@ public class ProfileService implements ProfileServiceInterface {
         String requestedPhone = req.phone() == null ? current.getPhone() : blankToNull(req.phone());
         String requestedEmail = req.email() == null ? current.getEmail() : normalizeEmail(req.email());
         String currentEmail = normalizeEmail(current.getEmail());
+        String requestedInsuranceId = req.insuranceId() == null
+                ? current.getInsuranceId() : blankToNull(req.insuranceId());
 
         if (!Objects.equals(requestedPhone, current.getPhone())
                 || !Objects.equals(requestedEmail, currentEmail)) {
             throw new BadRequestException(
                     "Số điện thoại và email chỉ được cập nhật bởi nhân viên lễ tân");
         }
+        if (!Objects.equals(requestedInsuranceId, current.getInsuranceId())) {
+            throw new BadRequestException(
+                    "Bảo hiểm y tế chỉ được xác minh và cập nhật tại quầy thu ngân");
+        }
 
         ProfileUpdateRequest safeRequest = new ProfileUpdateRequest(
                 req.fullName(), req.dateOfBirth(), req.gender(),
-                null, null, req.address(), req.bloodType(), req.insuranceId(),
+                null, null, req.address(), req.bloodType(), null,
                 req.height(), req.weight(), req.allergies());
         return update(id, safeRequest);
     }
@@ -175,7 +183,7 @@ public class ProfileService implements ProfileServiceInterface {
         if (profile.getFullName().codePoints().anyMatch(Character::isDigit)) {
             throw new BadRequestException("Họ tên không được chứa chữ số");
         }
-        if (profile.getDateOfBirth() == null || !profile.getDateOfBirth().isBefore(LocalDate.now())) {
+        if (profile.getDateOfBirth() == null || !profile.getDateOfBirth().isBefore(LocalDate.now(CLINIC_ZONE))) {
             throw new BadRequestException("Ngày sinh phải là ngày hợp lệ trong quá khứ");
         }
         if (profile.getGender() == null || profile.getGender() == Gender.OTHER) {

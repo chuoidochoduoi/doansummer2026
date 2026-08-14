@@ -90,7 +90,7 @@ public class ProfileController {
 
     /** ADMIN tao profile (thuong di kem StaffService.create). */
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ProfileResponse> create(@Valid @RequestBody ProfileCreateRequest req) {
         if (req.accountId() == null) {
             throw new BadRequestException("Mã tài khoản là bắt buộc");
@@ -101,7 +101,7 @@ public class ProfileController {
 
     /** ADMIN cap nhat profile bat ky. */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<ProfileResponse> update(@PathVariable UUID id,
                                                   @Valid @RequestBody ProfileUpdateRequest req) {
         return RestResponses.ok(profileService.update(id, req));

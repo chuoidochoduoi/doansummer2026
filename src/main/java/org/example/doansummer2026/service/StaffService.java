@@ -59,6 +59,8 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class StaffService implements StaffServiceInterface {
 
+    private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+
     private final StaffInfoRepository staffRepo;
     private final ProfileRepository profileRepo;
     private final AccountRepository accountRepo;
@@ -70,9 +72,12 @@ public class StaffService implements StaffServiceInterface {
 
     public StaffResponse create(StaffCreateRequest req) {
         SystemRole systemRole = req.systemRole().normalized();
+        String username = req.username().trim();
+        String email = req.email().trim().toLowerCase(Locale.ROOT);
+        String phone = req.phone().trim();
         // Validate unique
-        if (accountRepo.existsByUsername(req.username())) {
-            throw new ConflictException("Tên đăng nhập đã tồn tại: " + req.username());
+        if (accountRepo.existsByUsername(username)) {
+            throw new ConflictException("Tên đăng nhập đã tồn tại: " + username);
         }
         if (req.nationalId() != null && !req.nationalId().isBlank() && staffRepo.existsByNationalId(req.nationalId())) {
             throw new ConflictException("CCCD/CMND đã tồn tại: " + req.nationalId());
@@ -81,10 +86,10 @@ public class StaffService implements StaffServiceInterface {
                 && staffRepo.existsByLicenseNumber(req.licenseNumber())) {
             throw new ConflictException("Số giấy phép hành nghề đã tồn tại");
         }
-        if (profileRepo.findFirstByPhone(req.phone()).isPresent()) {
+        if (profileRepo.findFirstByPhone(phone).isPresent()) {
             throw new ConflictException("Số điện thoại đã được sử dụng");
         }
-        if (profileRepo.findFirstByEmail(req.email()).isPresent()) {
+        if (profileRepo.findFirstByEmailIgnoreCase(email).isPresent()) {
             throw new ConflictException("Email đã được sử dụng");
         }
 
@@ -97,7 +102,7 @@ public class StaffService implements StaffServiceInterface {
         Role accountRole = mapSystemRoleToRole(systemRole);
 
         Account account = Account.builder()
-                .username(req.username())
+                .username(username)
                 .passwordHash(passwordEncoder.encode(req.password()))
                 .role(accountRole)
                 .isActive(true)
@@ -109,8 +114,8 @@ public class StaffService implements StaffServiceInterface {
                 .fullName(req.fullName())
                 .dateOfBirth(req.dateOfBirth())
                 .gender(parseGender(req.gender()))
-                .phone(req.phone())
-                .email(req.email())
+                .phone(phone)
+                .email(email)
                 .address(req.address())
                 .build();
         profile = profileRepo.save(profile);
@@ -194,7 +199,7 @@ public class StaffService implements StaffServiceInterface {
             throw new BadRequestException("Họ tên không được chứa chữ số");
         }
         if (profile.getDateOfBirth() == null
-                || !profile.getDateOfBirth().isBefore(java.time.LocalDate.now())) {
+                || !profile.getDateOfBirth().isBefore(java.time.LocalDate.now(CLINIC_ZONE))) {
             throw new BadRequestException("Ngày sinh phải là ngày hợp lệ trong quá khứ");
         }
         if (profile.getGender() == null || profile.getGender() == Gender.OTHER) {
@@ -218,12 +223,18 @@ public class StaffService implements StaffServiceInterface {
             }
         }
         s.setLicenseNumber(blankToNull(req.licenseNumber()));
-        if (req.systemRole() != null) s.setSystemRole(req.systemRole().normalized());
+        if (req.systemRole() != null && req.systemRole().normalized() != s.getSystemRole().normalized()) {
+            throw new ConflictException("Không được đổi vai trò của nhân sự sau khi đã tạo tài khoản");
+        }
         if (req.bankAccount() != null) s.setBankAccount(req.bankAccount());
         if (req.highestDegree() != null) s.setHighestDegree(blankToNull(req.highestDegree()));
         if (req.university() != null) s.setUniversity(blankToNull(req.university()));
         if (req.specializationId() != null) {
-            s.setSpecialization(specializationService.findActiveById(req.specializationId()));
+            UUID currentSpecializationId = s.getSpecialization() == null
+                    ? null : s.getSpecialization().getSpecializationId();
+            if (!req.specializationId().equals(currentSpecializationId)) {
+                throw new ConflictException("Không được đổi chuyên khoa của nhân sự sau khi đã tạo tài khoản");
+            }
         }
         boolean isDoctor = s.getSystemRole().isDoctor();
         if (isDoctor && s.getSpecialization() == null) {
