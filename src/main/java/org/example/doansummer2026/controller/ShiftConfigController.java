@@ -8,6 +8,8 @@ import org.example.doansummer2026.dto.shift.ShiftConfigCreateRequest;
 import org.example.doansummer2026.dto.shift.ShiftConfigResponse;
 import org.example.doansummer2026.dto.shift.ShiftConfigUpdateRequest;
 import org.example.doansummer2026.service.ShiftConfigService;
+import org.example.doansummer2026.aop.Auditable;
+import org.example.doansummer2026.enums.AuditAction;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -36,18 +38,21 @@ public class ShiftConfigController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "ShiftConfig")
     public ResponseEntity<ShiftConfigResponse> createShift(@RequestBody @Valid ShiftConfigCreateRequest request) {
         return RestResponses.ok(shiftConfigService.createShift(request));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "ShiftConfig", idParamName = "id")
     public ResponseEntity<ShiftConfigResponse> updateShift(@PathVariable UUID id, @RequestBody @Valid ShiftConfigUpdateRequest request) {
         return RestResponses.ok(shiftConfigService.updateShift(id, request));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.DELETE, entityName = "ShiftConfig", idParamName = "id")
     public ResponseEntity<Void> deleteShift(@PathVariable UUID id) {
         shiftConfigService.deleteShift(id);
         return RestResponses.ok(null);

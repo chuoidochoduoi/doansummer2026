@@ -358,10 +358,8 @@ public class InvoiceService implements InvoiceServiceInterface {
     }
 
     public void delete(UUID id) {
-        if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Hóa đơn không tồn tại: " + id);
-        }
-        repo.deleteById(id);
+        findById(id);
+        throw new ConflictException("Không thể xóa hóa đơn. Hóa đơn chưa thanh toán chỉ được hủy; hóa đơn đã thanh toán phải được lưu lịch sử");
     }
 
     public Invoice findById(UUID id) {

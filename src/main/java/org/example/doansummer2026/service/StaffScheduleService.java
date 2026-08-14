@@ -7,6 +7,7 @@ import org.example.doansummer2026.dto.schedule.ScheduleCreateRequest;
 import org.example.doansummer2026.dto.schedule.ScheduleResponse;
 import org.example.doansummer2026.dto.schedule.ScheduleUpdateRequest;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
+import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.enums.ScheduleStatus;
 import org.example.doansummer2026.model.ShiftConfig;
 import org.example.doansummer2026.model.StaffInfo;
@@ -15,6 +16,7 @@ import org.example.doansummer2026.model.StaffScheduleTemplate;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.repository.StaffScheduleRepository;
 import org.example.doansummer2026.repository.StaffScheduleTemplateRepository;
+import org.example.doansummer2026.repository.StaffAttendanceRepository;
 import org.example.doansummer2026.dto.notification.NotificationCreateRequest;
 import org.example.doansummer2026.enums.NotificationType;
 import org.example.doansummer2026.enums.NotificationChannel;
@@ -43,11 +45,15 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     private final ShiftConfigRepository shiftConfigRepo;
     private final StaffService staffService;
     private final NotificationService notificationService;
+    private final StaffAttendanceRepository attendanceRepository;
 
     public ScheduleResponse create(ScheduleCreateRequest req) {
         StaffInfo staff = staffService.findById(req.staffId());
         ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
                 .orElseThrow(() -> new ResourceNotFoundException("Ca làm việc không tồn tại: " + req.shiftId()));
+        if (Boolean.FALSE.equals(shift.getIsActive())) {
+            throw new ConflictException("Ca làm việc đã ngừng hoạt động và không thể dùng cho lịch trực mới");
+        }
         StaffSchedule schedule = StaffSchedule.builder()
                 .staff(staff)
                 .workDate(req.workDate())
@@ -82,6 +88,9 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         if (req.shiftId() != null) {
             ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
                     .orElseThrow(() -> new ResourceNotFoundException("Ca làm việc không tồn tại: " + req.shiftId()));
+            if (Boolean.FALSE.equals(shift.getIsActive())) {
+                throw new ConflictException("Ca làm việc đã ngừng hoạt động và không thể gán cho lịch trực");
+            }
             s.setShift(shift);
         }
         if (req.status() != null) s.setStatus(req.status());
@@ -109,6 +118,14 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
 
     public void delete(UUID id) {
         StaffSchedule s = scheduleRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Lịch làm việc không tồn tại: " + id));
+        if (s.getStatus() != ScheduleStatus.SCHEDULED
+                || s.getWorkDate() == null
+                || !s.getWorkDate().isAfter(LocalDate.now())) {
+            throw new ConflictException("Chỉ có thể xóa lịch trực chưa diễn ra trong tương lai");
+        }
+        if (attendanceRepository.findBySchedule_ScheduleId(id).isPresent()) {
+            throw new ConflictException("Không thể xóa lịch trực đã phát sinh dữ liệu điểm danh");
+        }
         
         if (s.getStaff() != null && s.getStaff().getProfile() != null) {
             try {
@@ -295,4 +312,3 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         return weekStart.with(dow);
     }
 }
-

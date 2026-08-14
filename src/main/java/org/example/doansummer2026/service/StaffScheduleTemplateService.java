@@ -10,6 +10,7 @@ import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.model.StaffScheduleTemplate;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.repository.StaffScheduleTemplateRepository;
+import org.example.doansummer2026.repository.StaffScheduleRepository;
 import org.springframework.stereotype.Service;
 import org.example.doansummer2026.service.interfaces.StaffScheduleTemplateServiceInterface;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,7 @@ import java.util.UUID;
 public class StaffScheduleTemplateService implements StaffScheduleTemplateServiceInterface {
 
     private final StaffScheduleTemplateRepository repo;
+    private final StaffScheduleRepository staffScheduleRepository;
     private final ShiftConfigRepository shiftConfigRepo;
     private final StaffService staffService;
 
@@ -36,6 +38,9 @@ public class StaffScheduleTemplateService implements StaffScheduleTemplateServic
         validateUnique(staff, req.dayOfWeek(), null);
         ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
                 .orElseThrow(() -> new ResourceNotFoundException("Ca làm việc không tồn tại: " + req.shiftId()));
+        if (Boolean.FALSE.equals(shift.getIsActive())) {
+            throw new ConflictException("Ca làm việc đã ngừng hoạt động và không thể dùng cho mẫu lịch mới");
+        }
         StaffScheduleTemplate t = StaffScheduleTemplate.builder()
                 .staff(staff)
                 .dayOfWeek(req.dayOfWeek())
@@ -56,6 +61,9 @@ public class StaffScheduleTemplateService implements StaffScheduleTemplateServic
         if (req.shiftId() != null) {
             ShiftConfig shift = shiftConfigRepo.findById(req.shiftId())
                     .orElseThrow(() -> new ResourceNotFoundException("Ca làm việc không tồn tại: " + req.shiftId()));
+            if (Boolean.FALSE.equals(shift.getIsActive())) {
+                throw new ConflictException("Ca làm việc đã ngừng hoạt động và không thể gán cho mẫu lịch");
+            }
             t.setShift(shift);
         }
         if (req.isActive() != null) t.setIsActive(req.isActive());
@@ -63,10 +71,13 @@ public class StaffScheduleTemplateService implements StaffScheduleTemplateServic
     }
 
     public void delete(UUID id) {
-        if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Mẫu lịch làm việc không tồn tại: " + id);
+        StaffScheduleTemplate template = findById(id);
+        if (staffScheduleRepository.countByTemplate_TemplateId(id) > 0) {
+            template.setIsActive(false);
+            repo.save(template);
+            return;
         }
-        repo.deleteById(id);
+        repo.delete(template);
     }
 
     @Transactional(readOnly = true)

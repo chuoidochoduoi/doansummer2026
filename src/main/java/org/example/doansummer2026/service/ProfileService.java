@@ -178,7 +178,7 @@ public class ProfileService implements ProfileServiceInterface {
         if (!profileRepository.existsById(id)) {
             throw new ResourceNotFoundException("Hồ sơ cá nhân không tồn tại: " + id);
         }
-        profileRepository.deleteById(id);
+        throw new ConflictException("Không thể xóa hồ sơ cá nhân đã tạo. Vui lòng khóa tài khoản để ngừng sử dụng và giữ nguyên lịch sử");
     }
 
     @Transactional(readOnly = true)

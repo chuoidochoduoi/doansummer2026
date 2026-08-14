@@ -13,6 +13,8 @@ public interface ServiceCategoryRepository extends JpaRepository<ServiceCategory
     boolean existsByName(String name);
 
     Optional<ServiceCategory> findByName(String name);
+
+    boolean existsByParentCategory_CategoryId(UUID categoryId);
 }
 
 

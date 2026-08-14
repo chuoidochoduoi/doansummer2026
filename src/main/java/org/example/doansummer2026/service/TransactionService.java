@@ -103,12 +103,8 @@ public class TransactionService implements TransactionServiceInterface {
 
     
     public void delete(UUID id) {
-        if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Giao dịch không tồn tại: " + id);
-        }
-        UUID invoiceId = findById(id).getInvoice().getInvoiceId();
-        repo.deleteById(id);
-        invoiceService.recalculatePaidAmount(invoiceId);
+        findById(id);
+        throw new ConflictException("Không thể xóa giao dịch thanh toán. Hãy chuyển giao dịch chưa thành công sang Thất bại hoặc Đã hủy");
     }
 
     public Transaction findById(UUID id) {

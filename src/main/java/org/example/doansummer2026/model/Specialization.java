@@ -43,6 +43,11 @@ public class Specialization extends BaseEntity {
     @Size(max = 500)
     @Column(length = 500)
     private String description;
+
+    /** Cho phep dung chuyen khoa cho cac cau hinh moi. */
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    @Builder.Default
+    private Boolean active = true;
 }
 
 

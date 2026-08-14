@@ -240,10 +240,8 @@ public class AppointmentService implements AppointmentServiceInterface {
     }
 
     public void delete(UUID id) {
-        if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Lịch hẹn không tồn tại: " + id);
-        }
-        repo.deleteById(id);
+        findById(id);
+        throw new ConflictException("Không xóa lịch hẹn để tránh mất lịch sử. Vui lòng dùng chức năng hủy lịch hẹn");
     }
 
     private void validateServiceEligibility(MedicalService service, Integer age, Gender gender) {

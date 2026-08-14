@@ -23,15 +23,15 @@ RESTART IDENTITY CASCADE;
 -- ===================================================================
 -- Specialization (danh muc chuyen khoa - toi thieu de bo sung vao department)
 -- ===================================================================
-INSERT INTO specialization (specialization_id, created_at, updated_at, deleted, name, description) VALUES
-('00000001-1111-1111-1111-111111111111', NOW(), NOW(), false, 'Nội khoa', 'Chẩn đoán và điều trị bệnh nội'),
-('00000002-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Nhi khoa', 'Khám và điều trị cho trẻ em'),
-('00000003-3333-3333-3333-333333333333', NOW(), NOW(), false, 'Chẩn đoán hình ảnh', 'Siêu âm, X-quang và các kỹ thuật hình ảnh'),
-('00000004-4444-4444-4444-444444444444', NOW(), NOW(), false, 'Da liễu', 'Khám và điều trị bệnh da liễu'),
-('00000005-5555-5555-5555-555555555555', NOW(), NOW(), false, 'Tai Mũi Họng', 'Khám và điều trị tai, mũi, họng'),
-('00000006-6666-6666-6666-666666666666', NOW(), NOW(), false, 'Khám tổng quát', 'Khám ban đầu và điều phối đa khoa'),
-('00000007-7777-7777-7777-777777777777', NOW(), NOW(), false, 'Tim mạch', 'Khám và theo dõi bệnh tim mạch'),
-('00000008-8888-8888-8888-888888888888', NOW(), NOW(), false, 'Sản phụ khoa', 'Khám sức khỏe phụ nữ và thai kỳ');
+INSERT INTO specialization (specialization_id, created_at, updated_at, deleted, active, name, description) VALUES
+('00000001-1111-1111-1111-111111111111', NOW(), NOW(), false, true, 'Nội khoa', 'Chẩn đoán và điều trị bệnh nội'),
+('00000002-2222-2222-2222-222222222222', NOW(), NOW(), false, true, 'Nhi khoa', 'Khám và điều trị cho trẻ em'),
+('00000003-3333-3333-3333-333333333333', NOW(), NOW(), false, true, 'Chẩn đoán hình ảnh', 'Siêu âm, X-quang và các kỹ thuật hình ảnh'),
+('00000004-4444-4444-4444-444444444444', NOW(), NOW(), false, true, 'Da liễu', 'Khám và điều trị bệnh da liễu'),
+('00000005-5555-5555-5555-555555555555', NOW(), NOW(), false, true, 'Tai Mũi Họng', 'Khám và điều trị tai, mũi, họng'),
+('00000006-6666-6666-6666-666666666666', NOW(), NOW(), false, true, 'Khám tổng quát', 'Khám ban đầu và điều phối đa khoa'),
+('00000007-7777-7777-7777-777777777777', NOW(), NOW(), false, true, 'Tim mạch', 'Khám và theo dõi bệnh tim mạch'),
+('00000008-8888-8888-8888-888888888888', NOW(), NOW(), false, true, 'Sản phụ khoa', 'Khám sức khỏe phụ nữ và thai kỳ');
 
 -- ===================================================================
 -- Department (phòng khám - toi thieu de he thong hoat dong)

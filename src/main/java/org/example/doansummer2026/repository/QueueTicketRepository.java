@@ -20,6 +20,10 @@ import java.util.UUID;
 @Repository
 public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>, JpaSpecificationExecutor<QueueTicket> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT q FROM QueueTicket q WHERE q.ticketId = :id")
+    Optional<QueueTicket> findByIdForUpdate(@Param("id") UUID id);
+
     /**
      * Tim queue ticket theo visit + department (1 visit co the co nhieu ticket cho cac khoa khac nhau).
      * Dung khi biet ro department can cap nhat (vi du: performingDepartment cua TestRequest).

@@ -12,6 +12,7 @@ import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Department;
 import org.example.doansummer2026.model.StaffInfo;
+import org.example.doansummer2026.model.Specialization;
 import org.example.doansummer2026.repository.DepartmentRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.repository.SpecializationRepository;
@@ -84,8 +85,12 @@ public class DepartmentService implements DepartmentServiceInterface {
                 .description(req.description());
 
         if (departmentType == DepartmentType.EXAMINATION && req.specializationId() != null) {
-            builder.specialization(specializationRepo.findById(req.specializationId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Chuyên khoa không tồn tại: " + req.specializationId())));
+            Specialization specialization = specializationRepo.findById(req.specializationId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Chuyên khoa không tồn tại: " + req.specializationId()));
+            if (Boolean.FALSE.equals(specialization.getActive())) {
+                throw new ConflictException("Chuyên khoa đã ngừng hoạt động và không thể gán cho phòng mới");
+            }
+            builder.specialization(specialization);
         }
 
         if (req.headDoctorId() != null) {
@@ -103,6 +108,9 @@ public class DepartmentService implements DepartmentServiceInterface {
             department.setCapabilities(new java.util.HashSet<>(capabilityRepo.findAllById(req.capabilityIds())));
             if (department.getCapabilities().size() != req.capabilityIds().stream().distinct().count()) {
                 throw new ResourceNotFoundException("Danh mục kỹ thuật không tồn tại");
+            }
+            if (department.getCapabilities().stream().anyMatch(c -> Boolean.FALSE.equals(c.getActive()))) {
+                throw new ConflictException("Không thể gán danh mục kỹ thuật đã ngừng hoạt động cho phòng");
             }
         }
         validateHeadDoctorCapabilities(department);
@@ -146,13 +154,20 @@ public class DepartmentService implements DepartmentServiceInterface {
             }
         }
         if (d.getDepartmentType() == DepartmentType.EXAMINATION && req.specializationId() != null) {
-            d.setSpecialization(specializationRepo.findById(req.specializationId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Chuyên khoa không tồn tại: " + req.specializationId())));
+            Specialization specialization = specializationRepo.findById(req.specializationId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Chuyên khoa không tồn tại: " + req.specializationId()));
+            if (Boolean.FALSE.equals(specialization.getActive())) {
+                throw new ConflictException("Chuyên khoa đã ngừng hoạt động và không thể gán cho phòng");
+            }
+            d.setSpecialization(specialization);
         }
         if (req.capabilityIds() != null) {
             d.setCapabilities(new java.util.HashSet<>(capabilityRepo.findAllById(req.capabilityIds())));
             if (d.getCapabilities().size() != req.capabilityIds().stream().distinct().count()) {
                 throw new ResourceNotFoundException("Danh mục kỹ thuật không tồn tại");
+            }
+            if (d.getCapabilities().stream().anyMatch(c -> Boolean.FALSE.equals(c.getActive()))) {
+                throw new ConflictException("Không thể gán danh mục kỹ thuật đã ngừng hoạt động cho phòng");
             }
         }
         if (req.description() != null) d.setDescription(req.description());

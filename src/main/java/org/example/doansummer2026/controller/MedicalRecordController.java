@@ -119,6 +119,7 @@ public class MedicalRecordController {
     }
 
     @PostMapping("/api/v1/medical-records/{id}/rate")
+    @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "id", description = "Đánh giá lượt khám (API tương thích)")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<MedicalRecordResponse> rate(@PathVariable UUID id,
                                                      @RequestParam int ratingScore) {
@@ -153,6 +154,7 @@ public class MedicalRecordController {
 
     @PostMapping("/api/patient/medical-history/{recordId}/rate")
     @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "recordId", description = "Đánh giá lượt khám")
     public ResponseEntity<MedicalRecordResponse> rateVisit(@PathVariable UUID recordId,
                                                           @RequestParam int ratingScore) {
         return RestResponses.ok(service.rate(recordId, ratingScore));
@@ -160,6 +162,7 @@ public class MedicalRecordController {
 
     @PostMapping("/api/patient/medical-history/{recordId}/feedback")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "recordId", description = "Gửi phản hồi lượt khám")
     public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse> submitFeedback(
             @PathVariable UUID recordId,
             @Valid @RequestBody org.example.doansummer2026.dto.medicalRecord.FeedbackRequest req) {
@@ -178,6 +181,7 @@ public class MedicalRecordController {
 
     @PutMapping("/api/v1/feedbacks/{id}/respond")
     @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER','ROLE_RECEPTIONIST')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "id", description = "Phản hồi đánh giá của bệnh nhân")
     public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse> respond(
             @PathVariable UUID id, @RequestBody java.util.Map<String,String> body) {
         return RestResponses.ok(service.respondFeedback(id, authService.currentStaffId(), body.get("response")));
@@ -185,6 +189,7 @@ public class MedicalRecordController {
 
     @PutMapping("/api/v1/feedbacks/{id}/explain")
     @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "id", description = "Bác sĩ giải trình đánh giá")
     public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse> explain(
             @PathVariable UUID id, @RequestBody java.util.Map<String,String> body) {
         return RestResponses.ok(service.explainFeedback(id, authService.currentStaffId(), body.get("explanation")));
@@ -259,6 +264,7 @@ public class MedicalRecordController {
     }
 
     @PostMapping("/api/receptionist/follow-ups/{recordId}/schedule")
+    @Auditable(action = AuditAction.CREATE, entityName = "Appointment", idParamName = "recordId", description = "Lễ tân xếp lịch tái khám")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> scheduleFollowUp(
             @PathVariable UUID recordId,

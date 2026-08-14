@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -38,6 +40,18 @@ public interface StaffInfoRepository extends JpaRepository<StaffInfo, UUID>, Jpa
     /** Lay danh sach tat ca staff (cho Schedule). */
     List<StaffInfo> findAll();
 
+    @Query(value = """
+            SELECT (SELECT COUNT(*) FROM department d
+                    WHERE d.deleted = false AND d.head_doctor_id = :staffId)
+                 + (SELECT COUNT(*) FROM staff_info si
+                    WHERE si.deleted = false AND si.staff_id = :staffId AND si.department_id IS NOT NULL)
+                 + (SELECT COUNT(*) FROM staff_schedule ss
+                    WHERE ss.staff_id = :staffId AND ss.work_date >= CURRENT_DATE AND ss.status = 'SCHEDULED')
+                 + (SELECT COUNT(*) FROM medical_record mr
+                    WHERE mr.deleted = false AND mr.doctor_id = :staffId AND mr.status IN ('IN_PROGRESS', 'DRAFT'))
+            """, nativeQuery = true)
+    long countBlockingLockReferences(@Param("staffId") UUID staffId);
+
     default Page<StaffInfo> search(String keyword, UUID specializationId,
                                     SystemRole systemRole, Pageable pageable) {
         Specification<StaffInfo> spec = (root, query, cb) -> cb.conjunction();
@@ -65,6 +79,5 @@ public interface StaffInfoRepository extends JpaRepository<StaffInfo, UUID>, Jpa
         return findAll(spec, pageable);
     }
 }
-
 
 

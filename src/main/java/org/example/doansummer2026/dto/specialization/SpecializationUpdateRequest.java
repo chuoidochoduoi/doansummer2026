@@ -4,7 +4,8 @@ import jakarta.validation.constraints.Size;
 
 public record SpecializationUpdateRequest(
         @Size(max = 150) String name,
-        @Size(max = 500) String description
+        @Size(max = 500) String description,
+        Boolean active
 ) {}
 
 

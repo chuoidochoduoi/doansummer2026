@@ -39,7 +39,19 @@ public class ServiceCapabilityService {
         value.setCode(request.code().trim().toUpperCase());
         value.setName(request.name().trim());
         value.setDescription(request.description());
-        if (request.active() != null) value.setActive(request.active());
+        if (request.active() != null) {
+            if (!request.active() && !Boolean.FALSE.equals(value.getActive())) {
+                long serviceCount = medicalServiceRepository.countActiveReferencesToCapability(id);
+                long departmentCount = departmentRepository.countReferencesToCapability(id);
+                long staffCount = staffCapabilityRepository.countActiveReferencesToCapability(id);
+                if (serviceCount > 0 || departmentCount > 0 || staffCount > 0) {
+                    throw new ConflictException(
+                            "Không thể ngừng danh mục kỹ thuật khi vẫn còn dịch vụ, phòng hoặc nhân sự đang sử dụng"
+                    );
+                }
+            }
+            value.setActive(request.active());
+        }
         return ServiceCapabilityResponse.from(repository.save(value));
     }
 
@@ -67,5 +79,13 @@ public class ServiceCapabilityService {
 
     public ServiceCapability find(UUID id) {
         return repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Danh mục kỹ thuật không tồn tại: " + id));
+    }
+
+    public ServiceCapability findActive(UUID id) {
+        ServiceCapability capability = find(id);
+        if (Boolean.FALSE.equals(capability.getActive())) {
+            throw new ConflictException("Danh mục kỹ thuật đã ngừng hoạt động và không thể dùng cho cấu hình mới");
+        }
+        return capability;
     }
 }

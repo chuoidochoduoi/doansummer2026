@@ -63,6 +63,13 @@ public class TestRequestController {
         return RestResponses.ok(service.get(id));
     }
 
+    /** Danh sach yeu cau CLS trong toan bo luot kham, dung de chan chi dinh trung. */
+    @GetMapping("/visit/{visitId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    public ResponseEntity<List<TestRequestResponse>> listByVisit(@PathVariable UUID visitId) {
+        return RestResponses.ok(service.listByVisit(visitId));
+    }
+
     @GetMapping("/queue/{ticketId}")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<List<TestRequestResponse>> listByQueue(@PathVariable UUID ticketId) {
@@ -71,6 +78,7 @@ public class TestRequestController {
 
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "TestRequest")
     public ResponseEntity<TestRequestResponse> create(@Valid @RequestBody TestRequestCreateRequest req) {
         TestRequestResponse created = service.create(req);
         return RestResponses.created("/api/v1/test-requests/{id}", created.testRequestId(), created);
@@ -81,6 +89,7 @@ public class TestRequestController {
      */
     @PostMapping("/batch")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "TestRequest", description = "Tạo danh sách yêu cầu cận lâm sàng")
     public ResponseEntity<List<TestRequestResponse>> createBatch(
             @Valid @RequestBody TestRequestBatchCreateRequest req) {
         List<TestRequestResponse> created = service.createBatch(req);
@@ -89,6 +98,7 @@ public class TestRequestController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "TestRequest", idParamName = "id")
     public ResponseEntity<TestRequestResponse> update(@PathVariable UUID id,
                                                        @Valid @RequestBody TestRequestUpdateRequest req,
                                                        org.springframework.security.core.Authentication auth) {
@@ -105,6 +115,7 @@ public class TestRequestController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "TestRequestCancel", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
@@ -115,6 +126,7 @@ public class TestRequestController {
      */
     @PostMapping("/{id}/cancel")
     @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "TestRequest", idParamName = "id", description = "Hủy yêu cầu cận lâm sàng")
     public ResponseEntity<TestRequestResponse> cancel(@PathVariable UUID id,
                                                       @Valid @RequestBody TestRequestCancelRequest req) {
         return RestResponses.ok(service.cancel(id, req));
@@ -148,6 +160,7 @@ public class TestRequestController {
 
     @PostMapping("/{id}/result")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "TestResult", idParamName = "id", description = "Tạo nháp kết quả cận lâm sàng")
     public ResponseEntity<TestResultResponse> createResult(@PathVariable UUID id,
                                                             @Valid @RequestBody TestResultCreateRequest req) {
         TestResultResponse created = service.createResult(id, req);
@@ -156,6 +169,7 @@ public class TestRequestController {
 
     @PutMapping("/{id}/result")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "TestResult", idParamName = "id", description = "Cập nhật kết quả cận lâm sàng")
     public ResponseEntity<TestResultResponse> updateResult(@PathVariable UUID id,
                                                             @Valid @RequestBody TestResultUpdateRequest req) {
         return RestResponses.ok(service.updateResult(id, req));

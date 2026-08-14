@@ -92,6 +92,58 @@ public class TestRequestService implements TestRequestServiceInterface {
     }
 
     @Transactional(readOnly = true)
+    public List<TestRequestResponse> listByVisit(UUID visitId) {
+        visitRepo.findById(visitId)
+                .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
+        return repo.findAllByVisitIdWithDetails(visitId).stream()
+                .map(TestRequestResponse::from)
+                .toList();
+    }
+
+    /**
+     * Gan yeu cau CLS da dat va thanh toan truoc vao ho so dang kham.
+     * Khong tao TestRequest/Invoice moi. Tra ve false neu dich vu chua duoc dat truoc.
+     */
+    public boolean attachPrepaidRequestToExamination(UUID visitId, UUID medicalRecordId,
+                                                      UUID serviceId, UUID doctorId, String notes) {
+        MedicalRecord targetRecord = recordRepo.findById(medicalRecordId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ khám: " + medicalRecordId));
+        if (targetRecord.getVisit() == null || !visitId.equals(targetRecord.getVisit().getVisitId())) {
+            throw new BadRequestException("Hồ sơ khám không thuộc lượt khám hiện tại");
+        }
+
+        TestRequest existing = repo.findAllByVisitIdWithDetails(visitId).stream()
+                .filter(request -> request.getService() != null
+                        && serviceId.equals(request.getService().getServiceId()))
+                .filter(request -> request.getStatus() != TestRequestStatus.CANCELLED)
+                .findFirst()
+                .orElse(null);
+        if (existing == null) return false;
+
+        MedicalRecord existingRecord = existing.getMedicalRecord();
+        if (existingRecord != null && medicalRecordId.equals(existingRecord.getRecordId())) {
+            throw new org.example.doansummer2026.exception.ConflictException(
+                    "Dịch vụ cận lâm sàng đã được chỉ định trong hồ sơ khám này");
+        }
+        if (existingRecord != null && existingRecord.getQueueTicket() != null) {
+            throw new org.example.doansummer2026.exception.ConflictException(
+                    "Dịch vụ cận lâm sàng đã được một phòng khám khác chỉ định");
+        }
+        if (existing.getStatus() == TestRequestStatus.COMPLETED) {
+            throw new org.example.doansummer2026.exception.ConflictException(
+                    "Dịch vụ cận lâm sàng đã có kết quả; bác sĩ có thể xem kết quả trong lượt khám");
+        }
+
+        StaffInfo doctor = staffRepo.findById(doctorId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bác sĩ chỉ định"));
+        existing.setMedicalRecord(targetRecord);
+        existing.setRequestedBy(doctor);
+        if (notes != null && !notes.isBlank()) existing.setDescription(notes.trim());
+        repo.save(existing);
+        return true;
+    }
+
+    @Transactional(readOnly = true)
     public TestRequestResponse get(UUID id) {
         return TestRequestResponse.from(findById(id));
     }
@@ -409,10 +461,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     }
 
     public void delete(UUID id) {
-        if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + id);
-        }
-        repo.deleteById(id);
+        cancel(id, new TestRequestCancelRequest("Hủy yêu cầu thay cho thao tác xóa"));
     }
 
     // Override default method trong interface
@@ -721,6 +770,44 @@ public class TestRequestService implements TestRequestServiceInterface {
         t.setStatus(TestRequestStatus.CANCELLED);
         t.setCancelReason(req.reason());
         repo.save(t);
+
+        QueueTicket paraclinicalQueue = t.getQueueTicket();
+        if (paraclinicalQueue != null) {
+            long remainingInQueue = repo.countByQueueTicket_TicketIdAndStatusIn(
+                    paraclinicalQueue.getTicketId(),
+                    java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS,
+                            TestRequestStatus.BLOCKED));
+            if (remainingInQueue == 0) {
+                paraclinicalQueue.setStatus(QueueStatus.SKIPPED);
+                paraclinicalQueue.setCompletedAt(LocalDateTime.now());
+                queueTicketRepo.save(paraclinicalQueue);
+            }
+        }
+
+        MedicalRecord sourceRecord = t.getMedicalRecord();
+        if (sourceRecord != null && sourceRecord.getVisit() != null) {
+            long remainingInRecord = repo.countByMedicalRecordAndStatusIn(
+                    sourceRecord.getRecordId(),
+                    java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS,
+                            TestRequestStatus.BLOCKED));
+            QueueTicket sourceQueue = sourceRecord.getQueueTicket();
+            if (remainingInRecord == 0 && sourceQueue != null
+                    && sourceQueue.getStatus() == QueueStatus.WAITING_FOR_TEST) {
+                // Khong con yeu cau CLS can cho: dua benh nhan ve lai phong
+                // nguon de bac si tiep tuc ket luan hoac chi dinh lai.
+                sourceQueue.setStatus(QueueStatus.TEST_DONE);
+                sourceQueue.setCalledAt(null);
+                queueTicketRepo.save(sourceQueue);
+            } else if (remainingInRecord == 0 && sourceQueue == null) {
+                completeStandaloneRecordIfReady(sourceRecord,
+                        repo.countByMedicalRecord_MedicalRecordId(sourceRecord.getRecordId()), 0);
+                patientJourneyService.activateNext(sourceRecord.getVisit().getVisitId());
+            }
+        }
+
+        if (t.getPerformingDepartment() != null) {
+            publishLabQueueUpdated(t.getPerformingDepartment().getDepartmentId());
+        }
 
         return TestRequestResponse.from(t);
     }

@@ -182,10 +182,8 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
     }
 
     public void delete(UUID id) {
-        if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Lượt khám không tồn tại: " + id);
-        }
-        repo.deleteById(id);
+        findById(id);
+        throw new ConflictException("Không thể xóa lượt khám vì đây là dữ liệu nghiệp vụ. Hãy hủy lượt trước khi phát sinh thanh toán hoặc khám");
     }
 
     public CustomerVisit findById(UUID id) {

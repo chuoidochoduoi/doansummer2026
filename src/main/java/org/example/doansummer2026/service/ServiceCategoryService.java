@@ -65,21 +65,36 @@ public class ServiceCategoryService implements ServiceCategoryServiceInterface {
                 throw new org.example.doansummer2026.exception.BadRequestException(
                         "Không thể đặt danh mục cha là chính nó");
             }
-            c.setParentCategory(findById(req.parentId()));
+            ServiceCategory parent = findById(req.parentId());
+            validateNoCycle(c, parent);
+            c.setParentCategory(parent);
         }
         return ServiceCategoryResponse.from(repo.save(c), false);
     }
 
     public void delete(UUID id) {
-        if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Danh mục không tồn tại: " + id);
+        ServiceCategory category = findById(id);
+        if (repo.existsByParentCategory_CategoryId(id)) {
+            throw new ConflictException("Không thể xóa danh mục đang có danh mục con. Vui lòng xử lý danh mục con trước");
         }
-        repo.deleteById(id);
+        repo.delete(category);
     }
 
     public ServiceCategory findById(UUID id) {
         return repo.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Danh mục không tồn tại: " + id));
+    }
+
+    private void validateNoCycle(ServiceCategory category, ServiceCategory proposedParent) {
+        ServiceCategory current = proposedParent;
+        while (current != null) {
+            if (current.getCategoryId().equals(category.getCategoryId())) {
+                throw new org.example.doansummer2026.exception.BadRequestException(
+                        "Không thể chọn danh mục con làm danh mục cha vì sẽ tạo vòng lặp"
+                );
+            }
+            current = current.getParentCategory();
+        }
     }
 }
 

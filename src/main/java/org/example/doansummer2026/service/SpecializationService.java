@@ -43,6 +43,7 @@ public class SpecializationService implements SpecializationServiceInterface {
         Specialization s = Specialization.builder()
                 .name(normalizedName)
                 .description(normalizeOptional(req.description()))
+                .active(req.active() == null || req.active())
                 .build();
         return SpecializationResponse.from(repo.save(s));
     }
@@ -57,6 +58,15 @@ public class SpecializationService implements SpecializationServiceInterface {
             s.setName(normalizedName);
         }
         if (req.description() != null) s.setDescription(normalizeOptional(req.description()));
+        if (req.active() != null && req.active() != !Boolean.FALSE.equals(s.getActive())) {
+            if (!req.active() && repo.countActiveReferences(id) > 0) {
+                throw new ConflictException(
+                        "Không thể ngừng sử dụng chuyên khoa khi vẫn còn phòng, dịch vụ hoặc nhân sự đang hoạt động. "
+                                + "Vui lòng ngừng hoặc chuyển các cấu hình liên quan trước."
+                );
+            }
+            s.setActive(req.active());
+        }
         return SpecializationResponse.from(repo.save(s));
     }
 
@@ -70,15 +80,26 @@ public class SpecializationService implements SpecializationServiceInterface {
     }
 
     public void delete(UUID id) {
-        if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Chuyên khoa không tồn tại: " + id);
+        Specialization specialization = findById(id);
+        if (repo.countAllReferences(id) > 0) {
+            throw new ConflictException(
+                    "Không thể xóa chuyên khoa đã được sử dụng. Hãy chuyển sang trạng thái ngừng hoạt động."
+            );
         }
-        repo.deleteById(id);
+        repo.delete(specialization);
     }
 
     public Specialization findById(UUID id) {
         return repo.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Chuyên khoa không tồn tại: " + id));
+    }
+
+    public Specialization findActiveById(UUID id) {
+        Specialization specialization = findById(id);
+        if (Boolean.FALSE.equals(specialization.getActive())) {
+            throw new ConflictException("Chuyên khoa đã ngừng hoạt động và không thể dùng cho cấu hình mới");
+        }
+        return specialization;
     }
 }
 

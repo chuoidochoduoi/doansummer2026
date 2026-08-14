@@ -72,10 +72,12 @@ public class VitalSignsService implements VitalSignsServiceInterface {
     }
 
     public void delete(UUID id) {
-        if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Chỉ số sinh hiệu không tồn tại: " + id);
+        VitalSigns vitalSigns = findById(id);
+        if (vitalSigns.getMedicalRecord() != null
+                && vitalSigns.getMedicalRecord().getStatus() == org.example.doansummer2026.enums.MedicalRecordStatus.COMPLETED) {
+            throw new ConflictException("Không thể xóa chỉ số sinh hiệu của hồ sơ đã hoàn thành");
         }
-        repo.deleteById(id);
+        repo.delete(vitalSigns);
     }
 
     public VitalSigns findById(UUID id) {

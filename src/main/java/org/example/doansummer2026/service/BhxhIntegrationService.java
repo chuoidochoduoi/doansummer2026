@@ -9,67 +9,58 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.Map;
-import java.util.Optional;
 
 @Service
 public class BhxhIntegrationService {
 
     private final InsuranceRepository insuranceRepository;
     private final RestTemplate restTemplate;
-    
-    // Đọc từ properties hoặc gán cứng cho demo
-    private final String mockBhxhUrl;
+    private final String verifyCardUrl;
 
     public BhxhIntegrationService(
             InsuranceRepository insuranceRepository,
             RestTemplate restTemplate,
-            @Value("${integration.bhxh.verify-card-url:http://localhost:8081/api/verify-card}") String mockBhxhUrl
+            @Value("${integration.bhxh.verify-card-url:http://localhost:8081/api/verify-card}") String verifyCardUrl
     ) {
         this.insuranceRepository = insuranceRepository;
         this.restTemplate = restTemplate;
-        this.mockBhxhUrl = mockBhxhUrl;
+        this.verifyCardUrl = verifyCardUrl;
     }
 
     public BhxhCheckResponse checkBhytCard(String cardNumber) {
         try {
-            // 1. Gọi sang Mock BHXH Service (Microservice)
-            String url = UriComponentsBuilder.fromUriString(mockBhxhUrl)
+            String url = UriComponentsBuilder.fromUriString(verifyCardUrl)
                     .queryParam("code", cardNumber)
                     .toUriString();
-                    
+
             @SuppressWarnings("unchecked")
             Map<String, Object> response = restTemplate.getForObject(url, Map.class);
-            
             if (response == null || !Boolean.TRUE.equals(response.get("isValid"))) {
-                return new BhxhCheckResponse(false, 
-                        response != null ? (String) response.get("message") : "Không thể kết nối Cổng GĐBHYT", 
+                return new BhxhCheckResponse(false,
+                        response != null && response.get("message") instanceof String message
+                                ? message : "Không nhận được kết quả xác minh BHYT",
                         null, null, null, null);
             }
-            
-            // 2. Lấy kết quả hợp lệ, mapping với DB của phòng khám
-            String insuranceName = (String) response.get("insuranceName");
-            String fullName = (String) response.get("fullName");
-            String dob = (String) response.get("dateOfBirth");
-            
-            // Tìm cấu hình BHYT trong CSDL phòng khám (mã mặc định là BHYT)
-            Optional<Insurance> optIns = insuranceRepository.findByCode("BHYT");
-            Insurance insurance;
-            if (optIns.isEmpty()) {
-                // Tự động tạo nếu chưa có để demo trơn tru
-                insurance = Insurance.builder()
-                        .code("BHYT")
-                        .name("Bảo hiểm Y tế Nhà nước")
-                        .description("Tự động tạo từ quá trình kiểm tra BHYT")
-                        .build();
-                insurance = insuranceRepository.save(insurance);
-            } else {
-                insurance = optIns.get();
-            }
-            
-            return new BhxhCheckResponse(true, "Hợp lệ", insurance.getInsuranceId(), insurance.getName(), fullName, dob);
 
-        } catch (Exception e) {
-            return new BhxhCheckResponse(false, "Lỗi kết nối tới Hệ thống BHXH: " + e.getMessage(), null, null, null, null);
+            Insurance insurance = insuranceRepository.findByCode("BHYT").orElse(null);
+            if (insurance == null) {
+                return new BhxhCheckResponse(false,
+                        "Hệ thống chưa cấu hình loại bảo hiểm BHYT",
+                        null, null, null, null);
+            }
+
+            return new BhxhCheckResponse(
+                    true,
+                    "Hợp lệ",
+                    insurance.getInsuranceId(),
+                    insurance.getName(),
+                    response.get("fullName") instanceof String name ? name : null,
+                    response.get("dateOfBirth") instanceof String dob ? dob : null
+            );
+        } catch (Exception exception) {
+            return new BhxhCheckResponse(false,
+                    "Không thể kết nối hệ thống xác minh BHYT. Vui lòng thử lại sau.",
+                    null, null, null, null);
         }
     }
 }

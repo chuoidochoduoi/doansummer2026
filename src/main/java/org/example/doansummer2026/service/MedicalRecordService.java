@@ -605,7 +605,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         if (!repo.existsById(id)) {
             throw new ResourceNotFoundException("Hồ sơ không tồn tại: " + id);
         }
-        repo.deleteById(id);
+        throw new ConflictException("Không thể xóa hồ sơ bệnh án. Hồ sơ nháp được tiếp tục chỉnh sửa; hồ sơ hoàn thành phải được lưu lịch sử");
     }
 
     public MedicalRecord findById(UUID id) {

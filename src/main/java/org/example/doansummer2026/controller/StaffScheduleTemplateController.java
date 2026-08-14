@@ -6,6 +6,8 @@ import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.dto.scheduleTemplate.ScheduleTemplateRequest;
 import org.example.doansummer2026.dto.scheduleTemplate.ScheduleTemplateResponse;
 import org.example.doansummer2026.service.StaffScheduleTemplateService;
+import org.example.doansummer2026.aop.Auditable;
+import org.example.doansummer2026.enums.AuditAction;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -30,6 +32,7 @@ public class StaffScheduleTemplateController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.CREATE, entityName = "ScheduleTemplate")
     public ResponseEntity<ScheduleTemplateResponse> create(@Valid @RequestBody ScheduleTemplateRequest req) {
         ScheduleTemplateResponse created = service.create(req);
         return RestResponses.created("/api/v1/schedule-templates/{id}", created.templateId(), created);
@@ -37,6 +40,7 @@ public class StaffScheduleTemplateController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "ScheduleTemplate", idParamName = "id")
     public ResponseEntity<ScheduleTemplateResponse> update(@PathVariable UUID id,
                                                             @RequestBody ScheduleTemplateRequest req) {
         return RestResponses.ok(service.update(id, req));
@@ -44,6 +48,7 @@ public class StaffScheduleTemplateController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @Auditable(action = AuditAction.DELETE, entityName = "ScheduleTemplate", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
@@ -61,6 +66,5 @@ public class StaffScheduleTemplateController {
         return RestResponses.ok(service.get(id));
     }
 }
-
 
 

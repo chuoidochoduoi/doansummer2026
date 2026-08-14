@@ -16,6 +16,10 @@ public interface StaffScheduleTemplateRepository extends JpaRepository<StaffSche
     List<StaffScheduleTemplate> findByStaff(StaffInfo staff);
 
     Optional<StaffScheduleTemplate> findByStaffAndDayOfWeek(StaffInfo staff, DayOfWeek dayOfWeek);
+
+    long countByShift_ShiftId(UUID shiftId);
+
+    boolean existsByShift_ShiftIdAndIsActiveTrue(UUID shiftId);
 }
 
 

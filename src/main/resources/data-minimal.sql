@@ -17,11 +17,11 @@ RESTART IDENTITY CASCADE;
 -- ===================================================================
 -- Specialization (danh muc chuyen khoa - toi thieu de bo sung vao department)
 -- ===================================================================
-INSERT INTO specialization (specialization_id, created_at, updated_at, deleted, name, description) VALUES
-('00000001-1111-1111-1111-111111111111', NOW(), NOW(), false, 'Nội khoa', 'Chẩn đoán và điều trị bệnh nội'),
-('00000002-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Nhi khoa', 'Khám và điều trị cho trẻ em'),
-('00000003-3333-3333-3333-333333333333', NOW(), NOW(), false, 'Chẩn đoán hình ảnh', 'Siêu âm, X-quang, CT, MRI'),
-('00000006-6666-6666-6666-666666666666', NOW(), NOW(), false, 'Khám tổng quát', 'Khám ban đầu và điều phối đa khoa');
+INSERT INTO specialization (specialization_id, created_at, updated_at, deleted, active, name, description) VALUES
+('00000001-1111-1111-1111-111111111111', NOW(), NOW(), false, true, 'Nội khoa', 'Chẩn đoán và điều trị bệnh nội'),
+('00000002-2222-2222-2222-222222222222', NOW(), NOW(), false, true, 'Nhi khoa', 'Khám và điều trị cho trẻ em'),
+('00000003-3333-3333-3333-333333333333', NOW(), NOW(), false, true, 'Chẩn đoán hình ảnh', 'Siêu âm, X-quang, CT, MRI'),
+('00000006-6666-6666-6666-666666666666', NOW(), NOW(), false, true, 'Khám tổng quát', 'Khám ban đầu và điều phối đa khoa');
 
 -- ===================================================================
 -- Department (phòng khám - toi thieu de he thong hoat dong)

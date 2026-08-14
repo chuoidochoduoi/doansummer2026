@@ -8,6 +8,7 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.example.doansummer2026.dto.auditLog.AuditLogCreateRequest;
+import org.example.doansummer2026.enums.AuditAction;
 import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.service.AuditLogService;
 import org.example.doansummer2026.service.AuthService;
@@ -18,6 +19,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.lang.reflect.Method;
+import java.util.Set;
 import java.util.UUID;
 import tools.jackson.databind.ObjectMapper;
 
@@ -26,6 +28,8 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 @Slf4j
 public class AuditLogAspect {
+
+    private static final Set<String> MUTATING_HTTP_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
 
     private final AuditLogService auditLogService;
     private final AuthService authService;
@@ -77,6 +81,64 @@ public class AuditLogAspect {
         }
 
         return result;
+    }
+
+    /**
+     * Safety net for newly added or legacy mutation endpoints that have not yet
+     * received a domain-specific {@link Auditable} annotation. Deliberately do
+     * not serialize the response: authentication tokens, OTP codes and chat
+     * content must never be copied into the audit table.
+     */
+    @Around("execution(public * org.example.doansummer2026.controller..*(..)) " +
+            "&& !@annotation(org.example.doansummer2026.aop.Auditable)")
+    public Object logUnannotatedMutation(ProceedingJoinPoint joinPoint) throws Throwable {
+        Object result = joinPoint.proceed();
+        HttpServletRequest request = getRequest();
+        if (request == null || !MUTATING_HTTP_METHODS.contains(request.getMethod())) {
+            return result;
+        }
+        if (result instanceof ResponseEntity<?> response && response.getStatusCode().isError()) {
+            return result;
+        }
+
+        try {
+            UUID actorId = null;
+            try {
+                Account account = authService.currentAccount();
+                if (account != null) actorId = account.getAccountId();
+            } catch (Exception ignored) {
+                // Public operations (login, OTP, guest booking) legitimately have no actor.
+            }
+
+            String controllerName = joinPoint.getSignature().getDeclaringType().getSimpleName();
+            if (controllerName.endsWith("Controller")) {
+                controllerName = controllerName.substring(0, controllerName.length() - "Controller".length());
+            }
+            AuditAction action = switch (request.getMethod()) {
+                case "POST" -> AuditAction.CREATE;
+                case "DELETE" -> AuditAction.DELETE;
+                default -> AuditAction.UPDATE;
+            };
+            auditLogService.create(new AuditLogCreateRequest(
+                    action,
+                    controllerName,
+                    null,
+                    actorId,
+                    truncate(request.getRemoteAddr(), 50),
+                    truncate(request.getHeader("User-Agent"), 500),
+                    null,
+                    null,
+                    request.getMethod() + " " + request.getRequestURI()
+            ));
+        } catch (Exception ex) {
+            log.error("Failed to create fallback audit log", ex);
+        }
+        return result;
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) return value;
+        return value.substring(0, maxLength);
     }
 
     private String serializeResponse(Object result) {

@@ -30,6 +30,7 @@ public interface CustomerVisitRepository extends JpaRepository<CustomerVisit, UU
     Optional<CustomerVisit> findByIdForUpdate(@Param("visitId") UUID visitId);
 
     List<CustomerVisit> findAllByCustomer_ProfileIdOrderByCheckInTimeDesc(UUID profileId);
+    List<CustomerVisit> findAllByCustomer_PhoneAndCustomer_AccountIsNullOrderByCheckInTimeDesc(String phone);
     Optional<CustomerVisit> findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
             UUID profileId, List<VisitStatus> statuses);
 

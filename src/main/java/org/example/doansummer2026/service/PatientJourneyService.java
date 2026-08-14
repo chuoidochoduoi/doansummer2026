@@ -23,7 +23,23 @@ public class PatientJourneyService {
 
     public void activateNext(UUID visitId) {
         if (hasActiveStep(visitId)) return;
-        QueueTicket queue = queueRepo.findAllByVisit_VisitId(visitId).stream().filter(q -> q.getStatus()==QueueStatus.BLOCKED)
+        List<QueueTicket> visitQueues = queueRepo.findAllByVisit_VisitId(visitId);
+
+        // Khi mot phong kham dang cho ket qua CLS, benh nhan chi duoc di tiep qua
+        // cac phong CLS con lai. Khong mo phong kham thu hai cho den khi bac si
+        // cua phong nguon da nhan ket qua va hoan thanh ket luan.
+        boolean examinationWaitingForTest = visitQueues.stream().anyMatch(q ->
+                q.getStatus() == QueueStatus.WAITING_FOR_TEST
+                        && q.getDepartment() != null
+                        && q.getDepartment().getDepartmentType()
+                        == org.example.doansummer2026.enums.DepartmentType.EXAMINATION);
+
+        QueueTicket queue = visitQueues.stream()
+                .filter(q -> q.getStatus() == QueueStatus.BLOCKED)
+                .filter(q -> !examinationWaitingForTest
+                        || (q.getDepartment() != null
+                        && q.getDepartment().getDepartmentType() != null
+                        && q.getDepartment().getDepartmentType().isParaclinical()))
                 .min(Comparator.comparing(QueueTicket::getCreatedAt)).orElse(null);
         // TestRequest da gan QueueTicket se duoc kich hoat theo ticket cua no.
         // Chi giu nhanh du phong nay cho du lieu cu chua co QueueTicket.
@@ -36,6 +52,12 @@ public class PatientJourneyService {
                     .filter(item -> item.getStatus() == TestRequestStatus.BLOCKED)
                     .forEach(item -> { item.setStatus(TestRequestStatus.PENDING); testRepo.save(item); });
         } else if (test != null) { test.setStatus(TestRequestStatus.PENDING); testRepo.save(test); }
+        else if (examinationWaitingForTest) {
+            // Da lam het cac phong CLS nhung ket qua chua san sang: giu nguyen
+            // cac phong kham tiep theo o BLOCKED de cho benh nhan quay lai dung
+            // phong da chi dinh CLS.
+            return;
+        }
         else {
             CustomerVisit visit = visitRepo.findById(visitId).orElse(null);
             boolean hasAnyStep = !queueRepo.findAllByVisit_VisitId(visitId).isEmpty()
@@ -82,6 +104,25 @@ public class PatientJourneyService {
 
     @Transactional(readOnly=true)
     public PatientJourneyResponse get(UUID id) { return build(visitRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lượt khám"))); }
+
+    /**
+     * Tra cuu hanh trinh cho khach vang lai bang hai thong tin tren phieu kham.
+     * Bat buoc khop ca ma luot va so dien thoai de tranh lo thong tin benh nhan.
+     */
+    @Transactional(readOnly=true)
+    public PatientJourneyResponse lookupGuest(String visitCode, String phone) {
+        String normalizedCode = visitCode == null ? "" : visitCode.trim().toUpperCase(Locale.ROOT);
+        String normalizedPhone = phone == null ? "" : phone.replaceAll("\\s+", "");
+        if (!normalizedCode.matches("VIS-[0-9A-F]{8}") || normalizedPhone.isBlank()) {
+            throw new ResourceNotFoundException("Không tìm thấy lượt khám phù hợp");
+        }
+
+        return visitRepo.findAllByCustomer_PhoneAndCustomer_AccountIsNullOrderByCheckInTimeDesc(normalizedPhone).stream()
+                .filter(visit -> normalizedCode.equals(toVisitCode(visit.getVisitId())))
+                .findFirst()
+                .map(this::build)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lượt khám phù hợp"));
+    }
 
     /** Phuc hoi luot cu bi ket o BLOCKED theo dung quy tac dieu phoi hien tai. */
     public PatientJourneyResponse advanceBlockedStep(UUID visitId) {
@@ -180,9 +221,14 @@ public class PatientJourneyService {
         String phone = visit.getCustomer()!=null ? visit.getCustomer().getPhone() : visit.getAppointment()!=null ? visit.getAppointment().getGuestPhone() : null;
         long waiting = current!=null && visit.getCheckInTime()!=null ? Math.max(0, Duration.between(visit.getCheckInTime(), LocalDateTime.now()).toMinutes()) : 0;
         String state = current!=null?current.status():finished?"COMPLETED":"UNASSIGNED";
-        return new PatientJourneyResponse(visit.getVisitId(), "VIS-"+visit.getVisitId().toString().substring(0,8).toUpperCase(), name, phone,
-                visit.getCustomer()==null, current!=null?current.serviceName():finished?"Đã hoàn thành":"Chưa có lộ trình",
+        boolean guest = visit.getCustomer() == null || visit.getCustomer().getAccount() == null;
+        return new PatientJourneyResponse(visit.getVisitId(), toVisitCode(visit.getVisitId()), name, phone,
+                guest, current!=null?current.serviceName():finished?"Đã hoàn thành":"Chưa có lộ trình",
                 current!=null?current.roomName()+" ("+(current.roomCode()==null?"-":current.roomCode())+")":"-", state,
                 next!=null?next.serviceName():"-", visit.getCheckInTime(), waiting, waiting>=60 || "UNASSIGNED".equals(state), steps);
+    }
+
+    private String toVisitCode(UUID visitId) {
+        return "VIS-" + visitId.toString().substring(0, 8).toUpperCase(Locale.ROOT);
     }
 }

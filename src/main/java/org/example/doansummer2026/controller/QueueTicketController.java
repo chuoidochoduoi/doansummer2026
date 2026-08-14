@@ -55,6 +55,7 @@ public class QueueTicketController {
     }
 
     @PostMapping("/api/v1/queue-tickets")
+    @Auditable(action = AuditAction.CREATE, entityName = "QueueTicket")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<QueueTicketResponse> create(@Valid @RequestBody QueueTicketCreateRequest req) {
         QueueTicketResponse created = service.create(req);
@@ -62,6 +63,7 @@ public class QueueTicketController {
     }
 
     @PutMapping("/api/v1/queue-tickets/{id}")
+    @Auditable(action = AuditAction.UPDATE, entityName = "QueueTicket", idParamName = "id")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<QueueTicketResponse> update(@PathVariable UUID id,
                                                        @Valid @RequestBody QueueTicketUpdateRequest req) {
@@ -112,6 +114,7 @@ public class QueueTicketController {
     }
 
     @DeleteMapping("/api/v1/queue-tickets/{id}")
+    @Auditable(action = AuditAction.UPDATE, entityName = "QueueTicketSkip", idParamName = "id")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
@@ -188,6 +191,7 @@ public class QueueTicketController {
      * API danh dau queue ticket da hoan thanh xet nghiem (WAITING_FOR_TEST -> TEST_DONE).
      */
     @PostMapping("/api/v1/queue-tickets/{id}/mark-test-done")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket", idParamName = "id", description = "Đánh dấu đã hoàn thành cận lâm sàng")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<QueueTicketResponse> markTestDone(@PathVariable UUID id) {
         return RestResponses.ok(service.markTestDone(id));
@@ -218,6 +222,7 @@ public class QueueTicketController {
     }
 
     @PutMapping("/api/v1/queue/{id}")
+    @Auditable(action = AuditAction.UPDATE, entityName = "QueueTicket", idParamName = "id", description = "Cập nhật hàng chờ qua API tương thích")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN')")
     public ResponseEntity<QueueTicketResponse> updateQueue(
             @PathVariable UUID id,

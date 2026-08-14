@@ -39,4 +39,10 @@ public class PatientJourneyController {
     public ResponseEntity<List<PatientJourneyResponse>> mine() {
         return RestResponses.ok(service.listForCustomer(authService.currentProfileId()));
     }
+
+    @GetMapping("/api/public/patient-journeys/lookup")
+    public ResponseEntity<PatientJourneyResponse> lookupGuest(@RequestParam String visitCode,
+                                                               @RequestParam String phone) {
+        return RestResponses.ok(service.lookupGuest(visitCode, phone));
+    }
 }

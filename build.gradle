@@ -29,6 +29,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-aspectj'
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
     implementation 'org.springframework.boot:spring-boot-starter-mail'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
     // Chỉ giữ nếu backend thực sự render HTML bằng Thymeleaf
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'

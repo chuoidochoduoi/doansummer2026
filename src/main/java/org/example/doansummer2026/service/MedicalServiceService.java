@@ -100,6 +100,9 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
             spec = specializationRepo.findById(req.requiredSpecializationId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Chuyên khoa không tồn tại: " + req.requiredSpecializationId()));
+            if (Boolean.FALSE.equals(spec.getActive())) {
+                throw new ConflictException("Chuyên khoa đã ngừng hoạt động và không thể gán cho dịch vụ mới");
+            }
         }
         MedicalService s = MedicalService.builder()
                 .serviceCode(req.serviceCode())
@@ -126,6 +129,9 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
                         ? capabilityRepo.findById(req.requiredCapabilityId()).orElseThrow(() ->
                         new ResourceNotFoundException("Danh mục kỹ thuật không tồn tại: " + req.requiredCapabilityId())) : null)
                 .build();
+        if (s.getRequiredCapability() != null && Boolean.FALSE.equals(s.getRequiredCapability().getActive())) {
+            throw new ConflictException("Danh mục kỹ thuật đã ngừng hoạt động và không thể gán cho dịch vụ mới");
+        }
         return MedicalServiceResponse.from(repo.save(s));
     }
 
@@ -168,9 +174,13 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
             s.setRequiredCapability(null);
             s.setRequiresSpecimen(false);
             if (req.requiredSpecializationId() != null) {
-                s.setRequiredSpecialization(specializationRepo.findById(req.requiredSpecializationId())
+                Specialization specialization = specializationRepo.findById(req.requiredSpecializationId())
                         .orElseThrow(() -> new ResourceNotFoundException(
-                                "Chuyên khoa không tồn tại: " + req.requiredSpecializationId())));
+                                "Chuyên khoa không tồn tại: " + req.requiredSpecializationId()));
+                if (Boolean.FALSE.equals(specialization.getActive())) {
+                    throw new ConflictException("Chuyên khoa đã ngừng hoạt động và không thể gán cho dịch vụ");
+                }
+                s.setRequiredSpecialization(specialization);
             }
             if (s.getRequiredSpecialization() == null) {
                 throw new BadRequestException("Dịch vụ khám bệnh bắt buộc chọn chuyên khoa phục vụ");
@@ -179,9 +189,13 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
             // Dich vu CLS chi dung nang luc; gan nang luc moi truoc khi kiem tra bat buoc.
             s.setRequiredSpecialization(null);
             if (req.requiredCapabilityId() != null) {
-                s.setRequiredCapability(capabilityRepo.findById(req.requiredCapabilityId())
+                org.example.doansummer2026.model.ServiceCapability capability = capabilityRepo.findById(req.requiredCapabilityId())
                         .orElseThrow(() -> new ResourceNotFoundException(
-                                "Danh mục kỹ thuật không tồn tại: " + req.requiredCapabilityId())));
+                                "Danh mục kỹ thuật không tồn tại: " + req.requiredCapabilityId()));
+                if (Boolean.FALSE.equals(capability.getActive())) {
+                    throw new ConflictException("Danh mục kỹ thuật đã ngừng hoạt động và không thể gán cho dịch vụ");
+                }
+                s.setRequiredCapability(capability);
             }
             if (s.getRequiredCapability() == null) {
                 throw new BadRequestException("Dịch vụ cận lâm sàng bắt buộc chọn danh mục kỹ thuật");

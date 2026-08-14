@@ -137,12 +137,14 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     }
 
     public QueueTicketResponse update(UUID id, QueueTicketUpdateRequest req) {
-        QueueTicket q = findById(id);
+        QueueTicket q = findByIdForUpdate(id);
         if (req.status() != null) {
             if (req.status() == QueueStatus.IN_PROGRESS) {
                 if (q.getStatus() != QueueStatus.CALLED && q.getStatus() != QueueStatus.WAITING_FOR_TEST && q.getStatus() != QueueStatus.TEST_DONE) {
                     throw new BadRequestException("Chỉ có thể bắt đầu từ trạng thái đã gọi hoặc chờ quay lại; trạng thái hiện tại: " + q.getStatus());
                 }
+                departmentRepo.findByIdForUpdate(q.getDepartment().getDepartmentId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Phòng không tồn tại"));
                 long inprogressCount = repo.countInprogressByDepartment(q.getDepartment().getDepartmentId());
                 if (inprogressCount >= 1) {
                     throw new BadRequestException("Phòng đã có bệnh nhân đang khám, mỗi phòng chỉ được xử lý một bệnh nhân tại một thời điểm");
@@ -162,7 +164,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     }
 
     public QueueTicketResponse call(UUID id) {
-        QueueTicket q = findById(id);
+        QueueTicket q = findByIdForUpdate(id);
         // Cho phep call tu WAITING, WAITING_FOR_TEST hoac TEST_DONE
         if (q.getStatus() != QueueStatus.WAITING && q.getStatus() != QueueStatus.CALLED && q.getStatus() != QueueStatus.WAITING_FOR_TEST && q.getStatus() != QueueStatus.TEST_DONE) {
             throw new BadRequestException("Chỉ có thể gọi phiếu đang chờ; trạng thái hiện tại: " + q.getStatus());
@@ -175,10 +177,14 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     }
 
     public QueueTicketResponse startExam(UUID id) {
-        QueueTicket q = findById(id);
+        QueueTicket q = findByIdForUpdate(id);
         if (q.getStatus() != QueueStatus.CALLED && q.getStatus() != QueueStatus.WAITING_FOR_TEST && q.getStatus() != QueueStatus.TEST_DONE) {
             throw new BadRequestException("Chỉ có thể bắt đầu với phiếu đã gọi hoặc đang chờ quay lại; trạng thái hiện tại: " + q.getStatus());
         }
+        // Khoa phong nhu mot mutex: hai nhan vien khong the cung luc dua hai
+        // benh nhan khac nhau vao IN_PROGRESS trong cung mot phong.
+        departmentRepo.findByIdForUpdate(q.getDepartment().getDepartmentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Phòng không tồn tại"));
         long inprogressCount = repo.countInprogressByDepartment(q.getDepartment().getDepartmentId());
         if (inprogressCount >= 1) {
             throw new BadRequestException("Phòng đã có bệnh nhân đang khám, mỗi phòng chỉ được xử lý một bệnh nhân tại một thời điểm");
@@ -225,7 +231,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     }
 
     public MedicalRecordResponse completeAndReturnRecord(UUID id, MedicalRecordUpdateRequest req) {
-        QueueTicket q = findById(id);
+        QueueTicket q = findByIdForUpdate(id);
         if (q.getStatus() != QueueStatus.IN_PROGRESS) {
             throw new BadRequestException("Chỉ có thể đóng phiếu đang thực hiện; trạng thái hiện tại: " + q.getStatus());
         }
@@ -286,6 +292,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             recordRepo.save(record);
         }
 
+        boolean waitingForNewTestInvoicePayment = false;
         // Tao TestRequest neu co trong payload (gop voi API hoan thien de tranh goi 2 lan)
         if (hasTestRequests) {
             UUID doctorId = record.getDoctor() != null ? record.getDoctor().getStaffId() : null;
@@ -299,6 +306,13 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             for (org.example.doansummer2026.dto.medicalRecord.TestRequestInExaminationRequest testReq : req.testRequests()) {
                 if (!selectedServiceIds.add(testReq.serviceId())) {
                     throw new ConflictException("Dịch vụ này đang bị chọn trùng trong chỉ định.");
+                }
+                // Neu benh nhan da dat va thanh toan dich vu nay, gan yeu cau
+                // hien co vao ho so kham thay vi tao trung va thu tien lan hai.
+                if (testRequestService.attachPrepaidRequestToExamination(
+                        q.getVisit().getVisitId(), record.getRecordId(), testReq.serviceId(),
+                        doctorId, testReq.notes())) {
+                    continue;
                 }
                 // TestRequest cua dich vu cu chi duoc tao sau khi hoa don PAID, do do
                 // phai kiem tra truoc khi tao Invoice o day, khong chi o TestRequestService.create().
@@ -319,6 +333,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             }
             
             if (!invoiceItems.isEmpty()) {
+                waitingForNewTestInvoicePayment = true;
                 invoiceService.create(new org.example.doansummer2026.dto.invoice.InvoiceCreateRequest(
                         q.getVisit().getCustomer() != null ? q.getVisit().getCustomer().getProfileId() : null,
                         q.getVisit().getVisitId(),
@@ -344,7 +359,10 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             q.setCompletedAt(LocalDateTime.now());
         }
         repo.save(q);
-        if (q.getStatus() == QueueStatus.DONE) patientJourneyService.activateNext(q.getVisit().getVisitId());
+        if (q.getStatus() == QueueStatus.DONE
+                || (hasTestRequests && !waitingForNewTestInvoicePayment)) {
+            patientJourneyService.activateNext(q.getVisit().getVisitId());
+        }
         updateDepartmentStatus(q.getDepartment().getDepartmentId());
 
         return MedicalRecordResponse.from(record, true);
@@ -491,7 +509,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     }
 
     public QueueTicketResponse complete(UUID id) {
-        QueueTicket q = findById(id);
+        QueueTicket q = findByIdForUpdate(id);
         q.setStatus(QueueStatus.DONE);
         q.setCompletedAt(LocalDateTime.now());
         QueueTicket saved = repo.save(q);
@@ -502,7 +520,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
     /** Ket thuc thao tac tai phong can lam sang; ket qua van co the dang duoc xu ly/ky. */
     public QueueTicketResponse finishParaclinicalQueue(UUID id) {
-        QueueTicket q = findById(id);
+        QueueTicket q = findByIdForUpdate(id);
         if (q.getDepartment().getDepartmentType() == null
                 || !q.getDepartment().getDepartmentType().isParaclinical()) {
             throw new BadRequestException("Thao tác này chỉ áp dụng cho phòng cận lâm sàng");
@@ -519,7 +537,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     }
 
     public QueueTicketResponse skip(UUID id) {
-        QueueTicket q = findById(id);
+        QueueTicket q = findByIdForUpdate(id);
         q.setStatus(QueueStatus.SKIPPED);
         QueueTicket saved = repo.save(q);
         if (q.getVisit() != null) {
@@ -530,7 +548,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     }
 
     public QueueTicketResponse returnToQueue(UUID id) {
-        QueueTicket q = findById(id);
+        QueueTicket q = findByIdForUpdate(id);
         if (q.getStatus() != QueueStatus.SKIPPED) {
             throw new BadRequestException("Chỉ có thể đưa phiếu vắng quay lại hàng chờ");
         }
@@ -545,19 +563,22 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     }
 
     public void delete(UUID id) {
-        if (!repo.existsById(id)) {
-            throw new ResourceNotFoundException("Phiếu xếp hàng không tồn tại: " + id);
-        }
         QueueTicket q = findById(id);
-        UUID deptId = q.getDepartment() != null ? q.getDepartment().getDepartmentId() : null;
-        repo.deleteById(id);
-        if (deptId != null) {
-            updateDepartmentStatus(deptId);
+        if (q.getStatus() != QueueStatus.BLOCKED
+                && q.getStatus() != QueueStatus.WAITING
+                && q.getStatus() != QueueStatus.CALLED) {
+            throw new ConflictException("Không thể bỏ phiếu ở trạng thái hiện tại. Phiếu đang xử lý hoặc đã hoàn thành phải được giữ lịch sử");
         }
+        skip(id);
     }
 
     public QueueTicket findById(UUID id) {
         return repo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Phiếu xếp hàng không tồn tại: " + id));
+    }
+
+    private QueueTicket findByIdForUpdate(UUID id) {
+        return repo.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Phiếu xếp hàng không tồn tại: " + id));
     }
 

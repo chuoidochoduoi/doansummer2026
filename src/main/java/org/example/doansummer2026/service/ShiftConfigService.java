@@ -5,10 +5,13 @@ import org.example.doansummer2026.dto.shift.ShiftConfigCreateRequest;
 import org.example.doansummer2026.dto.shift.ShiftConfigResponse;
 import org.example.doansummer2026.dto.shift.ShiftConfigUpdateRequest;
 import org.example.doansummer2026.exception.BadRequestException;
+import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.ShiftConfig;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.repository.AppointmentRepository;
+import org.example.doansummer2026.repository.StaffScheduleRepository;
+import org.example.doansummer2026.repository.StaffScheduleTemplateRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +26,8 @@ public class ShiftConfigService {
 
     private final ShiftConfigRepository shiftConfigRepository;
     private final AppointmentRepository appointmentRepository;
+    private final StaffScheduleRepository staffScheduleRepository;
+    private final StaffScheduleTemplateRepository staffScheduleTemplateRepository;
 
     @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
     public void initDefaultShifts() {
@@ -90,16 +95,40 @@ public class ShiftConfigService {
         if (request.name() != null) shiftConfig.setName(request.name());
         if (request.startTime() != null) shiftConfig.setStartTime(request.startTime());
         if (request.endTime() != null) shiftConfig.setEndTime(request.endTime());
-        if (request.isActive() != null) shiftConfig.setIsActive(request.isActive());
+        if (request.isActive() != null) {
+            if (!request.isActive()) validateCanDeactivate(shiftId);
+            shiftConfig.setIsActive(request.isActive());
+        }
 
         return ShiftConfigResponse.from(shiftConfigRepository.save(shiftConfig));
     }
 
     public void deleteShift(UUID shiftId) {
-        if (!shiftConfigRepository.existsById(shiftId)) {
-            throw new ResourceNotFoundException("Không tìm thấy ca khám");
+        ShiftConfig shift = shiftConfigRepository.findById(shiftId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy ca khám"));
+        long scheduleCount = staffScheduleRepository.countByShift_ShiftId(shiftId);
+        long templateCount = staffScheduleTemplateRepository.countByShift_ShiftId(shiftId);
+        if (scheduleCount == 0 && templateCount == 0) {
+            shiftConfigRepository.delete(shift);
+            return;
         }
-        shiftConfigRepository.deleteById(shiftId);
+        validateCanDeactivate(shiftId);
+        shift.setIsActive(false);
+        shiftConfigRepository.save(shift);
+    }
+
+    private void validateCanDeactivate(UUID shiftId) {
+        boolean hasFutureSchedule = staffScheduleRepository
+                .existsByShift_ShiftIdAndWorkDateGreaterThanEqualAndStatus(
+                        shiftId, java.time.LocalDate.now(), org.example.doansummer2026.enums.ScheduleStatus.SCHEDULED);
+        boolean hasActiveTemplate = staffScheduleTemplateRepository
+                .existsByShift_ShiftIdAndIsActiveTrue(shiftId);
+        if (hasFutureSchedule || hasActiveTemplate) {
+            throw new ConflictException(
+                    "Không thể ngừng ca làm khi còn lịch trực tương lai hoặc mẫu lịch đang hoạt động. "
+                            + "Vui lòng xử lý các lịch liên quan trước."
+            );
+        }
     }
 
     private void validateTimeFormat(String time) {

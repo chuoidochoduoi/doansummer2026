@@ -124,7 +124,7 @@ public class StaffService implements StaffServiceInterface {
                 .university(blankToNull(req.university()))
                 .licenseNumber(blankToNull(req.licenseNumber()))
                 .specialization(req.specializationId() != null
-                        ? specializationService.findById(req.specializationId()) : null)
+                        ? specializationService.findActiveById(req.specializationId()) : null)
                 .build();
         staff = staffRepo.save(staff);
         return toResponse(staff);
@@ -223,7 +223,7 @@ public class StaffService implements StaffServiceInterface {
         if (req.highestDegree() != null) s.setHighestDegree(blankToNull(req.highestDegree()));
         if (req.university() != null) s.setUniversity(blankToNull(req.university()));
         if (req.specializationId() != null) {
-            s.setSpecialization(specializationService.findById(req.specializationId()));
+            s.setSpecialization(specializationService.findActiveById(req.specializationId()));
         }
         boolean isDoctor = s.getSystemRole().isDoctor();
         if (isDoctor && s.getSpecialization() == null) {
@@ -243,7 +243,7 @@ public class StaffService implements StaffServiceInterface {
         if (!staffRepo.existsById(staffId)) {
             throw new ResourceNotFoundException("Nhân viên không tồn tại: " + staffId);
         }
-        staffRepo.deleteById(staffId);
+        throw new ConflictException("Không thể xóa nhân sự đã tạo. Vui lòng khóa tài khoản sau khi đã gỡ lịch trực, phòng phụ trách và ca đang xử lý");
     }
 
     /**
@@ -254,6 +254,12 @@ public class StaffService implements StaffServiceInterface {
         StaffInfo s = findById(staffId);
         if (s.getSystemRole() == SystemRole.ADMIN || s.getSystemRole() == SystemRole.CLINIC_MANAGER) {
             throw new ConflictException("Không thể khóa tài khoản quản trị viên hoặc quản lý phòng khám");
+        }
+        if (staffRepo.countBlockingLockReferences(staffId) > 0) {
+            throw new ConflictException(
+                    "Không thể khóa nhân sự khi còn phòng phụ trách, phòng được phân công, lịch trực tương lai hoặc hồ sơ đang xử lý. "
+                            + "Vui lòng xử lý các phân công liên quan trước."
+            );
         }
         Account account = s.getProfile().getAccount();
         account.setIsActive(false);
@@ -302,14 +308,22 @@ public class StaffService implements StaffServiceInterface {
                         request -> request, (first, ignored) -> first)).values().stream().toList();
         List<StaffCapability> values = unique.stream().map(request -> StaffCapability.builder()
                 .staff(staff)
-                .capability(capabilityRepo.findById(request.capabilityId()).orElseThrow(() ->
-                        new ResourceNotFoundException("Danh mục kỹ thuật không tồn tại: " + request.capabilityId())))
+                .capability(findActiveCapability(request.capabilityId()))
                 .certificateNumber(blankToNull(request.certificateNumber()))
                 .issuedDate(request.issuedDate()).expiryDate(request.expiryDate())
                 .issuingOrganization(blankToNull(request.issuingOrganization()))
                 .status(request.status() != null ? request.status() : StaffCapabilityStatus.ACTIVE)
                 .build()).toList();
         return staffCapabilityRepo.saveAll(values).stream().map(StaffCapabilityResponse::from).toList();
+    }
+
+    private org.example.doansummer2026.model.ServiceCapability findActiveCapability(UUID capabilityId) {
+        org.example.doansummer2026.model.ServiceCapability capability = capabilityRepo.findById(capabilityId)
+                .orElseThrow(() -> new ResourceNotFoundException("Danh mục kỹ thuật không tồn tại: " + capabilityId));
+        if (Boolean.FALSE.equals(capability.getActive())) {
+            throw new ConflictException("Danh mục kỹ thuật đã ngừng hoạt động và không thể cấp cho nhân sự");
+        }
+        return capability;
     }
 
     /**
