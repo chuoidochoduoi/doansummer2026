@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><authors><author/></authors><commentList><comment ref="D10" authorId="0" shapeId="0"><text><r><rPr><b/><sz val="8"/><color indexed="81"/><rFont val="Tahoma"/><family val="2"/></rPr><t>*A</t></r><r><rPr><sz val="8"/><color indexed="81"/><rFont val="Tahoma"/><family val="2"/></rPr><t xml:space="preserve">: Add
+  </t></r><r><rPr><b/><sz val="8"/><color indexed="81"/><rFont val="Tahoma"/><family val="2"/></rPr><t>M</t></r><r><rPr><sz val="8"/><color indexed="81"/><rFont val="Tahoma"/><family val="2"/></rPr><t xml:space="preserve">: Modify
+  </t></r><r><rPr><b/><sz val="8"/><color indexed="81"/><rFont val="Tahoma"/><family val="2"/></rPr><t>D</t></r><r><rPr><sz val="8"/><color indexed="81"/><rFont val="Tahoma"/><family val="2"/></rPr><t xml:space="preserve">: Delete
+</t></r></text></comment></commentList></comments>

@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><authors><author>tqsang</author></authors><commentList><comment ref="E10" authorId="0" shapeId="0"><text><r><rPr><sz val="8"/><color rgb="FF000000"/><rFont val="Tahoma"/><family val="2"/></rPr><t>List all test cases (must run before this case), conditions that must be done, or required state that the system should be in before performing this case</t></r></text></comment></commentList></comments>

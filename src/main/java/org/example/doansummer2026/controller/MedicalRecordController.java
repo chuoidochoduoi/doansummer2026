@@ -42,6 +42,7 @@ public class MedicalRecordController {
     private final MedicalRecordService service;
     private final AuthService authService;
     private final org.example.doansummer2026.service.AppointmentService appointmentService;
+    private final org.example.doansummer2026.service.ProfileService profileService;
 
     // --- MAIN ENDPOINTS ---
 
@@ -252,6 +253,15 @@ public class MedicalRecordController {
     public ResponseEntity<ReceptionistCustomerResponse> getCustomerForReceptionist(
             @PathVariable UUID customerId) {
         return RestResponses.ok(service.getCustomerForReceptionist(customerId));
+    }
+
+    @PutMapping("/api/receptionist/records/customers/{customerId}")
+    @Auditable(action = org.example.doansummer2026.enums.AuditAction.UPDATE, entityName = "Profile", idParamName = "customerId", description = "Lễ tân cập nhật hồ sơ bệnh nhân")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    public ResponseEntity<org.example.doansummer2026.dto.profile.ProfileResponse> updateCustomerForReceptionist(
+            @PathVariable UUID customerId,
+            @Valid @RequestBody org.example.doansummer2026.dto.profile.ProfileUpdateRequest req) {
+        return RestResponses.ok(profileService.update(customerId, req));
     }
 
     @GetMapping("/api/receptionist/records/customers/{customerId}/visits")
