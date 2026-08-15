@@ -135,4 +135,12 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
 
         return findAll(spec, pageable);
     }
+
+    /**
+     * Lấy tất cả ticket còn active (chưa kết thúc) của các ngày trước hôm nay.
+     * Dùng cho job dọn cuối ngày để đánh vắng mặt.
+     */
+    @Query("SELECT q FROM QueueTicket q WHERE q.workDate < :today AND q.status IN :statuses")
+    List<QueueTicket> findOverdueActiveTickets(@Param("today") LocalDate today,
+                                               @Param("statuses") List<QueueStatus> statuses);
 }
