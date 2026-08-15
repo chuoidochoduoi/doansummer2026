@@ -77,6 +77,7 @@ public class ChatController {
         var res = sessions.stream().map(s -> Map.of(
             "sessionId", s.getSessionId(),
             "customerName", s.getCustomer().getFullName(),
+            "patientCode", s.getCustomer().getPatientCode() != null ? s.getCustomer().getPatientCode() : "Chưa có",
             "status", s.getStatus(),
             "assignedReceptionistId", s.getAssignedReceptionistId() != null ? s.getAssignedReceptionistId() : "",
             "updatedAt", s.getUpdatedAt() != null ? s.getUpdatedAt() : s.getCreatedAt()
@@ -91,6 +92,7 @@ public class ChatController {
         var res = sessions.stream().map(s -> Map.of(
             "sessionId", s.getSessionId(),
             "customerName", s.getCustomer().getFullName(),
+            "patientCode", s.getCustomer().getPatientCode() != null ? s.getCustomer().getPatientCode() : "Chưa có",
             "status", s.getStatus(),
             "assignedReceptionistId", s.getAssignedReceptionistId() != null ? s.getAssignedReceptionistId() : "",
             "updatedAt", s.getUpdatedAt() != null ? s.getUpdatedAt() : s.getCreatedAt()

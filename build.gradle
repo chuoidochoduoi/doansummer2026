@@ -48,6 +48,10 @@ dependencies {
         exclude group: 'io.jsonwebtoken', module: 'jjwt-impl'
         exclude group: 'io.jsonwebtoken', module: 'jjwt-jackson'
     }
+    
+    // PayOS
+    implementation 'vn.payos:payos-java:2.0.1'
+
     // Database
     runtimeOnly 'org.postgresql:postgresql'
 

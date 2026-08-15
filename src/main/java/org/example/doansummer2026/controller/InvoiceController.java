@@ -42,6 +42,7 @@ public class InvoiceController {
 
     private final InvoiceService service;
     private final AuthService authService;
+    private final org.example.doansummer2026.service.PayOSService payOSService;
 
     // --- MAIN ENDPOINTS ---
 
@@ -114,22 +115,13 @@ public class InvoiceController {
     }
 
     /**
-     * Mock PayOS payment - tạo link thanh toán giả lập.
-     * Trong môi trường thực tế sẽ gọi API PayOS SDK.
+     * PayOS payment - tạo link thanh toán.
      */
     @PostMapping("/api/v1/invoices/{id}/payos")
     @Auditable(action = AuditAction.PAYMENT_CONFIRMED, entityName = "Invoice", idParamName = "id", description = "Khởi tạo thanh toán PayOS")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN')")
     public ResponseEntity<?> payosMock(@PathVariable UUID id) {
-        InvoiceResponse invoice = service.get(id);
-        if (invoice.status() == InvoiceStatus.PAID) {
-            return RestResponses.ok(PayOSPaymentResponse.paid(
-                    invoice.invoiceId(), invoice.invoiceCode(), invoice.totalAmount()
-            ));
-        }
-        return RestResponses.ok(PayOSPaymentResponse.pending(
-                    invoice.invoiceId(), invoice.invoiceCode(), invoice.totalAmount()
-        ));
+        return RestResponses.ok(payOSService.createPaymentLink(id));
     }
 
     @GetMapping("/api/v1/invoices/{id}/print")

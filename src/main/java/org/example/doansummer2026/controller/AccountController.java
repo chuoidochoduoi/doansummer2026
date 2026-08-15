@@ -10,6 +10,8 @@ import org.example.doansummer2026.enums.Role;
 import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.service.AccountService;
+import org.example.doansummer2026.service.AuthService;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -36,6 +38,13 @@ public class AccountController {
 
     private final AccountService accountService;
     private final StaffInfoRepository staffRepo;
+    private final AuthService authService;
+
+    private void checkAdminPermissionOnClinicManager(SystemRole targetRole) {
+        if (targetRole == SystemRole.CLINIC_MANAGER && authService.getCurrentSystemRole() == SystemRole.ADMIN) {
+            throw new AccessDeniedException("Quản trị viên không có quyền thao tác trên tài khoản Quản lý phòng khám");
+        }
+    }
 
     @GetMapping
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
@@ -76,6 +85,7 @@ public class AccountController {
         SystemRole systemRole = staffRepo.findFirstByProfile_Account_Username(account.getUsername())
                 .map(staff -> staff.getSystemRole())
                 .orElse(null);
+        checkAdminPermissionOnClinicManager(systemRole);
         return RestResponses.ok(AccountResponse.from(account, systemRole));
     }
 
@@ -84,10 +94,13 @@ public class AccountController {
     @Auditable(action = AuditAction.UPDATE, entityName = "Account", idParamName = "id")
     public ResponseEntity<AccountResponse> update(@PathVariable UUID id,
                                                   @RequestBody AccountUpdateRequest req) {
-        var account = accountService.update(id, req);
+        var account = accountService.findById(id);
         SystemRole systemRole = staffRepo.findFirstByProfile_Account_Username(account.getUsername())
                 .map(staff -> staff.getSystemRole())
                 .orElse(null);
+        checkAdminPermissionOnClinicManager(systemRole);
+        
+        account = accountService.update(id, req);
         return RestResponses.ok(AccountResponse.from(account, systemRole));
     }
 
@@ -96,6 +109,12 @@ public class AccountController {
     @Auditable(action = AuditAction.UPDATE, entityName = "Account", idParamName = "id")
     public ResponseEntity<Void> adminResetPassword(@PathVariable UUID id,
                                                   @RequestBody Map<String, String> payload) {
+        var account = accountService.findById(id);
+        SystemRole systemRole = staffRepo.findFirstByProfile_Account_Username(account.getUsername())
+                .map(staff -> staff.getSystemRole())
+                .orElse(null);
+        checkAdminPermissionOnClinicManager(systemRole);
+
         String newPassword = payload.get("newPassword");
         accountService.adminResetPassword(id, newPassword);
         return RestResponses.noContent();

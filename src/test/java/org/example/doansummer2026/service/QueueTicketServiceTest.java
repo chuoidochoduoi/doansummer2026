@@ -223,7 +223,7 @@ class QueueTicketServiceTest {
                 .thenReturn(Optional.of(visit));
 
         when(
-                repo.findByVisit_VisitIdAndService_ServiceId(
+                repo.findTopByVisit_VisitIdAndService_ServiceIdOrderByCreatedAtDesc(
                         visitId,
                         serviceId
                 )
@@ -255,7 +255,7 @@ class QueueTicketServiceTest {
                 .thenReturn(Optional.of(mock(CustomerVisit.class)));
 
         when(
-                repo.findByVisit_VisitIdAndService_ServiceId(
+                repo.findTopByVisit_VisitIdAndService_ServiceIdOrderByCreatedAtDesc(
                         visitId,
                         serviceId
                 )
@@ -291,7 +291,7 @@ class QueueTicketServiceTest {
                 .thenReturn(Optional.of(mock(CustomerVisit.class)));
 
         when(
-                repo.findByVisit_VisitIdAndService_ServiceId(
+                repo.findTopByVisit_VisitIdAndService_ServiceIdOrderByCreatedAtDesc(
                         visitId,
                         serviceId
                 )
@@ -339,7 +339,7 @@ class QueueTicketServiceTest {
                 .thenReturn(Optional.of(visit));
 
         when(
-                repo.findByVisit_VisitIdAndService_ServiceId(
+                repo.findTopByVisit_VisitIdAndService_ServiceIdOrderByCreatedAtDesc(
                         visitId,
                         serviceId
                 )

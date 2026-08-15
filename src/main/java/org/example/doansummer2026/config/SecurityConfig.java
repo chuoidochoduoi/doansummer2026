@@ -58,6 +58,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/shifts/active").permitAll()
                         .requestMatchers("/api/v1/chat/guest/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
+                        .requestMatchers("/api/v1/payos/webhook").permitAll()
                         .requestMatchers("/ws", "/ws/**", "/ws/info").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // Preflight

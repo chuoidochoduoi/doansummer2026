@@ -104,7 +104,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
             if (s.getWorkDate().isBefore(today)
                     || (s.getWorkDate().equals(today)
                     && s.getShift() != null
-                    && !java.time.LocalTime.now(CLINIC_ZONE).isBefore(s.getShift().getStartTime()))) {
+                    && !java.time.LocalTime.now(CLINIC_ZONE).isBefore(java.time.LocalTime.parse(s.getShift().getStartTime())))) {
                 throw new ConflictException("Không thể đổi ca trực đã bắt đầu hoặc đã qua");
             }
             ShiftConfig shift = shiftConfigRepo.findByIdForScheduleUpdate(req.shiftId())
