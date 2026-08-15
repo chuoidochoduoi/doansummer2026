@@ -1,50 +1,45 @@
 package org.example.doansummer2026.service;
 
+import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class EmailService {
 
-    @Value("${app.brevo.api-key:}")
-    private String brevoApiKey;
+    private final JavaMailSender mailSender;
 
-    @Value("${app.brevo.from-email:chuoidochoduoi7e@gmail.com}")
+    @Value("${spring.mail.username}")
     private String fromEmail;
 
     public void sendOtpEmail(String toEmail, String otpCode) {
-        if (brevoApiKey == null || brevoApiKey.trim().isEmpty()) {
-            System.out.println("[MOCK EMAIL] Gửi OTP " + otpCode + " đến " + toEmail);
-            log.info("Mocked email OTP since Brevo API key is empty");
-            return;
-        }
-
         try {
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("api-key", brevoApiKey);
-            headers.set("accept", "application/json");
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
-            String body = String.format(
-                "{\"sender\": {\"email\": \"%s\", \"name\": \"OTP Service\"}, \"to\": [{\"email\": \"%s\"}], \"subject\": \"Mã xác thực OTP của bạn\", \"htmlContent\": \"<p>Mã xác thực (OTP) của bạn là: <strong>%s</strong></p><p>Mã có hiệu lực trong 5 phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>\"}",
-                fromEmail, toEmail, otpCode
+            helper.setFrom(fromEmail, "OTP Service");
+            helper.setTo(toEmail);
+            helper.setSubject("Mã xác thực OTP của bạn");
+
+            String htmlContent = String.format(
+                "<p>Mã xác thực (OTP) của bạn là: <strong style=\"font-size: 1.2em; color: #0056b3;\">%s</strong></p>" +
+                "<p>Mã có hiệu lực trong 5 phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>",
+                otpCode
             );
 
-            HttpEntity<String> request = new HttpEntity<>(body, headers);
-            String response = restTemplate.postForObject("https://api.brevo.com/v3/smtp/email", request, String.class);
+            helper.setText(htmlContent, true);
+
+            mailSender.send(message);
             
-            log.info("Da gui OTP {} den email {} qua Brevo. Response: {}", otpCode, toEmail, response);
+            log.info("Da gui OTP {} den email {} qua Gmail SMTP.", otpCode, toEmail);
         } catch (Exception e) {
-            log.error("Loi khi gui email OTP den {} qua Brevo: {}", toEmail, e.getMessage());
+            log.error("Loi khi gui email OTP den {}: {}", toEmail, e.getMessage());
             throw new RuntimeException("Không thể gửi email lúc này. Vui lòng thử lại sau.", e);
         }
     }
