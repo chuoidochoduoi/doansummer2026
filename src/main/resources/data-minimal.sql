@@ -9,7 +9,8 @@
 -- ===================================================================
 
 TRUNCATE TABLE
-    medical_service, department, specialization, service_capability,
+    contact_request, public_announcement, department_capability, medical_service,
+    medicine_catalog, icd_10_codes, department, specialization, service_capability,
     staff_info, staff_capability, staff_attendance, staff_schedule,
     profile, account, shift_config
 RESTART IDENTITY CASCADE;
@@ -20,16 +21,17 @@ RESTART IDENTITY CASCADE;
 INSERT INTO specialization (specialization_id, created_at, updated_at, deleted, active, name, description) VALUES
 ('00000001-1111-1111-1111-111111111111', NOW(), NOW(), false, true, 'Nội khoa', 'Chẩn đoán và điều trị bệnh nội'),
 ('00000002-2222-2222-2222-222222222222', NOW(), NOW(), false, true, 'Nhi khoa', 'Khám và điều trị cho trẻ em'),
-('00000003-3333-3333-3333-333333333333', NOW(), NOW(), false, true, 'Chẩn đoán hình ảnh', 'Siêu âm, X-quang, CT, MRI'),
-('00000006-6666-6666-6666-666666666666', NOW(), NOW(), false, true, 'Khám tổng quát', 'Khám ban đầu và điều phối đa khoa');
+('00000003-3333-3333-3333-333333333333', NOW(), NOW(), false, true, 'Ngoại khoa', 'Khám và xử trí các bệnh lý ngoại khoa'),
+('00000004-4444-4444-4444-444444444444', NOW(), NOW(), false, true, 'Da liễu', 'Khám và điều trị bệnh da liễu'),
+('00000008-8888-8888-8888-888888888888', NOW(), NOW(), false, true, 'Sản phụ khoa', 'Khám sức khỏe phụ nữ và thai kỳ');
 
 -- ===================================================================
 -- Department (phòng khám - toi thieu de he thong hoat dong)
 -- ===================================================================
 INSERT INTO department (department_id, created_at, updated_at, deleted, room_code, name, status, department_type, specialization_id, description, head_doctor_id) VALUES
-('33333333-3333-3333-3333-333333333333', NOW(), NOW(), false, 'EX-101', 'Phòng Khám Bệnh', 'AVAILABLE', 'EXAMINATION', '00000006-6666-6666-6666-666666666666', 'Khám bệnh tổng quát', NULL),
+('33333333-3333-3333-3333-333333333333', NOW(), NOW(), false, 'INT-101', 'Phòng khám Nội', 'AVAILABLE', 'EXAMINATION', '00000001-1111-1111-1111-111111111111', 'Khám bệnh nội khoa', NULL),
 ('44444444-4444-4444-4444-444444444444', NOW(), NOW(), false, 'LAB-201', 'Phòng Xét nghiệm', 'AVAILABLE', 'PARACLINICAL', NULL, 'Thực hiện các xét nghiệm mẫu bệnh phẩm', NULL),
-('55555555-5555-5555-5555-555555555555', NOW(), NOW(), false, 'IMG-301', 'Phòng Chẩn đoán hình ảnh', 'AVAILABLE', 'PARACLINICAL', '00000003-3333-3333-3333-333333333333', 'Siêu âm, X-quang, CT, MRI', NULL),
+('55555555-5555-5555-5555-555555555555', NOW(), NOW(), false, 'IMG-301', 'Phòng Chẩn đoán hình ảnh', 'AVAILABLE', 'PARACLINICAL', NULL, 'Siêu âm và X-quang', NULL),
 ('66666666-6666-6666-6666-666666666666', NOW(), NOW(), false, 'PED-102', 'Phòng Nhi', 'AVAILABLE', 'EXAMINATION', '00000002-2222-2222-2222-222222222222', 'Khám chăm sóc cho trẩ em', NULL);
 
 -- ===================================================================
@@ -43,8 +45,8 @@ INSERT INTO account (account_id, created_at, is_active, password_hash, role, use
 -- Profile (thong tin ca nhan lien ket voi account)
 -- ===================================================================
 INSERT INTO profile (profile_id, created_at, updated_at, deleted, full_name, date_of_birth, gender, phone, email, address, blood_type) VALUES
-('20000009-9999-9999-9999-999999999999', NOW(), NOW(), false, 'Quản trị viên hệ thống', '1985-01-01', 'MALE', '0999999999', 'admin@example.com', 'Hà Nội', NULL),
-('20000010-0000-0000-0000-000000000001', NOW(), NOW(), false, 'Quản lý phòng khám', '1988-01-01', 'FEMALE', '0888888888', 'clinicmanager@example.com', 'TP.HCM', NULL);
+('20000009-9999-9999-9999-999999999999', NOW(), NOW(), false, 'Phạm Đức Minh', '1985-03-18', 'MALE', '0903214567', 'ducminh.pham@cares.vn', 'Cầu Giấy, Hà Nội', NULL),
+('20000010-0000-0000-0000-000000000001', NOW(), NOW(), false, 'Nguyễn Thu Hương', '1988-09-24', 'FEMALE', '0912864537', 'thuhuong.nguyen@cares.vn', 'Thanh Xuân, Hà Nội', NULL);
 
 -- ===================================================================
 -- ServiceCapability (nang luc thuc hien dich vu - dung de gan voi medical_service/lab)
@@ -74,18 +76,23 @@ INSERT INTO medical_service (
 -- Dịch vụ khám không gắn cứng department_id. Phòng được chọn theo chuyên khoa
 -- phục vụ tại thời điểm điều phối.
 ('40000008-8888-8888-8888-888888888888', 'KHB001', NOW(), NOW(), false,
- 'Khám bệnh tổng quát', 'ACTIVE', false, 'Khám bệnh tổng quát', 200000, 'EXAMINATION',
+ 'Khám và đánh giá tổng quát các bệnh lý nội khoa thường gặp ở người lớn.', 'ACTIVE', false, 'Khám Nội tổng quát', 220000, 'EXAMINATION',
  30, 1, false, false, false, 0, true, 0, 120, NULL,
- NULL, '00000006-6666-6666-6666-666666666666', NULL),
+ NULL, '00000001-1111-1111-1111-111111111111', NULL),
 -- Dịch vụ cận lâm sàng được chọn phòng theo năng lực thực hiện.
 ('40000001-1111-1111-1111-111111111111', 'XN001', NOW(), NOW(), false,
- 'Xét nghiệm công thức máu (CBC)', 'ACTIVE', false, 'Xét nghiệm công thức máu', 120000, 'PARACLINICAL',
- 20, 1, false, false, false, 30, true, 0, 120, NULL,
+ 'Đánh giá các thành phần tế bào máu, hỗ trợ phát hiện thiếu máu và nhiễm trùng.', 'ACTIVE', false, 'Công thức máu', 120000, 'PARACLINICAL',
+ 20, 1, true, true, true, 30, false, 0, 120, NULL,
  NULL, NULL, 'ca000001-0000-0000-0000-000000000001'),
 ('40000004-4444-4444-4444-444444444444', 'CDHA001', NOW(), NOW(), false,
  'Siêu âm ổ bụng', 'ACTIVE', false, 'Siêu âm ổ bụng', 250000, 'PARACLINICAL',
- 20, 1, false, false, false, 15, true, 0, 120, NULL,
+ 20, 1, true, true, false, 15, false, 0, 120, NULL,
  NULL, NULL, 'ca000003-0000-0000-0000-000000000003');
+
+-- Tất cả dịch vụ ACTIVE đều được phép đặt từ phía khách hàng.
+UPDATE medical_service
+SET allow_customer_booking = true
+WHERE status = 'ACTIVE' AND deleted = false;
 
 -- Link profile -> account
 UPDATE profile SET account_id = '30000012-2222-2222-2222-222222222222' WHERE profile_id = '20000009-9999-9999-9999-999999999999';
@@ -127,26 +134,26 @@ INSERT INTO account (account_id, created_at, is_active, password_hash, role, use
 -- Profile (Thêm profile cho các account trên)
 -- ===================================================================
 INSERT INTO profile (profile_id, account_id, created_at, updated_at, deleted, full_name, date_of_birth, gender, phone, email, address, blood_type) VALUES
-('20000011-1111-1111-1111-111111111111', '30000014-4444-4444-4444-444444444444', NOW(), NOW(), false, 'Bác sĩ Nguyễn Văn A', '1980-05-10', 'MALE', '0911111111', 'doctor1@example.com', 'Hà Nội', NULL),
-('20000012-2222-2222-2222-222222222222', '30000015-5555-5555-5555-555555555555', NOW(), NOW(), false, 'Y tá Trần Thị B', '1990-08-20', 'FEMALE', '0922222222', 'nurse1@example.com', 'Hà Nội', NULL),
-('20000013-3333-3333-3333-333333333333', '30000016-6666-6666-6666-666666666666', NOW(), NOW(), false, 'Lễ tân Lê Văn C', '1995-12-01', 'MALE', '0933333333', 'receptionist1@example.com', 'Hà Nội', NULL),
-('20000014-4444-4444-4444-444444444444', '30000017-7777-7777-7777-777777777777', NOW(), NOW(), false, 'Thu ngân Phạm Thị D', '1992-03-15', 'FEMALE', '0944444444', 'cashier1@example.com', 'Hà Nội', NULL);
+('20000011-1111-1111-1111-111111111111', '30000014-4444-4444-4444-444444444444', NOW(), NOW(), false, 'Nguyễn Hoàng Minh', '1980-05-10', 'MALE', '0913517624', 'hoangminh.nguyen@cares.vn', 'Ba Đình, Hà Nội', NULL),
+('20000012-2222-2222-2222-222222222222', '30000015-5555-5555-5555-555555555555', NOW(), NOW(), false, 'Trần Ngọc Hân', '1990-08-20', 'FEMALE', '0924186357', 'ngochan.tran@cares.vn', 'Đống Đa, Hà Nội', NULL),
+('20000013-3333-3333-3333-333333333333', '30000016-6666-6666-6666-666666666666', NOW(), NOW(), false, 'Lê Quốc Bảo', '1995-12-01', 'MALE', '0935271468', 'quocbao.le@cares.vn', 'Hai Bà Trưng, Hà Nội', NULL),
+('20000014-4444-4444-4444-444444444444', '30000017-7777-7777-7777-777777777777', NOW(), NOW(), false, 'Phạm Thùy Dương', '1992-03-15', 'FEMALE', '0946382517', 'thuyduong.pham@cares.vn', 'Hoàng Mai, Hà Nội', NULL);
 
 -- ===================================================================
 -- StaffInfo (Thêm staff_info cho các profile trên)
 -- ===================================================================
 INSERT INTO staff_info (staff_id, created_at, updated_at, deleted, profile_id, staff_code, system_role, national_id, bank_account, highest_degree, university, license_number, specialization_id, department_id) VALUES
-('90000010-3333-3333-3333-333333333333', NOW(), NOW(), false, '20000011-1111-1111-1111-111111111111', 'STF-DOC-001', 'DOCTOR', '001080123456', NULL, 'Bác sĩ chuyên khoa', 'Đại học Y Hà Nội', 'CCHN-12345', '00000006-6666-6666-6666-666666666666', '33333333-3333-3333-3333-333333333333'),
+('90000010-3333-3333-3333-333333333333', NOW(), NOW(), false, '20000011-1111-1111-1111-111111111111', 'STF-DOC-001', 'DOCTOR', '001080123456', NULL, 'Bác sĩ chuyên khoa', 'Đại học Y Hà Nội', 'CCHN-12345', '00000001-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333'),
 ('90000011-4444-4444-4444-444444444444', NOW(), NOW(), false, '20000012-2222-2222-2222-222222222222', 'STF-NUR-001', 'NURSE', '001090123456', NULL, 'Cử nhân điều dưỡng', 'Đại học Y Dược', 'CCHN-23456', NULL, '44444444-4444-4444-4444-444444444444'),
 ('90000012-5555-5555-5555-555555555555', NOW(), NOW(), false, '20000013-3333-3333-3333-333333333333', 'STF-REC-001', 'RECEPTIONIST', '001095123456', NULL, NULL, NULL, NULL, NULL, NULL),
 ('90000013-6666-6666-6666-666666666666', NOW(), NOW(), false, '20000014-4444-4444-4444-444444444444', 'STF-CAS-001', 'CASHIER', '001092123456', NULL, NULL, NULL, NULL, NULL, NULL);
 
--- Phòng khám mẫu cần bác sĩ phụ trách để hệ thống tạo được hàng chờ khám.
+-- Phòng khám cần bác sĩ phụ trách để hệ thống tạo được hàng chờ khám.
 UPDATE department
 SET head_doctor_id = '90000010-3333-3333-3333-333333333333'
 WHERE department_id = '33333333-3333-3333-3333-333333333333';
 
--- Năng lực nhân sự mẫu; các thông tin chứng chỉ được để trống theo nghiệp vụ.
+-- Năng lực nhân sự; các thông tin chứng chỉ được để trống theo nghiệp vụ.
 INSERT INTO staff_capability (
     staff_capability_id, created_at, updated_at, deleted,
     staff_id, capability_id, certificate_number, issued_date, expiry_date,

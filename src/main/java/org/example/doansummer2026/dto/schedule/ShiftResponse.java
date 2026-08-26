@@ -1,6 +1,7 @@
 package org.example.doansummer2026.dto.schedule;
 
 import org.example.doansummer2026.model.ShiftConfig;
+import org.example.doansummer2026.model.StaffSchedule;
 
 import java.util.UUID;
 
@@ -20,5 +21,15 @@ public record ShiftResponse(
                 shift.getStartTime(),
                 shift.getEndTime()
         );
+    }
+
+    public static ShiftResponse from(StaffSchedule schedule) {
+        if (schedule == null || schedule.getShift() == null) return null;
+        String start = schedule.getActualStartTime() == null ? schedule.getShift().getStartTime()
+                : schedule.getActualStartTime().toString();
+        String end = schedule.getActualEndTime() == null ? schedule.getShift().getEndTime()
+                : schedule.getActualEndTime().toString();
+        return new ShiftResponse(schedule.getShift().getShiftId().toString(),
+                schedule.getShift().getName(), start, end);
     }
 }

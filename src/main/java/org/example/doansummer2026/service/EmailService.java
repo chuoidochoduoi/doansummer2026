@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.HtmlUtils;
 
 @Service
 @Slf4j
@@ -41,6 +42,34 @@ public class EmailService {
         } catch (Exception e) {
             log.error("Loi khi gui email OTP den {}: {}", toEmail, e.getMessage());
             throw new RuntimeException("Không thể gửi email lúc này. Vui lòng thử lại sau.", e);
+        }
+    }
+
+    public void sendContactRequestEmail(String toEmail, String requestCode, String fullName,
+                                        String phone, String customerEmail, String subject,
+                                        String content) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom(fromEmail, "CareS Clinic");
+            helper.setTo(toEmail);
+            helper.setSubject("[" + requestCode + "] Yêu cầu liên hệ mới: " + subject);
+
+            String htmlContent = "<h3>Yêu cầu liên hệ mới</h3>"
+                    + "<p><strong>Mã yêu cầu:</strong> " + HtmlUtils.htmlEscape(requestCode) + "</p>"
+                    + "<p><strong>Họ tên:</strong> " + HtmlUtils.htmlEscape(fullName) + "</p>"
+                    + "<p><strong>Số điện thoại:</strong> " + HtmlUtils.htmlEscape(phone) + "</p>"
+                    + "<p><strong>Email:</strong> "
+                    + HtmlUtils.htmlEscape(customerEmail == null || customerEmail.isBlank() ? "Không cung cấp" : customerEmail)
+                    + "</p><p><strong>Chủ đề:</strong> " + HtmlUtils.htmlEscape(subject) + "</p>"
+                    + "<p><strong>Nội dung:</strong><br>"
+                    + HtmlUtils.htmlEscape(content).replace("\n", "<br>") + "</p>";
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+            log.info("Đã gửi thông báo yêu cầu liên hệ {} tới email tiếp nhận", requestCode);
+        } catch (Exception e) {
+            log.warn("Không thể gửi email thông báo yêu cầu liên hệ {}: {}", requestCode, e.getMessage());
+            throw new RuntimeException("Không thể gửi email thông báo yêu cầu liên hệ", e);
         }
     }
 }

@@ -21,6 +21,7 @@ public record VisitDetailResponse(
         String patientGender,
         String patientPhone,
         String patientAddress,
+        org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse patientAllergies,
         String recordId,
         String appointmentDate,
         String checkInTime,
@@ -41,7 +42,8 @@ public record VisitDetailResponse(
         String respondedByName,
         String doctorName,
         List<String> labDoctors,
-        List<ExaminationResponse> examinations
+        List<ExaminationResponse> examinations,
+        List<SameDayParaclinicalResultResponse> sameDayReferencedResults
 ) {
     public record PrescriptionItemResponse(String medicineName, Integer quantity, String unit,
                                            String note, Integer frequencyPerDay) {
@@ -57,9 +59,17 @@ public record VisitDetailResponse(
                                       String clinicalResult, String diagnosis, List<DiagnosisResponse> diagnoses,
                                       String conclusion, String treatmentPlan, String patientInstruction,
                                       String followUpNote, String prescription,
-                                      List<PrescriptionItemResponse> prescriptionItems) {}
+                                      List<PrescriptionItemResponse> prescriptionItems,
+                                      org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse clinicalForm) {}
 
-    public static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests) {
+    public static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests,
+            java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments) {
+        return from(records, testRequests, attachments, List.of());
+    }
+
+    public static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests,
+            java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments,
+            List<SameDayParaclinicalResultResponse> sameDayReferencedResults) {
         if (records == null || records.isEmpty()) return null;
 
         MedicalRecord first = records.get(0);
@@ -77,7 +87,7 @@ public record VisitDetailResponse(
                 .toList();
 
         List<TestResponse> tests = testRequests == null ? List.of()
-                : testRequests.stream().map(VisitDetailResponse::testFrom).toList();
+                : testRequests.stream().map(request -> testFrom(request, attachments)).toList();
         List<String> labDoctors = tests.stream()
                 .map(TestResponse::performedBy)
                 .filter(name -> name != null && !name.isBlank())
@@ -92,6 +102,9 @@ public record VisitDetailResponse(
                 || "CANCELLED".equals(test.status()));
         boolean completed = (!examinations.isEmpty() || !tests.isEmpty())
                 && examinationsCompleted && testsCompleted;
+        String visitStatus = first.getVisit() != null && first.getVisit().getStatus() != null
+                ? first.getVisit().getStatus().name()
+                : completed ? "COMPLETED" : "IN_PROGRESS";
         String appointmentDate = first.getVisit() != null && first.getVisit().getCheckInTime() != null
                 ? first.getVisit().getCheckInTime().toLocalDate().toString() : null;
         String checkInTime = first.getVisit() != null && first.getVisit().getCheckInTime() != null
@@ -109,6 +122,8 @@ public record VisitDetailResponse(
                 first.getVisit() != null && first.getVisit().getCustomer() != null && first.getVisit().getCustomer().getGender() != null ? first.getVisit().getCustomer().getGender().name() : null,
                 first.getVisit() != null && first.getVisit().getCustomer() != null ? first.getVisit().getCustomer().getPhone() : null,
                 first.getVisit() != null && first.getVisit().getCustomer() != null ? first.getVisit().getCustomer().getAddress() : null,
+                org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(
+                        first.getVisit() == null ? null : first.getVisit().getCustomer()),
                 first.getRecordCode(),
                 appointmentDate,
                 checkInTime,
@@ -119,7 +134,7 @@ public record VisitDetailResponse(
                 first.getPatientInstruction(),
                 prescriptionTextFrom(first),
                 tests,
-                completed ? "COMPLETED" : "IN_PROGRESS",
+                visitStatus,
                 feedbackRecord.getRatingScore(),
                 feedbackRecord.getRatingComment(),
                 feedbackRecord.getRatedAt() != null ? feedbackRecord.getRatedAt().toString() : null,
@@ -130,7 +145,8 @@ public record VisitDetailResponse(
                         ? feedbackRecord.getRespondedBy().getProfile().getFullName() : null,
                 doctorName(first),
                 labDoctors,
-                examinations
+                examinations,
+                sameDayReferencedResults == null ? List.of() : sameDayReferencedResults
         );
     }
 
@@ -147,33 +163,83 @@ public record VisitDetailResponse(
                 record.getChiefComplaint(), record.getChiefComplaint(), record.getClinicalFindings(),
                 clinicalResultFrom(record), record.getDiagnosis(), diagnosesFrom(record), record.getConclusion(),
                 record.getConclusion(), record.getPatientInstruction(), record.getFollowUpNote(),
-                prescriptionTextFrom(record), prescriptionItems
+                prescriptionTextFrom(record), prescriptionItems, clinicalFormFrom(record)
         );
     }
 
-    private static TestResponse testFrom(TestRequest request) {
+    private static org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse clinicalFormFrom(
+            MedicalRecord record) {
+        var version = record.getFormTemplateVersion();
+        if (version == null || version.getTemplate() == null) return null;
+        var template = version.getTemplate();
+        return new org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse(
+                template.getTemplateId(), version.getVersionId(), version.getVersionNo(), template.getCode(),
+                template.getName(), template.getContext(), version.getSchemaJson(), record.getSpecialtyData());
+    }
+
+    private static TestResponse testFrom(TestRequest request,
+            java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments) {
         TestResult result = request.getTestResult();
         String performedBy = result != null && result.getPerformedBy() != null && result.getPerformedBy().getProfile() != null
                 ? result.getPerformedBy().getProfile().getFullName() : null;
         String collectedBy = result != null && result.getCollectedBy() != null && result.getCollectedBy().getProfile() != null
                 ? result.getCollectedBy().getProfile().getFullName() : null;
+        MedicalRecord orderingRecord = request.getMedicalRecord();
+        String orderingServiceName = orderingRecord != null && orderingRecord.getQueueTicket() != null
+                && orderingRecord.getQueueTicket().getService() != null
+                ? orderingRecord.getQueueTicket().getService().getName() : null;
         return new TestResponse(
                 request.getTestRequestId().toString(), request.getTestRequestId().toString(),
                 request.getService() != null ? request.getService().getName() : "Dịch vụ cận lâm sàng",
                 request.getStatus() != null ? request.getStatus().name() : null,
                 request.getPerformingDepartment() != null ? request.getPerformingDepartment().getName() : null,
                 request.getCreatedAt() != null ? request.getCreatedAt().toString() : null,
-                false, List.of(), result != null ? result.getConclusion() : null,
+                hasAbnormal(result), structuredResults(result), result != null ? result.getConclusion() : null,
                 result != null && result.getImageUrl() != null
-                        ? "/api/v1/test-results/" + result.getResultId() + "/file" : null, performedBy,
+                        ? "/api/v1/test-results/" + result.getResultId() + "/file" : null,
+                result == null ? List.of() : attachments.getOrDefault(result.getResultId(), List.of()), performedBy,
                 result != null && result.getPerformedBy() != null ? result.getPerformedBy().getStaffId() : null,
                 result != null && result.getPerformedAt() != null ? result.getPerformedAt().toString() : null,
                 result != null ? result.getSampleId() : null,
                 result != null && result.getSampleType() != null ? result.getSampleType().name() : null,
                 result != null && result.getSampleStatus() != null ? result.getSampleStatus().name() : null,
                 result != null && result.getCollectedAt() != null ? result.getCollectedAt().toString() : null,
-                collectedBy
+                collectedBy,
+                orderingRecord != null && orderingRecord.getQueueTicket() != null
+                        ? orderingRecord.getRecordId() : null,
+                orderingRecord != null && orderingRecord.getQueueTicket() != null
+                        ? orderingRecord.getRecordCode() : null,
+                orderingServiceName
         );
+    }
+
+    private static List<TestResponse.TestResultResponse> structuredResults(TestResult result) {
+        if (result == null || result.getResultData() == null || result.getFormTemplateVersion() == null
+                || result.getFormTemplateVersion().getSchemaJson() == null) return List.of();
+        var schema = result.getFormTemplateVersion().getSchemaJson();
+        java.util.List<tools.jackson.databind.JsonNode> fields = new java.util.ArrayList<>();
+        if (schema.path("fields").isArray()) schema.path("fields").forEach(fields::add);
+        if (schema.path("sections").isArray()) schema.path("sections").forEach(section -> {
+            if (section.path("fields").isArray()) section.path("fields").forEach(fields::add);
+        });
+        var flags = result.getResultData().path("_meta").path("flags");
+        return fields.stream().filter(field -> result.getResultData().hasNonNull(field.path("key").asText()))
+                .map(field -> {
+                    String key = field.path("key").asText();
+                    var flag = flags.path(key);
+                    var range = flag.path("referenceRange");
+                    String rangeText = range.isObject()
+                            ? (range.has("low") ? range.path("low").asText() : "") + " - "
+                            + (range.has("high") ? range.path("high").asText() : "") : null;
+                    return new TestResponse.TestResultResponse(field.path("label").asText(key),
+                            result.getResultData().path(key).asText(), rangeText,
+                            field.path("unit").asText(null), flag.path("status").asText("NOT_EVALUATED"));
+                }).toList();
+    }
+
+    private static boolean hasAbnormal(TestResult result) {
+        return structuredResults(result).stream().anyMatch(item ->
+                java.util.Set.of("LOW", "HIGH", "ABNORMAL").contains(item.assessment()));
     }
 
     private static List<DiagnosisResponse> diagnosesFrom(MedicalRecord record) {

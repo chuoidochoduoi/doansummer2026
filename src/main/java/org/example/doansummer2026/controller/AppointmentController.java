@@ -62,7 +62,7 @@ public class AppointmentController {
         return RestResponses.ok(service.get(id));
     }
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER', 'ROLE_RECEPTIONIST', 'ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER', 'ROLE_RECEPTIONIST', 'ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "Appointment")
     public ResponseEntity<AppointmentResponse> create(@Valid @RequestBody AppointmentCreateRequest req) {
         var current = authService.currentAccount();
@@ -84,7 +84,7 @@ public class AppointmentController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST', 'ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.UPDATE, entityName = "Appointment", idParamName = "id")
     public ResponseEntity<AppointmentResponse> update(@PathVariable UUID id,
                                                       @Valid @RequestBody AppointmentUpdateRequest req) {
@@ -92,7 +92,7 @@ public class AppointmentController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.DELETE, entityName = "Appointment", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
@@ -105,7 +105,7 @@ public class AppointmentController {
      * - issuedById se tu dong lay tu staff dang dang nhap neu khong truyen.
      */
     @PostMapping("/{id}/check-in")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST', 'ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Appointment", idParamName = "id")
     public ResponseEntity<AppointmentCheckInResponse> checkIn(
             @PathVariable UUID id,
@@ -123,7 +123,7 @@ public class AppointmentController {
      * - Tao CustomerVisit + Invoice, QueueTicket se duoc tao khi thanh toan.
      */
     @PostMapping("/guest-check-in")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST', 'ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Appointment")
     public ResponseEntity<GuestCheckInResponse> guestCheckIn(
             @Valid @RequestBody GuestCheckInRequest req) {
@@ -137,7 +137,7 @@ public class AppointmentController {
      * - Dung de hien thi thong tin guest cu khi dang ky/ check-in lan 2.
      */
     @GetMapping("/guest-history")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_RECEPTIONIST', 'ROLE_CLINIC_MANAGER')")
     public ResponseEntity<List<GuestHistoryResponse>> getGuestHistory(
             @RequestParam String phone) {
         List<GuestHistoryResponse> history = service.getGuestHistoryByPhone(phone);

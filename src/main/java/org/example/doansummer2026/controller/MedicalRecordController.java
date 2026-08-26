@@ -7,6 +7,7 @@ import org.example.doansummer2026.common.ReceptionistRecordPageResponse;
 import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.dto.medicalHistory.MedicalHistoryResponse;
 import org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse;
+import org.example.doansummer2026.dto.medicalHistory.VisitHistorySummaryResponse;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
@@ -58,9 +59,39 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/v1/medical-records/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER','ROLE_ADMIN')")
     public ResponseEntity<MedicalRecordResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
+    }
+
+    @GetMapping("/api/v1/medical-records/{id}/clinical-form")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER','ROLE_ADMIN')")
+    public ResponseEntity<org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse> clinicalForm(
+            @PathVariable UUID id) {
+        return RestResponses.ok(service.getClinicalForm(id));
+    }
+
+    @GetMapping("/api/v1/medical-records/{id}/patient-allergies")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER','ROLE_ADMIN')")
+    public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse> patientAllergies(
+            @PathVariable UUID id) {
+        return RestResponses.ok(service.getPatientAllergies(id));
+    }
+
+    @GetMapping("/api/v1/medical-records/{id}/visit-detail")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER','ROLE_ADMIN')")
+    public ResponseEntity<VisitDetailResponse> staffVisitDetail(@PathVariable UUID id) {
+        return RestResponses.ok(service.getVisitDetailForStaff(id));
+    }
+
+    @PutMapping("/api/v1/medical-records/{id}/patient-allergies")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "PatientAllergy", idParamName = "id",
+            description = "Xác minh và cập nhật dị ứng trong quá trình khám")
+    public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse> updatePatientAllergies(
+            @PathVariable UUID id,
+            @Valid @RequestBody org.example.doansummer2026.dto.medicalRecord.PatientAllergyRequest request) {
+        return RestResponses.ok(service.updatePatientAllergies(id, request));
     }
 
     @GetMapping("/api/v1/medical-records/{id}/previous-history")
@@ -158,6 +189,36 @@ public class MedicalRecordController {
         return RestResponses.ok(response);
     }
 
+    @GetMapping("/api/patient/medical-history/visits")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
+    public ResponseEntity<ReceptionistRecordPageResponse<VisitHistorySummaryResponse>> getVisitHistory(
+            @RequestParam(required = false) String search, Pageable pageable) {
+        UUID profileId = authService.currentProfileId();
+        if (profileId == null) {
+            return RestResponses.ok(new ReceptionistRecordPageResponse<>(java.util.List.of(), 0L, 0));
+        }
+        return RestResponses.ok(ReceptionistRecordPageResponse.from(
+                service.getVisitHistoryForPatient(profileId, search, pageable)));
+    }
+
+    @GetMapping("/api/patient/medical-history/visits/{visitId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
+    public ResponseEntity<VisitDetailResponse> getPatientVisitDetail(@PathVariable UUID visitId) {
+        UUID profileId = authService.currentProfileId();
+        if (profileId == null) {
+            throw new org.example.doansummer2026.exception.ResourceNotFoundException(
+                    "Không tìm thấy hồ sơ cá nhân");
+        }
+        return RestResponses.ok(service.getPatientVisitDetail(visitId, profileId));
+    }
+
+    @GetMapping("/api/patient/medical-history/{recordId}/clinical-form")
+    @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
+    public ResponseEntity<org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse> getPatientClinicalForm(
+            @PathVariable UUID recordId) {
+        return RestResponses.ok(service.getClinicalFormForPatient(recordId, authService.currentProfileId()));
+    }
+
     @PostMapping("/api/patient/medical-history/{recordId}/rate")
     @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
     @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "recordId", description = "Đánh giá lượt khám")
@@ -211,7 +272,7 @@ public class MedicalRecordController {
     // --- RECEPTIONIST ENDPOINTS ---
 
     @GetMapping("/api/receptionist/records")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<ReceptionistRecordPageResponse<ReceptionistRecordResponse>> listRecordsForReceptionist(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String gender,
@@ -224,7 +285,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/receptionist/records/customers")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<ReceptionistCustomerResponse>> listCustomersForReceptionist(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String gender,
@@ -249,7 +310,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/receptionist/records/customers/{customerId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<ReceptionistCustomerResponse> getCustomerForReceptionist(
             @PathVariable UUID customerId) {
         return RestResponses.ok(service.getCustomerForReceptionist(customerId));
@@ -257,7 +318,7 @@ public class MedicalRecordController {
 
     @PutMapping("/api/receptionist/records/customers/{customerId}")
     @Auditable(action = org.example.doansummer2026.enums.AuditAction.UPDATE, entityName = "Profile", idParamName = "customerId", description = "Lễ tân cập nhật hồ sơ bệnh nhân")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<org.example.doansummer2026.dto.profile.ProfileResponse> updateCustomerForReceptionist(
             @PathVariable UUID customerId,
             @Valid @RequestBody org.example.doansummer2026.dto.profile.ProfileUpdateRequest req) {
@@ -265,7 +326,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/receptionist/records/customers/{customerId}/visits")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<MedicalHistoryResponse>> getCustomerVisitsForReceptionist(
             @PathVariable UUID customerId,
             @RequestParam(required = false) String search,
@@ -274,7 +335,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/receptionist/records/customers/{customerId}/visits/{visitId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<VisitDetailResponse> getCustomerVisitForReceptionist(
             @PathVariable UUID customerId,
             @PathVariable UUID visitId) {
@@ -282,7 +343,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/receptionist/records/search-by-phone")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<java.util.List<ReceptionistAllCustomerResponse>> searchByPhoneForReceptionist(
             @RequestParam String phone) {
         var result = service.searchByPhone(phone);
@@ -290,7 +351,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/receptionist/follow-ups")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse>> getPendingFollowUps(
             @RequestParam(required = false) String search,
             Pageable pageable) {
@@ -299,7 +360,7 @@ public class MedicalRecordController {
 
     @PostMapping("/api/receptionist/follow-ups/{recordId}/schedule")
     @Auditable(action = AuditAction.CREATE, entityName = "Appointment", idParamName = "recordId", description = "Lễ tân xếp lịch tái khám")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> scheduleFollowUp(
             @PathVariable UUID recordId,
             @Valid @RequestBody org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {

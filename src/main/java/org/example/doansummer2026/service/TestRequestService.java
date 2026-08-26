@@ -1,6 +1,7 @@
 package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
+import tools.jackson.databind.JsonNode;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,6 +12,9 @@ import org.example.doansummer2026.dto.testRequest.*;
 import org.example.doansummer2026.dto.testResult.TestResultCreateRequest;
 import org.example.doansummer2026.dto.testResult.TestResultResponse;
 import org.example.doansummer2026.dto.testResult.TestResultUpdateRequest;
+import org.example.doansummer2026.dto.testResult.TestResultRevisionResponse;
+import org.example.doansummer2026.dto.testResult.TestResultAmendRequest;
+import org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
@@ -25,6 +29,7 @@ import org.example.doansummer2026.enums.MedicalRecordStatus;
 import org.example.doansummer2026.enums.DepartmentStatus;
 import org.example.doansummer2026.enums.QueueStatus;
 import org.example.doansummer2026.enums.TestRequestStatus;
+import org.example.doansummer2026.enums.TestResultRevisionStatus;
 import org.example.doansummer2026.model.TestResult;
 import org.example.doansummer2026.repository.MedicalRecordRepository;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
@@ -40,6 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -55,6 +61,8 @@ public class TestRequestService implements TestRequestServiceInterface {
 
     private final TestRequestRepository repo;
     private final TestResultRepository resultRepo;
+    private final org.example.doansummer2026.repository.TestResultRevisionRepository revisionRepo;
+    private final org.example.doansummer2026.repository.TestResultAttachmentRepository attachmentRepo;
     private final MedicalRecordRepository recordRepo;
     private final org.example.doansummer2026.repository.CustomerVisitRepository visitRepo;
     private final MedicalServiceRepository serviceRepo;
@@ -67,6 +75,9 @@ public class TestRequestService implements TestRequestServiceInterface {
     private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
     private final NotificationService notificationService;
     private final AuthService authService;
+    private final ClinicalFormTemplateService clinicalFormTemplateService;
+    private final ClinicalFormEngine clinicalFormEngine;
+    private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
 
     @Transactional(readOnly = true)
     public PageResponse<TestRequestResponse> search(UUID recordId, UUID departmentId,
@@ -135,11 +146,63 @@ public class TestRequestService implements TestRequestServiceInterface {
         return true;
     }
 
+    /**
+     * Gan cac dich vu CLS da mua truc tiep cho phong kham dau tien thuc su xu ly
+     * benh nhan. Nho vay workflow co mot phong nguon ro rang de dua benh nhan
+     * quay lai sau khi tat ca ket qua da san sang.
+     */
+    public int attachUnlinkedPrepaidRequestsToExamination(UUID visitId, UUID medicalRecordId,
+                                                           UUID doctorId) {
+        int attached = 0;
+        for (TestRequest request : repo.findAllByVisitIdWithDetails(visitId)) {
+            MedicalRecord source = request.getMedicalRecord();
+            boolean standalone = source == null || source.getQueueTicket() == null;
+            boolean incomplete = request.getStatus() == TestRequestStatus.BLOCKED
+                    || request.getStatus() == TestRequestStatus.PENDING
+                    || request.getStatus() == TestRequestStatus.IN_PROGRESS;
+            if (!standalone || !incomplete || request.getService() == null) continue;
+            if (attachPrepaidRequestToExamination(visitId, medicalRecordId,
+                    request.getService().getServiceId(), doctorId, request.getDescription())) {
+                attached++;
+            }
+        }
+        return attached;
+    }
+
     @Transactional(readOnly = true)
     public TestRequestResponse get(UUID id) {
         TestRequest request = findById(id);
         ensureCurrentStaffCanView(request);
         return TestRequestResponse.from(request);
+    }
+
+    @Transactional(readOnly = true)
+    public TestRequestActionPermissionsResponse actionPermissions(UUID id) {
+        TestRequest request = findById(id);
+        ensureCurrentStaffCanView(request);
+
+        UUID staffId = authService.currentStaffId();
+        StaffInfo actor = staffId == null ? null : staffRepo.findById(staffId).orElse(null);
+        Department department = request.getPerformingDepartment();
+        boolean responsibleDoctor = isResponsibleDoctor(department, actor);
+        boolean assignedNurse = isAssignedNurse(department, actor);
+        boolean finished = request.getStatus() == TestRequestStatus.COMPLETED
+                || request.getStatus() == TestRequestStatus.CANCELLED;
+        QueueTicket queue = request.getQueueTicket();
+        boolean executionStarted = queue != null && (queue.getStatus() == QueueStatus.IN_PROGRESS
+                || queue.getStatus() == QueueStatus.DONE);
+        boolean canEdit = !finished && executionStarted && (responsibleDoctor || assignedNurse);
+        boolean canCancel = responsibleDoctor && java.util.Set.of(
+                TestRequestStatus.BLOCKED, TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS)
+                .contains(request.getStatus());
+
+        return new TestRequestActionPermissionsResponse(
+                true,
+                canEdit,
+                canEdit,
+                responsibleDoctor && !finished && executionStarted,
+                canCancel
+        );
     }
 
     @Transactional(readOnly = true)
@@ -202,6 +265,8 @@ public class TestRequestService implements TestRequestServiceInterface {
                         "Hồ sơ bệnh án không tồn tại: " + req.medicalRecordId()));
         MedicalService service = serviceRepo.findById(req.serviceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + req.serviceId()));
+        requireParaclinicalService(service);
+        ensureNoSignedSameDayResult(record, service);
         ensureServiceNotAlreadyRequested(record, service.getServiceId());
         Department dept = selectPerformingDepartment(service);
         StaffInfo requestedBy = staffRepo.findById(req.requestedById())
@@ -250,6 +315,16 @@ public class TestRequestService implements TestRequestServiceInterface {
                                                      UUID requestedById, String notes, UUID invoiceItemId) {
         MedicalService service = serviceRepo.findById(serviceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
+        requireParaclinicalService(service);
+        if (visitId != null) {
+            var targetVisit = visitRepo.findById(visitId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
+            if (sameDayParaclinicalResultService.hasReusableResult(targetVisit, serviceId)) {
+                throw new ConflictException(
+                        "Dịch vụ cận lâm sàng này đã có kết quả được ký trong ngày; hãy sử dụng kết quả tham chiếu"
+                );
+            }
+        }
 
         /*
          * Idempotency khong dong nghia voi return ngay lap tuc.
@@ -411,6 +486,17 @@ public class TestRequestService implements TestRequestServiceInterface {
         }
     }
     
+    private void publishExaminationQueueUpdated(QueueTicket queueTicket) {
+        if (queueTicket == null || queueTicket.getDepartment() == null) return;
+        try {
+            messagingTemplate.convertAndSend(
+                    "/topic/department-" + queueTicket.getDepartment().getDepartmentId() + "-queue",
+                    "QUEUE_UPDATED");
+        } catch (Exception ignored) {
+            // Khong de WebSocket lam huy giao dich nghiep vu.
+        }
+    }
+
     private void notifyNurses(TestRequest t) {
         String patientName = t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null && t.getMedicalRecord().getVisit().getCustomer() != null ? t.getMedicalRecord().getVisit().getCustomer().getFullName() : "Khach";
         String serviceName = t.getService() != null ? t.getService().getName() : "Can lam sang";
@@ -490,6 +576,18 @@ public class TestRequestService implements TestRequestServiceInterface {
         return TestResultResponse.from(r);
     }
 
+    @Transactional(readOnly = true)
+    public org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse getClinicalForm(UUID testRequestId) {
+        TestRequest request = findById(testRequestId);
+        ensureCurrentStaffCanView(request);
+        if (request.getService() == null) throw new ResourceNotFoundException("Yêu cầu chưa gắn dịch vụ");
+        TestResult result = resultRepo.findByTestRequest_TestRequestId(testRequestId).orElse(null);
+        var version = result != null && result.getFormTemplateVersion() != null
+                ? result.getFormTemplateVersion()
+                : clinicalFormTemplateService.resolveVersion(request.getService().getServiceId(), null);
+        return clinicalFormTemplateService.resolvedResponse(version, result == null ? null : result.getResultData());
+    }
+
     public TestResultResponse createResult(UUID testRequestId, TestResultCreateRequest req) {
         TestRequest t = findById(testRequestId);
         ensureCurrentStaffCanOperate(t);
@@ -510,8 +608,10 @@ public class TestRequestService implements TestRequestServiceInterface {
                 .performedBy(performedBy)
                 .performedAt(LocalDateTime.now())
                 .build();
+        applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData());
         applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         resultRepo.save(r);
+        saveDraftRevision(r, performedBy, null);
 
         if (t.getStatus() == TestRequestStatus.PENDING) {
             t.setStatus(TestRequestStatus.IN_PROGRESS);
@@ -540,6 +640,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         updateResultFileUrl(r, req.imageUrl());
         if (req.conclusion() != null) r.setConclusion(req.conclusion());
         if (req.sampleId() != null) r.setSampleId(req.sampleId());
+        applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData());
         applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
 
         if (t.getStatus() == TestRequestStatus.PENDING) {
@@ -548,6 +649,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         }
 
         TestResult saved = resultRepo.save(r);
+        saveDraftRevision(saved, saved.getPerformedBy(), null);
         return TestResultResponse.from(saved);
     }
 
@@ -555,10 +657,11 @@ public class TestRequestService implements TestRequestServiceInterface {
      * Hoan thanh ket qua xet nghiem - TAO MOI hoac CAP NHAT ROI CHUYEN STATUS SANG COMPLETED.
      * Phu hop cho truong hop luu nhap + hoan thanh sau.
      */
-    public TestResultResponse completeResult(UUID testRequestId, TestResultCreateRequest req, UUID verifiedById) {
+    public TestResultResponse completeResult(UUID testRequestId, TestResultCreateRequest req) {
         // Dung findByIdWithResult de eager fetch testResult - tranh lazy loading
         TestRequest t = repo.findByIdForUpdate(testRequestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
+        StaffInfo verifier = requireResponsibleDoctorLocked(t);
 
         // Kiem tra neu da COMPLETED thi khong cho tao/cap nhat nua
         if (t.getStatus() == TestRequestStatus.COMPLETED) {
@@ -577,6 +680,7 @@ public class TestRequestService implements TestRequestServiceInterface {
             updateResultFileUrl(r, req.imageUrl());
             if (req.conclusion() != null) r.setConclusion(req.conclusion());
             if (req.sampleId() != null) r.setSampleId(req.sampleId());
+            applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData());
             applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         } else {
             // Tao moi
@@ -589,6 +693,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                     .performedBy(performedBy)
                     .performedAt(LocalDateTime.now())
                     .build();
+            applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData());
             applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         }
 
@@ -599,25 +704,17 @@ public class TestRequestService implements TestRequestServiceInterface {
         if (r.getConclusion() == null || r.getConclusion().isBlank()) {
             throw new BadRequestException("Vui lòng nhập kết luận của bác sĩ");
         }
-        if (r.getImageUrl() == null || r.getImageUrl().isBlank()
-                || !r.getImageUrl().toLowerCase().endsWith(".pdf")) {
-            throw new BadRequestException("Vui lòng tải phiếu kết quả định dạng PDF");
-        }
+        boolean hasRevisionAttachment = r.getResultId() != null && revisionRepo
+                .findFirstByTestResult_ResultIdOrderByRevisionNoDesc(r.getResultId())
+                .map(revision -> attachmentRepo.countByRevision_RevisionId(revision.getRevisionId()) > 0).orElse(false);
+        if (r.getResultData() == null && (r.getImageUrl() == null || r.getImageUrl().isBlank()) && !hasRevisionAttachment)
+            throw new BadRequestException("Vui lòng nhập kết quả có cấu trúc hoặc tải tệp kết quả");
 
-        StaffInfo verifier = staffRepo.findById(verifiedById)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bác sĩ xác nhận kết quả"));
-        if (verifier.getSystemRole() == null || !verifier.getSystemRole().isDoctor()) {
-            throw new BadRequestException("Chỉ bác sĩ mới được ký xác nhận và hoàn thành kết quả");
-        }
-        Department performingDepartment = t.getPerformingDepartment();
-        if (performingDepartment == null || performingDepartment.getHeadDoctor() == null
-                || !performingDepartment.getHeadDoctor().getStaffId().equals(verifier.getStaffId())) {
-            throw new BadRequestException("Chỉ bác sĩ phụ trách phòng mới được ký và hoàn thành kết quả");
-        }
         r.setVerifiedBy(verifier);
         r.setVerifiedAt(LocalDateTime.now());
 
         resultRepo.save(r);
+        signLatestRevision(r, verifier, null);
 
         // Chuyen status sang COMPLETED
         t.setStatus(TestRequestStatus.COMPLETED);
@@ -656,6 +753,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                     queueTicket.setCalledAt(null);
                 }
                 queueTicketRepo.save(queueTicket);
+                publishExaminationQueueUpdated(queueTicket);
             }
             if (queueTicket == null || queueTicket.getStatus() != QueueStatus.TEST_DONE)
                 patientJourneyService.activateNext(t.getMedicalRecord().getVisit().getVisitId());
@@ -663,6 +761,139 @@ public class TestRequestService implements TestRequestServiceInterface {
 
         publishLabQueueUpdated(t.getPerformingDepartment().getDepartmentId());
         return TestResultResponse.from(r);
+    }
+
+    private void applyStructuredResult(TestRequest request, TestResult result,
+                                       UUID requestedVersionId, JsonNode input) {
+        if (input == null && requestedVersionId == null) return;
+        if (request.getService() == null) throw new BadRequestException("Yêu cầu chưa gắn dịch vụ để xác định biểu mẫu");
+        var version = clinicalFormTemplateService.resolveVersion(
+                request.getService().getServiceId(), requestedVersionId);
+        var patient = request.getMedicalRecord() == null || request.getMedicalRecord().getVisit() == null
+                ? null : request.getMedicalRecord().getVisit().getCustomer();
+        JsonNode normalized = clinicalFormEngine.validateAndEnrich(version.getSchemaJson(), input,
+                patient == null ? null : patient.getDateOfBirth(),
+                patient == null ? null : patient.getGender(), LocalDate.now(CLINIC_ZONE));
+        result.setFormTemplateVersion(version);
+        result.setResultData(normalized);
+    }
+
+    private org.example.doansummer2026.model.TestResultRevision saveDraftRevision(
+            TestResult result, StaffInfo enteredBy, String amendmentReason) {
+        var current = revisionRepo.findFirstByTestResult_ResultIdOrderByRevisionNoDesc(result.getResultId()).orElse(null);
+        if (current != null && current.getStatus() == TestResultRevisionStatus.DRAFT) {
+            current.setResultData(result.getResultData());
+            current.setConclusion(result.getConclusion());
+            current.setTemplateVersion(result.getFormTemplateVersion());
+            if (amendmentReason != null) current.setAmendmentReason(amendmentReason);
+            return revisionRepo.save(current);
+        }
+        int nextNo = current == null ? 1 : current.getRevisionNo() + 1;
+        return revisionRepo.save(org.example.doansummer2026.model.TestResultRevision.builder()
+                .testResult(result).revisionNo(nextNo).status(TestResultRevisionStatus.DRAFT)
+                .resultData(result.getResultData()).conclusion(result.getConclusion())
+                .templateVersion(result.getFormTemplateVersion()).amendmentReason(amendmentReason)
+                .enteredBy(enteredBy).build());
+    }
+
+    private void signLatestRevision(TestResult result, StaffInfo signer, String amendmentReason) {
+        var draft = saveDraftRevision(result, result.getPerformedBy(), amendmentReason);
+        revisionRepo.findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
+                result.getResultId(), TestResultRevisionStatus.SIGNED).ifPresent(previous -> {
+            previous.setStatus(TestResultRevisionStatus.SUPERSEDED);
+            revisionRepo.save(previous);
+        });
+        draft.setResultData(result.getResultData());
+        draft.setConclusion(result.getConclusion());
+        draft.setTemplateVersion(result.getFormTemplateVersion());
+        draft.setStatus(TestResultRevisionStatus.SIGNED);
+        draft.setSignedBy(signer);
+        draft.setSignedAt(LocalDateTime.now());
+        revisionRepo.save(draft);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TestResultRevisionResponse> resultHistory(UUID testRequestId) {
+        TestRequest request = findById(testRequestId);
+        ensureCurrentStaffCanView(request);
+        TestResult result = resultRepo.findByTestRequest_TestRequestId(testRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Chưa có kết quả cho yêu cầu này"));
+        return revisionRepo.findByTestResult_ResultIdOrderByRevisionNoDesc(result.getResultId())
+                .stream().map(TestResultRevisionResponse::from).toList();
+    }
+
+    public TestResultRevisionResponse amendResult(UUID testRequestId, TestResultAmendRequest req) {
+        TestRequest request = repo.findByIdForUpdate(testRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
+        requireResponsibleDoctorLocked(request);
+        if (request.getStatus() != TestRequestStatus.COMPLETED)
+            throw new ConflictException("Chỉ kết quả đã ký mới cần lập bản đính chính");
+        TestResult result = resultRepo.findByTestRequest_TestRequestId(testRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Chưa có kết quả để đính chính"));
+        var latest = revisionRepo.findFirstByTestResult_ResultIdOrderByRevisionNoDesc(result.getResultId()).orElse(null);
+        if (latest != null && latest.getStatus() == TestResultRevisionStatus.DRAFT)
+            throw new ConflictException("Đã tồn tại một bản đính chính chưa ký");
+        StaffInfo actor = authService.currentStaffId() == null ? result.getPerformedBy()
+                : staffRepo.findById(authService.currentStaffId()).orElse(result.getPerformedBy());
+        return TestResultRevisionResponse.from(saveDraftRevision(result, actor, req.reason().trim()));
+    }
+
+    public TestResultRevisionResponse updateAmendment(UUID testRequestId, UUID revisionId,
+                                                       TestResultUpdateRequest req) {
+        TestRequest request = repo.findByIdForUpdate(testRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
+        requireResponsibleDoctorLocked(request);
+        var revision = findDraftRevision(request, revisionId);
+        if (req.conclusion() != null) revision.setConclusion(req.conclusion());
+        if (req.resultData() != null || req.formTemplateVersionId() != null) {
+            var version = clinicalFormTemplateService.resolveVersion(
+                    request.getService().getServiceId(), req.formTemplateVersionId());
+            var patient = request.getMedicalRecord() == null || request.getMedicalRecord().getVisit() == null
+                    ? null : request.getMedicalRecord().getVisit().getCustomer();
+            revision.setResultData(clinicalFormEngine.validateAndEnrich(version.getSchemaJson(), req.resultData(),
+                    patient == null ? null : patient.getDateOfBirth(), patient == null ? null : patient.getGender(),
+                    LocalDate.now(CLINIC_ZONE)));
+            revision.setTemplateVersion(version);
+        }
+        return TestResultRevisionResponse.from(revisionRepo.save(revision));
+    }
+
+    public TestResultRevisionResponse signAmendment(UUID testRequestId, UUID revisionId) {
+        TestRequest request = repo.findByIdForUpdate(testRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
+        StaffInfo signer = requireResponsibleDoctorLocked(request);
+        var revision = findDraftRevision(request, revisionId);
+        if (revision.getConclusion() == null || revision.getConclusion().isBlank())
+            throw new BadRequestException("Vui lòng nhập kết luận đính chính");
+        TestResult result = revision.getTestResult();
+        revisionRepo.findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
+                result.getResultId(), TestResultRevisionStatus.SIGNED).ifPresent(previous -> {
+            previous.setStatus(TestResultRevisionStatus.SUPERSEDED);
+            revisionRepo.save(previous);
+        });
+        revision.setStatus(TestResultRevisionStatus.SIGNED);
+        revision.setSignedBy(signer);
+        revision.setSignedAt(LocalDateTime.now());
+        revisionRepo.save(revision);
+        result.setResultData(revision.getResultData());
+        result.setConclusion(revision.getConclusion());
+        result.setFormTemplateVersion(revision.getTemplateVersion());
+        result.setVerifiedBy(signer);
+        result.setVerifiedAt(LocalDateTime.now());
+        resultRepo.save(result);
+        return TestResultRevisionResponse.from(revision);
+    }
+
+    private org.example.doansummer2026.model.TestResultRevision findDraftRevision(
+            TestRequest request, UUID revisionId) {
+        var revision = revisionRepo.findById(revisionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bản đính chính"));
+        if (revision.getTestResult() == null || revision.getTestResult().getTestRequest() == null
+                || !request.getTestRequestId().equals(revision.getTestResult().getTestRequest().getTestRequestId()))
+            throw new BadRequestException("Bản đính chính không thuộc yêu cầu này");
+        if (revision.getStatus() != TestResultRevisionStatus.DRAFT)
+            throw new ConflictException("Bản đính chính đã ký không thể sửa trực tiếp");
+        return revision;
     }
 
     /**
@@ -765,21 +996,98 @@ public class TestRequestService implements TestRequestServiceInterface {
         return "/uploads/test-results/" + fileName;
     }
 
-    /**
-     * Huy yeu cau xet nghiem - chi cho PENDING hoac IN_PROGRESS.
-     * Mac dinh: khong cho huy neu da COMPLETED.
-     */
+    public List<TestResultAttachmentResponse> uploadAttachments(UUID testRequestId, UUID revisionId,
+                                                                 List<MultipartFile> files) throws IOException {
+        TestRequest request = findById(testRequestId);
+        ensureCurrentStaffCanOperate(request);
+        ensureExecutionStarted(request);
+        TestResult result = resultRepo.findByTestRequest_TestRequestId(testRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hãy lưu nháp kết quả trước khi tải tệp"));
+        var revision = revisionRepo.findById(revisionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phiên bản kết quả"));
+        if (!revision.getTestResult().getResultId().equals(result.getResultId()))
+            throw new BadRequestException("Phiên bản kết quả không thuộc yêu cầu này");
+        if (revision.getStatus() != TestResultRevisionStatus.DRAFT)
+            throw new ConflictException("Không thể thêm tệp vào kết quả đã ký");
+        if (files == null || files.isEmpty()) throw new BadRequestException("Vui lòng chọn ít nhất một tệp");
+        long existing = attachmentRepo.countByRevision_RevisionId(revisionId);
+        if (existing + files.size() > 10) throw new BadRequestException("Mỗi kết quả chỉ được tối đa 10 tệp");
+
+        Path uploadDir = Paths.get(uploadRoot, "test-results", "attachments").toAbsolutePath().normalize();
+        Files.createDirectories(uploadDir);
+        List<TestResultAttachmentResponse> saved = new java.util.ArrayList<>();
+        int order = (int) existing;
+        for (MultipartFile file : files) {
+            ValidatedUpload valid = validateAttachment(file);
+            String extension = switch (valid.contentType()) {
+                case "application/pdf" -> ".pdf";
+                case "image/jpeg" -> ".jpg";
+                case "image/png" -> ".png";
+                case "image/webp" -> ".webp";
+                default -> throw new BadRequestException("Định dạng tệp không hợp lệ");
+            };
+            String storedName = UUID.randomUUID() + extension;
+            Path target = uploadDir.resolve(storedName).normalize();
+            if (!target.startsWith(uploadDir)) throw new BadRequestException("Tên tệp không an toàn");
+            Files.copy(file.getInputStream(), target);
+            var attachment = attachmentRepo.save(org.example.doansummer2026.model.TestResultAttachment.builder()
+                    .revision(revision).storagePath(target.toString()).originalName(valid.originalName())
+                    .contentType(valid.contentType()).fileSize(file.getSize()).displayOrder(order++).build());
+            saved.add(TestResultAttachmentResponse.from(attachment));
+        }
+        return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public List<TestResultAttachmentResponse> listAttachments(UUID testRequestId, UUID revisionId) {
+        TestRequest request = findById(testRequestId);
+        ensureCurrentStaffCanView(request);
+        var revision = revisionRepo.findById(revisionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phiên bản kết quả"));
+        if (revision.getTestResult() == null || revision.getTestResult().getTestRequest() == null
+                || !testRequestId.equals(revision.getTestResult().getTestRequest().getTestRequestId()))
+            throw new BadRequestException("Phiên bản kết quả không thuộc yêu cầu này");
+        return attachmentRepo.findByRevision_RevisionIdOrderByDisplayOrder(revisionId)
+                .stream().map(TestResultAttachmentResponse::from).toList();
+    }
+
+    private ValidatedUpload validateAttachment(MultipartFile file) throws IOException {
+        if (file == null || file.isEmpty()) throw new BadRequestException("Tệp không được để trống");
+        if (file.getSize() > 10L * 1024 * 1024) throw new BadRequestException("Mỗi tệp không được vượt quá 10 MB");
+        String original = Paths.get(file.getOriginalFilename() == null ? "result" : file.getOriginalFilename())
+                .getFileName().toString().replaceAll("[\\r\\n]", "_");
+        byte[] head = new byte[12];
+        int read;
+        try (var input = file.getInputStream()) { read = input.read(head); }
+        String detected;
+        if (read >= 5 && new String(head, 0, 5, java.nio.charset.StandardCharsets.US_ASCII).equals("%PDF-")) detected = "application/pdf";
+        else if (read >= 3 && (head[0] & 0xff) == 0xff && (head[1] & 0xff) == 0xd8 && (head[2] & 0xff) == 0xff) detected = "image/jpeg";
+        else if (read >= 8 && java.util.Arrays.equals(java.util.Arrays.copyOf(head, 8), new byte[]{(byte)137,80,78,71,13,10,26,10})) detected = "image/png";
+        else if (read >= 12 && new String(head, 0, 4, java.nio.charset.StandardCharsets.US_ASCII).equals("RIFF")
+                && new String(head, 8, 4, java.nio.charset.StandardCharsets.US_ASCII).equals("WEBP")) detected = "image/webp";
+        else throw new BadRequestException("Chỉ chấp nhận PDF, JPEG, PNG hoặc WebP hợp lệ");
+        if (file.getContentType() != null && !file.getContentType().equalsIgnoreCase(detected)
+                && !(detected.equals("image/jpeg") && file.getContentType().equalsIgnoreCase("image/jpg")))
+            throw new BadRequestException("Loại MIME không khớp với nội dung tệp");
+        return new ValidatedUpload(original, detected);
+    }
+
+    private record ValidatedUpload(String originalName, String contentType) {}
+
+    /** Huy yeu cau chi dinh khi phong thuc hien chua bat dau xu ly. */
     public TestRequestResponse cancel(UUID id, TestRequestCancelRequest req) {
         TestRequest t = repo.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + id));
-        ensureCanCancel(t);
+        requireResponsibleDoctorLocked(t);
 
-        // Chi cho phep huy khi PENDING hoac IN_PROGRESS
-        if (t.getStatus() == TestRequestStatus.COMPLETED) {
-            throw new org.example.doansummer2026.exception.ConflictException("Không thể hủy yêu cầu đã hoàn thành");
-        }
         if (t.getStatus() == TestRequestStatus.CANCELLED) {
             throw new org.example.doansummer2026.exception.ConflictException("Yêu cầu đã bị hủy");
+        }
+        if (t.getStatus() != TestRequestStatus.PENDING
+                && t.getStatus() != TestRequestStatus.BLOCKED
+                && t.getStatus() != TestRequestStatus.IN_PROGRESS) {
+            throw new org.example.doansummer2026.exception.ConflictException(
+                    "Chỉ có thể hủy yêu cầu trước khi kết quả được ký");
         }
 
         t.setStatus(TestRequestStatus.CANCELLED);
@@ -859,6 +1167,8 @@ public class TestRequestService implements TestRequestServiceInterface {
                 .map((java.util.function.Function<java.util.UUID, TestRequest>) serviceId -> {
                     MedicalService service = serviceRepo.findById(serviceId)
                             .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
+                    requireParaclinicalService(service);
+                    ensureNoSignedSameDayResult(record, service);
                     ensureServiceNotAlreadyRequested(record, serviceId);
                     Department dept = selectPerformingDepartment(service);
                     return TestRequest.builder()
@@ -887,6 +1197,25 @@ public class TestRequestService implements TestRequestServiceInterface {
         if (repo.existsByMedicalRecord_Visit_VisitIdAndService_ServiceIdAndStatusNot(
                 visitId, serviceId, TestRequestStatus.CANCELLED)) {
             throw new ConflictException("Dịch vụ này đã được chỉ định trong lượt khám hiện tại.");
+        }
+    }
+
+    private void requireParaclinicalService(MedicalService service) {
+        if (service == null || service.getDepartmentType() == null
+                || !service.getDepartmentType().isParaclinical()) {
+            throw new BadRequestException(
+                    "Chỉ được tạo yêu cầu cho dịch vụ cận lâm sàng; dịch vụ khám phải được lễ tân tạo lượt riêng"
+            );
+        }
+    }
+
+    private void ensureNoSignedSameDayResult(MedicalRecord record, MedicalService service) {
+        if (record != null && record.getVisit() != null
+                && sameDayParaclinicalResultService.hasReusableResult(
+                        record.getVisit(), service.getServiceId())) {
+            throw new ConflictException(
+                    "Dịch vụ cận lâm sàng này đã có kết quả được ký trong ngày; hãy sử dụng kết quả tham chiếu"
+            );
         }
     }
 
@@ -960,18 +1289,16 @@ public class TestRequestService implements TestRequestServiceInterface {
     }
 
     private void ensureCurrentStaffCanOperate(TestRequest request) {
-        if (isCurrentAdmin()) return;
         UUID staffId = authService.currentStaffId();
         Department department = request.getPerformingDepartment();
         if (staffId == null || department == null) {
-            throw new BadRequestException("Không xác định được nhân viên hoặc phòng thực hiện");
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Không xác định được nhân viên hoặc phòng thực hiện");
         }
-        boolean headDoctor = department.getHeadDoctor() != null
-                && staffId.equals(department.getHeadDoctor().getStaffId());
-        boolean assignedNurse = department.getNurses() != null && department.getNurses().stream()
-                .anyMatch(nurse -> staffId.equals(nurse.getStaffId()));
-        if (!headDoctor && !assignedNurse) {
-            throw new BadRequestException("Bạn không được phân công thực hiện tại phòng này");
+        StaffInfo actor = staffRepo.findById(staffId).orElse(null);
+        if (!isResponsibleDoctor(department, actor) && !isAssignedNurse(department, actor)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Bạn không được phân công thực hiện tại phòng này");
         }
     }
 
@@ -985,31 +1312,46 @@ public class TestRequestService implements TestRequestServiceInterface {
     }
 
     private StaffInfo resolveCurrentPerformer(UUID requestedPerformerId) {
-        if (isCurrentAdmin()) {
-            return staffRepo.findById(requestedPerformerId)
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Nhân viên không tồn tại: " + requestedPerformerId));
-        }
         UUID currentStaffId = authService.currentStaffId();
         if (currentStaffId == null || requestedPerformerId == null
                 || !currentStaffId.equals(requestedPerformerId)) {
-            throw new BadRequestException("Người thực hiện phải là tài khoản nhân viên đang đăng nhập");
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Người thực hiện phải là tài khoản nhân viên đang đăng nhập");
         }
         return staffRepo.findById(currentStaffId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên thực hiện"));
     }
 
-    private void ensureCanCancel(TestRequest request) {
-        if (isCurrentAdmin()) return;
+    private StaffInfo requireResponsibleDoctorLocked(TestRequest request) {
         UUID staffId = authService.currentStaffId();
-        boolean requester = staffId != null && request.getRequestedBy() != null
-                && staffId.equals(request.getRequestedBy().getStaffId());
-        boolean responsibleDoctor = staffId != null && request.getPerformingDepartment() != null
-                && request.getPerformingDepartment().getHeadDoctor() != null
-                && staffId.equals(request.getPerformingDepartment().getHeadDoctor().getStaffId());
-        if (!requester && !responsibleDoctor) {
-            throw new BadRequestException("Chỉ bác sĩ chỉ định hoặc bác sĩ phụ trách phòng mới được hủy yêu cầu");
+        Department currentDepartment = request.getPerformingDepartment();
+        if (staffId == null || currentDepartment == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Chỉ bác sĩ phụ trách phòng thực hiện mới được phép thao tác");
         }
+        Department lockedDepartment = departmentRepo.findByIdForUpdate(currentDepartment.getDepartmentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Phòng thực hiện không tồn tại"));
+        StaffInfo actor = staffRepo.findById(staffId).orElse(null);
+        if (!isResponsibleDoctor(lockedDepartment, actor)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Chỉ bác sĩ phụ trách phòng thực hiện mới được phép thao tác");
+        }
+        return actor;
+    }
+
+    private boolean isResponsibleDoctor(Department department, StaffInfo actor) {
+        return department != null && actor != null && actor.getSystemRole() != null
+                && actor.getSystemRole().isDoctor()
+                && department.getHeadDoctor() != null
+                && actor.getStaffId().equals(department.getHeadDoctor().getStaffId());
+    }
+
+    private boolean isAssignedNurse(Department department, StaffInfo actor) {
+        return department != null && actor != null
+                && actor.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE
+                && department.getNurses() != null
+                && department.getNurses().stream()
+                .anyMatch(nurse -> actor.getStaffId().equals(nurse.getStaffId()));
     }
 
     private boolean isCurrentAdmin() {

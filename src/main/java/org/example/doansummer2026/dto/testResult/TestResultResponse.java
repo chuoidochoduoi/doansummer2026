@@ -1,5 +1,6 @@
 package org.example.doansummer2026.dto.testResult;
 
+import tools.jackson.databind.JsonNode;
 import org.example.doansummer2026.model.TestResult;
 
 import java.time.LocalDateTime;
@@ -13,6 +14,8 @@ public record TestResultResponse(
         String imageUrl,
         String fileName,
         String conclusion,
+        UUID formTemplateVersionId,
+        JsonNode resultData,
         String sampleId,
         SpecimenType sampleType,
         SpecimenStatus sampleStatus,
@@ -41,7 +44,8 @@ public record TestResultResponse(
                 ? "/api/v1/test-results/" + r.getResultId() + "/file"
                 : null;
         return new TestResultResponse(r.getResultId(), reqId, protectedFileUrl, fileName,
-                r.getConclusion(), r.getSampleId(), r.getSampleType(), r.getSampleStatus(), r.getCollectedAt(),
+                r.getConclusion(), r.getFormTemplateVersion() == null ? null : r.getFormTemplateVersion().getVersionId(),
+                r.getResultData(), r.getSampleId(), r.getSampleType(), r.getSampleStatus(), r.getCollectedAt(),
                 collectedById, collectedByName, performedById, performedByName, r.getPerformedAt(),
                 verifiedById, verifiedByName, r.getVerifiedAt());
     }
@@ -52,4 +56,3 @@ public record TestResultResponse(
         return idx >= 0 ? imageUrl.substring(idx + 1) : imageUrl;
     }
 }
-

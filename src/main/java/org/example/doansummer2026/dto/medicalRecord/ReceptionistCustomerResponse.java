@@ -6,6 +6,7 @@ import org.example.doansummer2026.model.Profile;
 
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.List;
 
 /**
  * Thong tin customer (benh nhan) cho receptionist.
@@ -20,9 +21,12 @@ public record ReceptionistCustomerResponse(
         BloodType bloodType,
         String phone,
         String email,
-        String address
+        String address,
+        org.example.doansummer2026.enums.AllergyStatus allergyStatus,
+        List<String> allergies
 ) {
     public static ReceptionistCustomerResponse from(Profile p) {
+        var allergy = PatientAllergyResponse.from(p);
         return new ReceptionistCustomerResponse(
                 p.getProfileId(),
                 p.getPatientCode(),
@@ -32,7 +36,9 @@ public record ReceptionistCustomerResponse(
                 p.getBloodType(),
                 p.getPhone(),
                 p.getEmail(),
-                p.getAddress()
+                p.getAddress(),
+                allergy.status(),
+                allergy.items()
         );
     }
 }

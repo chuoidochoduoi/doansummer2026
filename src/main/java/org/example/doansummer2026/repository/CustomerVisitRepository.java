@@ -34,6 +34,52 @@ public interface CustomerVisitRepository extends JpaRepository<CustomerVisit, UU
     Optional<CustomerVisit> findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
             UUID profileId, List<VisitStatus> statuses);
 
+    @Query(value = """
+            SELECT v FROM CustomerVisit v
+            WHERE v.customer.profileId = :profileId
+              AND EXISTS (
+                  SELECT m.recordId FROM MedicalRecord m
+                  WHERE m.visit = v
+                    AND m.status = org.example.doansummer2026.enums.MedicalRecordStatus.COMPLETED
+                    AND m.queueTicket IS NOT NULL
+                    AND m.queueTicket.department.departmentType = org.example.doansummer2026.enums.DepartmentType.EXAMINATION
+              )
+              AND (:search = '' OR EXISTS (
+                  SELECT sm.recordId FROM MedicalRecord sm
+                  WHERE sm.visit = v
+                    AND sm.status = org.example.doansummer2026.enums.MedicalRecordStatus.COMPLETED
+                    AND (LOWER(sm.recordCode) LIKE LOWER(CONCAT('%', :search, '%'))
+                         OR LOWER(COALESCE(sm.diagnosis, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                         OR LOWER(COALESCE(sm.conclusion, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                         OR LOWER(COALESCE(sm.queueTicket.service.name, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                         OR LOWER(COALESCE(sm.doctor.profile.fullName, '')) LIKE LOWER(CONCAT('%', :search, '%')))
+              ))
+            """,
+            countQuery = """
+            SELECT COUNT(v) FROM CustomerVisit v
+            WHERE v.customer.profileId = :profileId
+              AND EXISTS (
+                  SELECT m.recordId FROM MedicalRecord m
+                  WHERE m.visit = v
+                    AND m.status = org.example.doansummer2026.enums.MedicalRecordStatus.COMPLETED
+                    AND m.queueTicket IS NOT NULL
+                    AND m.queueTicket.department.departmentType = org.example.doansummer2026.enums.DepartmentType.EXAMINATION
+              )
+              AND (:search = '' OR EXISTS (
+                  SELECT sm.recordId FROM MedicalRecord sm
+                  WHERE sm.visit = v
+                    AND sm.status = org.example.doansummer2026.enums.MedicalRecordStatus.COMPLETED
+                    AND (LOWER(sm.recordCode) LIKE LOWER(CONCAT('%', :search, '%'))
+                         OR LOWER(COALESCE(sm.diagnosis, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                         OR LOWER(COALESCE(sm.conclusion, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                         OR LOWER(COALESCE(sm.queueTicket.service.name, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                         OR LOWER(COALESCE(sm.doctor.profile.fullName, '')) LIKE LOWER(CONCAT('%', :search, '%')))
+              ))
+            """)
+    Page<CustomerVisit> findMedicalHistoryVisits(@Param("profileId") UUID profileId,
+                                                  @Param("search") String search,
+                                                  Pageable pageable);
+
     default Page<CustomerVisit> search(UUID customerId, VisitStatus status,
                                         LocalDateTime from, LocalDateTime to, Pageable pageable) {
         Specification<CustomerVisit> spec = (root, query, cb) -> cb.conjunction();

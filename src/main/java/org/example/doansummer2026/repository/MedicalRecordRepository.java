@@ -35,11 +35,13 @@ public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UU
             LEFT JOIN FETCH m.visit v
             LEFT JOIN FETCH m.doctor d
             LEFT JOIN FETCH d.profile
+            LEFT JOIN FETCH m.queueTicket q
+            LEFT JOIN FETCH q.service
             WHERE v.customer.profileId = :profileId
               AND m.recordId <> :currentRecordId
               AND m.status = org.example.doansummer2026.enums.MedicalRecordStatus.COMPLETED
-              AND m.queueTicket IS NOT NULL
-              AND m.queueTicket.department.departmentType = org.example.doansummer2026.enums.DepartmentType.EXAMINATION
+              AND q IS NOT NULL
+              AND q.department.departmentType = org.example.doansummer2026.enums.DepartmentType.EXAMINATION
             ORDER BY m.createdAt DESC
             """)
     List<MedicalRecord> findCompletedHistoryByProfileIdExcludingRecord(

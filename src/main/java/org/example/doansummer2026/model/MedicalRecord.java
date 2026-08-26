@@ -26,6 +26,9 @@ import lombok.Setter;
 import org.example.doansummer2026.common.BaseEntity;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import tools.jackson.databind.JsonNode;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
@@ -111,6 +114,15 @@ public class MedicalRecord extends BaseEntity {
 
     @Column(name = "patient_instruction", columnDefinition = "TEXT")
     private String patientInstruction;
+
+    /** Dữ liệu chuyên khoa được kiểm tra theo đúng phiên bản form đã áp dụng. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "specialty_data", columnDefinition = "jsonb")
+    private JsonNode specialtyData;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "form_template_version_id")
+    private ClinicalFormTemplateVersion formTemplateVersion;
 
     @NotNull
     @Enumerated(EnumType.STRING)

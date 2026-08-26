@@ -6,42 +6,58 @@ import org.example.doansummer2026.dto.invoice.InvoiceResponse;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.enums.Gender;
+import org.example.doansummer2026.enums.ServiceStatus;
 import org.example.doansummer2026.enums.VisitStatus;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Appointment;
 import org.example.doansummer2026.model.CustomerVisit;
-import org.example.doansummer2026.model.InsuranceRule;
+import org.example.doansummer2026.model.Invoice;
 import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.Profile;
+import org.example.doansummer2026.model.StaffInfo;
 import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.InsuranceRuleRepository;
+import org.example.doansummer2026.repository.InvoiceRepository;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
+import org.example.doansummer2026.repository.StaffInfoRepository;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
+
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
+
 import static org.mockito.Mockito.*;
+
 
 @ExtendWith(MockitoExtension.class)
 class CustomerVisitServiceTest {
+
+    private static final ZoneId CLINIC_ZONE =
+            ZoneId.of("Asia/Ho_Chi_Minh");
+
 
     @Mock
     private CustomerVisitRepository repo;
@@ -61,6 +77,12 @@ class CustomerVisitServiceTest {
     @Mock
     private InsuranceRuleRepository insuranceRuleRepo;
 
+    @Mock
+    private InvoiceRepository invoiceRepo;
+
+    @Mock
+    private StaffInfoRepository staffInfoRepository;
+
     @InjectMocks
     private CustomerVisitService customerVisitService;
 
@@ -69,15 +91,37 @@ class CustomerVisitServiceTest {
     // HELPERS
     // =========================================================
 
+    private LocalDate clinicToday() {
+        return LocalDate.now(CLINIC_ZONE);
+    }
+
+
     private Profile profile(UUID id) {
+
         return Profile.builder()
                 .profileId(id)
                 .fullName("Nguyen Van A")
                 .phone("0901234567")
                 .gender(Gender.MALE)
-                .dateOfBirth(LocalDate.of(2000, 1, 1))
+                .dateOfBirth(
+                        LocalDate.of(
+                                2000,
+                                1,
+                                1
+                        )
+                )
                 .build();
     }
+
+
+    private StaffInfo staff(UUID id) {
+
+        return StaffInfo.builder()
+                .staffId(id)
+                .staffCode("STAFF001")
+                .build();
+    }
+
 
     private MedicalService medicalService(
             UUID id,
@@ -86,31 +130,47 @@ class CustomerVisitServiceTest {
             BigDecimal price,
             DepartmentType departmentType
     ) {
+
         return MedicalService.builder()
                 .serviceId(id)
                 .name(name)
                 .serviceCode(code)
                 .price(price)
                 .departmentType(departmentType)
+                .status(ServiceStatus.ACTIVE)
                 .build();
     }
+
 
     private CustomerVisit visit(
             UUID id,
             Profile customer,
             VisitStatus status
     ) {
+
         return CustomerVisit.builder()
                 .visitId(id)
                 .customer(customer)
-                .checkInTime(LocalDateTime.now().minusMinutes(30))
+                .checkInTime(
+                        LocalDateTime.now()
+                                .minusMinutes(30)
+                )
                 .status(status)
                 .build();
     }
 
-    private InvoiceResponse mockInvoiceResponse(UUID invoiceId) {
-        InvoiceResponse response = mock(InvoiceResponse.class);
-        doReturn(invoiceId).when(response).invoiceId();
+
+    private InvoiceResponse mockInvoiceResponse(
+            UUID invoiceId
+    ) {
+
+        InvoiceResponse response =
+                mock(InvoiceResponse.class);
+
+        doReturn(invoiceId)
+                .when(response)
+                .invoiceId();
+
         return response;
     }
 
@@ -122,20 +182,39 @@ class CustomerVisitServiceTest {
     @Test
     void search_ShouldReturnMappedPage() {
 
-        UUID customerId = UUID.randomUUID();
+        UUID customerId =
+                UUID.randomUUID();
+
+        UUID visitId =
+                UUID.randomUUID();
 
         LocalDateTime from =
-                LocalDateTime.of(2026, 8, 1, 0, 0);
+                LocalDateTime.of(
+                        2026,
+                        8,
+                        1,
+                        0,
+                        0
+                );
 
         LocalDateTime to =
-                LocalDateTime.of(2026, 8, 31, 23, 59);
+                LocalDateTime.of(
+                        2026,
+                        8,
+                        31,
+                        23,
+                        59
+                );
 
         var pageable =
-                PageRequest.of(0, 10);
+                PageRequest.of(
+                        0,
+                        10
+                );
 
         CustomerVisit visit =
                 visit(
-                        UUID.randomUUID(),
+                        visitId,
                         profile(customerId),
                         VisitStatus.CHECKED_IN
                 );
@@ -149,7 +228,18 @@ class CustomerVisitServiceTest {
                         pageable
                 )
         ).thenReturn(
-                new PageImpl<>(List.of(visit))
+                new PageImpl<>(
+                        List.of(visit)
+                )
+        );
+
+        when(
+                invoiceRepo
+                        .findAllByVisit_VisitId(
+                                visitId
+                        )
+        ).thenReturn(
+                List.of()
         );
 
         var result =
@@ -170,17 +260,23 @@ class CustomerVisitServiceTest {
                 to,
                 pageable
         );
+
+        verify(invoiceRepo)
+                .findAllByVisit_VisitId(
+                        visitId
+                );
     }
 
 
     // =========================================================
-    // GET / FIND
+    // FIND BY ID
     // =========================================================
 
     @Test
     void findById_ShouldReturn_WhenFound() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         CustomerVisit visit =
                 visit(
@@ -190,7 +286,9 @@ class CustomerVisitServiceTest {
                 );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(visit));
+                .thenReturn(
+                        Optional.of(visit)
+                );
 
         assertSame(
                 visit,
@@ -202,22 +300,32 @@ class CustomerVisitServiceTest {
     @Test
     void findById_ShouldThrow_WhenMissing() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         when(repo.findById(id))
-                .thenReturn(Optional.empty());
+                .thenReturn(
+                        Optional.empty()
+                );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> customerVisitService.findById(id)
+                () ->
+                        customerVisitService
+                                .findById(id)
         );
     }
 
 
+    // =========================================================
+    // GET
+    // =========================================================
+
     @Test
     void get_ShouldReturnResponse() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         CustomerVisit visit =
                 visit(
@@ -227,124 +335,632 @@ class CustomerVisitServiceTest {
                 );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(visit));
+                .thenReturn(
+                        Optional.of(visit)
+                );
 
-        assertNotNull(
-                customerVisitService.get(id)
+        when(
+                invoiceRepo
+                        .findAllByVisit_VisitId(id)
+        ).thenReturn(
+                List.of()
         );
+
+        var result =
+                customerVisitService.get(id);
+
+        assertNotNull(result);
+
+        verify(invoiceRepo)
+                .findAllByVisit_VisitId(id);
     }
 
 
     // =========================================================
-    // CREATE - NO SERVICE
+    // CREATE - SERVICE IDS NULL
     // =========================================================
 
     @Test
     void create_ShouldReject_WhenServiceIdsNull() {
 
         CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
 
         when(req.serviceIds())
                 .thenReturn(null);
 
         assertThrows(
                 BadRequestException.class,
-                () -> customerVisitService.create(req)
+                () ->
+                        customerVisitService
+                                .create(req)
         );
 
-        verifyNoInteractions(profileRepo);
+        verifyNoInteractions(
+                profileRepo
+        );
+
+        verifyNoInteractions(
+                serviceRepo
+        );
     }
 
+
+    // =========================================================
+    // CREATE - SERVICE IDS EMPTY
+    // =========================================================
 
     @Test
     void create_ShouldReject_WhenServiceIdsEmpty() {
 
         CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
 
         when(req.serviceIds())
-                .thenReturn(List.of());
+                .thenReturn(
+                        List.of()
+                );
 
         assertThrows(
                 BadRequestException.class,
-                () -> customerVisitService.create(req)
+                () ->
+                        customerVisitService
+                                .create(req)
+        );
+
+        verifyNoInteractions(
+                profileRepo
+        );
+
+        verifyNoInteractions(
+                serviceRepo
         );
     }
 
 
     // =========================================================
-    // CREATE REGISTERED CUSTOMER - NOT FOUND
+    // CREATE - SERVICE MISSING
+    // =========================================================
+
+    @Test
+    void create_ShouldThrow_WhenServiceMissing() {
+
+        UUID serviceId =
+                UUID.randomUUID();
+
+        CustomerVisitCreateRequest req =
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        List.of(serviceId)
+                );
+
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        assertThrows(
+                ResourceNotFoundException.class,
+                () ->
+                        customerVisitService
+                                .create(req)
+        );
+
+        verifyNoInteractions(
+                profileRepo
+        );
+
+        verify(
+                invoiceService,
+                never()
+        ).create(any());
+    }
+
+
+    // =========================================================
+    // CREATE - REGISTERED CUSTOMER MISSING
     // =========================================================
 
     @Test
     void create_ShouldThrow_WhenRegisteredCustomerMissing() {
 
-        UUID customerId = UUID.randomUUID();
+        UUID customerId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
+
+        MedicalService service =
+                medicalService(
+                        serviceId,
+                        "Kham",
+                        "DV01",
+                        new BigDecimal("100000"),
+                        DepartmentType.EXAMINATION
+                );
 
         CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
 
         when(req.serviceIds())
-                .thenReturn(List.of(UUID.randomUUID()));
+                .thenReturn(
+                        List.of(serviceId)
+                );
 
         when(req.customerId())
-                .thenReturn(customerId);
+                .thenReturn(
+                        customerId
+                );
 
-        when(profileRepo.findById(customerId))
-                .thenReturn(Optional.empty());
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
+
+        when(
+                profileRepo.findById(customerId)
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> customerVisitService.create(req)
+                () ->
+                        customerVisitService
+                                .create(req)
         );
+
+        verify(
+                profileRepo,
+                never()
+        ).findByIdForUpdate(any());
     }
 
 
     // =========================================================
-    // CREATE - PROFILE LOCK MISSING
+    // CREATE - CUSTOMER CANNOT BE LOCKED
     // =========================================================
 
     @Test
     void create_ShouldThrow_WhenCustomerCannotBeLocked() {
 
-        UUID customerId = UUID.randomUUID();
+        UUID customerId =
+                UUID.randomUUID();
 
-        Profile profile =
+        UUID serviceId =
+                UUID.randomUUID();
+
+        Profile customer =
                 profile(customerId);
 
+        MedicalService service =
+                medicalService(
+                        serviceId,
+                        "Kham",
+                        "DV01",
+                        new BigDecimal("100000"),
+                        DepartmentType.EXAMINATION
+                );
+
         CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
 
         when(req.serviceIds())
-                .thenReturn(List.of(UUID.randomUUID()));
+                .thenReturn(
+                        List.of(serviceId)
+                );
 
         when(req.customerId())
-                .thenReturn(customerId);
+                .thenReturn(
+                        customerId
+                );
 
-        when(profileRepo.findById(customerId))
-                .thenReturn(Optional.of(profile));
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
 
-        when(profileRepo.findByIdForUpdate(customerId))
-                .thenReturn(Optional.empty());
+        when(
+                profileRepo.findById(customerId)
+        ).thenReturn(
+                Optional.of(customer)
+        );
+
+        when(
+                profileRepo.findByIdForUpdate(
+                        customerId
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> customerVisitService.create(req)
+                () ->
+                        customerVisitService
+                                .create(req)
+        );
+
+        verify(
+                repo,
+                never()
+        ).save(any(CustomerVisit.class));
+    }
+
+
+    // =========================================================
+    // CREATE - INSURANCE NOT ALLOWED
+    // =========================================================
+
+    @Test
+    void create_ShouldReject_WhenInsuranceProvided() {
+
+        UUID serviceId =
+                UUID.randomUUID();
+
+        UUID insuranceId =
+                UUID.randomUUID();
+
+        MedicalService service =
+                medicalService(
+                        serviceId,
+                        "Kham",
+                        "DV01",
+                        new BigDecimal("100000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        CustomerVisitCreateRequest req =
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        List.of(serviceId)
+                );
+
+        when(req.insuranceId())
+                .thenReturn(
+                        insuranceId
+                );
+
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
+
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () ->
+                                customerVisitService
+                                        .create(req)
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains(
+                                "quầy thu ngân"
+                        )
+        );
+
+        verifyNoInteractions(
+                profileRepo
+        );
+
+        verifyNoInteractions(
+                insuranceRuleRepo
         );
     }
 
 
     // =========================================================
-    // CREATE GUEST - REUSE PROFILE BY PHONE
+    // CREATE - MULTIPLE EXAMINATION SERVICES
+    // =========================================================
+
+    @Test
+    void create_ShouldReject_WhenMoreThanThreeExaminationServices() {
+
+        UUID firstId =
+                UUID.randomUUID();
+
+        UUID secondId =
+                UUID.randomUUID();
+
+        UUID thirdId =
+                UUID.randomUUID();
+
+        UUID fourthId =
+                UUID.randomUUID();
+
+        MedicalService first =
+                medicalService(
+                        firstId,
+                        "Kham 1",
+                        "K01",
+                        new BigDecimal("100000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        MedicalService second =
+                medicalService(
+                        secondId,
+                        "Kham 2",
+                        "K02",
+                        new BigDecimal("150000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        MedicalService third =
+                medicalService(
+                        thirdId,
+                        "Kham 3",
+                        "K03",
+                        new BigDecimal("120000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        MedicalService fourth =
+                medicalService(
+                        fourthId,
+                        "Kham 4",
+                        "K04",
+                        new BigDecimal("130000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        CustomerVisitCreateRequest req =
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        List.of(
+                                firstId,
+                                secondId,
+                                thirdId,
+                                fourthId
+                        )
+                );
+
+        when(
+                serviceRepo.findById(firstId)
+        ).thenReturn(
+                Optional.of(first)
+        );
+
+        when(
+                serviceRepo.findById(secondId)
+        ).thenReturn(
+                Optional.of(second)
+        );
+
+        when(
+                serviceRepo.findById(thirdId)
+        ).thenReturn(
+                Optional.of(third)
+        );
+
+        when(
+                serviceRepo.findById(fourthId)
+        ).thenReturn(
+                Optional.of(fourth)
+        );
+
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        customerVisitService
+                                .create(req)
+        );
+
+        verifyNoInteractions(
+                profileRepo
+        );
+    }
+
+
+    // =========================================================
+    // CREATE GUEST - FULL NAME MISSING
+    // =========================================================
+
+    @Test
+    void create_ShouldRejectGuest_WhenFullNameMissing() {
+
+        UUID serviceId =
+                UUID.randomUUID();
+
+        MedicalService service =
+                medicalService(
+                        serviceId,
+                        "Kham",
+                        "DV01",
+                        new BigDecimal("100000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        CustomerVisitCreateRequest req =
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        List.of(serviceId)
+                );
+
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
+
+        when(req.guestFullName())
+                .thenReturn(null);
+
+        when(req.guestPhone())
+                .thenReturn(
+                        "0901234567"
+                );
+
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        customerVisitService
+                                .create(req)
+        );
+    }
+
+
+    // =========================================================
+    // CREATE GUEST - INVALID PHONE
+    // =========================================================
+
+    @Test
+    void create_ShouldRejectGuest_WhenPhoneInvalid() {
+
+        UUID serviceId =
+                UUID.randomUUID();
+
+        MedicalService service =
+                medicalService(
+                        serviceId,
+                        "Kham",
+                        "DV01",
+                        new BigDecimal("100000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        CustomerVisitCreateRequest req =
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        List.of(serviceId)
+                );
+
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
+
+        when(req.guestFullName())
+                .thenReturn(
+                        "Guest A"
+                );
+
+        when(req.guestPhone())
+                .thenReturn(
+                        "123"
+                );
+
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        customerVisitService
+                                .create(req)
+        );
+    }
+
+
+    // =========================================================
+    // CREATE GUEST - GENDER INVALID
+    // =========================================================
+
+    @Test
+    void create_ShouldRejectGuest_WhenGenderOther() {
+
+        UUID serviceId =
+                UUID.randomUUID();
+
+        MedicalService service =
+                medicalService(
+                        serviceId,
+                        "Kham",
+                        "DV01",
+                        new BigDecimal("100000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        CustomerVisitCreateRequest req =
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        List.of(serviceId)
+                );
+
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
+
+        when(req.guestFullName())
+                .thenReturn(
+                        "Guest A"
+                );
+
+        when(req.guestPhone())
+                .thenReturn(
+                        "0901234567"
+                );
+
+        when(req.guestGender())
+                .thenReturn(
+                        Gender.OTHER
+                );
+
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        customerVisitService
+                                .create(req)
+        );
+    }
+
+
+    // =========================================================
+    // CREATE GUEST - REUSE EXISTING PROFILE
     // =========================================================
 
     @Test
     void create_ShouldReuseExistingGuestProfile_WhenPhoneExists() {
 
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
-        UUID visitId = UUID.randomUUID();
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
+
+        UUID visitId =
+                UUID.randomUUID();
+
+        UUID staffId =
+                UUID.randomUUID();
 
         Profile existing =
                 profile(profileId);
@@ -358,72 +974,158 @@ class CustomerVisitServiceTest {
                         DepartmentType.EXAMINATION
                 );
 
+        StaffInfo staff =
+                staff(staffId);
+
         CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
 
         when(req.serviceIds())
-                .thenReturn(List.of(serviceId));
+                .thenReturn(
+                        List.of(serviceId)
+                );
 
-        when(req.customerId())
-                .thenReturn(null);
+        when(req.guestFullName())
+                .thenReturn(
+                        "Guest Updated"
+                );
 
         when(req.guestPhone())
-                .thenReturn(" 0901234567 ");
+                .thenReturn(
+                        "0901234567"
+                );
 
-        when(profileRepo.findFirstByPhone("0901234567"))
-                .thenReturn(Optional.of(existing));
+        when(req.guestGender())
+                .thenReturn(
+                        Gender.MALE
+                );
 
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(existing));
+        when(req.guestDateOfBirth())
+                .thenReturn(
+                        LocalDate.of(
+                                2000,
+                                1,
+                                1
+                        )
+                );
+
+        when(req.issuedById())
+                .thenReturn(
+                        staffId
+                );
+
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
+
+        when(
+                profileRepo.findFirstByPhone(
+                        "0901234567"
+                )
+        ).thenReturn(
+                Optional.of(existing)
+        );
+
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenReturn(
+                Optional.of(existing)
+        );
 
         when(
                 repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
                         eq(profileId),
                         anyList()
                 )
-        ).thenReturn(Optional.empty());
+        ).thenReturn(
+                Optional.empty()
+        );
 
-        when(repo.save(any(CustomerVisit.class)))
-                .thenAnswer(invocation -> {
-                    CustomerVisit visit =
+        when(
+                staffInfoRepository.findById(
+                        staffId
+                )
+        ).thenReturn(
+                Optional.of(staff)
+        );
+
+        when(
+                repo.save(
+                        any(CustomerVisit.class)
+                )
+        ).thenAnswer(
+                invocation -> {
+
+                    CustomerVisit saved =
                             invocation.getArgument(0);
 
-                    visit.setVisitId(visitId);
+                    saved.setVisitId(
+                            visitId
+                    );
 
-                    return visit;
-                });
-
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
+                    return saved;
+                }
+        );
 
         InvoiceResponse invoiceResponse =
-                mockInvoiceResponse(UUID.randomUUID());
+                mockInvoiceResponse(
+                        UUID.randomUUID()
+                );
 
-        when(invoiceService.create(any()))
-                .thenReturn(invoiceResponse);
+        when(
+                invoiceService.create(any())
+        ).thenReturn(
+                invoiceResponse
+        );
 
         var result =
                 customerVisitService.create(req);
 
         assertNotNull(result);
 
-        verify(profileRepo, never())
-                .save(any(Profile.class));
+        assertEquals(
+                "Guest Updated",
+                existing.getFullName()
+        );
+
+        verify(profileRepo)
+                .save(existing);
+
+        verify(
+                staffInfoRepository
+        ).findById(staffId);
+
+        verify(invoiceService)
+                .create(any());
     }
 
 
     // =========================================================
-    // CREATE GUEST - NO PHONE
+    // CREATE GUEST - NEW PROFILE
     // =========================================================
 
     @Test
-    void create_ShouldCreateNewGuestProfile_WhenPhoneNull() {
+    void create_ShouldCreateNewGuestProfile() {
 
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
-        UUID visitId = UUID.randomUUID();
+        UUID profileId =
+                UUID.randomUUID();
 
-        MedicalService medicalService =
+        UUID serviceId =
+                UUID.randomUUID();
+
+        UUID visitId =
+                UUID.randomUUID();
+
+        UUID staffId =
+                UUID.randomUUID();
+
+        MedicalService service =
                 medicalService(
                         serviceId,
                         "Kham",
@@ -432,118 +1134,174 @@ class CustomerVisitServiceTest {
                         DepartmentType.EXAMINATION
                 );
 
+        StaffInfo staff =
+                staff(staffId);
+
         CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
 
         when(req.serviceIds())
-                .thenReturn(List.of(serviceId));
-
-        when(req.customerId())
-                .thenReturn(null);
-
-        when(req.guestPhone())
-                .thenReturn(null);
+                .thenReturn(
+                        List.of(serviceId)
+                );
 
         when(req.guestFullName())
-                .thenReturn("Guest A");
+                .thenReturn(
+                        "Guest A"
+                );
+
+        when(req.guestPhone())
+                .thenReturn(
+                        "0909999999"
+                );
 
         when(req.guestAddress())
-                .thenReturn("Ha Noi");
+                .thenReturn(
+                        "Ha Noi"
+                );
 
         when(req.guestDateOfBirth())
-                .thenReturn(LocalDate.of(2000, 1, 1));
+                .thenReturn(
+                        LocalDate.of(
+                                2000,
+                                1,
+                                1
+                        )
+                );
 
         when(req.guestGender())
-                .thenReturn(Gender.MALE);
+                .thenReturn(
+                        Gender.FEMALE
+                );
 
+        when(req.issuedById())
+                .thenReturn(
+                        staffId
+                );
 
-        // Khi service tạo guest mới -> save profile
-        when(profileRepo.save(any(Profile.class)))
-                .thenAnswer(invocation -> {
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
 
-                    Profile p = invocation.getArgument(0);
+        when(
+                profileRepo.findFirstByPhone(
+                        "0909999999"
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
 
-                    p.setProfileId(profileId);
+        when(
+                profileRepo.save(
+                        any(Profile.class)
+                )
+        ).thenAnswer(
+                invocation -> {
 
-                    return p;
-                });
+                    Profile saved =
+                            invocation.getArgument(0);
 
+                    if (saved.getProfileId() == null) {
+                        saved.setProfileId(
+                                profileId
+                        );
+                    }
 
-        // Sau khi save, service gọi findByIdForUpdate
-        Profile lockedProfile =
-                Profile.builder()
-                        .profileId(profileId)
-                        .fullName("Guest A")
-                        .phone(null)
-                        .address("Ha Noi")
-                        .dateOfBirth(LocalDate.of(2000, 1, 1))
-                        .gender(Gender.MALE)
-                        .build();
+                    return saved;
+                }
+        );
 
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(lockedProfile));
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenAnswer(
+                invocation -> {
 
+                    Profile locked =
+                            Profile.builder()
+                                    .profileId(profileId)
+                                    .fullName("Guest A")
+                                    .phone("0909999999")
+                                    .address("Ha Noi")
+                                    .dateOfBirth(
+                                            LocalDate.of(
+                                                    2000,
+                                                    1,
+                                                    1
+                                            )
+                                    )
+                                    .gender(Gender.FEMALE)
+                                    .build();
+
+                    return Optional.of(locked);
+                }
+        );
 
         when(
                 repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
                         eq(profileId),
                         anyList()
                 )
-        ).thenReturn(Optional.empty());
+        ).thenReturn(
+                Optional.empty()
+        );
 
+        when(
+                staffInfoRepository.findById(
+                        staffId
+                )
+        ).thenReturn(
+                Optional.of(staff)
+        );
 
-        when(repo.save(any(CustomerVisit.class)))
-                .thenAnswer(invocation -> {
+        when(
+                repo.save(
+                        any(CustomerVisit.class)
+                )
+        ).thenAnswer(
+                invocation -> {
 
                     CustomerVisit visit =
                             invocation.getArgument(0);
 
-                    visit.setVisitId(visitId);
+                    visit.setVisitId(
+                            visitId
+                    );
 
                     return visit;
-                });
+                }
+        );
 
-
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(medicalService));
-
+        UUID invoiceId =
+                UUID.randomUUID();
 
         InvoiceResponse invoiceResponse =
-                mockInvoiceResponse(UUID.randomUUID());
+                mockInvoiceResponse(
+                        invoiceId
+                );
 
-        when(invoiceService.create(any()))
-                .thenReturn(invoiceResponse);
+        when(
+                invoiceService.create(any())
+        ).thenReturn(
+                invoiceResponse
+        );
 
-
-        // ACT
         var result =
                 customerVisitService.create(req);
 
-
-        // ASSERT
         assertNotNull(result);
 
-
-        // Profile chỉ được save đúng 1 lần bởi production service
-        verify(profileRepo, times(1))
-                .save(argThat(p ->
-                        "Guest A".equals(p.getFullName())
-                                && p.getPhone() == null
-                                && "Ha Noi".equals(p.getAddress())
-                                && LocalDate.of(2000, 1, 1)
-                                .equals(p.getDateOfBirth())
-                                && p.getGender() == Gender.MALE
-                ));
-
-        verify(profileRepo)
-                .findByIdForUpdate(profileId);
-
-        verify(repo)
-                .save(argThat(v ->
-                        v.getCustomer() == lockedProfile
-                                && v.getStatus() == VisitStatus.CHECKED_IN
-                                && v.getCheckInTime() != null
-                ));
+        verify(
+                profileRepo,
+                atLeastOnce()
+        ).save(
+                any(Profile.class)
+        );
 
         verify(invoiceService)
                 .create(any());
@@ -551,138 +1309,103 @@ class CustomerVisitServiceTest {
 
 
     // =========================================================
-    // CREATE GUEST - BLANK PHONE + DEFAULT GENDER OTHER
-    // =========================================================
-
-    @Test
-    void create_ShouldCreateGuestWithOtherGender_WhenGenderNull() {
-
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
-        UUID visitId = UUID.randomUUID();
-
-        CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
-
-        when(req.serviceIds())
-                .thenReturn(List.of(serviceId));
-
-        when(req.guestPhone())
-                .thenReturn(" ");
-
-        when(req.guestFullName())
-                .thenReturn("Guest");
-
-        when(profileRepo.save(any(Profile.class)))
-                .thenAnswer(invocation -> {
-                    Profile p = invocation.getArgument(0);
-                    p.setProfileId(profileId);
-                    return p;
-                });
-
-        Profile locked =
-                Profile.builder()
-                        .profileId(profileId)
-                        .fullName("Guest")
-                        .gender(Gender.OTHER)
-                        .build();
-
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(locked));
-
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(Optional.empty());
-
-        when(repo.save(any(CustomerVisit.class)))
-                .thenAnswer(invocation -> {
-                    CustomerVisit v = invocation.getArgument(0);
-                    v.setVisitId(visitId);
-                    return v;
-                });
-
-        MedicalService service =
-                medicalService(
-                        serviceId,
-                        "Kham",
-                        "DV",
-                        BigDecimal.ZERO,
-                        DepartmentType.EXAMINATION
-                );
-
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
-
-        InvoiceResponse invoiceResponse =
-                mockInvoiceResponse(UUID.randomUUID());
-
-        when(invoiceService.create(any()))
-                .thenReturn(invoiceResponse);
-
-        customerVisitService.create(req);
-
-        verify(profileRepo).save(argThat(p ->
-                p.getGender() == Gender.OTHER
-        ));
-    }
-
-
-    // =========================================================
-    // CREATE - ACTIVE VISIT
+    // CREATE - ACTIVE VISIT EXISTS
     // =========================================================
 
     @Test
     void create_ShouldReject_WhenCustomerAlreadyHasActiveVisit() {
 
-        UUID profileId = UUID.randomUUID();
+        UUID profileId =
+                UUID.randomUUID();
 
-        Profile profile =
+        UUID serviceId =
+                UUID.randomUUID();
+
+        Profile customer =
                 profile(profileId);
+
+        MedicalService service =
+                medicalService(
+                        serviceId,
+                        "Kham",
+                        "DV01",
+                        new BigDecimal("100000"),
+                        DepartmentType.EXAMINATION
+                );
 
         CustomerVisit active =
                 visit(
                         UUID.randomUUID(),
-                        profile,
+                        customer,
                         VisitStatus.IN_PROGRESS
                 );
 
         CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
 
         when(req.serviceIds())
-                .thenReturn(List.of(UUID.randomUUID()));
+                .thenReturn(
+                        List.of(serviceId)
+                );
 
         when(req.customerId())
-                .thenReturn(profileId);
+                .thenReturn(
+                        profileId
+                );
 
-        when(profileRepo.findById(profileId))
-                .thenReturn(Optional.of(profile));
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
 
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(profile));
+        when(
+                profileRepo.findById(profileId)
+        ).thenReturn(
+                Optional.of(customer)
+        );
+
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
                         eq(profileId),
-                        anyList()
+                        eq(
+                                List.of(
+                                        VisitStatus.CHECKED_IN,
+                                        VisitStatus.IN_PROGRESS
+                                )
+                        )
                 )
-        ).thenReturn(Optional.of(active));
+        ).thenReturn(
+                Optional.of(active)
+        );
 
-        ConflictException ex =
+        ConflictException exception =
                 assertThrows(
                         ConflictException.class,
-                        () -> customerVisitService.create(req)
+                        () ->
+                                customerVisitService
+                                        .create(req)
                 );
 
         assertTrue(
-                ex.getMessage().contains("VIS-")
+                exception.getMessage()
+                        .contains("VIS-")
         );
 
-        verify(repo, never())
-                .save(any(CustomerVisit.class));
+        verify(
+                repo,
+                never()
+        ).save(any(CustomerVisit.class));
     }
 
 
@@ -693,67 +1416,17 @@ class CustomerVisitServiceTest {
     @Test
     void create_ShouldThrow_WhenAppointmentMissing() {
 
-        UUID profileId = UUID.randomUUID();
-        UUID appointmentId = UUID.randomUUID();
+        UUID profileId =
+                UUID.randomUUID();
 
-        Profile profile =
+        UUID serviceId =
+                UUID.randomUUID();
+
+        UUID appointmentId =
+                UUID.randomUUID();
+
+        Profile customer =
                 profile(profileId);
-
-        CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
-
-        when(req.serviceIds())
-                .thenReturn(List.of(UUID.randomUUID()));
-
-        when(req.customerId())
-                .thenReturn(profileId);
-
-        when(req.appointmentId())
-                .thenReturn(appointmentId);
-
-        when(profileRepo.findById(profileId))
-                .thenReturn(Optional.of(profile));
-
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(profile));
-
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(Optional.empty());
-
-        when(appointmentRepo.findById(appointmentId))
-                .thenReturn(Optional.empty());
-
-        assertThrows(
-                ResourceNotFoundException.class,
-                () -> customerVisitService.create(req)
-        );
-    }
-
-
-    // =========================================================
-    // CREATE - APPOINTMENT SUCCESS
-    // =========================================================
-
-    @Test
-    void create_ShouldMarkAppointmentCheckedIn() {
-
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
-        UUID appointmentId = UUID.randomUUID();
-        UUID visitId = UUID.randomUUID();
-
-        Profile profile =
-                profile(profileId);
-
-        Appointment appointment =
-                Appointment.builder()
-                        .appointmentId(appointmentId)
-                        .status(AppointmentStatus.PENDING)
-                        .build();
 
         MedicalService service =
                 medicalService(
@@ -765,48 +1438,592 @@ class CustomerVisitServiceTest {
                 );
 
         CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
 
         when(req.serviceIds())
-                .thenReturn(List.of(serviceId));
+                .thenReturn(
+                        List.of(serviceId)
+                );
 
         when(req.customerId())
-                .thenReturn(profileId);
+                .thenReturn(
+                        profileId
+                );
 
         when(req.appointmentId())
-                .thenReturn(appointmentId);
+                .thenReturn(
+                        appointmentId
+                );
 
-        when(profileRepo.findById(profileId))
-                .thenReturn(Optional.of(profile));
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
 
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(profile));
+        when(
+                profileRepo.findById(profileId)
+        ).thenReturn(
+                Optional.of(customer)
+        );
+
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
                         eq(profileId),
                         anyList()
                 )
-        ).thenReturn(Optional.empty());
+        ).thenReturn(
+                Optional.empty()
+        );
 
-        when(appointmentRepo.findById(appointmentId))
-                .thenReturn(Optional.of(appointment));
+        when(
+                appointmentRepo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
 
-        when(repo.save(any(CustomerVisit.class)))
-                .thenAnswer(invocation -> {
-                    CustomerVisit v = invocation.getArgument(0);
-                    v.setVisitId(visitId);
-                    return v;
-                });
+        assertThrows(
+                ResourceNotFoundException.class,
+                () ->
+                        customerVisitService
+                                .create(req)
+        );
 
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
+        verifyNoInteractions(
+                staffInfoRepository
+        );
+    }
+
+
+    // =========================================================
+    // CREATE - STAFF ID MISSING
+    // =========================================================
+
+    @Test
+    void create_ShouldReject_WhenIssuedByMissing() {
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
+
+        Profile customer =
+                profile(profileId);
+
+        MedicalService service =
+                medicalService(
+                        serviceId,
+                        "Kham",
+                        "DV01",
+                        new BigDecimal("100000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        CustomerVisitCreateRequest req =
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        List.of(serviceId)
+                );
+
+        when(req.customerId())
+                .thenReturn(
+                        profileId
+                );
+
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
+
+        when(
+                profileRepo.findById(profileId)
+        ).thenReturn(
+                Optional.of(customer)
+        );
+
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenReturn(
+                Optional.of(customer)
+        );
+
+        when(
+                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
+                        eq(profileId),
+                        anyList()
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () ->
+                                customerVisitService
+                                        .create(req)
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains(
+                                "nhân viên"
+                        )
+        );
+    }
+
+
+    // =========================================================
+    // CREATE - STAFF NOT FOUND
+    // =========================================================
+
+    @Test
+    void create_ShouldThrow_WhenStaffMissing() {
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
+
+        UUID staffId =
+                UUID.randomUUID();
+
+        Profile customer =
+                profile(profileId);
+
+        MedicalService service =
+                medicalService(
+                        serviceId,
+                        "Kham",
+                        "DV01",
+                        new BigDecimal("100000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        CustomerVisitCreateRequest req =
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        List.of(serviceId)
+                );
+
+        when(req.customerId())
+                .thenReturn(
+                        profileId
+                );
+
+        when(req.issuedById())
+                .thenReturn(
+                        staffId
+                );
+
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
+
+        when(
+                profileRepo.findById(profileId)
+        ).thenReturn(
+                Optional.of(customer)
+        );
+
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenReturn(
+                Optional.of(customer)
+        );
+
+        when(
+                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
+                        eq(profileId),
+                        anyList()
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                staffInfoRepository.findById(
+                        staffId
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        assertThrows(
+                ResourceNotFoundException.class,
+                () ->
+                        customerVisitService
+                                .create(req)
+        );
+    }
+
+
+    // =========================================================
+    // CREATE - SUCCESS
+    // =========================================================
+
+    @Test
+    void create_ShouldCreateCheckedInVisitAndInvoice() {
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
+
+        UUID visitId =
+                UUID.randomUUID();
+
+        UUID staffId =
+                UUID.randomUUID();
+
+        UUID invoiceId =
+                UUID.randomUUID();
+
+        Profile customer =
+                profile(profileId);
+
+        StaffInfo staff =
+                staff(staffId);
+
+        MedicalService service =
+                medicalService(
+                        serviceId,
+                        "Kham tong quat",
+                        "DV001",
+                        new BigDecimal("200000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        CustomerVisitCreateRequest req =
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        List.of(serviceId)
+                );
+
+        when(req.customerId())
+                .thenReturn(
+                        profileId
+                );
+
+        when(req.issuedById())
+                .thenReturn(
+                        staffId
+                );
+
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
+
+        when(
+                profileRepo.findById(profileId)
+        ).thenReturn(
+                Optional.of(customer)
+        );
+
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenReturn(
+                Optional.of(customer)
+        );
+
+        when(
+                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
+                        eq(profileId),
+                        anyList()
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                staffInfoRepository.findById(
+                        staffId
+                )
+        ).thenReturn(
+                Optional.of(staff)
+        );
+
+        when(
+                repo.save(
+                        any(CustomerVisit.class)
+                )
+        ).thenAnswer(
+                invocation -> {
+
+                    CustomerVisit saved =
+                            invocation.getArgument(0);
+
+                    saved.setVisitId(
+                            visitId
+                    );
+
+                    return saved;
+                }
+        );
 
         InvoiceResponse invoiceResponse =
-                mockInvoiceResponse(UUID.randomUUID());
+                mockInvoiceResponse(
+                        invoiceId
+                );
 
-        when(invoiceService.create(any()))
-                .thenReturn(invoiceResponse);
+        when(
+                invoiceService.create(any())
+        ).thenReturn(
+                invoiceResponse
+        );
+
+        var result =
+                customerVisitService.create(req);
+
+        assertNotNull(result);
+
+        verify(repo).save(
+                argThat(
+                        saved ->
+                                saved.getCustomer()
+                                        == customer
+                                        &&
+                                        saved.getCheckedInBy()
+                                                == staff
+                                        &&
+                                        saved.getStatus()
+                                                == VisitStatus.CHECKED_IN
+                                        &&
+                                        saved.getCheckInTime()
+                                                != null
+                )
+        );
+
+        verify(invoiceService)
+                .create(
+                        argThat(
+                                invoice ->
+                                        profileId.equals(
+                                                invoice.customerId()
+                                        )
+                                                &&
+                                                visitId.equals(
+                                                        invoice.visitId()
+                                                )
+                                                &&
+                                                staffId.equals(
+                                                        invoice.issuedById()
+                                                )
+                                                &&
+                                                BigDecimal.ZERO.compareTo(
+                                                        invoice.discount()
+                                                ) == 0
+                                                &&
+                                                invoice.items()
+                                                        != null
+                                                &&
+                                                invoice.items()
+                                                        .size()
+                                                        == 1
+                        )
+                );
+    }
+
+
+    // =========================================================
+    // CREATE - APPOINTMENT SUCCESS
+    // =========================================================
+
+    @Test
+    void create_ShouldMarkAppointmentCheckedIn() {
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
+
+        UUID appointmentId =
+                UUID.randomUUID();
+
+        UUID visitId =
+                UUID.randomUUID();
+
+        UUID staffId =
+                UUID.randomUUID();
+
+        Profile customer =
+                profile(profileId);
+
+        StaffInfo staff =
+                staff(staffId);
+
+        MedicalService service =
+                medicalService(
+                        serviceId,
+                        "Kham",
+                        "DV01",
+                        new BigDecimal("100000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        Appointment appointment =
+                Appointment.builder()
+                        .appointmentId(
+                                appointmentId
+                        )
+                        .customer(customer)
+                        .scheduledAt(
+                                clinicToday()
+                                        .atTime(9, 0)
+                        )
+                        .status(
+                                AppointmentStatus.PENDING
+                        )
+                        .build();
+
+        CustomerVisitCreateRequest req =
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        List.of(serviceId)
+                );
+
+        when(req.customerId())
+                .thenReturn(
+                        profileId
+                );
+
+        when(req.appointmentId())
+                .thenReturn(
+                        appointmentId
+                );
+
+        when(req.issuedById())
+                .thenReturn(
+                        staffId
+                );
+
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
+
+        when(
+                profileRepo.findById(profileId)
+        ).thenReturn(
+                Optional.of(customer)
+        );
+
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenReturn(
+                Optional.of(customer)
+        );
+
+        when(
+                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
+                        eq(profileId),
+                        anyList()
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                appointmentRepo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.of(appointment)
+        );
+
+        when(
+                repo.findByAppointment_AppointmentId(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                staffInfoRepository.findById(
+                        staffId
+                )
+        ).thenReturn(
+                Optional.of(staff)
+        );
+
+        when(
+                repo.save(
+                        any(CustomerVisit.class)
+                )
+        ).thenAnswer(
+                invocation -> {
+
+                    CustomerVisit saved =
+                            invocation.getArgument(0);
+
+                    saved.setVisitId(
+                            visitId
+                    );
+
+                    return saved;
+                }
+        );
+
+        UUID invoiceId =
+                UUID.randomUUID();
+
+        InvoiceResponse invoiceResponse =
+                mockInvoiceResponse(
+                        invoiceId
+                );
+
+        when(
+                invoiceService.create(any())
+        ).thenReturn(
+                invoiceResponse
+        );
 
         customerVisitService.create(req);
 
@@ -821,568 +2038,170 @@ class CustomerVisitServiceTest {
 
 
     // =========================================================
-    // CREATE - SERVICE MISSING
+    // CREATE - INACTIVE SERVICE
     // =========================================================
 
     @Test
-    void create_ShouldThrow_WhenServiceMissing() {
+    void create_ShouldReject_WhenServiceInactive() {
 
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
+        UUID profileId =
+                UUID.randomUUID();
 
-        Profile profile =
+        UUID serviceId =
+                UUID.randomUUID();
+
+        UUID staffId =
+                UUID.randomUUID();
+
+        Profile customer =
                 profile(profileId);
 
+        MedicalService service =
+                medicalService(
+                        serviceId,
+                        "Inactive Service",
+                        "DV01",
+                        new BigDecimal("100000"),
+                        DepartmentType.EXAMINATION
+                );
+
+        service.setStatus(
+                ServiceStatus.INACTIVE
+        );
+
         CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
+                mock(
+                        CustomerVisitCreateRequest.class
+                );
 
         when(req.serviceIds())
-                .thenReturn(List.of(serviceId));
+                .thenReturn(
+                        List.of(serviceId)
+                );
 
         when(req.customerId())
-                .thenReturn(profileId);
+                .thenReturn(
+                        profileId
+                );
 
-        when(profileRepo.findById(profileId))
-                .thenReturn(Optional.of(profile));
+        when(req.issuedById())
+                .thenReturn(
+                        staffId
+                );
 
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(profile));
+        when(
+                serviceRepo.findById(serviceId)
+        ).thenReturn(
+                Optional.of(service)
+        );
+
+        when(
+                profileRepo.findById(profileId)
+        ).thenReturn(
+                Optional.of(customer)
+        );
+
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
                         eq(profileId),
                         anyList()
                 )
-        ).thenReturn(Optional.empty());
+        ).thenReturn(
+                Optional.empty()
+        );
 
-        when(repo.save(any(CustomerVisit.class)))
-                .thenAnswer(invocation -> {
-                    CustomerVisit v = invocation.getArgument(0);
-                    v.setVisitId(UUID.randomUUID());
-                    return v;
-                });
+        when(
+                staffInfoRepository.findById(
+                        staffId
+                )
+        ).thenReturn(
+                Optional.of(
+                        staff(staffId)
+                )
+        );
 
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.empty());
+        when(
+                repo.save(
+                        any(CustomerVisit.class)
+                )
+        ).thenAnswer(
+                invocation -> {
+
+                    CustomerVisit saved =
+                            invocation.getArgument(0);
+
+                    saved.setVisitId(
+                            UUID.randomUUID()
+                    );
+
+                    return saved;
+                }
+        );
+
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        customerVisitService
+                                .create(req)
+        );
+
+        verify(
+                invoiceService,
+                never()
+        ).create(any());
+    }
+
+
+    // =========================================================
+    // UPDATE - VISIT MISSING
+    // =========================================================
+
+    @Test
+    void update_ShouldThrow_WhenVisitMissing() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        CustomerVisitUpdateRequest req =
+                mock(
+                        CustomerVisitUpdateRequest.class
+                );
+
+        when(
+                repo.findByIdForUpdate(id)
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> customerVisitService.create(req)
-        );
-
-        verify(invoiceService, never())
-                .create(any());
-    }
-
-
-    // =========================================================
-    // CREATE - NO INSURANCE
-    // =========================================================
-
-    @Test
-    void create_ShouldCreateInvoiceWithoutInsuranceDiscount() {
-
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
-        UUID visitId = UUID.randomUUID();
-        UUID issuerId = UUID.randomUUID();
-
-        Profile profile =
-                profile(profileId);
-
-        MedicalService service =
-                medicalService(
-                        serviceId,
-                        "Kham tong quat",
-                        "DV001",
-                        new BigDecimal("200000"),
-                        DepartmentType.EXAMINATION
-                );
-
-        CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
-
-        when(req.serviceIds())
-                .thenReturn(List.of(serviceId));
-
-        when(req.customerId())
-                .thenReturn(profileId);
-
-        when(req.issuedById())
-                .thenReturn(issuerId);
-
-        when(profileRepo.findById(profileId))
-                .thenReturn(Optional.of(profile));
-
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(profile));
-
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(Optional.empty());
-
-        when(repo.save(any(CustomerVisit.class)))
-                .thenAnswer(invocation -> {
-                    CustomerVisit v = invocation.getArgument(0);
-                    v.setVisitId(visitId);
-                    return v;
-                });
-
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
-
-        InvoiceResponse invoiceResponse =
-                mockInvoiceResponse(UUID.randomUUID());
-
-        when(invoiceService.create(any()))
-                .thenReturn(invoiceResponse);
-
-        customerVisitService.create(req);
-
-        verifyNoInteractions(
-                insuranceRuleRepo
-        );
-
-        verify(invoiceService)
-                .create(argThat(invoice ->
-                        profileId.equals(invoice.customerId())
-                                && visitId.equals(invoice.visitId())
-                                && issuerId.equals(invoice.issuedById())
-                                && BigDecimal.ZERO.compareTo(invoice.discount()) == 0
-                                && invoice.items() != null
-                                && invoice.items().size() == 1
-                ));
-    }
-
-
-    // =========================================================
-    // CREATE - INSURANCE WITHOUT MATCHING RULE
-    // =========================================================
-
-    @Test
-    void create_ShouldUseZeroDiscount_WhenInsuranceRuleMissing() {
-
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
-        UUID insuranceId = UUID.randomUUID();
-        UUID visitId = UUID.randomUUID();
-
-        Profile profile =
-                profile(profileId);
-
-        MedicalService service =
-                medicalService(
-                        serviceId,
-                        "Kham",
-                        "DV01",
-                        new BigDecimal("100000"),
-                        DepartmentType.EXAMINATION
-                );
-
-        CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
-
-        when(req.serviceIds())
-                .thenReturn(List.of(serviceId));
-
-        when(req.customerId())
-                .thenReturn(profileId);
-
-        when(req.insuranceId())
-                .thenReturn(insuranceId);
-
-        when(profileRepo.findById(profileId))
-                .thenReturn(Optional.of(profile));
-
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(profile));
-
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(Optional.empty());
-
-        when(repo.save(any(CustomerVisit.class)))
-                .thenAnswer(invocation -> {
-                    CustomerVisit v = invocation.getArgument(0);
-                    v.setVisitId(visitId);
-                    return v;
-                });
-
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
-
-        when(
-                insuranceRuleRepo
-                        .findByInsurance_InsuranceIdAndDepartmentType(
-                                insuranceId,
-                                DepartmentType.EXAMINATION
-                        )
-        ).thenReturn(Optional.empty());
-
-        InvoiceResponse invoiceResponse =
-                mockInvoiceResponse(UUID.randomUUID());
-
-        when(invoiceService.create(any()))
-                .thenReturn(invoiceResponse);
-
-        customerVisitService.create(req);
-
-        verify(invoiceService)
-                .create(argThat(invoice ->
-                        BigDecimal.ZERO.compareTo(invoice.discount()) == 0
-                                && invoice.items().get(0).discountPercent()
-                                .compareTo(BigDecimal.ZERO) == 0
-                ));
-    }
-
-
-    // =========================================================
-    // CREATE - INSURANCE DISCOUNT
-    // =========================================================
-
-    @Test
-    void create_ShouldCalculateInsuranceDiscount() {
-
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
-        UUID insuranceId = UUID.randomUUID();
-        UUID visitId = UUID.randomUUID();
-
-        Profile profile =
-                profile(profileId);
-
-        MedicalService service =
-                medicalService(
-                        serviceId,
-                        "Xet nghiem",
-                        "XN01",
-                        new BigDecimal("200000"),
-                        DepartmentType.PARACLINICAL
-                );
-
-        InsuranceRule rule =
-                mock(InsuranceRule.class);
-
-        when(rule.getDiscountPercent())
-                .thenReturn(
-                        new BigDecimal("20")
-                );
-
-        CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
-
-        when(req.serviceIds())
-                .thenReturn(List.of(serviceId));
-
-        when(req.customerId())
-                .thenReturn(profileId);
-
-        when(req.insuranceId())
-                .thenReturn(insuranceId);
-
-        when(profileRepo.findById(profileId))
-                .thenReturn(Optional.of(profile));
-
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(profile));
-
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(Optional.empty());
-
-        when(repo.save(any(CustomerVisit.class)))
-                .thenAnswer(invocation -> {
-                    CustomerVisit v = invocation.getArgument(0);
-                    v.setVisitId(visitId);
-                    return v;
-                });
-
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
-
-        when(
-                insuranceRuleRepo
-                        .findByInsurance_InsuranceIdAndDepartmentType(
-                                insuranceId,
-                                DepartmentType.PARACLINICAL
-                        )
-        ).thenReturn(Optional.of(rule));
-
-        InvoiceResponse invoiceResponse =
-                mockInvoiceResponse(UUID.randomUUID());
-
-        when(invoiceService.create(any()))
-                .thenReturn(invoiceResponse);
-
-        customerVisitService.create(req);
-
-        verify(invoiceService)
-                .create(argThat(invoice -> {
-
-                    if (invoice.discount() == null) {
-                        return false;
-                    }
-
-                    if (invoice.items() == null
-                            || invoice.items().size() != 1) {
-                        return false;
-                    }
-
-                    var item =
-                            invoice.items().get(0);
-
-                    return invoice.discount()
-                            .compareTo(new BigDecimal("40000.00")) == 0
-
-                            && item.discountPercent()
-                            .compareTo(new BigDecimal("20")) == 0
-
-                            && item.discountAmount()
-                            .compareTo(new BigDecimal("40000.00")) == 0
-
-                            && item.finalPrice()
-                            .compareTo(new BigDecimal("160000.00")) == 0;
-                }));
-    }
-
-
-    // =========================================================
-    // CREATE - MULTIPLE SERVICES / TOTAL DISCOUNT
-    // =========================================================
-
-    @Test
-    void create_ShouldSumDiscountAcrossMultipleServices() {
-
-        UUID profileId = UUID.randomUUID();
-        UUID insuranceId = UUID.randomUUID();
-        UUID visitId = UUID.randomUUID();
-
-        UUID s1Id = UUID.randomUUID();
-        UUID s2Id = UUID.randomUUID();
-
-        Profile profile =
-                profile(profileId);
-
-        MedicalService s1 =
-                medicalService(
-                        s1Id,
-                        "Service 1",
-                        "S1",
-                        new BigDecimal("100000"),
-                        DepartmentType.EXAMINATION
-                );
-
-        MedicalService s2 =
-                medicalService(
-                        s2Id,
-                        "Service 2",
-                        "S2",
-                        new BigDecimal("200000"),
-                        DepartmentType.PARACLINICAL
-                );
-
-        InsuranceRule rule1 =
-                mock(InsuranceRule.class);
-
-        InsuranceRule rule2 =
-                mock(InsuranceRule.class);
-
-        when(rule1.getDiscountPercent())
-                .thenReturn(new BigDecimal("10"));
-
-        when(rule2.getDiscountPercent())
-                .thenReturn(new BigDecimal("20"));
-
-        CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
-
-        when(req.serviceIds())
-                .thenReturn(List.of(s1Id, s2Id));
-
-        when(req.customerId())
-                .thenReturn(profileId);
-
-        when(req.insuranceId())
-                .thenReturn(insuranceId);
-
-        when(profileRepo.findById(profileId))
-                .thenReturn(Optional.of(profile));
-
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(profile));
-
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(Optional.empty());
-
-        when(repo.save(any(CustomerVisit.class)))
-                .thenAnswer(invocation -> {
-                    CustomerVisit v = invocation.getArgument(0);
-                    v.setVisitId(visitId);
-                    return v;
-                });
-
-        when(serviceRepo.findById(s1Id))
-                .thenReturn(Optional.of(s1));
-
-        when(serviceRepo.findById(s2Id))
-                .thenReturn(Optional.of(s2));
-
-        when(
-                insuranceRuleRepo
-                        .findByInsurance_InsuranceIdAndDepartmentType(
-                                insuranceId,
-                                DepartmentType.EXAMINATION
-                        )
-        ).thenReturn(Optional.of(rule1));
-
-        when(
-                insuranceRuleRepo
-                        .findByInsurance_InsuranceIdAndDepartmentType(
-                                insuranceId,
-                                DepartmentType.PARACLINICAL
-                        )
-        ).thenReturn(Optional.of(rule2));
-
-        InvoiceResponse invoiceResponse =
-                mockInvoiceResponse(UUID.randomUUID());
-
-        when(invoiceService.create(any()))
-                .thenReturn(invoiceResponse);
-
-        customerVisitService.create(req);
-
-        /*
-         * 100000 * 10% = 10000
-         * 200000 * 20% = 40000
-         * totalDiscount = 50000
-         */
-        verify(invoiceService)
-                .create(argThat(invoice ->
-                        invoice.discount()
-                                .compareTo(
-                                        new BigDecimal("50000.00")
-                                ) == 0
-                                && invoice.items() != null
-                                && invoice.items().size() == 2
-                ));
-    }
-
-
-    // =========================================================
-    // CREATE - CAPTURE VISIT
-    // =========================================================
-
-    @Test
-    void create_ShouldCreateCheckedInVisit() {
-
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
-        UUID visitId = UUID.randomUUID();
-
-        Profile profile =
-                profile(profileId);
-
-        MedicalService service =
-                medicalService(
-                        serviceId,
-                        "Kham",
-                        "DV01",
-                        BigDecimal.ZERO,
-                        DepartmentType.EXAMINATION
-                );
-
-        CustomerVisitCreateRequest req =
-                mock(CustomerVisitCreateRequest.class);
-
-        when(req.serviceIds())
-                .thenReturn(List.of(serviceId));
-
-        when(req.customerId())
-                .thenReturn(profileId);
-
-        when(profileRepo.findById(profileId))
-                .thenReturn(Optional.of(profile));
-
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(profile));
-
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(Optional.empty());
-
-        when(repo.save(any(CustomerVisit.class)))
-                .thenAnswer(invocation -> {
-                    CustomerVisit v = invocation.getArgument(0);
-                    v.setVisitId(visitId);
-                    return v;
-                });
-
-        when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
-
-        InvoiceResponse invoiceResponse =
-                mockInvoiceResponse(UUID.randomUUID());
-
-        when(invoiceService.create(any()))
-                .thenReturn(invoiceResponse);
-
-        customerVisitService.create(req);
-
-        ArgumentCaptor<CustomerVisit> captor =
-                ArgumentCaptor.forClass(
-                        CustomerVisit.class
-                );
-
-        verify(repo)
-                .save(captor.capture());
-
-        CustomerVisit saved =
-                captor.getValue();
-
-        assertSame(
-                profile,
-                saved.getCustomer()
-        );
-
-        assertEquals(
-                VisitStatus.CHECKED_IN,
-                saved.getStatus()
-        );
-
-        assertNotNull(
-                saved.getCheckInTime()
-        );
-
-        assertNull(
-                saved.getAppointment()
+                () ->
+                        customerVisitService
+                                .update(
+                                        id,
+                                        req
+                                )
         );
     }
 
 
     // =========================================================
-    // UPDATE - STATUS
+    // UPDATE - MANUAL CHECKOUT NOT ALLOWED
     // =========================================================
 
     @Test
-    void update_ShouldUpdateStatus() {
+    void update_ShouldReject_WhenCheckoutTimeProvided() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         CustomerVisit visit =
                 visit(
@@ -1392,194 +2211,47 @@ class CustomerVisitServiceTest {
                 );
 
         CustomerVisitUpdateRequest req =
-                mock(CustomerVisitUpdateRequest.class);
-
-        when(req.status())
-                .thenReturn(VisitStatus.IN_PROGRESS);
-
-        when(repo.findById(id))
-                .thenReturn(Optional.of(visit));
-
-        when(repo.save(visit))
-                .thenReturn(visit);
-
-        customerVisitService.update(
-                id,
-                req
-        );
-
-        assertEquals(
-                VisitStatus.IN_PROGRESS,
-                visit.getStatus()
-        );
-    }
-
-
-    // =========================================================
-    // UPDATE - CHECKOUT PROVIDED
-    // =========================================================
-
-    @Test
-    void update_ShouldUseProvidedCheckoutTime() {
-
-        UUID id = UUID.randomUUID();
-
-        CustomerVisit visit =
-                visit(
-                        id,
-                        profile(UUID.randomUUID()),
-                        VisitStatus.IN_PROGRESS
+                mock(
+                        CustomerVisitUpdateRequest.class
                 );
-
-        LocalDateTime checkout =
-                LocalDateTime.of(
-                        2026,
-                        8,
-                        10,
-                        15,
-                        0
-                );
-
-        CustomerVisitUpdateRequest req =
-                mock(CustomerVisitUpdateRequest.class);
 
         when(req.checkOutTime())
-                .thenReturn(checkout);
-
-        when(repo.findById(id))
-                .thenReturn(Optional.of(visit));
-
-        when(repo.save(visit))
-                .thenReturn(visit);
-
-        customerVisitService.update(
-                id,
-                req
-        );
-
-        assertEquals(
-                checkout,
-                visit.getCheckOutTime()
-        );
-    }
-
-
-    // =========================================================
-    // UPDATE - COMPLETED AUTO CHECKOUT
-    // =========================================================
-
-    @Test
-    void update_ShouldAutomaticallySetCheckout_WhenCompleted() {
-
-        UUID id = UUID.randomUUID();
-
-        CustomerVisit visit =
-                visit(
-                        id,
-                        profile(UUID.randomUUID()),
-                        VisitStatus.IN_PROGRESS
+                .thenReturn(
+                        LocalDateTime.now()
                 );
 
-        visit.setCheckOutTime(null);
-
-        CustomerVisitUpdateRequest req =
-                mock(CustomerVisitUpdateRequest.class);
-
-        when(req.status())
-                .thenReturn(VisitStatus.COMPLETED);
-
-        when(repo.findById(id))
-                .thenReturn(Optional.of(visit));
-
-        when(repo.save(visit))
-                .thenReturn(visit);
-
-        LocalDateTime before =
-                LocalDateTime.now();
-
-        customerVisitService.update(
-                id,
-                req
+        when(
+                repo.findByIdForUpdate(id)
+        ).thenReturn(
+                Optional.of(visit)
         );
 
-        LocalDateTime after =
-                LocalDateTime.now();
-
-        assertEquals(
-                VisitStatus.COMPLETED,
-                visit.getStatus()
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        customerVisitService
+                                .update(
+                                        id,
+                                        req
+                                )
         );
 
-        assertNotNull(
-                visit.getCheckOutTime()
-        );
-
-        assertFalse(
-                visit.getCheckOutTime()
-                        .isBefore(before)
-        );
-
-        assertFalse(
-                visit.getCheckOutTime()
-                        .isAfter(after)
-        );
+        verify(
+                repo,
+                never()
+        ).save(any());
     }
 
 
     // =========================================================
-    // UPDATE - COMPLETED PRESERVE EXISTING CHECKOUT
+    // UPDATE - STATUS MUST BE CANCELLED
     // =========================================================
 
     @Test
-    void update_ShouldKeepExistingCheckout_WhenAlreadySet() {
+    void update_ShouldReject_WhenStatusIsNotCancelled() {
 
-        UUID id = UUID.randomUUID();
-
-        CustomerVisit visit =
-                visit(
-                        id,
-                        profile(UUID.randomUUID()),
-                        VisitStatus.IN_PROGRESS
-                );
-
-        LocalDateTime oldCheckout =
-                LocalDateTime.now()
-                        .minusMinutes(10);
-
-        visit.setCheckOutTime(oldCheckout);
-
-        CustomerVisitUpdateRequest req =
-                mock(CustomerVisitUpdateRequest.class);
-
-        when(req.status())
-                .thenReturn(VisitStatus.COMPLETED);
-
-        when(repo.findById(id))
-                .thenReturn(Optional.of(visit));
-
-        when(repo.save(visit))
-                .thenReturn(visit);
-
-        customerVisitService.update(
-                id,
-                req
-        );
-
-        assertEquals(
-                oldCheckout,
-                visit.getCheckOutTime()
-        );
-    }
-
-
-    // =========================================================
-    // UPDATE - EMPTY REQUEST
-    // =========================================================
-
-    @Test
-    void update_ShouldSaveWithoutChanges_WhenRequestEmpty() {
-
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         CustomerVisit visit =
                 visit(
@@ -1589,10 +2261,125 @@ class CustomerVisitServiceTest {
                 );
 
         CustomerVisitUpdateRequest req =
-                mock(CustomerVisitUpdateRequest.class);
+                mock(
+                        CustomerVisitUpdateRequest.class
+                );
 
-        when(repo.findById(id))
-                .thenReturn(Optional.of(visit));
+        when(req.status())
+                .thenReturn(
+                        VisitStatus.IN_PROGRESS
+                );
+
+        when(
+                repo.findByIdForUpdate(id)
+        ).thenReturn(
+                Optional.of(visit)
+        );
+
+        assertThrows(
+                ConflictException.class,
+                () ->
+                        customerVisitService
+                                .update(
+                                        id,
+                                        req
+                                )
+        );
+
+        verifyNoInteractions(
+                invoiceRepo
+        );
+    }
+
+
+    // =========================================================
+    // UPDATE - CURRENT STATUS MUST BE CHECKED IN
+    // =========================================================
+
+    @Test
+    void update_ShouldRejectCancellation_WhenVisitAlreadyInProgress() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        CustomerVisit visit =
+                visit(
+                        id,
+                        profile(UUID.randomUUID()),
+                        VisitStatus.IN_PROGRESS
+                );
+
+        CustomerVisitUpdateRequest req =
+                mock(
+                        CustomerVisitUpdateRequest.class
+                );
+
+        when(req.status())
+                .thenReturn(
+                        VisitStatus.CANCELLED
+                );
+
+        when(
+                repo.findByIdForUpdate(id)
+        ).thenReturn(
+                Optional.of(visit)
+        );
+
+        assertThrows(
+                ConflictException.class,
+                () ->
+                        customerVisitService
+                                .update(
+                                        id,
+                                        req
+                                )
+        );
+
+        verifyNoInteractions(
+                invoiceRepo
+        );
+    }
+
+
+    // =========================================================
+    // UPDATE - CANCEL SUCCESS
+    // =========================================================
+
+    @Test
+    void update_ShouldCancelCheckedInVisit() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        CustomerVisit visit =
+                visit(
+                        id,
+                        profile(UUID.randomUUID()),
+                        VisitStatus.CHECKED_IN
+                );
+
+        CustomerVisitUpdateRequest req =
+                mock(
+                        CustomerVisitUpdateRequest.class
+                );
+
+        when(req.status())
+                .thenReturn(
+                        VisitStatus.CANCELLED
+                );
+
+        when(
+                repo.findByIdForUpdate(id)
+        ).thenReturn(
+                Optional.of(visit)
+        );
+
+        when(
+                invoiceRepo
+                        .findAllByVisit_VisitId(id)
+        ).thenReturn(
+                List.of()
+        );
 
         when(repo.save(visit))
                 .thenReturn(visit);
@@ -1606,8 +2393,12 @@ class CustomerVisitServiceTest {
         assertNotNull(result);
 
         assertEquals(
-                VisitStatus.CHECKED_IN,
+                VisitStatus.CANCELLED,
                 visit.getStatus()
+        );
+
+        assertNotNull(
+                visit.getCheckOutTime()
         );
 
         verify(repo)
@@ -1616,40 +2407,147 @@ class CustomerVisitServiceTest {
 
 
     // =========================================================
-    // DELETE
+    // UPDATE - CANCEL INVOICES
     // =========================================================
 
     @Test
-    void delete_ShouldThrow_WhenVisitMissing() {
+    void update_ShouldCancelInvoices_WhenVisitCancelled() {
 
         UUID id =
                 UUID.randomUUID();
 
-        when(repo.existsById(id))
-                .thenReturn(false);
+        UUID invoiceId =
+                UUID.randomUUID();
 
-        assertThrows(
-                ResourceNotFoundException.class,
-                () -> customerVisitService.delete(id)
+        CustomerVisit visit =
+                visit(
+                        id,
+                        profile(UUID.randomUUID()),
+                        VisitStatus.CHECKED_IN
+                );
+
+        Invoice invoice =
+                mock(Invoice.class);
+
+        when(invoice.getInvoiceId())
+                .thenReturn(
+                        invoiceId
+                );
+
+        CustomerVisitUpdateRequest req =
+                mock(
+                        CustomerVisitUpdateRequest.class
+                );
+
+        when(req.status())
+                .thenReturn(
+                        VisitStatus.CANCELLED
+                );
+
+        when(
+                repo.findByIdForUpdate(id)
+        ).thenReturn(
+                Optional.of(visit)
         );
 
-        verify(repo, never())
-                .deleteById(id);
+        when(
+                invoiceRepo
+                        .findAllByVisit_VisitId(id)
+        ).thenReturn(
+                List.of(invoice)
+        );
+
+        when(repo.save(visit))
+                .thenReturn(visit);
+
+        customerVisitService.update(
+                id,
+                req
+        );
+
+        verify(invoiceService)
+                .cancel(invoiceId);
+
+        assertEquals(
+                VisitStatus.CANCELLED,
+                visit.getStatus()
+        );
+
+        assertNotNull(
+                visit.getCheckOutTime()
+        );
     }
 
 
+    // =========================================================
+    // DELETE - MISSING
+    // =========================================================
+
     @Test
-    void delete_ShouldDelete_WhenVisitExists() {
+    void delete_ShouldThrowNotFound_WhenVisitMissing() {
 
         UUID id =
                 UUID.randomUUID();
 
-        when(repo.existsById(id))
-                .thenReturn(true);
+        when(repo.findById(id))
+                .thenReturn(
+                        Optional.empty()
+                );
 
-        customerVisitService.delete(id);
+        assertThrows(
+                ResourceNotFoundException.class,
+                () ->
+                        customerVisitService
+                                .delete(id)
+        );
 
-        verify(repo)
-                .deleteById(id);
+        verify(
+                repo,
+                never()
+        ).deleteById(any());
+    }
+
+
+    // =========================================================
+    // DELETE - EXISTING VISIT CANNOT BE DELETED
+    // =========================================================
+
+    @Test
+    void delete_ShouldReject_WhenVisitExists() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        CustomerVisit visit =
+                visit(
+                        id,
+                        profile(UUID.randomUUID()),
+                        VisitStatus.CHECKED_IN
+                );
+
+        when(repo.findById(id))
+                .thenReturn(
+                        Optional.of(visit)
+                );
+
+        ConflictException exception =
+                assertThrows(
+                        ConflictException.class,
+                        () ->
+                                customerVisitService
+                                        .delete(id)
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains(
+                                "Không thể xóa lượt khám"
+                        )
+        );
+
+        verify(
+                repo,
+                never()
+        ).deleteById(any());
     }
 }

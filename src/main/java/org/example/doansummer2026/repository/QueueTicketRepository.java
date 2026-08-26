@@ -46,6 +46,45 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
             UUID visitId, UUID serviceId);
     Optional<QueueTicket> findTopByVisit_VisitIdAndStatusOrderByCreatedAtAsc(UUID visitId, QueueStatus status);
 
+    @Query("""
+            SELECT q FROM QueueTicket q
+            JOIN FETCH q.department
+            WHERE q.visit.customer.profileId = :profileId
+              AND q.workDate = :workDate
+              AND q.ticketId <> :excludedTicketId
+              AND q.status IN :statuses
+            ORDER BY q.calledAt ASC, q.createdAt ASC
+            """)
+    List<QueueTicket> findPatientBusyTickets(
+            @Param("profileId") UUID profileId,
+            @Param("workDate") LocalDate workDate,
+            @Param("excludedTicketId") UUID excludedTicketId,
+            @Param("statuses") Collection<QueueStatus> statuses);
+
+    @Query("""
+            SELECT DISTINCT q.department.departmentId FROM QueueTicket q
+            WHERE q.visit.customer.profileId = :profileId
+              AND q.workDate = :workDate
+            """)
+    List<UUID> findPatientQueueDepartmentIds(
+            @Param("profileId") UUID profileId,
+            @Param("workDate") LocalDate workDate);
+
+    @Query("""
+            SELECT q FROM QueueTicket q
+            JOIN FETCH q.visit v
+            JOIN FETCH q.service s
+            LEFT JOIN FETCH q.department
+            WHERE v.customer.profileId = :profileId
+              AND q.workDate = :workDate
+              AND v.status <> org.example.doansummer2026.enums.VisitStatus.CANCELLED
+              AND s.departmentType = org.example.doansummer2026.enums.DepartmentType.EXAMINATION
+            ORDER BY q.createdAt DESC
+            """)
+    List<QueueTicket> findSameDayPatientExaminationTickets(
+            @Param("profileId") UUID profileId,
+            @Param("workDate") LocalDate workDate);
+
     @Query("SELECT MAX(q.queueNumber) FROM QueueTicket q WHERE q.department.departmentId = :departmentId AND q.workDate = :workDate")
     Optional<Integer> findMaxQueueNumberForDay(@Param("departmentId") UUID departmentId,
                                                 @Param("workDate") LocalDate workDate);
@@ -102,18 +141,11 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
             @Param("status") QueueStatus status,
             Pageable pageable);
 
-    /**
-     * Lay danh sach cho phong, uu tien TEST_DONE/WAITING_FOR_TEST truoc WAITING/CALLED.
-     * Mac dinh lay ca 4 trang thai, sap xep TEST_DONE/WAITING_FOR_TEST len dau.
-     */
+    /** Lay danh sach cho phong theo dung so thu tu FIFO, bat ke benh nhan dang tam thoi ban. */
     @Query("SELECT q FROM QueueTicket q WHERE q.department.departmentId = :departmentId " +
            "AND q.workDate = :workDate " +
            "AND q.status IN :statuses " +
-           "ORDER BY CASE WHEN q.status = org.example.doansummer2026.enums.QueueStatus.TEST_DONE THEN 0 " +
-                       "WHEN q.status = org.example.doansummer2026.enums.QueueStatus.WAITING_FOR_TEST THEN 1 " +
-                       "WHEN q.status = org.example.doansummer2026.enums.QueueStatus.WAITING THEN 2 " +
-                       "WHEN q.status = org.example.doansummer2026.enums.QueueStatus.CALLED THEN 3 " +
-                       "ELSE 4 END, q.createdAt ASC")
+           "ORDER BY q.queueNumber ASC, q.createdAt ASC")
     Page<QueueTicket> findWaitingPrioritized(@Param("departmentId") UUID departmentId,
                                             @Param("workDate") LocalDate workDate,
                                             @Param("statuses") List<QueueStatus> statuses,

@@ -26,19 +26,14 @@ public record ProfileCustomerResponse(
         Integer height,
         Integer weight,
         List<String> allergies,
+        org.example.doansummer2026.enums.AllergyStatus allergyStatus,
         List<AppointmentSummary> appointments,
         List<TestResultSummary> testResults
 ) {
     public static ProfileCustomerResponse from(Profile profile, Account account,
                                               List<AppointmentSummary> appointments,
                                               List<TestResultSummary> testResults) {
-        List<String> allergyList = null;
-        if (profile.getAllergies() != null && !profile.getAllergies().isBlank()) {
-            allergyList = java.util.Arrays.stream(profile.getAllergies().split("[;\\r\\n]+"))
-                    .map(String::trim)
-                    .filter(value -> !value.isBlank())
-                    .toList();
-        }
+        var allergy = org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(profile);
 
         String customerCode = profile.getPatientCode();
 
@@ -55,7 +50,8 @@ public record ProfileCustomerResponse(
                 profile.getInsuranceId(),
                 profile.getHeight(),
                 profile.getWeight(),
-                allergyList,
+                allergy.items(),
+                allergy.status(),
                 appointments,
                 testResults
         );

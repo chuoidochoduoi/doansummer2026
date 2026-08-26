@@ -28,6 +28,20 @@ public class BhxhIntegrationService {
     }
 
     public BhxhCheckResponse checkBhytCard(String cardNumber) {
+        // --- GIẢ LẬP MOCK TẠM THỜI ---
+        if ("BHYT123456".equals(cardNumber)) {
+            Insurance insurance = insuranceRepository.findByCode("BHYT").orElse(null);
+            return new BhxhCheckResponse(
+                    true,
+                    "Hợp lệ (Mocked)",
+                    insurance != null ? insurance.getInsuranceId() : null,
+                    insurance != null ? insurance.getName() : "Bảo hiểm Y Tế",
+                    "SKIP_VALIDATION", // Trả về flag để InvoiceService bỏ qua check tên
+                    "2000-01-01"
+            );
+        }
+        // ------------------------------
+
         try {
             String url = UriComponentsBuilder.fromUriString(verifyCardUrl)
                     .queryParam("code", cardNumber)

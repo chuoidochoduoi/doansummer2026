@@ -21,6 +21,9 @@ import lombok.Setter;
 import org.example.doansummer2026.common.BaseEntity;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import tools.jackson.databind.JsonNode;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -60,6 +63,15 @@ public class TestResult extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String conclusion;
 
+    /** Kết quả có cấu trúc; các cờ High/Low và phép tính được backend chuẩn hóa. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "result_data", columnDefinition = "jsonb")
+    private JsonNode resultData;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "form_template_version_id")
+    private ClinicalFormTemplateVersion formTemplateVersion;
+
     /** Ma mau vat (tu may quet hoac thiet bi y te). */
     @Column(name = "sample_id", length = 100)
     private String sampleId;
@@ -97,4 +109,3 @@ public class TestResult extends BaseEntity {
     @Column(name = "verified_at")
     private LocalDateTime verifiedAt;
 }
-

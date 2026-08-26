@@ -131,8 +131,8 @@ public class ProfileService implements ProfileServiceInterface {
         if (req.height() != null) p.setHeight(req.height());
         if (req.weight() != null) p.setWeight(req.weight());
         if (req.allergies() != null) {
-            p.setAllergies(req.allergies().stream().map(String::trim)
-                    .filter(value -> !value.isBlank()).distinct().collect(java.util.stream.Collectors.joining("\n")));
+            p.setAllergies(String.join("\n",
+                    org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.normalize(req.allergies())));
         }
         if (req.phone() != null || req.email() != null) {
             String newPhone = req.phone() != null ? blankToNull(req.phone()) : p.getPhone();

@@ -32,12 +32,15 @@ public record MedicalHistoryResponse(
 
         String specialty = null;
         String doctor = null;
+        if (record.getQueueTicket() != null && record.getQueueTicket().getService() != null) {
+            specialty = record.getQueueTicket().getService().getName();
+        }
         if (record.getVisit() != null && record.getVisit().getAppointment() != null) {
             var appt = record.getVisit().getAppointment();
-            // Lấy specialty từ dịch vụ đầu tiên
-            if (appt.getServices() != null && !appt.getServices().isEmpty()) {
+            // Hồ sơ cũ có thể chưa lưu dịch vụ trực tiếp trên queue ticket.
+            if (specialty == null && appt.getServices() != null && !appt.getServices().isEmpty()) {
                 specialty = appt.getServices().stream().findFirst()
-                        .map(s -> s.getDepartmentType() != null ? s.getDepartmentType().name() : "Khám bệnh")
+                        .map(s -> s.getName() != null ? s.getName() : "Khám bệnh")
                         .orElse("Khám bệnh");
             }
         }

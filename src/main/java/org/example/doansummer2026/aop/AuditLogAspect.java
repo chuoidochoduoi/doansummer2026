@@ -145,6 +145,16 @@ public class AuditLogAspect {
         if (result == null) return null;
         try {
             Object value = result instanceof ResponseEntity<?> response ? response.getBody() : result;
+            if (value instanceof org.example.doansummer2026.dto.contact.ContactRequestResponse contact) {
+                value = java.util.Map.of(
+                        "contactRequestId", contact.contactRequestId(),
+                        "requestCode", contact.requestCode(),
+                        "status", contact.status(),
+                        "assignedStaffId", contact.assignedStaffId() == null ? "" : contact.assignedStaffId().toString(),
+                        "acceptedAt", contact.acceptedAt() == null ? "" : contact.acceptedAt().toString(),
+                        "completedAt", contact.completedAt() == null ? "" : contact.completedAt().toString()
+                );
+            }
             return value == null ? null : objectMapper.writeValueAsString(value);
         } catch (Exception ex) {
             log.warn("Could not serialize audit response: {}", ex.getMessage());

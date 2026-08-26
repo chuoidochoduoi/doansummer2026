@@ -128,6 +128,11 @@ public class Appointment extends BaseEntity {
     @Column(name = "shift_time", length = 50)
     private String shiftTime;
 
+    /** Exact shift definition used when the appointment was booked. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shift_version_id")
+    private ShiftVersion shiftVersion;
+
     /** Cac dich vu kham da chon khi dat lich (co the thay doi khi check-in). */
     @ManyToMany
     @JoinTable(

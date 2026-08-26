@@ -40,14 +40,26 @@ public class AccountController {
     private final StaffInfoRepository staffRepo;
     private final AuthService authService;
 
-    private void checkAdminPermissionOnClinicManager(SystemRole targetRole) {
-        if (targetRole == SystemRole.CLINIC_MANAGER && authService.getCurrentSystemRole() == SystemRole.ADMIN) {
+    private void checkManagementPermission(SystemRole targetRole) {
+        SystemRole currentRole = authService.getCurrentSystemRole();
+        if (targetRole == SystemRole.CLINIC_MANAGER && currentRole == SystemRole.ADMIN) {
             throw new AccessDeniedException("Quản trị viên không có quyền thao tác trên tài khoản Quản lý phòng khám");
+        }
+        if (currentRole == SystemRole.CLINIC_MANAGER
+                && (targetRole == SystemRole.ADMIN || targetRole == SystemRole.CLINIC_MANAGER)) {
+            throw new AccessDeniedException("Quản lý phòng khám không có quyền thao tác trên tài khoản quản trị hệ thống hoặc quản lý phòng khám khác");
         }
     }
 
+    private SystemRole getTargetSystemRole(UUID accountId) {
+        var account = accountService.findById(accountId);
+        return staffRepo.findFirstByProfile_Account_Username(account.getUsername())
+                .map(staff -> staff.getSystemRole())
+                .orElse(null);
+    }
+
     @GetMapping
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<AccountResponse>> list(
             @RequestParam(required = false) Role role,
             Pageable pageable) {
@@ -58,7 +70,7 @@ public class AccountController {
      * API danh sach tai khoan nhan su (staff) - CHỉ ADMIN vaf CLINIC_MANAGER.
      */
     @GetMapping("/staff")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<AccountManagementResponse>> listStaff(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) SystemRole systemRole,
@@ -70,7 +82,7 @@ public class AccountController {
      * API danh sach tai khoan khach hang (customer) - CHỉ ADMIN vaf CLINIC_MANAGER.
      */
     @GetMapping("/customers")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<AccountManagementResponse>> listCustomers(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String status,
@@ -79,18 +91,18 @@ public class AccountController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<AccountResponse> get(@PathVariable UUID id) {
         var account = accountService.findById(id);
         SystemRole systemRole = staffRepo.findFirstByProfile_Account_Username(account.getUsername())
                 .map(staff -> staff.getSystemRole())
                 .orElse(null);
-        checkAdminPermissionOnClinicManager(systemRole);
+        checkManagementPermission(systemRole);
         return RestResponses.ok(AccountResponse.from(account, systemRole));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.UPDATE, entityName = "Account", idParamName = "id")
     public ResponseEntity<AccountResponse> update(@PathVariable UUID id,
                                                   @RequestBody AccountUpdateRequest req) {
@@ -98,14 +110,14 @@ public class AccountController {
         SystemRole systemRole = staffRepo.findFirstByProfile_Account_Username(account.getUsername())
                 .map(staff -> staff.getSystemRole())
                 .orElse(null);
-        checkAdminPermissionOnClinicManager(systemRole);
+        checkManagementPermission(systemRole);
         
         account = accountService.update(id, req);
         return RestResponses.ok(AccountResponse.from(account, systemRole));
     }
 
     @PutMapping("/{id}/password-reset")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.UPDATE, entityName = "Account", idParamName = "id")
     public ResponseEntity<Void> adminResetPassword(@PathVariable UUID id,
                                                   @RequestBody Map<String, String> payload) {
@@ -113,7 +125,7 @@ public class AccountController {
         SystemRole systemRole = staffRepo.findFirstByProfile_Account_Username(account.getUsername())
                 .map(staff -> staff.getSystemRole())
                 .orElse(null);
-        checkAdminPermissionOnClinicManager(systemRole);
+        checkManagementPermission(systemRole);
 
         String newPassword = payload.get("newPassword");
         accountService.adminResetPassword(id, newPassword);
@@ -125,9 +137,10 @@ public class AccountController {
      * KHÔNG cho phép khóa tài khoản ADMIN hoặc CLINIC_MANAGER.
      */
     @PatchMapping("/{id}/lock")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Account", idParamName = "id")
     public ResponseEntity<AccountResponse> lock(@PathVariable UUID id) {
+        checkManagementPermission(getTargetSystemRole(id));
         var account = accountService.lock(id);
         SystemRole systemRole = staffRepo.findFirstByProfile_Account_Username(account.getUsername())
                 .map(staff -> staff.getSystemRole())
@@ -136,11 +149,11 @@ public class AccountController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.DELETE, entityName = "Account", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        checkManagementPermission(getTargetSystemRole(id));
         accountService.softDelete(id);
         return RestResponses.noContent();
     }
 }
-

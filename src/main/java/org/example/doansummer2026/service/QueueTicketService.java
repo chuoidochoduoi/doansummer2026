@@ -29,6 +29,8 @@ import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.example.doansummer2026.repository.MedicalRecordRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
+import org.example.doansummer2026.repository.ProfileRepository;
+import org.example.doansummer2026.repository.InvoiceItemRepository;
 import org.example.doansummer2026.repository.Icd10CodeRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -59,10 +61,14 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     private final MedicalServiceRepository serviceRepo;
     private final MedicalRecordRepository recordRepo;
     private final StaffInfoRepository staffRepo;
+    private final ProfileRepository profileRepo;
+    private final InvoiceItemRepository invoiceItemRepo;
     private final Icd10CodeRepository icd10Repo;
     private final TestRequestService testRequestService;
     private final PatientJourneyService patientJourneyService;
     private final MedicalRecordService medicalRecordService;
+    private final ClinicalFormTemplateService clinicalFormTemplateService;
+    private final ClinicalFormEngine clinicalFormEngine;
     private final org.example.doansummer2026.repository.InvoiceRepository invoiceRepo;
     private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
     private final NotificationService notificationService;
@@ -75,12 +81,12 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     public PageResponse<QueueTicketResponse> search(UUID departmentId, LocalDate workDate,
                                                      QueueStatus status, Pageable pageable) {
         Page<QueueTicket> page = repo.search(departmentId, workDate, status, pageable);
-        return PageResponse.from(page, q -> QueueTicketResponse.from(q, getRecordId(q), null));
+        return PageResponse.from(page, q -> toResponse(q, getRecordId(q), null, null));
     }
 
     @Transactional(readOnly = true)
     public QueueTicketResponse get(UUID id) {
-        return QueueTicketResponse.from(findById(id));
+        return toResponse(findById(id));
     }
 
     public QueueTicketResponse create(QueueTicketCreateRequest req) {
@@ -89,16 +95,53 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + req.visitId()));
         var existing = repo.findTopByVisit_VisitIdAndService_ServiceIdOrderByCreatedAtDesc(
                 req.visitId(), req.serviceId());
-        if (existing.isPresent()) return QueueTicketResponse.from(existing.get());
+        if (existing.isPresent()) return toResponse(existing.get());
         Department dept = departmentRepo.findByIdForUpdate(req.departmentId())
                 .orElseThrow(() -> new ResourceNotFoundException("Phòng không tồn tại: " + req.departmentId()));
         // Kiem tra lai sau khi khoa phong. Neu hai thanh toan den cung luc,
         // request thu hai phai tai su dung phieu request thu nhat vua tao.
         existing = repo.findTopByVisit_VisitIdAndService_ServiceIdOrderByCreatedAtDesc(
                 req.visitId(), req.serviceId());
-        if (existing.isPresent()) return QueueTicketResponse.from(existing.get());
+        if (existing.isPresent()) return toResponse(existing.get());
         org.example.doansummer2026.model.MedicalService service = serviceRepo.findById(req.serviceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + req.serviceId()));
+        if (service.getDepartmentType() != null
+                && service.getDepartmentType().normalized()
+                == org.example.doansummer2026.enums.DepartmentType.EXAMINATION) {
+            if (visit.getCustomer() != null) {
+                profileRepo.findByIdForUpdate(visit.getCustomer().getProfileId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
+                repo.findSameDayPatientExaminationTickets(
+                                visit.getCustomer().getProfileId(),
+                                req.workDate() != null ? req.workDate() : LocalDate.now(CLINIC_ZONE))
+                        .stream()
+                        .filter(ticket -> ticket.getService() != null
+                                && invoiceItemRepo.findDistinctExaminationServiceIdsByVisit(
+                                        ticket.getVisit().getVisitId(), null)
+                                        .contains(ticket.getService().getServiceId())
+                                && service.getServiceId().equals(ticket.getService().getServiceId())
+                                && ticket.getVisit() != null
+                                && !visit.getVisitId().equals(ticket.getVisit().getVisitId()))
+                        .findFirst()
+                        .ifPresent(ticket -> {
+                            String visitCode = "VIS-" + ticket.getVisit().getVisitId().toString()
+                                    .replace("-", "").substring(0, 8).toUpperCase();
+                            throw new ConflictException("Dịch vụ " + service.getName()
+                                    + " đã được đăng ký hôm nay trong lượt " + visitCode);
+                        });
+            }
+            boolean hasOtherExamination = repo.findAllByVisit_VisitId(req.visitId()).stream()
+                    .filter(ticket -> ticket.getService() != null
+                            && ticket.getService().getDepartmentType() != null
+                            && ticket.getService().getDepartmentType().normalized()
+                            == org.example.doansummer2026.enums.DepartmentType.EXAMINATION)
+                    .anyMatch(ticket -> !service.getServiceId().equals(ticket.getService().getServiceId()));
+            if (hasOtherExamination) {
+                throw new ConflictException(
+                        "Lượt khám đã có dịch vụ khám bệnh; vui lòng tạo lượt mới tại lễ tân"
+                );
+            }
+        }
         LocalDate workDate = req.workDate() != null ? req.workDate() : LocalDate.now(CLINIC_ZONE);
         Integer max = repo.findMaxQueueNumberForDay(req.departmentId(), workDate).orElse(0);
         QueueTicket q = QueueTicket.builder()
@@ -114,7 +157,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         if (dept.getDepartmentType() == org.example.doansummer2026.enums.DepartmentType.EXAMINATION) {
             notifyDoctors(saved);
         }
-        return QueueTicketResponse.from(saved);
+        return toResponse(saved);
     }
     
     private void notifyDoctors(QueueTicket q) {
@@ -155,24 +198,26 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         QueueTicket q = findByIdForUpdate(id);
         ensureCallableToday(q);
         ensureCurrentStaffCanOperate(q);
-        // Cho phep call tu WAITING, WAITING_FOR_TEST hoac TEST_DONE
-        if (q.getStatus() != QueueStatus.WAITING && q.getStatus() != QueueStatus.CALLED && q.getStatus() != QueueStatus.WAITING_FOR_TEST && q.getStatus() != QueueStatus.TEST_DONE) {
+        // WAITING_FOR_TEST chua duoc goi lai; chi TEST_DONE moi quay ve bac si.
+        if (q.getStatus() != QueueStatus.WAITING && q.getStatus() != QueueStatus.CALLED && q.getStatus() != QueueStatus.TEST_DONE) {
             throw new BadRequestException("Chỉ có thể gọi phiếu đang chờ; trạng thái hiện tại: " + q.getStatus());
         }
+        ensurePatientNotBusy(q);
         q.setStatus(QueueStatus.CALLED);
         q.setCalledAt(LocalDateTime.now());
         QueueTicket saved = repo.save(q);
-        updateDepartmentStatus(q.getDepartment().getDepartmentId());
-        return QueueTicketResponse.from(saved);
+        updatePatientQueueDepartments(q);
+        return toResponse(saved);
     }
 
     public QueueTicketResponse startExam(UUID id) {
         QueueTicket q = findByIdForUpdate(id);
         ensureCallableToday(q);
         ensureCurrentStaffCanOperate(q);
-        if (q.getStatus() != QueueStatus.CALLED && q.getStatus() != QueueStatus.WAITING_FOR_TEST && q.getStatus() != QueueStatus.TEST_DONE) {
+        if (q.getStatus() != QueueStatus.CALLED && q.getStatus() != QueueStatus.TEST_DONE) {
             throw new BadRequestException("Chỉ có thể bắt đầu với phiếu đã gọi hoặc đang chờ quay lại; trạng thái hiện tại: " + q.getStatus());
         }
+        ensurePatientNotBusy(q);
         // Khoa phong nhu mot mutex: hai nhan vien khong the cung luc dua hai
         // benh nhan khac nhau vao IN_PROGRESS trong cung mot phong.
         departmentRepo.findByIdForUpdate(q.getDepartment().getDepartmentId())
@@ -187,8 +232,8 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             q.setStatus(QueueStatus.IN_PROGRESS);
             QueueTicket saved = repo.save(q);
             testRequestService.startRequestsForQueue(q.getTicketId());
-            updateDepartmentStatus(q.getDepartment().getDepartmentId());
-            return QueueTicketResponse.from(saved, null, getWaitingCount(q), null);
+            updatePatientQueueDepartments(q);
+            return toResponse(saved, null, getWaitingCount(q), null);
         }
 
         // Lay staffId tu SecurityContext (JWT token)
@@ -214,8 +259,8 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
         q.setStatus(QueueStatus.IN_PROGRESS);
         QueueTicket saved = repo.save(q);
-        updateDepartmentStatus(q.getDepartment().getDepartmentId());
-        return QueueTicketResponse.from(saved, recordId, getWaitingCount(q), medicalRecord);
+        updatePatientQueueDepartments(q);
+        return toResponse(saved, recordId, getWaitingCount(q), medicalRecord);
     }
 
     public MedicalRecordResponse completeAndReturnRecord(UUID id) {
@@ -256,10 +301,30 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             updateMedicalRecordFields(record, req);
             record = recordRepo.save(record);
         }
+        medicalRecordService.validateVitalSignsForCompletion(record);
+        medicalRecordService.ensureAllergiesVerifiedForExistingPrescription(record);
 
         boolean hasTestRequests = req != null && req.testRequests() != null && !req.testRequests().isEmpty();
+        UUID orderingDoctorId = record.getDoctor() != null ? record.getDoctor().getStaffId() : completingStaffId;
+        if (orderingDoctorId != null) {
+            // CLS da dat va thanh toan truoc duoc gan cho phong kham dau tien
+            // dang xu ly. Khong tao lai Invoice/TestRequest va dam bao ket qua
+            // dua benh nhan quay lai dung MedicalRecord nguon.
+            testRequestService.attachUnlinkedPrepaidRequestsToExamination(
+                    q.getVisit().getVisitId(), record.getRecordId(), orderingDoctorId);
+        }
         boolean hasIncompletePrepaidTests = testRequestService.hasIncompleteRequestsForRecord(record.getRecordId());
         boolean shouldWaitForTests = hasTestRequests || hasIncompletePrepaidTests;
+        if (shouldWaitForTests) {
+            // Day moi chi la ket thuc luot kham ban dau de benh nhan sang CLS,
+            // chua phai hoan thanh ho so. Dam bao ca du lieu cu tung bi dong nham
+            // cung quay ve trang thai dang xu ly cho den khi bac si ket luan lai.
+            record.setStatus(MedicalRecordStatus.IN_PROGRESS);
+            record.setCompletedAt(null);
+            record.setDoctorConfirmedBy(null);
+            record.setDoctorConfirmedAt(null);
+            recordRepo.save(record);
+        }
         if (!shouldWaitForTests && record.getStatus() != MedicalRecordStatus.COMPLETED) {
             
             // Validate unpaid invoices
@@ -313,6 +378,11 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 testRequestService.ensureServiceNotAlreadyRequested(record.getRecordId(), testReq.serviceId());
                 org.example.doansummer2026.model.MedicalService svc = serviceRepo.findById(testReq.serviceId())
                         .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + testReq.serviceId()));
+                if (svc.getDepartmentType() == null || !svc.getDepartmentType().isParaclinical()) {
+                    throw new BadRequestException(
+                            "Bác sĩ chỉ được chỉ định dịch vụ cận lâm sàng; dịch vụ khám khác phải được lễ tân tạo lượt mới"
+                    );
+                }
                 invoiceItems.add(new org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest(
                         svc.getServiceId(),
                         svc.getName(),
@@ -357,7 +427,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 || (shouldWaitForTests && !waitingForNewTestInvoicePayment)) {
             patientJourneyService.activateNext(q.getVisit().getVisitId());
         }
-        updateDepartmentStatus(q.getDepartment().getDepartmentId());
+        updatePatientQueueDepartments(q);
 
         return MedicalRecordResponse.from(record, true);
     }
@@ -421,12 +491,14 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     }
 
     private void updateMedicalRecordFields(MedicalRecord r, MedicalRecordUpdateRequest req) {
+        medicalRecordService.validatePrescriptionAllergyStatus(r, req.prescriptionItems());
         if (req.chiefComplaint() != null) r.setChiefComplaint(req.chiefComplaint());
         if (req.clinicalFindings() != null) r.setClinicalFindings(req.clinicalFindings());
         if (req.diagnosis() != null) r.setDiagnosis(req.diagnosis());
         if (req.prescriptionNote() != null) r.setPrescriptionNote(req.prescriptionNote());
         if (req.conclusion() != null) r.setConclusion(req.conclusion());
         if (req.patientInstruction() != null) r.setPatientInstruction(req.patientInstruction());
+        applySpecialtyData(r, req);
 
         // Cap nhat thong tin tai kham (follow-up)
         if (req.followUp() != null) {
@@ -497,6 +569,20 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         }
     }
 
+    private void applySpecialtyData(MedicalRecord record, MedicalRecordUpdateRequest req) {
+        if (req.specialtyData() == null && req.formTemplateVersionId() == null) return;
+        if (record.getQueueTicket() == null || record.getQueueTicket().getService() == null)
+            throw new BadRequestException("Hồ sơ chưa gắn dịch vụ để xác định biểu mẫu chuyên khoa");
+        var version = clinicalFormTemplateService.resolveVersion(
+                record.getQueueTicket().getService().getServiceId(), req.formTemplateVersionId());
+        var patient = record.getVisit() == null ? null : record.getVisit().getCustomer();
+        var normalized = clinicalFormEngine.validateAndEnrich(version.getSchemaJson(), req.specialtyData(),
+                patient == null ? null : patient.getDateOfBirth(),
+                patient == null ? null : patient.getGender(), LocalDate.now(CLINIC_ZONE));
+        record.setFormTemplateVersion(version);
+        record.setSpecialtyData(normalized);
+    }
+
     private boolean hasVitalSignsUpdate(MedicalRecordUpdateRequest req) {
         return req.bloodPressure() != null || req.heartRate() != null || req.temperature() != null ||
                req.weight() != null || req.height() != null;
@@ -523,8 +609,8 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         q.setCompletedAt(LocalDateTime.now());
         QueueTicket saved = repo.save(q);
         if (q.getVisit() != null) patientJourneyService.activateNext(q.getVisit().getVisitId());
-        updateDepartmentStatus(q.getDepartment().getDepartmentId());
-        return QueueTicketResponse.from(saved);
+        updatePatientQueueDepartments(q);
+        return toResponse(saved);
     }
 
     public QueueTicketResponse skip(UUID id) {
@@ -539,8 +625,8 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         // "Vang" la tam dung benh nhan, khong phai da hoan thanh dich vu.
         // Khong duoc mo buoc ke tiep cho den khi benh nhan quay lai hoac nhan
         // vien xu ly huy/reschedule ca kham.
-        updateDepartmentStatus(q.getDepartment().getDepartmentId());
-        return QueueTicketResponse.from(saved);
+        updatePatientQueueDepartments(q);
+        return toResponse(saved);
     }
 
     public QueueTicketResponse returnToQueue(UUID id) {
@@ -560,7 +646,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         testRequestService.restoreRequestsForQueue(q.getTicketId(), mustWaitForCurrentStep);
         QueueTicket saved = repo.save(q);
         updateDepartmentStatus(q.getDepartment().getDepartmentId());
-        return QueueTicketResponse.from(saved);
+        return toResponse(saved);
     }
 
     private void ensureCallableToday(QueueTicket queue) {
@@ -639,12 +725,10 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         if (ticket == null) return null;
         var medicalRecord = getMedicalRecordByQueueTicket(ticket.getTicketId());
         UUID recordId = medicalRecord != null ? medicalRecord.recordId() : null;
-        return QueueTicketResponse.from(ticket, recordId, null, medicalRecord);
+        return toResponse(ticket, recordId, null, medicalRecord);
     }
 
-    /**
-     * Lay danh sach cho (WAITING/CALLED/WAITING_FOR_TEST/TEST_DONE) theo khoa, uu tien TEST_DONE/WAITING_FOR_TEST.
-     */
+    /** Lay danh sach cho theo so thu tu FIFO; trang thai ban khong lam thay doi vi tri. */
     @Transactional(readOnly = true)
     public PageResponse<QueueTicketResponse> getWaitingByDepartment(UUID departmentId, LocalDate workDate, QueueStatus status, Pageable pageable) {
         Page<QueueTicket> page;
@@ -655,7 +739,6 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 page = repo.findByDepartment_DepartmentIdAndStatus(departmentId, status, pageable);
             }
         } else {
-            // Uu tien: TEST_DONE, WAITING_FOR_TEST, WAITING, CALLED
             List<QueueStatus> waitingStatuses = List.of(QueueStatus.TEST_DONE, QueueStatus.WAITING_FOR_TEST, QueueStatus.WAITING, QueueStatus.CALLED);
             if (workDate != null) {
                 page = repo.findWaitingPrioritized(departmentId, workDate, waitingStatuses, pageable);
@@ -663,13 +746,13 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 page = repo.findByDepartment_DepartmentIdAndStatusIn(departmentId, waitingStatuses, pageable);
             }
         }
-        return PageResponse.from(page, q -> QueueTicketResponse.from(q, getRecordId(q), null));
+        return PageResponse.from(page, q -> toResponse(q, getRecordId(q), null, null));
     }
 
     @Transactional(readOnly = true)
     public PageResponse<QueueTicketResponse> getAllInprogress(Pageable pageable) {
         Page<QueueTicket> page = repo.findAllByStatus(QueueStatus.IN_PROGRESS, pageable);
-        return PageResponse.from(page, q -> QueueTicketResponse.from(q, getRecordId(q), getWaitingCount(q)));
+        return PageResponse.from(page, q -> toResponse(q, getRecordId(q), getWaitingCount(q), null));
     }
 
     private MedicalRecordResponse getMedicalRecord(UUID visitId) {
@@ -732,6 +815,54 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         return (int) repo.countWaitingByDepartment(deptId);
     }
 
+    private QueueTicketResponse toResponse(QueueTicket ticket) {
+        return toResponse(ticket, null, null, null);
+    }
+
+    private QueueTicketResponse toResponse(QueueTicket ticket, UUID recordId, Integer waitingCount,
+                                           MedicalRecordResponse medicalRecord) {
+        QueueTicket busyTicket = findBusyTicket(ticket);
+        return QueueTicketResponse.from(ticket, recordId, waitingCount, medicalRecord,
+                busyTicket != null, busyTicket);
+    }
+
+    private QueueTicket findBusyTicket(QueueTicket ticket) {
+        if (ticket == null || ticket.getTicketId() == null || ticket.getWorkDate() == null
+                || ticket.getVisit() == null || ticket.getVisit().getCustomer() == null) {
+            return null;
+        }
+        return repo.findPatientBusyTickets(
+                        ticket.getVisit().getCustomer().getProfileId(),
+                        ticket.getWorkDate(), ticket.getTicketId(),
+                        List.of(QueueStatus.CALLED, QueueStatus.IN_PROGRESS))
+                .stream().findFirst().orElse(null);
+    }
+
+    private void ensurePatientNotBusy(QueueTicket ticket) {
+        if (ticket.getVisit() == null || ticket.getVisit().getCustomer() == null) return;
+        profileRepo.findByIdForUpdate(ticket.getVisit().getCustomer().getProfileId())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
+        QueueTicket busyTicket = findBusyTicket(ticket);
+        if (busyTicket == null) return;
+        String roomName = busyTicket.getDepartment() != null
+                ? busyTicket.getDepartment().getName() : "phòng khác";
+        throw new ConflictException("Bệnh nhân đang được phục vụ tại " + roomName
+                + ". Chưa thể gọi hoặc bắt đầu tại phòng này");
+    }
+
+    private void updatePatientQueueDepartments(QueueTicket ticket) {
+        if (ticket == null || ticket.getDepartment() == null) return;
+        updateDepartmentStatus(ticket.getDepartment().getDepartmentId());
+        if (ticket.getVisit() == null || ticket.getVisit().getCustomer() == null
+                || ticket.getWorkDate() == null) return;
+        for (UUID departmentId : repo.findPatientQueueDepartmentIds(
+                ticket.getVisit().getCustomer().getProfileId(), ticket.getWorkDate())) {
+            if (!departmentId.equals(ticket.getDepartment().getDepartmentId())) {
+                publishDepartmentQueueUpdate(departmentId);
+            }
+        }
+    }
+
     /**
      * Dem so benh nhan cho ket qua xet nghiem - bay loi dau han cho bac si.
      */
@@ -770,7 +901,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         q.setStatus(QueueStatus.TEST_DONE);
         repo.save(q);
         updateDepartmentStatus(q.getDepartment().getDepartmentId());
-        return QueueTicketResponse.from(q);
+        return toResponse(q);
     }
     private void updateDepartmentStatus(UUID departmentId) {
         if (departmentId == null) return;
@@ -792,10 +923,30 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         departmentRepo.save(dept);
 
         // Notify clients about queue changes in this department
-        try {
-            messagingTemplate.convertAndSend("/topic/department-" + departmentId + "-queue", "QUEUE_UPDATED");
-        } catch (Exception e) {
-            // Ignore messaging errors so it doesn't break the transaction
+        publishDepartmentQueueUpdate(departmentId);
+    }
+
+    private void publishDepartmentQueueUpdate(UUID departmentId) {
+        if (departmentId == null) return;
+        Runnable publish = () -> {
+            try {
+                messagingTemplate.convertAndSend(
+                        "/topic/department-" + departmentId + "-queue", "QUEUE_UPDATED");
+            } catch (Exception e) {
+                // Ignore messaging errors so it doesn't break the business transaction.
+            }
+        };
+        if (org.springframework.transaction.support.TransactionSynchronizationManager
+                .isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            publish.run();
+                        }
+                    });
+        } else {
+            publish.run();
         }
     }
 }

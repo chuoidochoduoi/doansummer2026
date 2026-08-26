@@ -79,7 +79,7 @@ public class StaffScheduleController {
     }
 
     @PostMapping("/api/v1/schedules")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule")
     public ResponseEntity<ScheduleResponse> create(@Valid @RequestBody ScheduleCreateRequest req) {
         ScheduleResponse created = service.create(req);
@@ -87,7 +87,7 @@ public class StaffScheduleController {
     }
 
     @PutMapping("/api/v1/schedules/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.UPDATE, entityName = "StaffSchedule", idParamName = "id")
     public ResponseEntity<ScheduleResponse> update(@PathVariable UUID id,
                                                    @RequestBody ScheduleUpdateRequest req) {
@@ -95,7 +95,7 @@ public class StaffScheduleController {
     }
 
     @DeleteMapping("/api/v1/schedules/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.DELETE, entityName = "StaffSchedule", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
@@ -104,7 +104,7 @@ public class StaffScheduleController {
 
     /** POST tac vu batch - sinh nhieu lich, khong co Location don le -> 200 OK. */
     @PostMapping("/api/v1/schedules/generate")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule")
     public ResponseEntity<List<ScheduleResponse>> generate(@RequestBody ScheduleGenerateRequest req) {
         return RestResponses.ok(service.generateFromTemplates(
@@ -161,7 +161,7 @@ public class StaffScheduleController {
      * Luu ca truc (shift template).
      */
     @PutMapping("/api/v1/clinic-manager/schedules/shifts")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<Void> updateShifts(@Valid @RequestBody ScheduleShiftUpdateRequest req) {
         // Hien tai chi co 3 shift co ban, khong cho sua
         // Neu can them shift moi, sua logic o day

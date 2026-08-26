@@ -68,12 +68,13 @@ class ServiceCategoryServiceTest {
                         "Danh muc xet nghiem"
                 );
 
-        when(repo.findAll(pageable))
-                .thenReturn(
-                        new PageImpl<>(
-                                List.of(category)
-                        )
-                );
+        when(
+                repo.findAll(pageable)
+        ).thenReturn(
+                new PageImpl<>(
+                        List.of(category)
+                )
+        );
 
         var result =
                 service.list(pageable);
@@ -91,15 +92,21 @@ class ServiceCategoryServiceTest {
         var pageable =
                 PageRequest.of(0, 10);
 
-        when(repo.findAll(pageable))
-                .thenReturn(
-                        new PageImpl<>(List.of())
-                );
+        when(
+                repo.findAll(pageable)
+        ).thenReturn(
+                new PageImpl<>(
+                        List.of()
+                )
+        );
 
         var result =
                 service.list(pageable);
 
         assertNotNull(result);
+
+        verify(repo)
+                .findAll(pageable);
     }
 
 
@@ -110,7 +117,8 @@ class ServiceCategoryServiceTest {
     @Test
     void findById_ShouldReturn_WhenFound() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         ServiceCategory category =
                 category(
@@ -119,29 +127,43 @@ class ServiceCategoryServiceTest {
                         "Mo ta"
                 );
 
-        when(repo.findById(id))
-                .thenReturn(
-                        Optional.of(category)
-                );
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
+        );
 
         assertSame(
                 category,
                 service.findById(id)
         );
+
+        verify(repo)
+                .findById(id);
     }
 
 
     @Test
     void findById_ShouldThrow_WhenMissing() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
-        when(repo.findById(id))
-                .thenReturn(Optional.empty());
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.empty()
+        );
 
-        assertThrows(
-                ResourceNotFoundException.class,
-                () -> service.findById(id)
+        ResourceNotFoundException exception =
+                assertThrows(
+                        ResourceNotFoundException.class,
+                        () -> service.findById(id)
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains(id.toString())
         );
     }
 
@@ -153,7 +175,8 @@ class ServiceCategoryServiceTest {
     @Test
     void get_ShouldReturnResponse() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         ServiceCategory category =
                 category(
@@ -162,15 +185,71 @@ class ServiceCategoryServiceTest {
                         "Mo ta"
                 );
 
-        when(repo.findById(id))
-                .thenReturn(
-                        Optional.of(category)
-                );
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
+        );
 
         var result =
                 service.get(id);
 
         assertNotNull(result);
+
+        verify(repo)
+                .findById(id);
+    }
+
+
+    // =========================================================
+    // CREATE - INVALID NAME
+    // =========================================================
+
+    @Test
+    void create_ShouldRejectNullName() {
+
+        ServiceCategoryCreateRequest req =
+                mock(ServiceCategoryCreateRequest.class);
+
+        when(req.name())
+                .thenReturn(null);
+
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () -> service.create(req)
+                );
+
+        assertEquals(
+                "Tên danh mục không được để trống",
+                exception.getMessage()
+        );
+
+        verifyNoInteractions(repo);
+    }
+
+
+    @Test
+    void create_ShouldRejectBlankName() {
+
+        ServiceCategoryCreateRequest req =
+                mock(ServiceCategoryCreateRequest.class);
+
+        when(req.name())
+                .thenReturn("   ");
+
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () -> service.create(req)
+                );
+
+        assertEquals(
+                "Tên danh mục không được để trống",
+                exception.getMessage()
+        );
+
+        verifyNoInteractions(repo);
     }
 
 
@@ -187,16 +266,77 @@ class ServiceCategoryServiceTest {
         when(req.name())
                 .thenReturn("Xet nghiem");
 
-        when(repo.existsByName("Xet nghiem"))
-                .thenReturn(true);
+        when(
+                repo.existsByNameIgnoreCase(
+                        "Xet nghiem"
+                )
+        ).thenReturn(true);
 
-        assertThrows(
-                ConflictException.class,
-                () -> service.create(req)
+        ConflictException exception =
+                assertThrows(
+                        ConflictException.class,
+                        () -> service.create(req)
+                );
+
+        assertEquals(
+                "Tên danh mục đã tồn tại: Xet nghiem",
+                exception.getMessage()
         );
 
         verify(repo, never())
-                .save(any());
+                .save(any(ServiceCategory.class));
+    }
+
+
+    // =========================================================
+    // CREATE - NORMALIZE NAME
+    // =========================================================
+
+    @Test
+    void create_ShouldNormalizeName() {
+
+        ServiceCategoryCreateRequest req =
+                mock(ServiceCategoryCreateRequest.class);
+
+        when(req.name())
+                .thenReturn(
+                        "   Xet    nghiem    mau   "
+                );
+
+        when(
+                repo.save(
+                        any(ServiceCategory.class)
+                )
+        ).thenAnswer(
+                invocation -> {
+
+                    ServiceCategory category =
+                            invocation.getArgument(0);
+
+                    category.setCategoryId(
+                            UUID.randomUUID()
+                    );
+
+                    return category;
+                }
+        );
+
+        service.create(req);
+
+        verify(repo)
+                .existsByNameIgnoreCase(
+                        "Xet nghiem mau"
+                );
+
+        verify(repo)
+                .save(
+                        argThat(category ->
+                                "Xet nghiem mau"
+                                        .equals(
+                                                category.getName()
+                                        )
+                        )
+                );
     }
 
 
@@ -211,25 +351,32 @@ class ServiceCategoryServiceTest {
                 mock(ServiceCategoryCreateRequest.class);
 
         when(req.name())
-                .thenReturn("Xet nghiem");
+                .thenReturn(
+                        "Xet nghiem"
+                );
 
         when(req.description())
-                .thenReturn("Danh muc xet nghiem");
+                .thenReturn(
+                        "Danh muc xet nghiem"
+                );
 
-        when(repo.existsByName("Xet nghiem"))
-                .thenReturn(false);
+        when(
+                repo.save(
+                        any(ServiceCategory.class)
+                )
+        ).thenAnswer(
+                invocation -> {
 
-        when(repo.save(any(ServiceCategory.class)))
-                .thenAnswer(invocation -> {
-                    ServiceCategory c =
+                    ServiceCategory category =
                             invocation.getArgument(0);
 
-                    c.setCategoryId(
+                    category.setCategoryId(
                             UUID.randomUUID()
                     );
 
-                    return c;
-                });
+                    return category;
+                }
+        );
 
         var result =
                 service.create(req);
@@ -242,7 +389,9 @@ class ServiceCategoryServiceTest {
                 );
 
         verify(repo)
-                .save(captor.capture());
+                .save(
+                        captor.capture()
+                );
 
         ServiceCategory saved =
                 captor.getValue();
@@ -260,6 +409,11 @@ class ServiceCategoryServiceTest {
         assertNull(
                 saved.getParentCategory()
         );
+
+        verify(repo)
+                .existsByNameIgnoreCase(
+                        "Xet nghiem"
+                );
     }
 
 
@@ -284,42 +438,74 @@ class ServiceCategoryServiceTest {
                 mock(ServiceCategoryCreateRequest.class);
 
         when(req.name())
-                .thenReturn("Xet nghiem mau");
-
-        when(req.description())
-                .thenReturn("Child");
-
-        when(req.parentId())
-                .thenReturn(parentId);
-
-        when(repo.existsByName("Xet nghiem mau"))
-                .thenReturn(false);
-
-        when(repo.findById(parentId))
                 .thenReturn(
-                        Optional.of(parent)
+                        "Xet nghiem mau"
                 );
 
-        when(repo.save(any(ServiceCategory.class)))
-                .thenAnswer(invocation -> {
-                    ServiceCategory c =
+        when(req.description())
+                .thenReturn(
+                        "Child"
+                );
+
+        when(req.parentId())
+                .thenReturn(
+                        parentId
+                );
+
+        when(
+                repo.findById(parentId)
+        ).thenReturn(
+                Optional.of(parent)
+        );
+
+        when(
+                repo.save(
+                        any(ServiceCategory.class)
+                )
+        ).thenAnswer(
+                invocation -> {
+
+                    ServiceCategory category =
                             invocation.getArgument(0);
 
-                    c.setCategoryId(
+                    category.setCategoryId(
                             UUID.randomUUID()
                     );
 
-                    return c;
-                });
+                    return category;
+                }
+        );
 
-        service.create(req);
+        var result =
+                service.create(req);
+
+        assertNotNull(result);
 
         verify(repo)
-                .save(argThat(c ->
-                        c.getParentCategory() == parent
-                                && "Xet nghiem mau"
-                                .equals(c.getName())
-                ));
+                .existsByNameIgnoreCase(
+                        "Xet nghiem mau"
+                );
+
+        verify(repo)
+                .findById(parentId);
+
+        verify(repo)
+                .save(
+                        argThat(category ->
+                                category.getParentCategory()
+                                        == parent
+                                        &&
+                                        "Xet nghiem mau"
+                                                .equals(
+                                                        category.getName()
+                                                )
+                                        &&
+                                        "Child"
+                                                .equals(
+                                                        category.getDescription()
+                                                )
+                        )
+                );
     }
 
 
@@ -337,24 +523,36 @@ class ServiceCategoryServiceTest {
                 mock(ServiceCategoryCreateRequest.class);
 
         when(req.name())
-                .thenReturn("Child");
+                .thenReturn(
+                        "Child"
+                );
 
         when(req.parentId())
-                .thenReturn(parentId);
+                .thenReturn(
+                        parentId
+                );
 
-        when(repo.existsByName("Child"))
-                .thenReturn(false);
-
-        when(repo.findById(parentId))
-                .thenReturn(Optional.empty());
+        when(
+                repo.findById(parentId)
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
                 () -> service.create(req)
         );
 
+        verify(repo)
+                .existsByNameIgnoreCase(
+                        "Child"
+                );
+
+        verify(repo)
+                .findById(parentId);
+
         verify(repo, never())
-                .save(any());
+                .save(any(ServiceCategory.class));
     }
 
 
@@ -371,21 +569,28 @@ class ServiceCategoryServiceTest {
         ServiceCategoryUpdateRequest req =
                 mock(ServiceCategoryUpdateRequest.class);
 
-        when(repo.findById(id))
-                .thenReturn(Optional.empty());
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> service.update(
-                        id,
-                        req
-                )
+                () ->
+                        service.update(
+                                id,
+                                req
+                        )
         );
+
+        verify(repo, never())
+                .save(any(ServiceCategory.class));
     }
 
 
     // =========================================================
-    // UPDATE - NEW NAME DUPLICATE
+    // UPDATE - DUPLICATE NAME
     // =========================================================
 
     @Test
@@ -405,26 +610,40 @@ class ServiceCategoryServiceTest {
                 mock(ServiceCategoryUpdateRequest.class);
 
         when(req.name())
-                .thenReturn("New");
-
-        when(repo.findById(id))
                 .thenReturn(
-                        Optional.of(category)
+                        "New"
                 );
 
-        when(repo.existsByName("New"))
-                .thenReturn(true);
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
+        );
 
-        assertThrows(
-                ConflictException.class,
-                () -> service.update(
-                        id,
-                        req
+        when(
+                repo.existsByNameIgnoreCaseAndCategoryIdNot(
+                        "New",
+                        id
                 )
+        ).thenReturn(true);
+
+        ConflictException exception =
+                assertThrows(
+                        ConflictException.class,
+                        () ->
+                                service.update(
+                                        id,
+                                        req
+                                )
+                );
+
+        assertEquals(
+                "Tên danh mục đã tồn tại: New",
+                exception.getMessage()
         );
 
         verify(repo, never())
-                .save(any());
+                .save(any(ServiceCategory.class));
     }
 
 
@@ -433,7 +652,7 @@ class ServiceCategoryServiceTest {
     // =========================================================
 
     @Test
-    void update_ShouldNotCheckDuplicate_WhenNameUnchanged() {
+    void update_ShouldAllowSameName_WhenNoOtherCategoryUsesIt() {
 
         UUID id =
                 UUID.randomUUID();
@@ -449,28 +668,41 @@ class ServiceCategoryServiceTest {
                 mock(ServiceCategoryUpdateRequest.class);
 
         when(req.name())
-                .thenReturn("Same");
-
-        when(repo.findById(id))
                 .thenReturn(
-                        Optional.of(category)
+                        "Same"
                 );
 
-        when(repo.save(category))
-                .thenReturn(category);
-
-        service.update(
-                id,
-                req
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
         );
 
-        verify(repo, never())
-                .existsByName(anyString());
+        when(
+                repo.save(category)
+        ).thenReturn(category);
+
+        var result =
+                service.update(
+                        id,
+                        req
+                );
+
+        assertNotNull(result);
 
         assertEquals(
                 "Same",
                 category.getName()
         );
+
+        verify(repo)
+                .existsByNameIgnoreCaseAndCategoryIdNot(
+                        "Same",
+                        id
+                );
+
+        verify(repo)
+                .save(category);
     }
 
 
@@ -495,18 +727,78 @@ class ServiceCategoryServiceTest {
                 mock(ServiceCategoryUpdateRequest.class);
 
         when(req.name())
-                .thenReturn("New");
-
-        when(repo.findById(id))
                 .thenReturn(
-                        Optional.of(category)
+                        "New"
                 );
 
-        when(repo.existsByName("New"))
-                .thenReturn(false);
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
+        );
 
-        when(repo.save(category))
-                .thenReturn(category);
+        when(
+                repo.save(category)
+        ).thenReturn(category);
+
+        var result =
+                service.update(
+                        id,
+                        req
+                );
+
+        assertNotNull(result);
+
+        assertEquals(
+                "New",
+                category.getName()
+        );
+
+        verify(repo)
+                .existsByNameIgnoreCaseAndCategoryIdNot(
+                        "New",
+                        id
+                );
+
+        verify(repo)
+                .save(category);
+    }
+
+
+    // =========================================================
+    // UPDATE - NORMALIZE NAME
+    // =========================================================
+
+    @Test
+    void update_ShouldNormalizeName() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        ServiceCategory category =
+                category(
+                        id,
+                        "Old",
+                        "Mo ta"
+                );
+
+        ServiceCategoryUpdateRequest req =
+                mock(ServiceCategoryUpdateRequest.class);
+
+        when(req.name())
+                .thenReturn(
+                        "   New    Category   "
+                );
+
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
+        );
+
+        when(
+                repo.save(category)
+        ).thenReturn(category);
 
         service.update(
                 id,
@@ -514,9 +806,66 @@ class ServiceCategoryServiceTest {
         );
 
         assertEquals(
-                "New",
+                "New Category",
                 category.getName()
         );
+
+        verify(repo)
+                .existsByNameIgnoreCaseAndCategoryIdNot(
+                        "New Category",
+                        id
+                );
+    }
+
+
+    // =========================================================
+    // UPDATE - BLANK NAME
+    // =========================================================
+
+    @Test
+    void update_ShouldRejectBlankName() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        ServiceCategory category =
+                category(
+                        id,
+                        "Old",
+                        "Mo ta"
+                );
+
+        ServiceCategoryUpdateRequest req =
+                mock(ServiceCategoryUpdateRequest.class);
+
+        when(req.name())
+                .thenReturn(
+                        "   "
+                );
+
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
+        );
+
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () ->
+                                service.update(
+                                        id,
+                                        req
+                                )
+                );
+
+        assertEquals(
+                "Tên danh mục không được để trống",
+                exception.getMessage()
+        );
+
+        verify(repo, never())
+                .save(any(ServiceCategory.class));
     }
 
 
@@ -541,25 +890,35 @@ class ServiceCategoryServiceTest {
                 mock(ServiceCategoryUpdateRequest.class);
 
         when(req.description())
-                .thenReturn("New description");
-
-        when(repo.findById(id))
                 .thenReturn(
-                        Optional.of(category)
+                        "New description"
                 );
 
-        when(repo.save(category))
-                .thenReturn(category);
-
-        service.update(
-                id,
-                req
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
         );
+
+        when(
+                repo.save(category)
+        ).thenReturn(category);
+
+        var result =
+                service.update(
+                        id,
+                        req
+                );
+
+        assertNotNull(result);
 
         assertEquals(
                 "New description",
                 category.getDescription()
         );
+
+        verify(repo)
+                .save(category);
     }
 
 
@@ -584,23 +943,33 @@ class ServiceCategoryServiceTest {
                 mock(ServiceCategoryUpdateRequest.class);
 
         when(req.parentId())
-                .thenReturn(id);
-
-        when(repo.findById(id))
                 .thenReturn(
-                        Optional.of(category)
+                        id
                 );
 
-        assertThrows(
-                BadRequestException.class,
-                () -> service.update(
-                        id,
-                        req
-                )
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
+        );
+
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () ->
+                                service.update(
+                                        id,
+                                        req
+                                )
+                );
+
+        assertEquals(
+                "Không thể đặt danh mục cha là chính nó",
+                exception.getMessage()
         );
 
         verify(repo, never())
-                .save(any());
+                .save(any(ServiceCategory.class));
     }
 
 
@@ -628,23 +997,33 @@ class ServiceCategoryServiceTest {
                 mock(ServiceCategoryUpdateRequest.class);
 
         when(req.parentId())
-                .thenReturn(parentId);
-
-        when(repo.findById(id))
                 .thenReturn(
-                        Optional.of(category)
+                        parentId
                 );
 
-        when(repo.findById(parentId))
-                .thenReturn(Optional.empty());
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
+        );
+
+        when(
+                repo.findById(parentId)
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> service.update(
-                        id,
-                        req
-                )
+                () ->
+                        service.update(
+                                id,
+                                req
+                        )
         );
+
+        verify(repo, never())
+                .save(any(ServiceCategory.class));
     }
 
 
@@ -679,30 +1058,121 @@ class ServiceCategoryServiceTest {
                 mock(ServiceCategoryUpdateRequest.class);
 
         when(req.parentId())
-                .thenReturn(parentId);
-
-        when(repo.findById(id))
                 .thenReturn(
-                        Optional.of(category)
+                        parentId
                 );
 
-        when(repo.findById(parentId))
-                .thenReturn(
-                        Optional.of(parent)
-                );
-
-        when(repo.save(category))
-                .thenReturn(category);
-
-        service.update(
-                id,
-                req
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
         );
+
+        when(
+                repo.findById(parentId)
+        ).thenReturn(
+                Optional.of(parent)
+        );
+
+        when(
+                repo.save(category)
+        ).thenReturn(category);
+
+        var result =
+                service.update(
+                        id,
+                        req
+                );
+
+        assertNotNull(result);
 
         assertSame(
                 parent,
                 category.getParentCategory()
         );
+
+        verify(repo)
+                .save(category);
+    }
+
+
+    // =========================================================
+    // UPDATE - REJECT CYCLE
+    // =========================================================
+
+    @Test
+    void update_ShouldReject_WhenParentCreatesCycle() {
+
+        UUID rootId =
+                UUID.randomUUID();
+
+        UUID childId =
+                UUID.randomUUID();
+
+        UUID grandChildId =
+                UUID.randomUUID();
+
+        ServiceCategory root =
+                category(
+                        rootId,
+                        "Root",
+                        "Root"
+                );
+
+        ServiceCategory child =
+                category(
+                        childId,
+                        "Child",
+                        "Child"
+                );
+
+        ServiceCategory grandChild =
+                category(
+                        grandChildId,
+                        "Grand Child",
+                        "Grand Child"
+                );
+
+        child.setParentCategory(root);
+        grandChild.setParentCategory(child);
+
+        ServiceCategoryUpdateRequest req =
+                mock(ServiceCategoryUpdateRequest.class);
+
+        when(req.parentId())
+                .thenReturn(
+                        grandChildId
+                );
+
+        when(
+                repo.findById(rootId)
+        ).thenReturn(
+                Optional.of(root)
+        );
+
+        when(
+                repo.findById(grandChildId)
+        ).thenReturn(
+                Optional.of(grandChild)
+        );
+
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () ->
+                                service.update(
+                                        rootId,
+                                        req
+                                )
+                );
+
+        assertEquals(
+                "Không thể chọn danh mục con làm danh mục cha vì sẽ tạo vòng lặp",
+                exception.getMessage()
+        );
+
+        verify(repo, never())
+                .save(any(ServiceCategory.class));
     }
 
 
@@ -737,29 +1207,35 @@ class ServiceCategoryServiceTest {
                 mock(ServiceCategoryUpdateRequest.class);
 
         when(req.name())
-                .thenReturn("New");
+                .thenReturn(
+                        "New"
+                );
 
         when(req.description())
-                .thenReturn("New description");
+                .thenReturn(
+                        "New description"
+                );
 
         when(req.parentId())
-                .thenReturn(parentId);
-
-        when(repo.findById(id))
                 .thenReturn(
-                        Optional.of(category)
+                        parentId
                 );
 
-        when(repo.existsByName("New"))
-                .thenReturn(false);
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
+        );
 
-        when(repo.findById(parentId))
-                .thenReturn(
-                        Optional.of(parent)
-                );
+        when(
+                repo.findById(parentId)
+        ).thenReturn(
+                Optional.of(parent)
+        );
 
-        when(repo.save(category))
-                .thenReturn(category);
+        when(
+                repo.save(category)
+        ).thenReturn(category);
 
         var result =
                 service.update(
@@ -783,6 +1259,15 @@ class ServiceCategoryServiceTest {
                 parent,
                 category.getParentCategory()
         );
+
+        verify(repo)
+                .existsByNameIgnoreCaseAndCategoryIdNot(
+                        "New",
+                        id
+                );
+
+        verify(repo)
+                .save(category);
     }
 
 
@@ -806,13 +1291,15 @@ class ServiceCategoryServiceTest {
         ServiceCategoryUpdateRequest req =
                 mock(ServiceCategoryUpdateRequest.class);
 
-        when(repo.findById(id))
-                .thenReturn(
-                        Optional.of(category)
-                );
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
+        );
 
-        when(repo.save(category))
-                .thenReturn(category);
+        when(
+                repo.save(category)
+        ).thenReturn(category);
 
         var result =
                 service.update(
@@ -832,13 +1319,17 @@ class ServiceCategoryServiceTest {
                 category.getDescription()
         );
 
+        assertNull(
+                category.getParentCategory()
+        );
+
         verify(repo)
                 .save(category);
     }
 
 
     // =========================================================
-    // DELETE
+    // DELETE - NOT FOUND
     // =========================================================
 
     @Test
@@ -847,31 +1338,106 @@ class ServiceCategoryServiceTest {
         UUID id =
                 UUID.randomUUID();
 
-        when(repo.existsById(id))
-                .thenReturn(false);
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> service.delete(id)
+                () ->
+                        service.delete(id)
         );
 
         verify(repo, never())
-                .deleteById(id);
+                .delete(any(ServiceCategory.class));
+
+        verify(repo, never())
+                .existsByParentCategory_CategoryId(id);
     }
 
 
+    // =========================================================
+    // DELETE - HAS CHILDREN
+    // =========================================================
+
     @Test
-    void delete_ShouldDelete_WhenExists() {
+    void delete_ShouldReject_WhenCategoryHasChildren() {
 
         UUID id =
                 UUID.randomUUID();
 
-        when(repo.existsById(id))
-                .thenReturn(true);
+        ServiceCategory category =
+                category(
+                        id,
+                        "Parent",
+                        "Parent category"
+                );
+
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
+        );
+
+        when(
+                repo.existsByParentCategory_CategoryId(
+                        id
+                )
+        ).thenReturn(true);
+
+        ConflictException exception =
+                assertThrows(
+                        ConflictException.class,
+                        () ->
+                                service.delete(id)
+                );
+
+        assertEquals(
+                "Không thể xóa danh mục đang có danh mục con. Vui lòng xử lý danh mục con trước",
+                exception.getMessage()
+        );
+
+        verify(repo, never())
+                .delete(any(ServiceCategory.class));
+    }
+
+
+    // =========================================================
+    // DELETE - SUCCESS
+    // =========================================================
+
+    @Test
+    void delete_ShouldDelete_WhenExistsAndHasNoChildren() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        ServiceCategory category =
+                category(
+                        id,
+                        "Category",
+                        "Description"
+                );
+
+        when(
+                repo.findById(id)
+        ).thenReturn(
+                Optional.of(category)
+        );
 
         service.delete(id);
 
         verify(repo)
+                .existsByParentCategory_CategoryId(
+                        id
+                );
+
+        verify(repo)
+                .delete(category);
+
+        verify(repo, never())
                 .deleteById(id);
     }
 }

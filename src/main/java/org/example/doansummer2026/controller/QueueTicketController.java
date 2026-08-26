@@ -39,7 +39,7 @@ public class QueueTicketController {
     // --- MAIN ENDPOINTS ---
 
     @GetMapping("/api/v1/queue-tickets")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<QueueTicketResponse>> list(
             @RequestParam(required = false) UUID departmentId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate workDate,
@@ -49,7 +49,7 @@ public class QueueTicketController {
     }
 
     @GetMapping("/api/v1/queue-tickets/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<QueueTicketResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
@@ -203,7 +203,7 @@ public class QueueTicketController {
      * API endpoint cho frontend hook useQueueList.
      */
     @GetMapping("/api/queue")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<QueueTicketResponse>> getQueue(
             @RequestParam(required = false) UUID departmentId,
             @RequestParam(required = false) String status,

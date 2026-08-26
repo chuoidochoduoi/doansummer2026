@@ -137,11 +137,19 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
 
     /** Cap nhat dich vu va chi cho phep chuyen trang thai theo workflow da chot. */
     public MedicalServiceResponse update(UUID id, MedicalServiceUpdateRequest req) {
+        MedicalService s = findById(id);
+        if (s.getStatus() == ServiceStatus.ACTIVE) {
+            ensureActiveServicePriceOnly(req);
+            if (req.price() != null) {
+                s.setPrice(req.price());
+            }
+            return MedicalServiceResponse.from(repo.save(s));
+        }
+
         validateDemographicRules(req.minimumAge(), req.maximumAge());
         if (req.allowedGender() == org.example.doansummer2026.enums.Gender.OTHER) {
             throw new BadRequestException("Hệ thống chỉ hỗ trợ giới tính Nam hoặc Nữ");
         }
-        MedicalService s = findById(id);
         validateStatusTransition(s.getStatus(), req.status());
         validateRoutingConfigurationCanChange(s, req);
         if (req.name() != null) {
@@ -204,6 +212,34 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
         }
 
         return MedicalServiceResponse.from(repo.save(s));
+    }
+
+    private void ensureActiveServicePriceOnly(MedicalServiceUpdateRequest req) {
+        boolean hasNonPriceConfiguration = req.name() != null
+                || req.description() != null
+                || req.departmentType() != null
+                || req.status() != null
+                || req.isPointOfCare() != null
+                || req.durationMinutes() != null
+                || req.workflowPriority() != null
+                || req.requiresDoctorOrder() != null
+                || req.requiresReturnToDoctor() != null
+                || req.requiresSpecimen() != null
+                || req.resultWaitMinutes() != null
+                || req.allowCustomerBooking() != null
+                || req.minimumAge() != null
+                || req.maximumAge() != null
+                || req.allowedGender() != null
+                || req.departmentId() != null
+                || req.requiredSpecializationId() != null
+                || req.requiredCapabilityId() != null;
+
+        if (hasNonPriceConfiguration) {
+            throw new ConflictException(
+                    "Dịch vụ đang hoạt động chỉ được phép cập nhật giá. " +
+                    "Hãy dùng thao tác tạm ngừng riêng nếu cần thay đổi trạng thái."
+            );
+        }
     }
 
     /**

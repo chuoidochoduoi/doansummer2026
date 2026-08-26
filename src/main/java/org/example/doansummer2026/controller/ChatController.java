@@ -71,7 +71,7 @@ public class ChatController {
     }
 
     @GetMapping("/sessions/active")
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<?> getActiveSessionsForReceptionist() {
         List<ChatSession> sessions = chatService.getActiveSessionsForReceptionist();
         var res = sessions.stream().map(s -> Map.of(
@@ -86,7 +86,7 @@ public class ChatController {
     }
 
     @GetMapping("/sessions/history")
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<?> getClosedSessionsForReceptionist() {
         List<ChatSession> sessions = chatService.getClosedSessionsForReceptionist();
         var res = sessions.stream().map(s -> Map.of(
@@ -204,7 +204,7 @@ public class ChatController {
     }
 
     @PostMapping("/{sessionId}/messages/receptionist")
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<?> sendReceptionistMessage(
             @PathVariable UUID sessionId,
             @RequestBody Map<String, String> body,
@@ -224,7 +224,7 @@ public class ChatController {
     }
 
     @PostMapping("/{sessionId}/close")
-    @PreAuthorize("hasRole('RECEPTIONIST')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<?> closeSession(@PathVariable UUID sessionId) {
         chatService.closeSession(sessionId);
         return ResponseEntity.ok().build();

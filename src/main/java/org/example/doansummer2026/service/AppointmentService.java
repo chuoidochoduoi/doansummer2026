@@ -72,6 +72,9 @@ public class AppointmentService implements AppointmentServiceInterface {
     private final NotificationService notificationService;
     private final ShiftConfigRepository shiftConfigRepository;
     private final InvoiceRepository invoiceRepository;
+    private final ShiftScheduleResolver shiftScheduleResolver;
+    private final ServiceAvailabilityService serviceAvailabilityService;
+    private final CustomerVisitService customerVisitService;
 
     @Transactional(readOnly = true)
     public PageResponse<AppointmentResponse> search(UUID customerId,
@@ -100,7 +103,8 @@ public class AppointmentService implements AppointmentServiceInterface {
         Profile customer = profileRepo.findFirstByAccount_AccountId(req.customerId())
                 .orElseThrow(() -> new ResourceNotFoundException("Bệnh nhân không tồn tại"));
 
-        // Cho phep nhieu lich trong tuong lai, chi chan cac lich bi chong thoi gian.
+        // Keep the legacy conflict check before resolving services. A second check
+        // is performed below when the selected shift normalizes the actual time.
         if (hasAppointmentConflict(customer.getProfileId(), req.scheduledAt())) {
             throw new BadRequestException("Bạn đã có lịch hẹn khác trùng hoặc quá gần thời gian này");
         }
@@ -109,18 +113,8 @@ public class AppointmentService implements AppointmentServiceInterface {
                 ? shiftConfigRepository.findById(req.shiftId())
                     .orElseThrow(() -> new ResourceNotFoundException("Ca khám không tồn tại"))
                 : null;
-        validateAppointmentTiming(req.scheduledAt(), shift);
-
-        Appointment a = Appointment.builder()
-                .customer(customer)
-                .scheduledAt(req.scheduledAt())
-                .cancelReason(req.cancelReason())
-                .shiftName(shift != null ? shift.getName() : null)
-                .shiftTime(shift != null ? shift.getStartTime() + " - " + shift.getEndTime() : null)
-                .status(AppointmentStatus.PENDING)
-                .build();
+        Set<MedicalService> services = new HashSet<>();
         if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
-            Set<MedicalService> services = new HashSet<>();
             for (UUID serviceId : req.serviceIds()) {
                 MedicalService service = serviceRepo.findById(serviceId)
                         .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
@@ -130,8 +124,24 @@ public class AppointmentService implements AppointmentServiceInterface {
                 services.add(service);
             }
             validateSingleExaminationService(services);
-            a.setServices(services);
         }
+        ShiftScheduleResolver.ResolvedShift resolved = resolveBookingShift(shift, req.scheduledAt(), services);
+        LocalDateTime scheduledAt = resolved == null ? req.scheduledAt()
+                : LocalDateTime.of(req.scheduledAt().toLocalDate(), resolved.startTime());
+        if (!scheduledAt.equals(req.scheduledAt()) && hasAppointmentConflict(customer.getProfileId(), scheduledAt)) {
+            throw new BadRequestException("Bạn đã có lịch hẹn khác trùng hoặc quá gần thời gian này");
+        }
+
+        Appointment a = Appointment.builder()
+                .customer(customer)
+                .scheduledAt(scheduledAt)
+                .cancelReason(req.cancelReason())
+                .shiftName(shift != null ? shift.getName() : null)
+                .shiftTime(resolved != null ? formatShiftTime(resolved) : null)
+                .shiftVersion(resolved != null ? resolved.version() : null)
+                .status(AppointmentStatus.PENDING)
+                .build();
+        a.setServices(services);
         Appointment saved = repo.save(a);
         notifyReceptionists(saved);
         return AppointmentResponse.from(saved);
@@ -157,10 +167,22 @@ public class AppointmentService implements AppointmentServiceInterface {
                 ? shiftConfigRepository.findById(req.shiftId())
                     .orElseThrow(() -> new ResourceNotFoundException("Ca khám không tồn tại"))
                 : null;
-        validateAppointmentTiming(req.scheduledAt(), shift);
+        Set<MedicalService> services = new HashSet<>();
+        if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
+            for (UUID serviceId : req.serviceIds()) {
+                MedicalService service = serviceRepo.findById(serviceId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
+                validateServiceEligibility(service, req.guestAge(), req.guestGender());
+                services.add(service);
+            }
+            validateSingleExaminationService(services);
+        }
+        ShiftScheduleResolver.ResolvedShift resolved = resolveBookingShift(shift, req.scheduledAt(), services);
+        LocalDateTime scheduledAt = resolved == null ? req.scheduledAt()
+                : LocalDateTime.of(req.scheduledAt().toLocalDate(), resolved.startTime());
 
-        LocalDateTime conflictFrom = req.scheduledAt().minusMinutes(APPOINTMENT_CONFLICT_MINUTES);
-        LocalDateTime conflictTo = req.scheduledAt().plusMinutes(APPOINTMENT_CONFLICT_MINUTES + 1);
+        LocalDateTime conflictFrom = scheduledAt.minusMinutes(APPOINTMENT_CONFLICT_MINUTES);
+        LocalDateTime conflictTo = scheduledAt.plusMinutes(APPOINTMENT_CONFLICT_MINUTES + 1);
         if ((emptyToNull(req.guestPhone()) != null || emptyToNull(req.guestEmail()) != null)
                 && repo.existsGuestConflict(
                         emptyToNull(req.guestPhone()),
@@ -172,7 +194,7 @@ public class AppointmentService implements AppointmentServiceInterface {
         }
 
         Appointment a = Appointment.builder()
-                .scheduledAt(req.scheduledAt())
+                .scheduledAt(scheduledAt)
                 .isGuest(true)
                 .guestFullName(req.guestFullName())
                 .guestPhone(req.guestPhone())
@@ -181,20 +203,11 @@ public class AppointmentService implements AppointmentServiceInterface {
                 .guestAge(req.guestAge())
                 .guestGender(req.guestGender())
                 .shiftName(shift != null ? shift.getName() : null)
-                .shiftTime(shift != null ? shift.getStartTime() + " - " + shift.getEndTime() : null)
+                .shiftTime(resolved != null ? formatShiftTime(resolved) : null)
+                .shiftVersion(resolved != null ? resolved.version() : null)
                 .status(AppointmentStatus.PENDING)
                 .build();
-        if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
-            Set<MedicalService> services = new HashSet<>();
-            for (UUID serviceId : req.serviceIds()) {
-                MedicalService service = serviceRepo.findById(serviceId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
-                validateServiceEligibility(service, req.guestAge(), req.guestGender());
-                services.add(service);
-            }
-            validateSingleExaminationService(services);
-            a.setServices(services);
-        }
+        a.setServices(services);
         Appointment saved = repo.save(a);
         notifyReceptionists(saved);
         return AppointmentResponse.from(saved);
@@ -208,20 +221,9 @@ public class AppointmentService implements AppointmentServiceInterface {
             throw new BadRequestException("Không thể sửa lịch hẹn đã Hủy hoặc đã Check-In");
         }
 
-        if (req.scheduledAt() != null) {
-            validateAppointmentTiming(req.scheduledAt(), resolveRequestedShift(req.shiftId(), a));
-            validateRescheduleConflict(a, req.scheduledAt());
-            a.setScheduledAt(req.scheduledAt());
-        }
         validateStaffStatusUpdate(oldStatus, req);
         if (req.status() != null) a.setStatus(req.status());
         if (req.cancelReason() != null) a.setCancelReason(req.cancelReason());
-        if (req.shiftId() != null) {
-            org.example.doansummer2026.model.ShiftConfig shift = shiftConfigRepository.findById(req.shiftId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Ca khám không tồn tại"));
-            a.setShiftName(shift.getName());
-            a.setShiftTime(shift.getStartTime() + " - " + shift.getEndTime());
-        }
 
         // Cập nhật thông tin khách (cho phép ghi đè kể cả khách vãng lai hay khách có tk)
         updatePatientInformation(a, req.guestFullName(), req.guestPhone(), req.guestEmail(),
@@ -240,6 +242,10 @@ public class AppointmentService implements AppointmentServiceInterface {
             }
             validateSingleExaminationService(services);
             a.setServices(services);
+        }
+
+        if (req.scheduledAt() != null || req.shiftId() != null || req.serviceIds() != null) {
+            refreshBookingSelection(a, req.scheduledAt(), req.shiftId(), a.getServices());
         }
 
         Appointment saved = repo.save(a);
@@ -371,6 +377,10 @@ public class AppointmentService implements AppointmentServiceInterface {
                 throw new BadRequestException("Lịch hẹn chưa chọn dịch vụ");
             }
         }
+        // Du lieu lich hen cu co the da luu nhieu dich vu kham. Luon kiem tra
+        // lai tai thoi diem check-in de khong tao CustomerVisit sai quy tac moi.
+        validateSingleExaminationService(services);
+        validateExaminationAvailabilityForShift(services, resolveAppointmentShift(a), clinicToday());
 
         repo.save(a); // Luu lai appointment voi services moi (neu co)
 
@@ -396,7 +406,8 @@ public class AppointmentService implements AppointmentServiceInterface {
                     req.patientEmail(), req.patientAddress(), req.patientDateOfBirth(),
                     req.patientGender());
         }
-        ensureNoActiveVisit(lockedCustomer.getProfileId());
+        customerVisitService.validateNoSameDayExaminationRegistration(
+                lockedCustomer.getProfileId(), services.stream().map(MedicalService::getServiceId).toList());
 
         CustomerVisit visit = visitRepo.findByAppointment_AppointmentId(a.getAppointmentId())
                 .orElseGet(() -> visitRepo.save(CustomerVisit.builder()
@@ -631,6 +642,7 @@ public class AppointmentService implements AppointmentServiceInterface {
         validateSingleExaminationService(selectedServices);
         selectedServices.forEach(service -> validateServiceEligibility(
                 service, req.guestAge(), req.guestGender()));
+        validateExaminationAvailabilityForShift(selectedServices, resolveCurrentShift(), clinicToday());
         if (req.guestFullName().codePoints().anyMatch(Character::isDigit)) {
             throw new BadRequestException("Họ tên không được chứa chữ số");
         }
@@ -647,7 +659,8 @@ public class AppointmentService implements AppointmentServiceInterface {
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
         updateProfileInformation(guestProfile, req.guestFullName(), null, null,
                 req.guestAddress(), null, req.guestGender());
-        ensureNoActiveVisit(guestProfile.getProfileId());
+        customerVisitService.validateNoSameDayExaminationRegistration(
+                guestProfile.getProfileId(), selectedServices.stream().map(MedicalService::getServiceId).toList());
         CustomerVisit visit = CustomerVisit.builder()
                 .customer(guestProfile)
                 .checkedInBy(req.issuedById()!=null?staffRepo.findById(req.issuedById()).orElse(null):null)
@@ -692,16 +705,6 @@ public class AppointmentService implements AppointmentServiceInterface {
         return GuestCheckInResponse.from(savedVisit, invoiceResponse.invoiceId(), req.guestFullName(), req.guestPhone());
     }
 
-    private void ensureNoActiveVisit(UUID profileId) {
-        visitRepo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                profileId, List.of(VisitStatus.CHECKED_IN, VisitStatus.IN_PROGRESS))
-                .ifPresent(active -> {
-                    String code = "VIS-" + active.getVisitId().toString().substring(0, 8).toUpperCase();
-                    throw new ConflictException("Bệnh nhân đang có lượt khám " + code
-                            + " chưa hoàn thành. Vui lòng hoàn thành hoặc hủy lượt hiện tại trước khi check-in lịch mới");
-                });
-    }
-
     @Transactional(readOnly = true)
     public PageResponse<CustomerAppointmentResponse> getMyAppointments(UUID customerId, String code, String specialty, String status, LocalDateTime from, LocalDateTime to, Pageable pageable) {
         // Tim profile tu account
@@ -742,17 +745,6 @@ public class AppointmentService implements AppointmentServiceInterface {
             throw new BadRequestException("Chỉ có thể cập nhật lịch hẹn khi chưa check-in");
         }
 
-        if (req.scheduledAt() != null) {
-            validateAppointmentTiming(req.scheduledAt(), resolveRequestedShift(req.shiftId(), a));
-            validateRescheduleConflict(a, req.scheduledAt());
-            a.setScheduledAt(req.scheduledAt());
-        }
-        if (req.shiftId() != null) {
-            org.example.doansummer2026.model.ShiftConfig shift = shiftConfigRepository.findById(req.shiftId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Ca khám không tồn tại"));
-            a.setShiftName(shift.getName());
-            a.setShiftTime(shift.getStartTime() + " - " + shift.getEndTime());
-        }
         if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
             Set<MedicalService> services = new HashSet<>();
             for (UUID serviceId : req.serviceIds()) {
@@ -768,7 +760,36 @@ public class AppointmentService implements AppointmentServiceInterface {
             validateSingleExaminationService(services);
             a.setServices(services);
         }
+        if (req.scheduledAt() != null || req.shiftId() != null || req.serviceIds() != null) {
+            refreshBookingSelection(a, req.scheduledAt(), req.shiftId(), a.getServices());
+        }
         return CustomerAppointmentDetailResponse.from(repo.save(a));
+    }
+
+    private void refreshBookingSelection(Appointment appointment, LocalDateTime requestedAt,
+                                         UUID requestedShiftId, Set<MedicalService> services) {
+        LocalDateTime target = requestedAt != null ? requestedAt : appointment.getScheduledAt();
+        org.example.doansummer2026.model.ShiftConfig shift = requestedShiftId != null
+                ? shiftConfigRepository.findById(requestedShiftId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Ca khám không tồn tại"))
+                : shiftFromAppointment(appointment);
+        ShiftScheduleResolver.ResolvedShift resolved = resolveBookingShift(shift, target, services);
+        LocalDateTime normalized = resolved == null ? target
+                : LocalDateTime.of(target.toLocalDate(), resolved.startTime());
+        validateRescheduleConflict(appointment, normalized);
+        appointment.setScheduledAt(normalized);
+        if (resolved != null) {
+            appointment.setShiftName(shift.getName());
+            appointment.setShiftTime(formatShiftTime(resolved));
+            appointment.setShiftVersion(resolved.version());
+        }
+    }
+
+    private org.example.doansummer2026.model.ShiftConfig shiftFromAppointment(Appointment appointment) {
+        if (appointment.getShiftVersion() != null) return appointment.getShiftVersion().getShift();
+        if (appointment.getShiftName() == null) return null;
+        return shiftConfigRepository.findAll().stream()
+                .filter(shift -> appointment.getShiftName().equals(shift.getName())).findFirst().orElse(null);
     }
 
     private void validateRescheduleConflict(Appointment appointment, LocalDateTime scheduledAt) {
@@ -792,9 +813,53 @@ public class AppointmentService implements AppointmentServiceInterface {
                 .count();
         if (examinationCount > 1) {
             throw new BadRequestException(
-                    "Mỗi lịch hẹn chỉ được chọn một dịch vụ khám bệnh. Bạn vẫn có thể chọn nhiều dịch vụ cận lâm sàng"
+                    "Mỗi lịch hẹn chỉ được chọn tối đa 1 dịch vụ khám bệnh"
             );
         }
+    }
+
+    private void validateExaminationAvailabilityForShift(java.util.Collection<MedicalService> services,
+                                                          org.example.doansummer2026.model.ShiftConfig shift,
+                                                          LocalDate date) {
+        boolean hasExamination = services != null && services.stream().anyMatch(service ->
+                service.getDepartmentType() != null && service.getDepartmentType().normalized()
+                        == org.example.doansummer2026.enums.DepartmentType.EXAMINATION);
+        if (!hasExamination) return;
+        if (shift == null) {
+            throw new ConflictException("Không xác định được ca làm việc hiện tại của phòng khám");
+        }
+        services.stream()
+                .filter(service -> service.getDepartmentType() != null
+                        && service.getDepartmentType().normalized()
+                        == org.example.doansummer2026.enums.DepartmentType.EXAMINATION)
+                .forEach(service -> {
+                    var evaluation = serviceAvailabilityService.evaluate(service, date, shift, false);
+                    if (!evaluation.available()) {
+                        throw new ConflictException("Dịch vụ " + service.getName()
+                                + " chưa có bác sĩ đủ điều kiện trong ca hiện tại"
+                                + (evaluation.reason() == null ? "" : " (" + evaluation.reason().name() + ")"));
+                    }
+                });
+    }
+
+    private org.example.doansummer2026.model.ShiftConfig resolveAppointmentShift(Appointment appointment) {
+        if (appointment.getShiftVersion() != null) return appointment.getShiftVersion().getShift();
+        if (appointment.getShiftName() == null) return null;
+        return shiftConfigRepository.findAll().stream()
+                .filter(shift -> appointment.getShiftName().equals(shift.getName()))
+                .findFirst().orElse(null);
+    }
+
+    private org.example.doansummer2026.model.ShiftConfig resolveCurrentShift() {
+        LocalDate today = clinicToday();
+        java.time.LocalTime now = java.time.LocalTime.now(CLINIC_ZONE);
+        return shiftConfigRepository.findAllByIsActiveTrueOrderByStartTimeAsc().stream()
+                .filter(shift -> {
+                    var resolved = shiftScheduleResolver.resolve(shift, today);
+                    return resolved.available() && resolved.startTime() != null && resolved.endTime() != null
+                            && !now.isBefore(resolved.startTime()) && now.isBefore(resolved.endTime());
+                })
+                .findFirst().orElse(null);
     }
 
     private LocalDate clinicToday() {
@@ -827,6 +892,41 @@ public class AppointmentService implements AppointmentServiceInterface {
                 throw new BadRequestException("Giờ hẹn không thuộc khung giờ của ca đã chọn");
             }
         }
+    }
+
+    private ShiftScheduleResolver.ResolvedShift resolveBookingShift(
+            org.example.doansummer2026.model.ShiftConfig shift,
+            LocalDateTime requestedAt,
+            Set<MedicalService> services) {
+        if (requestedAt == null) throw new BadRequestException("Vui lòng chọn ngày khám");
+        if (!requestedAt.toLocalDate().isAfter(clinicToday())) {
+            throw new BadRequestException("Lịch hẹn phải được đặt từ ngày mai trở đi");
+        }
+        if (shift == null) {
+            // Legacy integrations may create an unslotted appointment. Customer
+            // booking screens always send shiftId and therefore use full coverage validation.
+            return null;
+        }
+        ShiftScheduleResolver.ResolvedShift resolved = shiftScheduleResolver.resolve(shift, requestedAt.toLocalDate());
+        if (!resolved.available()) {
+            throw new ConflictException("Ca khám không khả dụng: " + resolved.unavailableReason());
+        }
+        if (services != null) {
+            for (MedicalService service : services) {
+                ServiceAvailabilityService.Evaluation availability =
+                        serviceAvailabilityService.evaluate(service, requestedAt.toLocalDate(), shift, true);
+                if (!availability.available()) {
+                    throw new ConflictException("Dịch vụ '" + service.getName()
+                            + "' không khả dụng trong ca đã chọn: " + availability.reason());
+                }
+            }
+        }
+        return resolved;
+    }
+
+    private String formatShiftTime(ShiftScheduleResolver.ResolvedShift resolved) {
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm");
+        return resolved.startTime().format(formatter) + " - " + resolved.endTime().format(formatter);
     }
 
     private Integer resolveAppointmentAge(Appointment appointment, LocalDate requestedDateOfBirth,

@@ -8,19 +8,21 @@ import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.*;
 import org.example.doansummer2026.repository.*;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.util.ArrayList;
+import java.time.ZoneId;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -31,8 +33,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+
 @ExtendWith(MockitoExtension.class)
 class AppointmentServiceTest {
+
+    private static final ZoneId CLINIC_ZONE =
+            ZoneId.of("Asia/Ho_Chi_Minh");
+
 
     @Mock
     private AppointmentRepository repo;
@@ -75,22 +82,44 @@ class AppointmentServiceTest {
     // HELPERS
     // =========================================================
 
+    private LocalDate clinicToday() {
+        return LocalDate.now(CLINIC_ZONE);
+    }
+
+    /**
+     * Dùng +2 ngày thay vì now().plusDays(1)
+     * để test không bị lỗi khi chạy đúng thời điểm qua 0h.
+     */
+    private LocalDateTime futureAppointmentTime() {
+        return clinicToday()
+                .plusDays(2)
+                .atTime(10, 0);
+    }
+
     private Profile customer(UUID profileId) {
         return Profile.builder()
                 .profileId(profileId)
                 .fullName("Nguyen Van A")
                 .phone("0901234567")
                 .gender(Gender.MALE)
-                .dateOfBirth(LocalDate.now().minusYears(25))
+                .dateOfBirth(
+                        clinicToday().minusYears(25)
+                )
                 .build();
     }
 
-    private MedicalService service(UUID id, String name) {
+    private MedicalService service(
+            UUID id,
+            String name
+    ) {
         return MedicalService.builder()
                 .serviceId(id)
                 .name(name)
                 .serviceCode("DV01")
-                .price(new BigDecimal("100000"))
+                .price(
+                        new BigDecimal("100000")
+                )
+                .status(ServiceStatus.ACTIVE)
                 .build();
     }
 
@@ -102,20 +131,17 @@ class AppointmentServiceTest {
         return Appointment.builder()
                 .appointmentId(id)
                 .customer(customer)
-                .scheduledAt(LocalDateTime.now().plusDays(1))
+                .scheduledAt(
+                        futureAppointmentTime()
+                )
                 .status(status)
                 .services(new HashSet<>())
                 .build();
     }
 
     /**
-     * Appointment riêng cho các test check-in.
-     *
-     * AppointmentService.checkIn() hiện chỉ cho phép check-in
-     * lịch hẹn đúng ngày hôm nay.
-     *
-     * Không sửa helper appointment() phía trên vì các test create/update
-     * vẫn cần lịch hẹn ở tương lai.
+     * Appointment cho check-in phải đúng ngày hiện tại
+     * theo timezone của phòng khám.
      */
     private Appointment appointmentForToday(
             UUID id,
@@ -125,7 +151,9 @@ class AppointmentServiceTest {
         return Appointment.builder()
                 .appointmentId(id)
                 .customer(customer)
-                .scheduledAt(LocalDate.now().atTime(9, 0))
+                .scheduledAt(
+                        clinicToday().atTime(9, 0)
+                )
                 .status(status)
                 .services(new HashSet<>())
                 .build();
@@ -139,9 +167,10 @@ class AppointmentServiceTest {
     @Test
     void findById_ShouldReturn_WhenExists() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
-        Appointment a =
+        Appointment appointment =
                 appointment(
                         id,
                         AppointmentStatus.PENDING,
@@ -149,25 +178,32 @@ class AppointmentServiceTest {
                 );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(a));
+                .thenReturn(
+                        Optional.of(appointment)
+                );
 
         assertSame(
-                a,
+                appointment,
                 appointmentService.findById(id)
         );
     }
 
+
     @Test
     void findById_ShouldThrow_WhenMissing() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         when(repo.findById(id))
-                .thenReturn(Optional.empty());
+                .thenReturn(
+                        Optional.empty()
+                );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> appointmentService.findById(id)
+                () ->
+                        appointmentService.findById(id)
         );
     }
 
@@ -179,9 +215,10 @@ class AppointmentServiceTest {
     @Test
     void get_ShouldReturnResponse_WhenFound() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
-        Appointment a =
+        Appointment appointment =
                 appointment(
                         id,
                         AppointmentStatus.PENDING,
@@ -189,7 +226,9 @@ class AppointmentServiceTest {
                 );
 
         when(repo.findById(id))
-                .thenReturn(Optional.of(a));
+                .thenReturn(
+                        Optional.of(appointment)
+                );
 
         assertNotNull(
                 appointmentService.get(id)
@@ -204,10 +243,14 @@ class AppointmentServiceTest {
     @Test
     void search_ShouldDelegateToRepository() {
 
-        UUID customerId = UUID.randomUUID();
+        UUID customerId =
+                UUID.randomUUID();
 
         var pageable =
-                PageRequest.of(0, 10);
+                PageRequest.of(
+                        0,
+                        10
+                );
 
         when(
                 repo.search(
@@ -218,7 +261,9 @@ class AppointmentServiceTest {
                         pageable
                 )
         ).thenReturn(
-                new PageImpl<>(List.of())
+                new PageImpl<>(
+                        List.of()
+                )
         );
 
         var result =
@@ -241,11 +286,15 @@ class AppointmentServiceTest {
         );
     }
 
+
     @Test
     void search_ShouldPassNullStatus_WhenStatusNull() {
 
         var pageable =
-                PageRequest.of(0, 10);
+                PageRequest.of(
+                        0,
+                        10
+                );
 
         when(
                 repo.search(
@@ -256,7 +305,9 @@ class AppointmentServiceTest {
                         pageable
                 )
         ).thenReturn(
-                new PageImpl<>(List.of())
+                new PageImpl<>(
+                        List.of()
+                )
         );
 
         appointmentService.search(
@@ -284,7 +335,8 @@ class AppointmentServiceTest {
     @Test
     void create_ShouldThrow_WhenAccountMissing() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         AppointmentCreateRequest req =
                 mock(AppointmentCreateRequest.class);
@@ -293,28 +345,33 @@ class AppointmentServiceTest {
                 .thenReturn(accountId);
 
         when(accountRepo.findById(accountId))
-                .thenReturn(Optional.empty());
+                .thenReturn(
+                        Optional.empty()
+                );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> appointmentService.create(req)
+                () ->
+                        appointmentService.create(req)
         );
     }
 
 
     // =========================================================
-    // CREATE - ROLE NOT ALLOWED
+    // CREATE - INVALID ROLE
     // =========================================================
 
     @Test
     void create_ShouldReject_WhenAccountRoleIsNull() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
-        Account account = Account.builder()
-                .accountId(accountId)
-                .role(null)
-                .build();
+        Account account =
+                Account.builder()
+                        .accountId(accountId)
+                        .role(null)
+                        .build();
 
         AppointmentCreateRequest req =
                 mock(AppointmentCreateRequest.class);
@@ -323,11 +380,14 @@ class AppointmentServiceTest {
                 .thenReturn(accountId);
 
         when(accountRepo.findById(accountId))
-                .thenReturn(Optional.of(account));
+                .thenReturn(
+                        Optional.of(account)
+                );
 
         assertThrows(
                 BadRequestException.class,
-                () -> appointmentService.create(req)
+                () ->
+                        appointmentService.create(req)
         );
     }
 
@@ -339,7 +399,8 @@ class AppointmentServiceTest {
     @Test
     void create_ShouldThrow_WhenProfileMissing() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         Account account =
                 Account.builder()
@@ -354,32 +415,42 @@ class AppointmentServiceTest {
                 .thenReturn(accountId);
 
         when(accountRepo.findById(accountId))
-                .thenReturn(Optional.of(account));
+                .thenReturn(
+                        Optional.of(account)
+                );
 
         when(
                 profileRepo
-                        .findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.empty());
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> appointmentService.create(req)
+                () ->
+                        appointmentService.create(req)
         );
     }
 
 
     // =========================================================
-    // CREATE - CONFLICT
+    // CREATE - APPOINTMENT CONFLICT
     // =========================================================
 
     @Test
     void create_ShouldReject_WhenAppointmentConflictExists() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
 
         LocalDateTime scheduledAt =
-                LocalDateTime.now().plusDays(1);
+                futureAppointmentTime();
 
         Account account =
                 Account.builder()
@@ -400,17 +471,28 @@ class AppointmentServiceTest {
                 .thenReturn(scheduledAt);
 
         when(accountRepo.findById(accountId))
-                .thenReturn(Optional.of(account));
+                .thenReturn(
+                        Optional.of(account)
+                );
 
         when(
                 profileRepo
-                        .findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 repo.existsCustomerConflict(
                         eq(profileId),
-                        eq(List.of(AppointmentStatus.PENDING)),
+                        eq(
+                                List.of(
+                                        AppointmentStatus.PENDING,
+                                        AppointmentStatus.RESCHEDULED
+                                )
+                        ),
                         any(LocalDateTime.class),
                         any(LocalDateTime.class)
                 )
@@ -418,8 +500,14 @@ class AppointmentServiceTest {
 
         assertThrows(
                 BadRequestException.class,
-                () -> appointmentService.create(req)
+                () ->
+                        appointmentService.create(req)
         );
+
+        verify(
+                repo,
+                never()
+        ).save(any(Appointment.class));
     }
 
 
@@ -430,9 +518,14 @@ class AppointmentServiceTest {
     @Test
     void create_ShouldThrow_WhenShiftMissing() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID shiftId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID shiftId =
+                UUID.randomUUID();
 
         Account account =
                 Account.builder()
@@ -446,18 +539,30 @@ class AppointmentServiceTest {
         AppointmentCreateRequest req =
                 mock(AppointmentCreateRequest.class);
 
-        when(req.customerId()).thenReturn(accountId);
-        when(req.scheduledAt()).thenReturn(
-                LocalDateTime.now().plusDays(1)
-        );
-        when(req.shiftId()).thenReturn(shiftId);
+        when(req.customerId())
+                .thenReturn(accountId);
+
+        when(req.scheduledAt())
+                .thenReturn(
+                        futureAppointmentTime()
+                );
+
+        when(req.shiftId())
+                .thenReturn(shiftId);
 
         when(accountRepo.findById(accountId))
-                .thenReturn(Optional.of(account));
+                .thenReturn(
+                        Optional.of(account)
+                );
 
         when(
-                profileRepo.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                profileRepo
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 repo.existsCustomerConflict(
@@ -468,12 +573,18 @@ class AppointmentServiceTest {
                 )
         ).thenReturn(false);
 
-        when(shiftConfigRepository.findById(shiftId))
-                .thenReturn(Optional.empty());
+        when(
+                shiftConfigRepository.findById(
+                        shiftId
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> appointmentService.create(req)
+                () ->
+                        appointmentService.create(req)
         );
     }
 
@@ -485,9 +596,14 @@ class AppointmentServiceTest {
     @Test
     void create_ShouldThrow_WhenServiceMissing() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
 
         Account account =
                 Account.builder()
@@ -501,20 +617,32 @@ class AppointmentServiceTest {
         AppointmentCreateRequest req =
                 mock(AppointmentCreateRequest.class);
 
-        when(req.customerId()).thenReturn(accountId);
-        when(req.scheduledAt()).thenReturn(
-                LocalDateTime.now().plusDays(1)
-        );
-        when(req.serviceIds()).thenReturn(
-                Set.of(serviceId)
-        );
+        when(req.customerId())
+                .thenReturn(accountId);
+
+        when(req.scheduledAt())
+                .thenReturn(
+                        futureAppointmentTime()
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        Set.of(serviceId)
+                );
 
         when(accountRepo.findById(accountId))
-                .thenReturn(Optional.of(account));
+                .thenReturn(
+                        Optional.of(account)
+                );
 
         when(
-                profileRepo.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                profileRepo
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 repo.existsCustomerConflict(
@@ -526,11 +654,14 @@ class AppointmentServiceTest {
         ).thenReturn(false);
 
         when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.empty());
+                .thenReturn(
+                        Optional.empty()
+                );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> appointmentService.create(req)
+                () ->
+                        appointmentService.create(req)
         );
     }
 
@@ -542,9 +673,14 @@ class AppointmentServiceTest {
     @Test
     void create_ShouldRejectService_WhenBirthDateMissingAndAgeRestricted() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
 
         Account account =
                 Account.builder()
@@ -558,27 +694,42 @@ class AppointmentServiceTest {
         customer.setDateOfBirth(null);
 
         MedicalService service =
-                service(serviceId, "Kham nhi");
+                service(
+                        serviceId,
+                        "Kham nhi"
+                );
 
         service.setMinimumAge(5);
 
         AppointmentCreateRequest req =
                 mock(AppointmentCreateRequest.class);
 
-        when(req.customerId()).thenReturn(accountId);
-        when(req.scheduledAt()).thenReturn(
-                LocalDateTime.now().plusDays(1)
-        );
-        when(req.serviceIds()).thenReturn(
-                Set.of(serviceId)
-        );
+        when(req.customerId())
+                .thenReturn(accountId);
+
+        when(req.scheduledAt())
+                .thenReturn(
+                        futureAppointmentTime()
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        Set.of(serviceId)
+                );
 
         when(accountRepo.findById(accountId))
-                .thenReturn(Optional.of(account));
+                .thenReturn(
+                        Optional.of(account)
+                );
 
         when(
-                profileRepo.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                profileRepo
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 repo.existsCustomerConflict(
@@ -590,11 +741,20 @@ class AppointmentServiceTest {
         ).thenReturn(false);
 
         when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
+                .thenReturn(
+                        Optional.of(service)
+                );
 
-        assertThrows(
-                BadRequestException.class,
-                () -> appointmentService.create(req)
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () ->
+                                appointmentService.create(req)
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains("ngày sinh")
         );
     }
 
@@ -606,9 +766,14 @@ class AppointmentServiceTest {
     @Test
     void create_ShouldRejectService_WhenCustomerTooYoung() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
 
         Account account =
                 Account.builder()
@@ -620,31 +785,46 @@ class AppointmentServiceTest {
                 customer(profileId);
 
         customer.setDateOfBirth(
-                LocalDate.now().minusYears(10)
+                clinicToday().minusYears(10)
         );
 
         MedicalService service =
-                service(serviceId, "Kham nguoi lon");
+                service(
+                        serviceId,
+                        "Kham nguoi lon"
+                );
 
         service.setMinimumAge(18);
 
         AppointmentCreateRequest req =
                 mock(AppointmentCreateRequest.class);
 
-        when(req.customerId()).thenReturn(accountId);
-        when(req.scheduledAt()).thenReturn(
-                LocalDateTime.now().plusDays(1)
-        );
-        when(req.serviceIds()).thenReturn(
-                Set.of(serviceId)
-        );
+        when(req.customerId())
+                .thenReturn(accountId);
+
+        when(req.scheduledAt())
+                .thenReturn(
+                        futureAppointmentTime()
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        Set.of(serviceId)
+                );
 
         when(accountRepo.findById(accountId))
-                .thenReturn(Optional.of(account));
+                .thenReturn(
+                        Optional.of(account)
+                );
 
         when(
-                profileRepo.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                profileRepo
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 repo.existsCustomerConflict(
@@ -656,11 +836,20 @@ class AppointmentServiceTest {
         ).thenReturn(false);
 
         when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
+                .thenReturn(
+                        Optional.of(service)
+                );
 
-        assertThrows(
-                BadRequestException.class,
-                () -> appointmentService.create(req)
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () ->
+                                appointmentService.create(req)
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains("18")
         );
     }
 
@@ -672,9 +861,14 @@ class AppointmentServiceTest {
     @Test
     void create_ShouldRejectService_WhenCustomerTooOld() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
 
         Account account =
                 Account.builder()
@@ -686,31 +880,46 @@ class AppointmentServiceTest {
                 customer(profileId);
 
         customer.setDateOfBirth(
-                LocalDate.now().minusYears(70)
+                clinicToday().minusYears(70)
         );
 
         MedicalService service =
-                service(serviceId, "Dich vu gioi han tuoi");
+                service(
+                        serviceId,
+                        "Dich vu gioi han tuoi"
+                );
 
         service.setMaximumAge(60);
 
         AppointmentCreateRequest req =
                 mock(AppointmentCreateRequest.class);
 
-        when(req.customerId()).thenReturn(accountId);
-        when(req.scheduledAt()).thenReturn(
-                LocalDateTime.now().plusDays(1)
-        );
-        when(req.serviceIds()).thenReturn(
-                Set.of(serviceId)
-        );
+        when(req.customerId())
+                .thenReturn(accountId);
+
+        when(req.scheduledAt())
+                .thenReturn(
+                        futureAppointmentTime()
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        Set.of(serviceId)
+                );
 
         when(accountRepo.findById(accountId))
-                .thenReturn(Optional.of(account));
+                .thenReturn(
+                        Optional.of(account)
+                );
 
         when(
-                profileRepo.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                profileRepo
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 repo.existsCustomerConflict(
@@ -722,11 +931,20 @@ class AppointmentServiceTest {
         ).thenReturn(false);
 
         when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
+                .thenReturn(
+                        Optional.of(service)
+                );
 
-        assertThrows(
-                BadRequestException.class,
-                () -> appointmentService.create(req)
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () ->
+                                appointmentService.create(req)
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains("60")
         );
     }
 
@@ -738,9 +956,14 @@ class AppointmentServiceTest {
     @Test
     void create_ShouldRejectService_WhenGenderMissing() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
 
         Account account =
                 Account.builder()
@@ -754,27 +977,44 @@ class AppointmentServiceTest {
         customer.setGender(null);
 
         MedicalService service =
-                service(serviceId, "Dich vu nu");
+                service(
+                        serviceId,
+                        "Dich vu nu"
+                );
 
-        service.setAllowedGender(Gender.FEMALE);
+        service.setAllowedGender(
+                Gender.FEMALE
+        );
 
         AppointmentCreateRequest req =
                 mock(AppointmentCreateRequest.class);
 
-        when(req.customerId()).thenReturn(accountId);
-        when(req.scheduledAt()).thenReturn(
-                LocalDateTime.now().plusDays(1)
-        );
-        when(req.serviceIds()).thenReturn(
-                Set.of(serviceId)
-        );
+        when(req.customerId())
+                .thenReturn(accountId);
+
+        when(req.scheduledAt())
+                .thenReturn(
+                        futureAppointmentTime()
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        Set.of(serviceId)
+                );
 
         when(accountRepo.findById(accountId))
-                .thenReturn(Optional.of(account));
+                .thenReturn(
+                        Optional.of(account)
+                );
 
         when(
-                profileRepo.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                profileRepo
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 repo.existsCustomerConflict(
@@ -786,25 +1026,39 @@ class AppointmentServiceTest {
         ).thenReturn(false);
 
         when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
+                .thenReturn(
+                        Optional.of(service)
+                );
 
-        assertThrows(
-                BadRequestException.class,
-                () -> appointmentService.create(req)
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () ->
+                                appointmentService.create(req)
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains("giới tính")
         );
     }
 
 
     // =========================================================
-    // CREATE - GENDER WRONG
+    // CREATE - WRONG GENDER
     // =========================================================
 
     @Test
     void create_ShouldRejectService_WhenGenderNotAllowed() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
 
         Account account =
                 Account.builder()
@@ -815,30 +1069,49 @@ class AppointmentServiceTest {
         Profile customer =
                 customer(profileId);
 
-        customer.setGender(Gender.MALE);
+        customer.setGender(
+                Gender.MALE
+        );
 
         MedicalService service =
-                service(serviceId, "Dich vu nu");
+                service(
+                        serviceId,
+                        "Dich vu nu"
+                );
 
-        service.setAllowedGender(Gender.FEMALE);
+        service.setAllowedGender(
+                Gender.FEMALE
+        );
 
         AppointmentCreateRequest req =
                 mock(AppointmentCreateRequest.class);
 
-        when(req.customerId()).thenReturn(accountId);
-        when(req.scheduledAt()).thenReturn(
-                LocalDateTime.now().plusDays(1)
-        );
-        when(req.serviceIds()).thenReturn(
-                Set.of(serviceId)
-        );
+        when(req.customerId())
+                .thenReturn(accountId);
+
+        when(req.scheduledAt())
+                .thenReturn(
+                        futureAppointmentTime()
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        Set.of(serviceId)
+                );
 
         when(accountRepo.findById(accountId))
-                .thenReturn(Optional.of(account));
+                .thenReturn(
+                        Optional.of(account)
+                );
 
         when(
-                profileRepo.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                profileRepo
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 repo.existsCustomerConflict(
@@ -850,11 +1123,20 @@ class AppointmentServiceTest {
         ).thenReturn(false);
 
         when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
+                .thenReturn(
+                        Optional.of(service)
+                );
 
-        assertThrows(
-                BadRequestException.class,
-                () -> appointmentService.create(req)
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () ->
+                                appointmentService.create(req)
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains("giới tính")
         );
     }
 
@@ -866,9 +1148,14 @@ class AppointmentServiceTest {
     @Test
     void create_ShouldCreatePendingAppointmentSuccessfully() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
 
         Account account =
                 Account.builder()
@@ -880,26 +1167,41 @@ class AppointmentServiceTest {
                 customer(profileId);
 
         MedicalService service =
-                service(serviceId, "Kham tong quat");
+                service(
+                        serviceId,
+                        "Kham tong quat"
+                );
 
         AppointmentCreateRequest req =
                 mock(AppointmentCreateRequest.class);
 
         LocalDateTime schedule =
-                LocalDateTime.now().plusDays(1);
+                futureAppointmentTime();
 
-        when(req.customerId()).thenReturn(accountId);
-        when(req.scheduledAt()).thenReturn(schedule);
-        when(req.serviceIds()).thenReturn(
-                Set.of(serviceId)
-        );
+        when(req.customerId())
+                .thenReturn(accountId);
+
+        when(req.scheduledAt())
+                .thenReturn(schedule);
+
+        when(req.serviceIds())
+                .thenReturn(
+                        Set.of(serviceId)
+                );
 
         when(accountRepo.findById(accountId))
-                .thenReturn(Optional.of(account));
+                .thenReturn(
+                        Optional.of(account)
+                );
 
         when(
-                profileRepo.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                profileRepo
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 repo.existsCustomerConflict(
@@ -911,25 +1213,44 @@ class AppointmentServiceTest {
         ).thenReturn(false);
 
         when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
+                .thenReturn(
+                        Optional.of(service)
+                );
 
         when(repo.save(any(Appointment.class)))
-                .thenAnswer(i -> {
-                    Appointment a = i.getArgument(0);
-                    a.setAppointmentId(UUID.randomUUID());
-                    return a;
-                });
+                .thenAnswer(
+                        invocation -> {
+
+                            Appointment appointment =
+                                    invocation.getArgument(0);
+
+                            appointment.setAppointmentId(
+                                    UUID.randomUUID()
+                            );
+
+                            return appointment;
+                        }
+                );
 
         var result =
                 appointmentService.create(req);
 
         assertNotNull(result);
 
-        verify(repo).save(argThat(a ->
-                a.getStatus() == AppointmentStatus.PENDING
-                        && a.getCustomer() == customer
-                        && a.getServices().contains(service)
-        ));
+        verify(repo).save(
+                argThat(
+                        appointment ->
+                                appointment.getStatus()
+                                        == AppointmentStatus.PENDING
+                                        &&
+                                        appointment.getCustomer()
+                                                == customer
+                                        &&
+                                        appointment
+                                                .getServices()
+                                                .contains(service)
+                )
+        );
 
         verify(notificationService)
                 .notifyStaffByRole(
@@ -950,14 +1271,20 @@ class AppointmentServiceTest {
     void createForGuest_ShouldRejectOtherGender() {
 
         AppointmentGuestCreateRequest req =
-                mock(AppointmentGuestCreateRequest.class);
+                mock(
+                        AppointmentGuestCreateRequest.class
+                );
 
         when(req.guestGender())
-                .thenReturn(Gender.OTHER);
+                .thenReturn(
+                        Gender.OTHER
+                );
 
         assertThrows(
                 BadRequestException.class,
-                () -> appointmentService.createForGuest(req)
+                () ->
+                        appointmentService
+                                .createForGuest(req)
         );
     }
 
@@ -970,51 +1297,72 @@ class AppointmentServiceTest {
     void createForGuest_ShouldRejectConflict() {
 
         AppointmentGuestCreateRequest req =
-                mock(AppointmentGuestCreateRequest.class);
+                mock(
+                        AppointmentGuestCreateRequest.class
+                );
 
         LocalDateTime scheduledAt =
-                LocalDateTime.now().plusDays(1);
+                futureAppointmentTime();
 
         when(req.guestGender())
-                .thenReturn(Gender.MALE);
+                .thenReturn(
+                        Gender.MALE
+                );
 
         when(req.scheduledAt())
-                .thenReturn(scheduledAt);
+                .thenReturn(
+                        scheduledAt
+                );
 
         when(req.guestPhone())
-                .thenReturn("0901234567");
+                .thenReturn(
+                        "0901234567"
+                );
 
-        when(repo.existsGuestConflict(
-                eq("0901234567"),
-                isNull(),
-                anyList(),
-                any(),
-                any()
-        )).thenReturn(true);
+        when(
+                repo.existsGuestConflict(
+                        eq("0901234567"),
+                        isNull(),
+                        eq(
+                                List.of(
+                                        AppointmentStatus.PENDING,
+                                        AppointmentStatus.RESCHEDULED
+                                )
+                        ),
+                        any(LocalDateTime.class),
+                        any(LocalDateTime.class)
+                )
+        ).thenReturn(true);
 
         assertThrows(
                 BadRequestException.class,
-                () -> appointmentService.createForGuest(req)
+                () ->
+                        appointmentService
+                                .createForGuest(req)
         );
     }
 
 
     // =========================================================
-    // CREATE GUEST - NO PHONE/EMAIL
+    // CREATE GUEST - NO PHONE / EMAIL
     // =========================================================
 
     @Test
     void createForGuest_ShouldSkipConflictCheck_WhenPhoneAndEmailBlank() {
 
         AppointmentGuestCreateRequest req =
-                mock(AppointmentGuestCreateRequest.class);
+                mock(
+                        AppointmentGuestCreateRequest.class
+                );
 
         when(req.guestGender())
-                .thenReturn(Gender.MALE);
+                .thenReturn(
+                        Gender.MALE
+                );
 
         when(req.scheduledAt())
                 .thenReturn(
-                        LocalDateTime.now().plusDays(1)
+                        futureAppointmentTime()
                 );
 
         when(req.guestPhone())
@@ -1024,25 +1372,36 @@ class AppointmentServiceTest {
                 .thenReturn(null);
 
         when(repo.save(any(Appointment.class)))
-                .thenAnswer(i -> {
-                    Appointment a = i.getArgument(0);
-                    a.setAppointmentId(UUID.randomUUID());
-                    return a;
-                });
+                .thenAnswer(
+                        invocation -> {
+
+                            Appointment appointment =
+                                    invocation.getArgument(0);
+
+                            appointment.setAppointmentId(
+                                    UUID.randomUUID()
+                            );
+
+                            return appointment;
+                        }
+                );
 
         var result =
-                appointmentService.createForGuest(req);
+                appointmentService
+                        .createForGuest(req);
 
         assertNotNull(result);
 
-        verify(repo, never())
-                .existsGuestConflict(
-                        any(),
-                        any(),
-                        anyList(),
-                        any(),
-                        any()
-                );
+        verify(
+                repo,
+                never()
+        ).existsGuestConflict(
+                any(),
+                any(),
+                anyList(),
+                any(),
+                any()
+        );
     }
 
 
@@ -1053,62 +1412,101 @@ class AppointmentServiceTest {
     @Test
     void createForGuest_ShouldCreateSuccessfully() {
 
-        UUID serviceId = UUID.randomUUID();
+        UUID serviceId =
+                UUID.randomUUID();
 
         AppointmentGuestCreateRequest req =
-                mock(AppointmentGuestCreateRequest.class);
+                mock(
+                        AppointmentGuestCreateRequest.class
+                );
 
         MedicalService service =
-                service(serviceId, "Kham guest");
+                service(
+                        serviceId,
+                        "Kham guest"
+                );
 
         when(req.guestGender())
-                .thenReturn(Gender.FEMALE);
+                .thenReturn(
+                        Gender.FEMALE
+                );
 
         when(req.guestAge())
                 .thenReturn(30);
 
         when(req.guestFullName())
-                .thenReturn("Guest A");
+                .thenReturn(
+                        "Guest A"
+                );
 
         when(req.guestPhone())
-                .thenReturn("0900000000");
+                .thenReturn(
+                        "0900000000"
+                );
 
         when(req.scheduledAt())
                 .thenReturn(
-                        LocalDateTime.now().plusDays(1)
+                        futureAppointmentTime()
                 );
 
         when(req.serviceIds())
-                .thenReturn(Set.of(serviceId));
+                .thenReturn(
+                        Set.of(serviceId)
+                );
 
-        when(repo.existsGuestConflict(
-                any(),
-                any(),
-                anyList(),
-                any(),
-                any()
-        )).thenReturn(false);
+        when(
+                repo.existsGuestConflict(
+                        any(),
+                        any(),
+                        anyList(),
+                        any(),
+                        any()
+                )
+        ).thenReturn(false);
 
         when(serviceRepo.findById(serviceId))
-                .thenReturn(Optional.of(service));
+                .thenReturn(
+                        Optional.of(service)
+                );
 
         when(repo.save(any(Appointment.class)))
-                .thenAnswer(i -> {
-                    Appointment a = i.getArgument(0);
-                    a.setAppointmentId(UUID.randomUUID());
-                    return a;
-                });
+                .thenAnswer(
+                        invocation -> {
+
+                            Appointment appointment =
+                                    invocation.getArgument(0);
+
+                            appointment.setAppointmentId(
+                                    UUID.randomUUID()
+                            );
+
+                            return appointment;
+                        }
+                );
 
         var result =
-                appointmentService.createForGuest(req);
+                appointmentService
+                        .createForGuest(req);
 
         assertNotNull(result);
 
-        verify(repo).save(argThat(a ->
-                Boolean.TRUE.equals(a.getIsGuest())
-                        && "Guest A".equals(a.getGuestFullName())
-                        && a.getServices().contains(service)
-        ));
+        verify(repo).save(
+                argThat(
+                        appointment ->
+                                Boolean.TRUE.equals(
+                                        appointment.getIsGuest()
+                                )
+                                        &&
+                                        "Guest A".equals(
+                                                appointment
+                                                        .getGuestFullName()
+                                        )
+                                        &&
+                                        appointment
+                                                .getServices()
+                                                .contains(service)
+                )
+        );
     }
 
 
@@ -1119,9 +1517,10 @@ class AppointmentServiceTest {
     @Test
     void update_ShouldUpdateFields() {
 
-        UUID appointmentId = UUID.randomUUID();
+        UUID appointmentId =
+                UUID.randomUUID();
 
-        Appointment a =
+        Appointment appointment =
                 appointment(
                         appointmentId,
                         AppointmentStatus.PENDING,
@@ -1129,21 +1528,42 @@ class AppointmentServiceTest {
                 );
 
         AppointmentUpdateRequest req =
-                mock(AppointmentUpdateRequest.class);
+                mock(
+                        AppointmentUpdateRequest.class
+                );
 
         LocalDateTime newTime =
-                LocalDateTime.now().plusDays(3);
+                clinicToday()
+                        .plusDays(3)
+                        .atTime(11, 0);
 
-        when(req.scheduledAt()).thenReturn(newTime);
-        when(req.status()).thenReturn(
-                AppointmentStatus.RESCHEDULED
-        );
-        when(req.cancelReason()).thenReturn("Reason");
-        when(req.guestFullName()).thenReturn("Updated");
-        when(req.guestPhone()).thenReturn("0999999999");
+        when(req.scheduledAt())
+                .thenReturn(newTime);
+
+        when(req.status())
+                .thenReturn(
+                        AppointmentStatus.RESCHEDULED
+                );
+
+        when(req.cancelReason())
+                .thenReturn(
+                        "Reason"
+                );
+
+        when(req.guestFullName())
+                .thenReturn(
+                        "Updated"
+                );
+
+        when(req.guestPhone())
+                .thenReturn(
+                        "0999999999"
+                );
 
         when(repo.findById(appointmentId))
-                .thenReturn(Optional.of(a));
+                .thenReturn(
+                        Optional.of(appointment)
+                );
 
         when(
                 repo.existsOtherCustomerConflict(
@@ -1155,8 +1575,8 @@ class AppointmentServiceTest {
                 )
         ).thenReturn(false);
 
-        when(repo.save(a))
-                .thenReturn(a);
+        when(repo.save(appointment))
+                .thenReturn(appointment);
 
         appointmentService.update(
                 appointmentId,
@@ -1165,17 +1585,17 @@ class AppointmentServiceTest {
 
         assertEquals(
                 newTime,
-                a.getScheduledAt()
+                appointment.getScheduledAt()
         );
 
         assertEquals(
                 AppointmentStatus.RESCHEDULED,
-                a.getStatus()
+                appointment.getStatus()
         );
 
         assertEquals(
                 "Updated",
-                a.getGuestFullName()
+                appointment.getGuestFullName()
         );
     }
 
@@ -1187,9 +1607,10 @@ class AppointmentServiceTest {
     @Test
     void update_ShouldRejectRescheduleConflict() {
 
-        UUID appointmentId = UUID.randomUUID();
+        UUID appointmentId =
+                UUID.randomUUID();
 
-        Appointment a =
+        Appointment appointment =
                 appointment(
                         appointmentId,
                         AppointmentStatus.PENDING,
@@ -1197,15 +1618,21 @@ class AppointmentServiceTest {
                 );
 
         AppointmentUpdateRequest req =
-                mock(AppointmentUpdateRequest.class);
+                mock(
+                        AppointmentUpdateRequest.class
+                );
 
         when(req.scheduledAt())
                 .thenReturn(
-                        LocalDateTime.now().plusDays(2)
+                        clinicToday()
+                                .plusDays(3)
+                                .atTime(10, 0)
                 );
 
         when(repo.findById(appointmentId))
-                .thenReturn(Optional.of(a));
+                .thenReturn(
+                        Optional.of(appointment)
+                );
 
         when(
                 repo.existsOtherCustomerConflict(
@@ -1219,57 +1646,73 @@ class AppointmentServiceTest {
 
         assertThrows(
                 BadRequestException.class,
-                () -> appointmentService.update(
-                        appointmentId,
-                        req
-                )
+                () ->
+                        appointmentService.update(
+                                appointmentId,
+                                req
+                        )
         );
     }
 
 
     // =========================================================
-    // UPDATE - GUEST SKIPS RESCHEDULE CHECK
+    // UPDATE - GUEST SKIPS RESCHEDULE CONFLICT
     // =========================================================
 
     @Test
     void update_ShouldSkipConflictCheck_WhenAppointmentHasNoCustomer() {
 
-        UUID appointmentId = UUID.randomUUID();
+        UUID appointmentId =
+                UUID.randomUUID();
 
-        Appointment a =
+        Appointment appointment =
                 Appointment.builder()
-                        .appointmentId(appointmentId)
-                        .status(AppointmentStatus.PENDING)
-                        .scheduledAt(LocalDateTime.now())
+                        .appointmentId(
+                                appointmentId
+                        )
+                        .status(
+                                AppointmentStatus.PENDING
+                        )
+                        .scheduledAt(
+                                futureAppointmentTime()
+                        )
                         .build();
 
         AppointmentUpdateRequest req =
-                mock(AppointmentUpdateRequest.class);
+                mock(
+                        AppointmentUpdateRequest.class
+                );
 
         when(req.scheduledAt())
                 .thenReturn(
-                        LocalDateTime.now().plusDays(2)
+                        clinicToday()
+                                .plusDays(3)
+                                .atTime(10, 0)
                 );
 
         when(repo.findById(appointmentId))
-                .thenReturn(Optional.of(a));
+                .thenReturn(
+                        Optional.of(appointment)
+                );
 
-        when(repo.save(a))
-                .thenReturn(a);
+        when(repo.save(appointment))
+                .thenReturn(appointment);
 
         appointmentService.update(
                 appointmentId,
                 req
         );
 
-        verify(repo, never())
-                .existsOtherCustomerConflict(
-                        any(),
-                        any(),
-                        anyList(),
-                        any(),
-                        any()
-                );
+        verify(
+                repo,
+                never()
+        ).existsOtherCustomerConflict(
+                any(),
+                any(),
+                anyList(),
+                any(),
+                any()
+        );
     }
 
 
@@ -1280,12 +1723,15 @@ class AppointmentServiceTest {
     @Test
     void update_ShouldNotifyReceptionist_WhenCancelled() {
 
-        UUID appointmentId = UUID.randomUUID();
+        UUID appointmentId =
+                UUID.randomUUID();
 
         Profile customer =
-                customer(UUID.randomUUID());
+                customer(
+                        UUID.randomUUID()
+                );
 
-        Appointment a =
+        Appointment appointment =
                 appointment(
                         appointmentId,
                         AppointmentStatus.PENDING,
@@ -1293,22 +1739,39 @@ class AppointmentServiceTest {
                 );
 
         AppointmentUpdateRequest req =
-                mock(AppointmentUpdateRequest.class);
+                mock(
+                        AppointmentUpdateRequest.class
+                );
 
         when(req.status())
                 .thenReturn(
                         AppointmentStatus.CANCELLED
                 );
 
-        when(repo.findById(appointmentId))
-                .thenReturn(Optional.of(a));
+        /*
+         * Production hiện bắt buộc nhập lý do hủy.
+         */
+        when(req.cancelReason())
+                .thenReturn(
+                        "Patient requested cancellation"
+                );
 
-        when(repo.save(a))
-                .thenReturn(a);
+        when(repo.findById(appointmentId))
+                .thenReturn(
+                        Optional.of(appointment)
+                );
+
+        when(repo.save(appointment))
+                .thenReturn(appointment);
 
         appointmentService.update(
                 appointmentId,
                 req
+        );
+
+        assertEquals(
+                AppointmentStatus.CANCELLED,
+                appointment.getStatus()
         );
 
         verify(notificationService)
@@ -1327,30 +1790,63 @@ class AppointmentServiceTest {
     // =========================================================
 
     @Test
-    void delete_ShouldThrow_WhenMissing() {
+    void delete_ShouldThrowNotFound_WhenMissing() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
-        when(repo.existsById(id))
-                .thenReturn(false);
+        when(repo.findById(id))
+                .thenReturn(
+                        Optional.empty()
+                );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> appointmentService.delete(id)
+                () ->
+                        appointmentService.delete(id)
         );
+
+        verify(
+                repo,
+                never()
+        ).deleteById(any());
     }
 
+
     @Test
-    void delete_ShouldDelete_WhenExists() {
+    void delete_ShouldRejectDeletion_WhenAppointmentExists() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
-        when(repo.existsById(id))
-                .thenReturn(true);
+        Appointment appointment =
+                appointment(
+                        id,
+                        AppointmentStatus.PENDING,
+                        customer(UUID.randomUUID())
+                );
 
-        appointmentService.delete(id);
+        when(repo.findById(id))
+                .thenReturn(
+                        Optional.of(appointment)
+                );
 
-        verify(repo).deleteById(id);
+        ConflictException exception =
+                assertThrows(
+                        ConflictException.class,
+                        () ->
+                                appointmentService.delete(id)
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains("Không xóa lịch hẹn")
+        );
+
+        verify(
+                repo,
+                never()
+        ).deleteById(any());
     }
 
 
@@ -1361,20 +1857,31 @@ class AppointmentServiceTest {
     @Test
     void checkIn_ShouldThrow_WhenAppointmentMissing() {
 
-        UUID appointmentId = UUID.randomUUID();
+        UUID appointmentId =
+                UUID.randomUUID();
 
         AppointmentCheckInRequest req =
-                mock(AppointmentCheckInRequest.class);
+                mock(
+                        AppointmentCheckInRequest.class
+                );
 
         when(req.appointmentId())
-                .thenReturn(appointmentId);
+                .thenReturn(
+                        appointmentId
+                );
 
-        when(repo.findByIdForUpdate(appointmentId))
-                .thenReturn(Optional.empty());
+        when(
+                repo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> appointmentService.checkIn(req)
+                () ->
+                        appointmentService.checkIn(req)
         );
     }
 
@@ -1386,12 +1893,15 @@ class AppointmentServiceTest {
     @Test
     void checkIn_ShouldReject_WhenAlreadyCheckedIn() {
 
-        UUID appointmentId = UUID.randomUUID();
+        UUID appointmentId =
+                UUID.randomUUID();
 
         AppointmentCheckInRequest req =
-                mock(AppointmentCheckInRequest.class);
+                mock(
+                        AppointmentCheckInRequest.class
+                );
 
-        Appointment a =
+        Appointment appointment =
                 appointmentForToday(
                         appointmentId,
                         AppointmentStatus.CHECKED_IN,
@@ -1399,14 +1909,22 @@ class AppointmentServiceTest {
                 );
 
         when(req.appointmentId())
-                .thenReturn(appointmentId);
+                .thenReturn(
+                        appointmentId
+                );
 
-        when(repo.findByIdForUpdate(appointmentId))
-                .thenReturn(Optional.of(a));
+        when(
+                repo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.of(appointment)
+        );
 
         assertThrows(
                 ConflictException.class,
-                () -> appointmentService.checkIn(req)
+                () ->
+                        appointmentService.checkIn(req)
         );
     }
 
@@ -1418,12 +1936,15 @@ class AppointmentServiceTest {
     @Test
     void checkIn_ShouldReject_WhenStatusNotPending() {
 
-        UUID appointmentId = UUID.randomUUID();
+        UUID appointmentId =
+                UUID.randomUUID();
 
         AppointmentCheckInRequest req =
-                mock(AppointmentCheckInRequest.class);
+                mock(
+                        AppointmentCheckInRequest.class
+                );
 
-        Appointment a =
+        Appointment appointment =
                 appointmentForToday(
                         appointmentId,
                         AppointmentStatus.CANCELLED,
@@ -1431,14 +1952,22 @@ class AppointmentServiceTest {
                 );
 
         when(req.appointmentId())
-                .thenReturn(appointmentId);
+                .thenReturn(
+                        appointmentId
+                );
 
-        when(repo.findByIdForUpdate(appointmentId))
-                .thenReturn(Optional.of(a));
+        when(
+                repo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.of(appointment)
+        );
 
         assertThrows(
                 BadRequestException.class,
-                () -> appointmentService.checkIn(req)
+                () ->
+                        appointmentService.checkIn(req)
         );
     }
 
@@ -1450,38 +1979,47 @@ class AppointmentServiceTest {
     @Test
     void checkIn_ShouldReject_WhenIssuedByMissing() {
 
-        UUID appointmentId = UUID.randomUUID();
+        UUID appointmentId =
+                UUID.randomUUID();
 
         AppointmentCheckInRequest req =
-                mock(AppointmentCheckInRequest.class);
+                mock(
+                        AppointmentCheckInRequest.class
+                );
 
-        Appointment a =
+        Appointment appointment =
                 appointmentForToday(
                         appointmentId,
                         AppointmentStatus.PENDING,
                         customer(UUID.randomUUID())
                 );
 
-        /*
-         * Service must not be empty here.
-         * Otherwise checkIn() stops at "no services" before it checks issuedById.
-         */
-        a.setServices(
-                new HashSet<>(List.of(
-                        service(UUID.randomUUID(), "Kham tong quat")
-                ))
-        );
-
         when(req.appointmentId())
-                .thenReturn(appointmentId);
+                .thenReturn(
+                        appointmentId
+                );
 
-        when(repo.findByIdForUpdate(appointmentId))
-                .thenReturn(Optional.of(a));
-
-        assertThrows(
-                BadRequestException.class,
-                () -> appointmentService.checkIn(req)
+        when(
+                repo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.of(appointment)
         );
+
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () ->
+                                appointmentService.checkIn(req)
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains("nhân viên lễ tân")
+        );
+
+        verifyNoInteractions(staffRepo);
     }
 
 
@@ -1492,43 +2030,51 @@ class AppointmentServiceTest {
     @Test
     void checkIn_ShouldThrow_WhenStaffMissing() {
 
-        UUID appointmentId = UUID.randomUUID();
-        UUID staffId = UUID.randomUUID();
+        UUID appointmentId =
+                UUID.randomUUID();
+
+        UUID staffId =
+                UUID.randomUUID();
 
         AppointmentCheckInRequest req =
-                mock(AppointmentCheckInRequest.class);
+                mock(
+                        AppointmentCheckInRequest.class
+                );
 
-        Appointment a =
+        Appointment appointment =
                 appointmentForToday(
                         appointmentId,
                         AppointmentStatus.PENDING,
                         customer(UUID.randomUUID())
                 );
 
-        /*
-         * Add a service so the test reaches staffRepo.findById().
-         */
-        a.setServices(
-                new HashSet<>(List.of(
-                        service(UUID.randomUUID(), "Kham tong quat")
-                ))
-        );
-
         when(req.appointmentId())
-                .thenReturn(appointmentId);
+                .thenReturn(
+                        appointmentId
+                );
 
         when(req.issuedById())
-                .thenReturn(staffId);
+                .thenReturn(
+                        staffId
+                );
 
-        when(repo.findByIdForUpdate(appointmentId))
-                .thenReturn(Optional.of(a));
+        when(
+                repo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.of(appointment)
+        );
 
         when(staffRepo.findById(staffId))
-                .thenReturn(Optional.empty());
+                .thenReturn(
+                        Optional.empty()
+                );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> appointmentService.checkIn(req)
+                () ->
+                        appointmentService.checkIn(req)
         );
     }
 
@@ -1540,39 +2086,69 @@ class AppointmentServiceTest {
     @Test
     void checkIn_ShouldReject_WhenAppointmentHasNoServices() {
 
-        UUID appointmentId = UUID.randomUUID();
+        UUID appointmentId =
+                UUID.randomUUID();
+
+        UUID staffId =
+                UUID.randomUUID();
 
         Profile customer =
-                customer(UUID.randomUUID());
+                customer(
+                        UUID.randomUUID()
+                );
 
-        Appointment a =
+        Appointment appointment =
                 appointmentForToday(
                         appointmentId,
                         AppointmentStatus.PENDING,
                         customer
                 );
 
-        a.setServices(new HashSet<>());
-
-        AppointmentCheckInRequest req =
-                mock(AppointmentCheckInRequest.class);
-
-        when(req.appointmentId())
-                .thenReturn(appointmentId);
-
-        when(repo.findByIdForUpdate(appointmentId))
-                .thenReturn(Optional.of(a));
-
-        assertThrows(
-                BadRequestException.class,
-                () -> appointmentService.checkIn(req)
+        appointment.setServices(
+                new HashSet<>()
         );
 
-        /*
-         * No issuedById/staff stubbing here.
-         * The method rejects the empty service list before staff lookup.
-         */
-        verifyNoInteractions(staffRepo);
+        AppointmentCheckInRequest req =
+                mock(
+                        AppointmentCheckInRequest.class
+                );
+
+        when(req.appointmentId())
+                .thenReturn(
+                        appointmentId
+                );
+
+        when(req.issuedById())
+                .thenReturn(
+                        staffId
+                );
+
+        when(
+                repo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.of(appointment)
+        );
+
+        when(staffRepo.findById(staffId))
+                .thenReturn(
+                        Optional.of(
+                                mock(StaffInfo.class)
+                        )
+                );
+
+        BadRequestException exception =
+                assertThrows(
+                        BadRequestException.class,
+                        () ->
+                                appointmentService.checkIn(req)
+                );
+
+        assertTrue(
+                exception.getMessage()
+                        .contains("chưa chọn dịch vụ")
+        );
     }
 
 
@@ -1583,64 +2159,111 @@ class AppointmentServiceTest {
     @Test
     void checkIn_ShouldReject_WhenCustomerHasActiveVisit() {
 
-        UUID appointmentId = UUID.randomUUID();
-        UUID staffId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID activeVisitId = UUID.randomUUID();
+        UUID appointmentId =
+                UUID.randomUUID();
+
+        UUID staffId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID activeVisitId =
+                UUID.randomUUID();
 
         Profile customer =
                 customer(profileId);
 
         MedicalService service =
-                service(UUID.randomUUID(), "Kham");
+                service(
+                        UUID.randomUUID(),
+                        "Kham"
+                );
 
-        Appointment a =
+        Appointment appointment =
                 appointmentForToday(
                         appointmentId,
                         AppointmentStatus.PENDING,
                         customer
                 );
 
-        a.setServices(
-                new HashSet<>(List.of(service))
+        appointment.setServices(
+                new HashSet<>(
+                        List.of(service)
+                )
         );
 
         AppointmentCheckInRequest req =
-                mock(AppointmentCheckInRequest.class);
+                mock(
+                        AppointmentCheckInRequest.class
+                );
 
         when(req.appointmentId())
-                .thenReturn(appointmentId);
+                .thenReturn(
+                        appointmentId
+                );
 
         when(req.issuedById())
-                .thenReturn(staffId);
+                .thenReturn(
+                        staffId
+                );
 
-        when(repo.findByIdForUpdate(appointmentId))
-                .thenReturn(Optional.of(a));
+        when(
+                repo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.of(appointment)
+        );
 
         when(staffRepo.findById(staffId))
-                .thenReturn(Optional.of(mock(StaffInfo.class)));
+                .thenReturn(
+                        Optional.of(
+                                mock(StaffInfo.class)
+                        )
+                );
 
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(customer));
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         CustomerVisit activeVisit =
                 CustomerVisit.builder()
                         .visitId(activeVisitId)
-                        .status(VisitStatus.IN_PROGRESS)
+                        .status(
+                                VisitStatus.IN_PROGRESS
+                        )
                         .build();
 
         when(
                 visitRepo
                         .findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
                                 eq(profileId),
-                                anyList()
+                                eq(
+                                        List.of(
+                                                VisitStatus.CHECKED_IN,
+                                                VisitStatus.IN_PROGRESS
+                                        )
+                                )
                         )
-        ).thenReturn(Optional.of(activeVisit));
+        ).thenReturn(
+                Optional.of(activeVisit)
+        );
 
         assertThrows(
                 ConflictException.class,
-                () -> appointmentService.checkIn(req)
+                () ->
+                        appointmentService.checkIn(req)
         );
+
+        verify(
+                invoiceService,
+                never()
+        ).create(any());
     }
 
 
@@ -1651,18 +2274,31 @@ class AppointmentServiceTest {
     @Test
     void checkIn_ShouldCreateVisitAndInvoice_ForRegisteredCustomer() {
 
-        UUID appointmentId = UUID.randomUUID();
-        UUID staffId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID visitId = UUID.randomUUID();
-        UUID serviceId = UUID.randomUUID();
-        UUID invoiceId = UUID.randomUUID();
+        UUID appointmentId =
+                UUID.randomUUID();
+
+        UUID staffId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID visitId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
+
+        UUID invoiceId =
+                UUID.randomUUID();
 
         Profile customer =
                 customer(profileId);
 
         StaffInfo staff =
-                mock(StaffInfo.class);
+                mock(
+                        StaffInfo.class
+                );
 
         MedicalService service =
                 service(
@@ -1670,70 +2306,114 @@ class AppointmentServiceTest {
                         "Kham tong quat"
                 );
 
-        Appointment a =
+        Appointment appointment =
                 appointmentForToday(
                         appointmentId,
                         AppointmentStatus.PENDING,
                         customer
                 );
 
-        a.setServices(
-                new HashSet<>(List.of(service))
+        appointment.setServices(
+                new HashSet<>(
+                        List.of(service)
+                )
         );
 
         AppointmentCheckInRequest req =
-                mock(AppointmentCheckInRequest.class);
+                mock(
+                        AppointmentCheckInRequest.class
+                );
 
         when(req.appointmentId())
-                .thenReturn(appointmentId);
+                .thenReturn(
+                        appointmentId
+                );
 
         when(req.issuedById())
-                .thenReturn(staffId);
+                .thenReturn(
+                        staffId
+                );
 
-        when(repo.findByIdForUpdate(appointmentId))
-                .thenReturn(Optional.of(a));
+        when(
+                repo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.of(appointment)
+        );
 
         when(staffRepo.findById(staffId))
-                .thenReturn(Optional.of(staff));
+                .thenReturn(
+                        Optional.of(staff)
+                );
 
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(customer));
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(
                 visitRepo
                         .findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
                                 eq(profileId),
-                                anyList()
+                                eq(
+                                        List.of(
+                                                VisitStatus.CHECKED_IN,
+                                                VisitStatus.IN_PROGRESS
+                                        )
+                                )
                         )
-        ).thenReturn(Optional.empty());
+        ).thenReturn(
+                Optional.empty()
+        );
 
         when(
-                visitRepo.findByAppointment_AppointmentId(
-                        appointmentId
+                visitRepo
+                        .findByAppointment_AppointmentId(
+                                appointmentId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                visitRepo.save(
+                        any(CustomerVisit.class)
                 )
-        ).thenReturn(Optional.empty());
+        ).thenAnswer(
+                invocation -> {
 
-        when(visitRepo.save(any(CustomerVisit.class)))
-                .thenAnswer(i -> {
                     CustomerVisit visit =
-                            i.getArgument(0);
+                            invocation.getArgument(0);
 
-                    visit.setVisitId(visitId);
+                    visit.setVisitId(
+                            visitId
+                    );
 
                     return visit;
-                });
+                }
+        );
 
         InvoiceResponse invoiceResponse =
-                mock(InvoiceResponse.class);
+                mock(
+                        InvoiceResponse.class
+                );
 
         when(invoiceResponse.invoiceId())
                 .thenReturn(invoiceId);
 
         when(invoiceService.create(any()))
-                .thenReturn(invoiceResponse);
+                .thenReturn(
+                        invoiceResponse
+                );
 
-        when(repo.save(a))
-                .thenReturn(a);
+        when(repo.save(appointment))
+                .thenReturn(
+                        appointment
+                );
 
         var result =
                 appointmentService.checkIn(req);
@@ -1742,27 +2422,33 @@ class AppointmentServiceTest {
 
         assertEquals(
                 AppointmentStatus.CHECKED_IN,
-                a.getStatus()
+                appointment.getStatus()
         );
 
         verify(invoiceService)
-                .create(argThat(invoice ->
-                        profileId.equals(
-                                invoice.customerId()
+                .create(
+                        argThat(
+                                invoice ->
+                                        profileId.equals(
+                                                invoice.customerId()
+                                        )
+                                                &&
+                                                visitId.equals(
+                                                        invoice.visitId()
+                                                )
+                                                &&
+                                                staffId.equals(
+                                                        invoice.issuedById()
+                                                )
+                                                &&
+                                                invoice.items()
+                                                        != null
+                                                &&
+                                                invoice.items()
+                                                        .size()
+                                                        == 1
                         )
-                                &&
-                                visitId.equals(
-                                        invoice.visitId()
-                                )
-                                &&
-                                staffId.equals(
-                                        invoice.issuedById()
-                                )
-                                &&
-                                invoice.items() != null
-                                &&
-                                invoice.items().size() == 1
-                ));
+                );
     }
 
 
@@ -1782,6 +2468,7 @@ class AppointmentServiceTest {
         verifyNoInteractions(repo);
     }
 
+
     @Test
     void getGuestHistoryByPhone_ShouldReturnEmpty_WhenPhoneBlank() {
 
@@ -1790,6 +2477,8 @@ class AppointmentServiceTest {
                         .getGuestHistoryByPhone(" ")
                         .isEmpty()
         );
+
+        verifyNoInteractions(repo);
     }
 
 
@@ -1800,13 +2489,58 @@ class AppointmentServiceTest {
     @Test
     void guestCheckIn_ShouldReject_WhenActiveVisitExists() {
 
-        UUID profileId = UUID.randomUUID();
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID staffId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
 
         GuestCheckInRequest req =
-                mock(GuestCheckInRequest.class);
+                mock(
+                        GuestCheckInRequest.class
+                );
+
+        MedicalService service =
+                service(
+                        serviceId,
+                        "Kham tong quat"
+                );
+
+        when(req.issuedById())
+                .thenReturn(
+                        staffId
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        Set.of(serviceId)
+                );
 
         when(req.guestPhone())
-                .thenReturn("0900000000");
+                .thenReturn(
+                        "0900000000"
+                );
+
+        when(req.guestFullName())
+                .thenReturn(
+                        "Guest A"
+                );
+
+        when(req.guestGender())
+                .thenReturn(
+                        Gender.MALE
+                );
+
+        when(req.guestAge())
+                .thenReturn(25);
+
+        when(serviceRepo.findById(serviceId))
+                .thenReturn(
+                        Optional.of(service)
+                );
 
         Profile guest =
                 customer(profileId);
@@ -1815,29 +2549,59 @@ class AppointmentServiceTest {
                 profileRepo.findFirstByPhone(
                         "0900000000"
                 )
-        ).thenReturn(Optional.of(guest));
+        ).thenReturn(
+                Optional.of(guest)
+        );
 
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(guest));
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenReturn(
+                Optional.of(guest)
+        );
 
         CustomerVisit active =
                 CustomerVisit.builder()
-                        .visitId(UUID.randomUUID())
-                        .status(VisitStatus.CHECKED_IN)
+                        .visitId(
+                                UUID.randomUUID()
+                        )
+                        .status(
+                                VisitStatus.CHECKED_IN
+                        )
                         .build();
 
         when(
                 visitRepo
                         .findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
                                 eq(profileId),
-                                anyList()
+                                eq(
+                                        List.of(
+                                                VisitStatus.CHECKED_IN,
+                                                VisitStatus.IN_PROGRESS
+                                        )
+                                )
                         )
-        ).thenReturn(Optional.of(active));
+        ).thenReturn(
+                Optional.of(active)
+        );
 
         assertThrows(
                 ConflictException.class,
-                () -> appointmentService.guestCheckIn(req)
+                () ->
+                        appointmentService
+                                .guestCheckIn(req)
         );
+
+        verify(
+                visitRepo,
+                never()
+        ).save(any(CustomerVisit.class));
+
+        verify(
+                invoiceService,
+                never()
+        ).create(any());
     }
 
 
@@ -1848,22 +2612,64 @@ class AppointmentServiceTest {
     @Test
     void guestCheckIn_ShouldCreateVisitAndInvoice() {
 
-        UUID profileId = UUID.randomUUID();
-        UUID visitId = UUID.randomUUID();
-        UUID invoiceId = UUID.randomUUID();
-        UUID staffId = UUID.randomUUID();
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID visitId =
+                UUID.randomUUID();
+
+        UUID invoiceId =
+                UUID.randomUUID();
+
+        UUID staffId =
+                UUID.randomUUID();
+
+        UUID serviceId =
+                UUID.randomUUID();
 
         GuestCheckInRequest req =
-                mock(GuestCheckInRequest.class);
+                mock(
+                        GuestCheckInRequest.class
+                );
+
+        MedicalService service =
+                service(
+                        serviceId,
+                        "Kham tong quat"
+                );
 
         when(req.guestPhone())
-                .thenReturn("0900000000");
+                .thenReturn(
+                        "0900000000"
+                );
 
         when(req.guestFullName())
-                .thenReturn("Guest");
+                .thenReturn(
+                        "Guest"
+                );
+
+        when(req.guestGender())
+                .thenReturn(
+                        Gender.MALE
+                );
+
+        when(req.guestAge())
+                .thenReturn(25);
 
         when(req.issuedById())
-                .thenReturn(staffId);
+                .thenReturn(
+                        staffId
+                );
+
+        when(req.serviceIds())
+                .thenReturn(
+                        Set.of(serviceId)
+                );
+
+        when(serviceRepo.findById(serviceId))
+                .thenReturn(
+                        Optional.of(service)
+                );
 
         Profile guest =
                 customer(profileId);
@@ -1872,54 +2678,103 @@ class AppointmentServiceTest {
                 profileRepo.findFirstByPhone(
                         "0900000000"
                 )
-        ).thenReturn(Optional.of(guest));
+        ).thenReturn(
+                Optional.of(guest)
+        );
 
-        when(profileRepo.findByIdForUpdate(profileId))
-                .thenReturn(Optional.of(guest));
+        when(
+                profileRepo.findByIdForUpdate(
+                        profileId
+                )
+        ).thenReturn(
+                Optional.of(guest)
+        );
 
         when(
                 visitRepo
                         .findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
                                 eq(profileId),
-                                anyList()
+                                eq(
+                                        List.of(
+                                                VisitStatus.CHECKED_IN,
+                                                VisitStatus.IN_PROGRESS
+                                        )
+                                )
                         )
-        ).thenReturn(Optional.empty());
+        ).thenReturn(
+                Optional.empty()
+        );
 
         when(staffRepo.findById(staffId))
-                .thenReturn(Optional.of(mock(StaffInfo.class)));
+                .thenReturn(
+                        Optional.of(
+                                mock(StaffInfo.class)
+                        )
+                );
 
-        when(visitRepo.save(any(CustomerVisit.class)))
-                .thenAnswer(i -> {
-                    CustomerVisit v =
-                            i.getArgument(0);
+        when(
+                visitRepo.save(
+                        any(CustomerVisit.class)
+                )
+        ).thenAnswer(
+                invocation -> {
 
-                    v.setVisitId(visitId);
+                    CustomerVisit visit =
+                            invocation.getArgument(0);
 
-                    return v;
-                });
+                    visit.setVisitId(
+                            visitId
+                    );
+
+                    return visit;
+                }
+        );
 
         InvoiceResponse invoiceResponse =
-                mock(InvoiceResponse.class);
+                mock(
+                        InvoiceResponse.class
+                );
 
         when(invoiceResponse.invoiceId())
-                .thenReturn(invoiceId);
+                .thenReturn(
+                        invoiceId
+                );
 
         when(invoiceService.create(any()))
-                .thenReturn(invoiceResponse);
+                .thenReturn(
+                        invoiceResponse
+                );
 
         var result =
-                appointmentService.guestCheckIn(req);
+                appointmentService
+                        .guestCheckIn(req);
 
         assertNotNull(result);
 
         verify(invoiceService)
-                .create(argThat(invoice ->
-                        profileId.equals(invoice.customerId())
-                                &&
-                                visitId.equals(invoice.visitId())
-                                &&
-                                staffId.equals(invoice.issuedById())
-                ));
+                .create(
+                        argThat(
+                                invoice ->
+                                        profileId.equals(
+                                                invoice.customerId()
+                                        )
+                                                &&
+                                                visitId.equals(
+                                                        invoice.visitId()
+                                                )
+                                                &&
+                                                staffId.equals(
+                                                        invoice.issuedById()
+                                                )
+                                                &&
+                                                invoice.items()
+                                                        != null
+                                                &&
+                                                invoice.items()
+                                                        .size()
+                                                        == 1
+                        )
+                );
     }
 
 
@@ -1930,25 +2785,34 @@ class AppointmentServiceTest {
     @Test
     void getMyAppointments_ShouldThrow_WhenCustomerMissing() {
 
-        UUID customerId = UUID.randomUUID();
+        UUID customerId =
+                UUID.randomUUID();
 
         when(
-                profileRepo.findFirstByAccount_AccountId(
-                        customerId
-                )
-        ).thenReturn(Optional.empty());
+                profileRepo
+                        .findFirstByAccount_AccountId(
+                                customerId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> appointmentService.getMyAppointments(
-                        customerId,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        PageRequest.of(0, 10)
-                )
+                () ->
+                        appointmentService
+                                .getMyAppointments(
+                                        customerId,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        PageRequest.of(
+                                                0,
+                                                10
+                                        )
+                                )
         );
     }
 
@@ -1960,16 +2824,23 @@ class AppointmentServiceTest {
     @Test
     void getMyAppointmentDetail_ShouldReject_WhenNotOwner() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID appointmentId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID appointmentId =
+                UUID.randomUUID();
 
         Profile customer =
-                customer(UUID.randomUUID());
+                customer(
+                        UUID.randomUUID()
+                );
 
         Profile other =
-                customer(UUID.randomUUID());
+                customer(
+                        UUID.randomUUID()
+                );
 
-        Appointment a =
+        Appointment appointment =
                 appointment(
                         appointmentId,
                         AppointmentStatus.PENDING,
@@ -1978,19 +2849,26 @@ class AppointmentServiceTest {
 
         when(
                 profileRepo
-                        .findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
         when(repo.findById(appointmentId))
-                .thenReturn(Optional.of(a));
+                .thenReturn(
+                        Optional.of(appointment)
+                );
 
         assertThrows(
                 BadRequestException.class,
-                () -> appointmentService
-                        .getMyAppointmentDetail(
-                                accountId,
-                                appointmentId
-                        )
+                () ->
+                        appointmentService
+                                .getMyAppointmentDetail(
+                                        accountId,
+                                        appointmentId
+                                )
         );
     }
 
@@ -2002,13 +2880,18 @@ class AppointmentServiceTest {
     @Test
     void updateMyAppointment_ShouldReject_WhenNotOwner() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID appointmentId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID appointmentId =
+                UUID.randomUUID();
 
         Profile customer =
-                customer(UUID.randomUUID());
+                customer(
+                        UUID.randomUUID()
+                );
 
-        Appointment a =
+        Appointment appointment =
                 appointment(
                         appointmentId,
                         AppointmentStatus.PENDING,
@@ -2017,19 +2900,32 @@ class AppointmentServiceTest {
 
         when(
                 profileRepo
-                        .findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
-        when(repo.findByIdForUpdate(appointmentId))
-                .thenReturn(Optional.of(a));
+        when(
+                repo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.of(appointment)
+        );
 
         assertThrows(
                 BadRequestException.class,
-                () -> appointmentService.updateMyAppointment(
-                        accountId,
-                        appointmentId,
-                        mock(AppointmentUpdateRequest.class)
-                )
+                () ->
+                        appointmentService
+                                .updateMyAppointment(
+                                        accountId,
+                                        appointmentId,
+                                        mock(
+                                                AppointmentUpdateRequest.class
+                                        )
+                                )
         );
     }
 
@@ -2041,14 +2937,19 @@ class AppointmentServiceTest {
     @Test
     void updateMyAppointment_ShouldReject_WhenNotPending() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID appointmentId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID appointmentId =
+                UUID.randomUUID();
 
         Profile customer =
                 customer(profileId);
 
-        Appointment a =
+        Appointment appointment =
                 appointment(
                         appointmentId,
                         AppointmentStatus.CHECKED_IN,
@@ -2057,19 +2958,32 @@ class AppointmentServiceTest {
 
         when(
                 profileRepo
-                        .findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
-        when(repo.findByIdForUpdate(appointmentId))
-                .thenReturn(Optional.of(a));
+        when(
+                repo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.of(appointment)
+        );
 
         assertThrows(
                 BadRequestException.class,
-                () -> appointmentService.updateMyAppointment(
-                        accountId,
-                        appointmentId,
-                        mock(AppointmentUpdateRequest.class)
-                )
+                () ->
+                        appointmentService
+                                .updateMyAppointment(
+                                        accountId,
+                                        appointmentId,
+                                        mock(
+                                                AppointmentUpdateRequest.class
+                                        )
+                                )
         );
     }
 
@@ -2081,14 +2995,19 @@ class AppointmentServiceTest {
     @Test
     void cancelMyAppointment_ShouldCancelPendingAppointment() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID appointmentId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID appointmentId =
+                UUID.randomUUID();
 
         Profile customer =
                 customer(profileId);
 
-        Appointment a =
+        Appointment appointment =
                 appointment(
                         appointmentId,
                         AppointmentStatus.PENDING,
@@ -2097,40 +3016,58 @@ class AppointmentServiceTest {
 
         when(
                 profileRepo
-                        .findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
-
-        when(repo.findByIdForUpdate(appointmentId))
-                .thenReturn(Optional.of(a));
-
-        when(repo.save(a))
-                .thenReturn(a);
-
-        appointmentService.cancelMyAppointment(
-                accountId,
-                appointmentId
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
         );
+
+        when(
+                repo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.of(appointment)
+        );
+
+        when(repo.save(appointment))
+                .thenReturn(
+                        appointment
+                );
+
+        appointmentService
+                .cancelMyAppointment(
+                        accountId,
+                        appointmentId
+                );
 
         assertEquals(
                 AppointmentStatus.CANCELLED,
-                a.getStatus()
+                appointment.getStatus()
         );
 
-        verify(repo).save(a);
+        verify(repo)
+                .save(appointment);
     }
 
 
     @Test
     void cancelMyAppointment_ShouldReject_WhenNotPending() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-        UUID appointmentId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        UUID appointmentId =
+                UUID.randomUUID();
 
         Profile customer =
                 customer(profileId);
 
-        Appointment a =
+        Appointment appointment =
                 appointment(
                         appointmentId,
                         AppointmentStatus.CHECKED_IN,
@@ -2139,18 +3076,29 @@ class AppointmentServiceTest {
 
         when(
                 profileRepo
-                        .findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(customer));
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(customer)
+        );
 
-        when(repo.findByIdForUpdate(appointmentId))
-                .thenReturn(Optional.of(a));
+        when(
+                repo.findByIdForUpdate(
+                        appointmentId
+                )
+        ).thenReturn(
+                Optional.of(appointment)
+        );
 
         assertThrows(
                 BadRequestException.class,
-                () -> appointmentService.cancelMyAppointment(
-                        accountId,
-                        appointmentId
-                )
+                () ->
+                        appointmentService
+                                .cancelMyAppointment(
+                                        accountId,
+                                        appointmentId
+                                )
         );
     }
 }

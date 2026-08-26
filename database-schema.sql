@@ -469,6 +469,20 @@ CREATE TABLE public.notification (
     CONSTRAINT notification_status_check CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'SENT'::character varying, 'FAILED'::character varying, 'READ'::character varying])::text[])))
 );
 
+-- Public landing-page announcements managed by ADMIN/CLINIC_MANAGER.
+CREATE TABLE public.public_announcement (
+    announcement_id uuid NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    deleted boolean NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    title character varying(150) NOT NULL,
+    content text NOT NULL,
+    published boolean NOT NULL,
+    starts_at timestamp(6) without time zone,
+    ends_at timestamp(6) without time zone,
+    created_by_account_id uuid
+);
+
 
 --
 -- Name: payment_transaction; Type: TABLE; Schema: public; Owner: -
@@ -965,6 +979,9 @@ ALTER TABLE ONLY public.medicine_catalog
 
 ALTER TABLE ONLY public.notification
     ADD CONSTRAINT notification_pkey PRIMARY KEY (notification_id);
+
+ALTER TABLE ONLY public.public_announcement
+    ADD CONSTRAINT public_announcement_pkey PRIMARY KEY (announcement_id);
 
 
 --
@@ -1958,4 +1975,3 @@ ALTER TABLE ONLY public.test_result
 --
 
 \unrestrict qUPdSDLPQbT0xGjdF8FtcrvnCa4BCcjpYaMXZwbkjMaD506urkWBcHbcvQbadnx
-

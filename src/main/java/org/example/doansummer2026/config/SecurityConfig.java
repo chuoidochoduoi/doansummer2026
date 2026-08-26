@@ -50,12 +50,14 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> {})
+                .headers(headers -> headers.frameOptions(frameOptions -> frameOptions.disable()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/v1/appointments/guest").permitAll()
                         .requestMatchers("/api/v1/medical-services/available").permitAll()
                         .requestMatchers("/api/v1/shifts/active").permitAll()
+                        .requestMatchers("/api/v1/shifts/available").permitAll()
                         .requestMatchers("/api/v1/chat/guest/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/v1/payos/webhook").permitAll()

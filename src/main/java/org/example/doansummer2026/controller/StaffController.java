@@ -22,6 +22,7 @@ import org.example.doansummer2026.enums.AuditAction;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -75,7 +76,7 @@ public class StaffController {
     }
 
     @PutMapping("/{staffId}/capabilities")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public List<StaffCapabilityResponse> replaceCapabilities(@PathVariable UUID staffId,
             @RequestBody List<StaffCapabilityRequest> requests) {
         return staffService.replaceCapabilities(staffId, requests);
@@ -123,6 +124,14 @@ public class StaffController {
         return authService.currentStaffId();
     }
 
+    private void ensureClinicManagerCanManage(SystemRole targetRole) {
+        if (authService.getCurrentSystemRole() == SystemRole.CLINIC_MANAGER
+                && (targetRole == SystemRole.ADMIN || targetRole == SystemRole.CLINIC_MANAGER)) {
+            throw new AccessDeniedException(
+                    "Quản lý phòng khám không có quyền quản lý tài khoản quản trị hệ thống hoặc quản lý phòng khám khác");
+        }
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
     public ResponseEntity<StaffResponse> get(@PathVariable UUID id) {
@@ -157,23 +166,25 @@ public class StaffController {
 
     /** CHI ADMIN tao nhan vien moi (kem account + profile). */
     @PostMapping
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "StaffInfo")
     public ResponseEntity<StaffResponse> create(@Valid @RequestBody StaffCreateRequest req) {
+        ensureClinicManagerCanManage(req.systemRole().normalized());
         StaffResponse created = staffService.create(req);
         return RestResponses.created("/api/v1/staff/{id}", created.staffId(), created);
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.UPDATE, entityName = "StaffInfo")
     public ResponseEntity<StaffResponse> update(@PathVariable UUID id,
                                                 @Valid @RequestBody StaffUpdateRequest req) {
+        ensureClinicManagerCanManage(SystemRole.valueOf(staffService.get(id).systemRole().name()));
         return RestResponses.ok(staffService.update(id, req));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.DELETE, entityName = "StaffInfo", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         staffService.delete(id);
@@ -182,7 +193,7 @@ public class StaffController {
 
     /** ADMIN vaf CLINIC_MANAGER khoa tai khoan (KHONG cho phep khoa ADMIN/CLINIC_MANAGER). */
     @PatchMapping("/{id}/lock")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "StaffInfo", idParamName = "id")
     public ResponseEntity<StaffResponse> lock(@PathVariable UUID id) {
         StaffResponse locked = staffService.lock(id);

@@ -2,9 +2,11 @@ package org.example.doansummer2026.service;
 
 import org.example.doansummer2026.dto.profile.ProfileCreateRequest;
 import org.example.doansummer2026.dto.profile.ProfileUpdateRequest;
+import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.enums.BloodType;
 import org.example.doansummer2026.enums.Gender;
 import org.example.doansummer2026.enums.Role;
+import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Account;
@@ -31,7 +33,8 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -57,7 +60,10 @@ class ProfileServiceTest {
     // HELPERS
     // =========================================================
 
-    private Account account(UUID id, String username) {
+    private Account account(
+            UUID id,
+            String username
+    ) {
         return Account.builder()
                 .accountId(id)
                 .username(username)
@@ -66,12 +72,22 @@ class ProfileServiceTest {
                 .build();
     }
 
-    private Profile profile(UUID id, Account account) {
+
+    private Profile profile(
+            UUID id,
+            Account account
+    ) {
         return Profile.builder()
                 .profileId(id)
                 .account(account)
                 .fullName("Nguyen Van A")
-                .dateOfBirth(LocalDate.of(2000, 1, 1))
+                .dateOfBirth(
+                        LocalDate.of(
+                                2000,
+                                1,
+                                1
+                        )
+                )
                 .gender(Gender.MALE)
                 .phone("0901234567")
                 .email("test@gmail.com")
@@ -87,34 +103,49 @@ class ProfileServiceTest {
     @Test
     void findById_ShouldReturn_WhenFound() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
-        Profile profile =
+        Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer01")
+                        account(
+                                UUID.randomUUID(),
+                                "customer01"
+                        )
                 );
 
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(profile));
+        when(
+                profileRepository.findById(id)
+        ).thenReturn(
+                Optional.of(p)
+        );
 
         assertSame(
-                profile,
+                p,
                 profileService.findById(id)
         );
     }
 
+
     @Test
     void findById_ShouldThrow_WhenMissing() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.empty());
+        when(
+                profileRepository.findById(id)
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> profileService.findById(id)
+                () ->
+                        profileService.findById(
+                                id
+                        )
         );
     }
 
@@ -126,16 +157,23 @@ class ProfileServiceTest {
     @Test
     void get_ShouldReturnResponse() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
-        Profile profile =
+        Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer01")
+                        account(
+                                UUID.randomUUID(),
+                                "customer01"
+                        )
                 );
 
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(profile));
+        when(
+                profileRepository.findById(id)
+        ).thenReturn(
+                Optional.of(p)
+        );
 
         assertNotNull(
                 profileService.get(id)
@@ -150,333 +188,515 @@ class ProfileServiceTest {
     @Test
     void getByAccount_ShouldReturn_WhenFound() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
-        Profile profile =
+        Profile p =
                 profile(
                         UUID.randomUUID(),
-                        account(accountId, "customer01")
+                        account(
+                                accountId,
+                                "customer01"
+                        )
                 );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(profile));
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(p)
+        );
 
         assertNotNull(
-                profileService.getByAccount(accountId)
+                profileService
+                        .getByAccount(
+                                accountId
+                        )
         );
     }
+
 
     @Test
     void getByAccount_ShouldThrow_WhenMissing() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.empty());
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> profileService.getByAccount(accountId)
+                () ->
+                        profileService
+                                .getByAccount(
+                                        accountId
+                                )
         );
     }
 
 
     // =========================================================
-    // GET MY PROFILE - ACCOUNT MISSING
+    // GET MY PROFILE
     // =========================================================
 
     @Test
     void getMyProfile_ShouldThrow_WhenAccountMissing() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.empty());
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> profileService.getMyProfile(accountId)
+                () ->
+                        profileService
+                                .getMyProfile(
+                                        accountId
+                                )
         );
 
-        verifyNoInteractions(appointmentRepository);
+        verifyNoInteractions(
+                appointmentRepository
+        );
+
+        verifyNoInteractions(
+                testRequestService
+        );
     }
 
-
-    // =========================================================
-    // GET MY PROFILE - PROFILE MISSING
-    // =========================================================
 
     @Test
     void getMyProfile_ShouldThrow_WhenProfileMissing() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+                account(
+                        accountId,
+                        "customer01"
+                );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.empty());
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> profileService.getMyProfile(accountId)
+                () ->
+                        profileService
+                                .getMyProfile(
+                                        accountId
+                                )
         );
     }
 
-
-    // =========================================================
-    // GET MY PROFILE - EMPTY
-    // =========================================================
 
     @Test
     void getMyProfile_ShouldReturn_WhenNoAppointmentsAndNoTests() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
 
         Profile profile =
-                profile(profileId, account);
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
-
-        when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(profile));
+                profile(
+                        profileId,
+                        account
+                );
 
         when(
-                appointmentRepository.findByCustomerId(profileId)
-        ).thenReturn(List.of());
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
 
         when(
-                testRequestService.findMyCompletedTests(profileId)
-        ).thenReturn(List.of());
-
-        var result =
-                profileService.getMyProfile(accountId);
-
-        assertNotNull(result);
-    }
-
-
-    // =========================================================
-    // GET MY PROFILE - APPOINTMENT WITH CUSTOMER NAME + SERVICE
-    // =========================================================
-
-    @Test
-    void getMyProfile_ShouldMapAppointmentWithCustomerNameAndService() {
-
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-
-        Account account =
-                account(accountId, "customer01");
-
-        Profile profile =
-                profile(profileId, account);
-
-        MedicalService medicalService =
-                MedicalService.builder()
-                        .serviceId(UUID.randomUUID())
-                        .name("Kham noi")
-                        .build();
-
-        Appointment appointment =
-                mock(Appointment.class);
-
-        when(appointment.getCustomer())
-                .thenReturn(profile);
-
-        when(appointment.getServices())
-                .thenReturn(Set.of(medicalService));
-
-        when(appointment.getScheduledAt())
-                .thenReturn(
-                        LocalDateTime.of(
-                                2026,
-                                8,
-                                10,
-                                10,
-                                0
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
                         )
-                );
-
-        when(appointment.getStatus())
-                .thenReturn(
-                        org.example.doansummer2026.enums.AppointmentStatus.PENDING
-                );
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+        ).thenReturn(
+                Optional.of(profile)
+        );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(profile));
+                appointmentRepository
+                        .findByCustomerId(
+                                profileId
+                        )
+        ).thenReturn(
+                List.of()
+        );
 
         when(
-                appointmentRepository.findByCustomerId(profileId)
-        ).thenReturn(List.of(appointment));
-
-        when(
-                testRequestService.findMyCompletedTests(profileId)
-        ).thenReturn(List.of());
+                testRequestService
+                        .findMyCompletedTests(
+                                profileId
+                        )
+        ).thenReturn(
+                List.of()
+        );
 
         var result =
-                profileService.getMyProfile(accountId);
+                profileService
+                        .getMyProfile(
+                                accountId
+                        );
 
         assertNotNull(result);
     }
 
 
-    // =========================================================
-    // GET MY PROFILE - APPOINTMENT CUSTOMER NULL
-    // =========================================================
-
     @Test
-    void getMyProfile_ShouldHandleAppointmentWithoutCustomer() {
+    void getMyProfile_ShouldMapAppointmentWithService() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
-
-        Profile profile =
-                profile(profileId, account);
-
-        Appointment appointment =
-                mock(Appointment.class);
-
-        when(appointment.getCustomer())
-                .thenReturn(null);
-
-        when(appointment.getServices())
-                .thenReturn(null);
-
-        when(appointment.getScheduledAt())
-                .thenReturn(LocalDateTime.now());
-
-        when(appointment.getStatus())
-                .thenReturn(
-                        org.example.doansummer2026.enums.AppointmentStatus.PENDING
+                account(
+                        accountId,
+                        "customer01"
                 );
 
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
-
-        when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(profile));
-
-        when(
-                appointmentRepository.findByCustomerId(profileId)
-        ).thenReturn(List.of(appointment));
-
-        when(
-                testRequestService.findMyCompletedTests(profileId)
-        ).thenReturn(List.of());
-
-        assertNotNull(
-                profileService.getMyProfile(accountId)
-        );
-    }
-
-
-    // =========================================================
-    // GET MY PROFILE - CUSTOMER NAME NULL
-    // =========================================================
-
-    @Test
-    void getMyProfile_ShouldHandleAppointmentCustomerNameNull() {
-
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
-
-        Account account =
-                account(accountId, "customer01");
-
         Profile profile =
-                profile(profileId, account);
+                profile(
+                        profileId,
+                        account
+                );
 
-        Profile appointmentCustomer =
-                Profile.builder()
-                        .profileId(UUID.randomUUID())
-                        .fullName(null)
+        MedicalService service =
+                MedicalService.builder()
+                        .serviceId(
+                                UUID.randomUUID()
+                        )
+                        .name(
+                                "Kham noi"
+                        )
                         .build();
 
         Appointment appointment =
                 mock(Appointment.class);
 
-        when(appointment.getCustomer())
-                .thenReturn(appointmentCustomer);
+        when(
+                appointment.getServices()
+        ).thenReturn(
+                Set.of(service)
+        );
 
-        when(appointment.getServices())
-                .thenReturn(Set.of());
+        when(
+                appointment.getScheduledAt()
+        ).thenReturn(
+                LocalDateTime.of(
+                        2026,
+                        8,
+                        10,
+                        10,
+                        0
+                )
+        );
 
-        when(appointment.getScheduledAt())
-                .thenReturn(LocalDateTime.now());
+        when(
+                appointment.getStatus()
+        ).thenReturn(
+                AppointmentStatus.PENDING
+        );
 
-        when(appointment.getStatus())
-                .thenReturn(
-                        org.example.doansummer2026.enums.AppointmentStatus.PENDING
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(profile)
+        );
+
+        when(
+                appointmentRepository
+                        .findByCustomerId(
+                                profileId
+                        )
+        ).thenReturn(
+                List.of(appointment)
+        );
+
+        when(
+                testRequestService
+                        .findMyCompletedTests(
+                                profileId
+                        )
+        ).thenReturn(
+                List.of()
+        );
+
+        var result =
+                profileService
+                        .getMyProfile(
+                                accountId
+                        );
+
+        assertNotNull(result);
+    }
+
+
+    @Test
+    void getMyProfile_ShouldHandleAppointmentWithoutServices() {
+
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        Account account =
+                account(
+                        accountId,
+                        "customer01"
                 );
 
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+        Profile profile =
+                profile(
+                        profileId,
+                        account
+                );
+
+        Appointment appointment =
+                mock(Appointment.class);
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(profile));
+                appointment.getServices()
+        ).thenReturn(null);
 
         when(
-                appointmentRepository.findByCustomerId(profileId)
-        ).thenReturn(List.of(appointment));
+                appointment.getScheduledAt()
+        ).thenReturn(
+                LocalDateTime.now()
+        );
 
         when(
-                testRequestService.findMyCompletedTests(profileId)
-        ).thenReturn(List.of());
+                appointment.getStatus()
+        ).thenReturn(
+                AppointmentStatus.PENDING
+        );
+
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(profile)
+        );
+
+        when(
+                appointmentRepository
+                        .findByCustomerId(
+                                profileId
+                        )
+        ).thenReturn(
+                List.of(appointment)
+        );
+
+        when(
+                testRequestService
+                        .findMyCompletedTests(
+                                profileId
+                        )
+        ).thenReturn(
+                List.of()
+        );
 
         assertNotNull(
-                profileService.getMyProfile(accountId)
+                profileService
+                        .getMyProfile(
+                                accountId
+                        )
         );
     }
 
 
-    // =========================================================
-    // GET MY PROFILE - TEST COMPLETED DATE
-    // =========================================================
+    @Test
+    void getMyProfile_ShouldHandleAppointmentWithEmptyServices() {
+
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
+
+        Account account =
+                account(
+                        accountId,
+                        "customer01"
+                );
+
+        Profile profile =
+                profile(
+                        profileId,
+                        account
+                );
+
+        Appointment appointment =
+                mock(Appointment.class);
+
+        when(
+                appointment.getServices()
+        ).thenReturn(
+                Set.of()
+        );
+
+        when(
+                appointment.getScheduledAt()
+        ).thenReturn(
+                LocalDateTime.now()
+        );
+
+        when(
+                appointment.getStatus()
+        ).thenReturn(
+                AppointmentStatus.PENDING
+        );
+
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(profile)
+        );
+
+        when(
+                appointmentRepository
+                        .findByCustomerId(
+                                profileId
+                        )
+        ).thenReturn(
+                List.of(appointment)
+        );
+
+        when(
+                testRequestService
+                        .findMyCompletedTests(
+                                profileId
+                        )
+        ).thenReturn(
+                List.of()
+        );
+
+        assertNotNull(
+                profileService
+                        .getMyProfile(
+                                accountId
+                        )
+        );
+    }
+
 
     @Test
     void getMyProfile_ShouldMapCompletedTest() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
 
         Profile profile =
-                profile(profileId, account);
+                profile(
+                        profileId,
+                        account
+                );
 
-        MedicalService medicalService =
+        MedicalService service =
                 MedicalService.builder()
-                        .serviceId(UUID.randomUUID())
-                        .name("Xet nghiem mau")
+                        .serviceId(
+                                UUID.randomUUID()
+                        )
+                        .name(
+                                "Xet nghiem mau"
+                        )
                         .build();
 
         TestRequest test =
                 TestRequest.builder()
-                        .testRequestId(UUID.randomUUID())
-                        .service(medicalService)
+                        .testRequestId(
+                                UUID.randomUUID()
+                        )
+                        .service(service)
                         .completedAt(
                                 LocalDateTime.of(
                                         2026,
@@ -488,608 +708,1229 @@ class ProfileServiceTest {
                         )
                         .build();
 
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(profile));
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(profile)
+        );
 
         when(
-                appointmentRepository.findByCustomerId(profileId)
-        ).thenReturn(List.of());
+                appointmentRepository
+                        .findByCustomerId(
+                                profileId
+                        )
+        ).thenReturn(
+                List.of()
+        );
 
         when(
-                testRequestService.findMyCompletedTests(profileId)
-        ).thenReturn(List.of(test));
+                testRequestService
+                        .findMyCompletedTests(
+                                profileId
+                        )
+        ).thenReturn(
+                List.of(test)
+        );
 
         assertNotNull(
-                profileService.getMyProfile(accountId)
+                profileService
+                        .getMyProfile(
+                                accountId
+                        )
         );
     }
 
-
-    // =========================================================
-    // GET MY PROFILE - TEST COMPLETED AT NULL
-    // =========================================================
 
     @Test
     void getMyProfile_ShouldHandleTestCompletedAtNull() {
 
-        UUID accountId = UUID.randomUUID();
-        UUID profileId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
+
+        UUID profileId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
 
         Profile profile =
-                profile(profileId, account);
+                profile(
+                        profileId,
+                        account
+                );
 
-        MedicalService medicalService =
+        MedicalService service =
                 MedicalService.builder()
-                        .serviceId(UUID.randomUUID())
-                        .name("Xet nghiem")
+                        .serviceId(
+                                UUID.randomUUID()
+                        )
+                        .name(
+                                "Xet nghiem"
+                        )
                         .build();
 
         TestRequest test =
                 TestRequest.builder()
-                        .testRequestId(UUID.randomUUID())
-                        .service(medicalService)
+                        .testRequestId(
+                                UUID.randomUUID()
+                        )
+                        .service(service)
                         .completedAt(null)
                         .build();
 
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(profile));
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(profile)
+        );
 
         when(
-                appointmentRepository.findByCustomerId(profileId)
-        ).thenReturn(List.of());
+                appointmentRepository
+                        .findByCustomerId(
+                                profileId
+                        )
+        ).thenReturn(
+                List.of()
+        );
 
         when(
-                testRequestService.findMyCompletedTests(profileId)
-        ).thenReturn(List.of(test));
+                testRequestService
+                        .findMyCompletedTests(
+                                profileId
+                        )
+        ).thenReturn(
+                List.of(test)
+        );
 
         assertNotNull(
-                profileService.getMyProfile(accountId)
+                profileService
+                        .getMyProfile(
+                                accountId
+                        )
         );
     }
 
 
     // =========================================================
-    // CREATE - ACCOUNT MISSING
+    // CREATE
     // =========================================================
 
     @Test
     void create_ShouldThrow_WhenAccountMissing() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         ProfileCreateRequest req =
-                mock(ProfileCreateRequest.class);
+                mock(
+                        ProfileCreateRequest.class
+                );
 
-        when(req.accountId())
-                .thenReturn(accountId);
+        when(
+                req.accountId()
+        ).thenReturn(
+                accountId
+        );
 
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.empty());
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> profileService.create(req)
+                () ->
+                        profileService
+                                .create(req)
         );
     }
 
-
-    // =========================================================
-    // CREATE - PROFILE ALREADY EXISTS
-    // =========================================================
 
     @Test
     void create_ShouldReject_WhenAccountAlreadyHasProfile() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
 
         Profile existing =
-                profile(UUID.randomUUID(), account);
+                profile(
+                        UUID.randomUUID(),
+                        account
+                );
 
         ProfileCreateRequest req =
-                mock(ProfileCreateRequest.class);
-
-        when(req.accountId())
-                .thenReturn(accountId);
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+                mock(
+                        ProfileCreateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.of(existing));
+                req.accountId()
+        ).thenReturn(
+                accountId
+        );
+
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.of(existing)
+        );
 
         assertThrows(
                 ConflictException.class,
-                () -> profileService.create(req)
+                () ->
+                        profileService
+                                .create(req)
         );
     }
 
-
-    // =========================================================
-    // CREATE - DUPLICATE PHONE
-    // =========================================================
 
     @Test
     void create_ShouldRejectDuplicatePhone() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
+
+        Profile other =
+                profile(
+                        UUID.randomUUID(),
+                        account(
+                                UUID.randomUUID(),
+                                "other"
+                        )
+                );
 
         ProfileCreateRequest req =
-                mock(ProfileCreateRequest.class);
-
-        when(req.accountId()).thenReturn(accountId);
-        when(req.phone()).thenReturn("0901234567");
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+                mock(
+                        ProfileCreateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.empty());
-
-        when(
-                profileRepository.findFirstByPhone("0901234567")
+                req.accountId()
         ).thenReturn(
-                Optional.of(
-                        profile(
-                                UUID.randomUUID(),
-                                account(
-                                        UUID.randomUUID(),
-                                        "other"
-                                )
-                        )
+                accountId
+        );
+
+        when(
+                req.phone()
+        ).thenReturn(
+                "0901234567"
+        );
+
+        when(
+                accountRepository.findById(
+                        accountId
                 )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                profileRepository
+                        .findFirstByPhone(
+                                "0901234567"
+                        )
+        ).thenReturn(
+                Optional.of(other)
         );
 
         assertThrows(
                 ConflictException.class,
-                () -> profileService.create(req)
+                () ->
+                        profileService
+                                .create(req)
+        );
+
+        verify(
+                profileRepository,
+                never()
+        ).save(
+                any(Profile.class)
         );
     }
 
-
-    // =========================================================
-    // CREATE - DUPLICATE EMAIL
-    // =========================================================
 
     @Test
     void create_ShouldRejectDuplicateEmail() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
+
+        Profile other =
+                profile(
+                        UUID.randomUUID(),
+                        account(
+                                UUID.randomUUID(),
+                                "other"
+                        )
+                );
 
         ProfileCreateRequest req =
-                mock(ProfileCreateRequest.class);
-
-        when(req.accountId()).thenReturn(accountId);
-        when(req.email()).thenReturn("test@gmail.com");
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+                mock(
+                        ProfileCreateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.empty());
-
-        when(
-                profileRepository.findFirstByEmail("test@gmail.com")
+                req.accountId()
         ).thenReturn(
-                Optional.of(
-                        profile(
-                                UUID.randomUUID(),
-                                account(
-                                        UUID.randomUUID(),
-                                        "other"
-                                )
-                        )
+                accountId
+        );
+
+        when(
+                req.email()
+        ).thenReturn(
+                "test@gmail.com"
+        );
+
+        when(
+                accountRepository.findById(
+                        accountId
                 )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                profileRepository
+                        .findFirstByEmailIgnoreCase(
+                                "test@gmail.com"
+                        )
+        ).thenReturn(
+                Optional.of(other)
         );
 
         assertThrows(
                 ConflictException.class,
-                () -> profileService.create(req)
+                () ->
+                        profileService
+                                .create(req)
+        );
+
+        verify(
+                profileRepository,
+                never()
+        ).save(
+                any(Profile.class)
         );
     }
 
-
-    // =========================================================
-    // CREATE - BLANK PHONE / EMAIL SKIP UNIQUE
-    // =========================================================
 
     @Test
     void create_ShouldSkipUniqueChecks_WhenPhoneAndEmailBlank() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
 
         ProfileCreateRequest req =
-                mock(ProfileCreateRequest.class);
-
-        when(req.accountId()).thenReturn(accountId);
-        when(req.fullName()).thenReturn("Nguyen Van A");
-        when(req.phone()).thenReturn(" ");
-        when(req.email()).thenReturn("");
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+                mock(
+                        ProfileCreateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.empty());
+                req.accountId()
+        ).thenReturn(
+                accountId
+        );
 
-        when(profileRepository.save(any(Profile.class)))
-                .thenAnswer(i -> {
-                    Profile p = i.getArgument(0);
-                    p.setProfileId(UUID.randomUUID());
+        when(
+                req.fullName()
+        ).thenReturn(
+                "Nguyen Van A"
+        );
+
+        when(
+                req.phone()
+        ).thenReturn(
+                " "
+        );
+
+        when(
+                req.email()
+        ).thenReturn(
+                ""
+        );
+
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                profileRepository.save(
+                        any(Profile.class)
+                )
+        ).thenAnswer(
+                invocation -> {
+
+                    Profile p =
+                            invocation.getArgument(0);
+
+                    p.setProfileId(
+                            UUID.randomUUID()
+                    );
+
                     return p;
-                });
+                }
+        );
 
-        profileService.create(req);
+        assertNotNull(
+                profileService.create(req)
+        );
 
-        verify(profileRepository, never())
-                .findFirstByPhone(anyString());
+        verify(
+                profileRepository,
+                never()
+        ).findFirstByPhone(
+                anyString()
+        );
 
-        verify(profileRepository, never())
-                .findFirstByEmail(anyString());
+        verify(
+                profileRepository,
+                never()
+        ).findFirstByEmailIgnoreCase(
+                anyString()
+        );
     }
 
-
-    // =========================================================
-    // CREATE - GENDER NULL
-    // =========================================================
 
     @Test
     void create_ShouldAllowNullGender() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
 
         ProfileCreateRequest req =
-                mock(ProfileCreateRequest.class);
-
-        when(req.accountId()).thenReturn(accountId);
-        when(req.fullName()).thenReturn("Nguyen Van A");
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+                mock(
+                        ProfileCreateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.empty());
+                req.accountId()
+        ).thenReturn(
+                accountId
+        );
 
-        when(profileRepository.save(any(Profile.class)))
-                .thenAnswer(i -> {
-                    Profile p = i.getArgument(0);
-                    p.setProfileId(UUID.randomUUID());
+        when(
+                req.fullName()
+        ).thenReturn(
+                "Nguyen Van A"
+        );
+
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                profileRepository.save(
+                        any(Profile.class)
+                )
+        ).thenAnswer(
+                invocation -> {
+
+                    Profile p =
+                            invocation.getArgument(0);
+
+                    p.setProfileId(
+                            UUID.randomUUID()
+                    );
+
                     return p;
-                });
+                }
+        );
 
         profileService.create(req);
 
-        verify(profileRepository)
-                .save(argThat(p ->
-                        p.getGender() == null
-                ));
+        verify(
+                profileRepository
+        ).save(
+                argThat(
+                        p ->
+                                p.getGender()
+                                        == null
+                )
+        );
     }
 
-
-    // =========================================================
-    // CREATE - GENDER BLANK
-    // =========================================================
 
     @Test
     void create_ShouldAllowBlankGender() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
 
         ProfileCreateRequest req =
-                mock(ProfileCreateRequest.class);
-
-        when(req.accountId()).thenReturn(accountId);
-        when(req.fullName()).thenReturn("Nguyen Van A");
-        when(req.gender()).thenReturn("   ");
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+                mock(
+                        ProfileCreateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.empty());
+                req.accountId()
+        ).thenReturn(
+                accountId
+        );
 
-        when(profileRepository.save(any(Profile.class)))
-                .thenAnswer(i -> {
-                    Profile p = i.getArgument(0);
-                    p.setProfileId(UUID.randomUUID());
+        when(
+                req.fullName()
+        ).thenReturn(
+                "Nguyen Van A"
+        );
+
+        when(
+                req.gender()
+        ).thenReturn(
+                "   "
+        );
+
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                profileRepository.save(
+                        any(Profile.class)
+                )
+        ).thenAnswer(
+                invocation -> {
+
+                    Profile p =
+                            invocation.getArgument(0);
+
+                    p.setProfileId(
+                            UUID.randomUUID()
+                    );
+
                     return p;
-                });
+                }
+        );
 
         profileService.create(req);
 
-        verify(profileRepository)
-                .save(argThat(p ->
-                        p.getGender() == null
-                ));
+        verify(
+                profileRepository
+        ).save(
+                argThat(
+                        p ->
+                                p.getGender()
+                                        == null
+                )
+        );
     }
 
-
-    // =========================================================
-    // CREATE - VALID GENDER
-    // =========================================================
 
     @Test
     void create_ShouldParseGenderCaseInsensitive() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
 
         ProfileCreateRequest req =
-                mock(ProfileCreateRequest.class);
-
-        when(req.accountId()).thenReturn(accountId);
-        when(req.fullName()).thenReturn("Nguyen Van A");
-        when(req.gender()).thenReturn(" female ");
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+                mock(
+                        ProfileCreateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.empty());
+                req.accountId()
+        ).thenReturn(
+                accountId
+        );
 
-        when(profileRepository.save(any(Profile.class)))
-                .thenAnswer(i -> {
-                    Profile p = i.getArgument(0);
-                    p.setProfileId(UUID.randomUUID());
+        when(
+                req.fullName()
+        ).thenReturn(
+                "Nguyen Van A"
+        );
+
+        when(
+                req.gender()
+        ).thenReturn(
+                " female "
+        );
+
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                profileRepository.save(
+                        any(Profile.class)
+                )
+        ).thenAnswer(
+                invocation -> {
+
+                    Profile p =
+                            invocation.getArgument(0);
+
+                    p.setProfileId(
+                            UUID.randomUUID()
+                    );
+
                     return p;
-                });
+                }
+        );
 
         profileService.create(req);
 
-        verify(profileRepository)
-                .save(argThat(p ->
-                        p.getGender() == Gender.FEMALE
-                ));
+        verify(
+                profileRepository
+        ).save(
+                argThat(
+                        p ->
+                                p.getGender()
+                                        == Gender.FEMALE
+                )
+        );
     }
 
-
-    // =========================================================
-    // CREATE - GENDER OTHER
-    // =========================================================
 
     @Test
     void create_ShouldRejectOtherGender() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
 
         ProfileCreateRequest req =
-                mock(ProfileCreateRequest.class);
-
-        when(req.accountId()).thenReturn(accountId);
-        when(req.gender()).thenReturn("OTHER");
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+                mock(
+                        ProfileCreateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.empty());
+                req.accountId()
+        ).thenReturn(
+                accountId
+        );
+
+        when(
+                req.gender()
+        ).thenReturn(
+                "OTHER"
+        );
+
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ConflictException.class,
-                () -> profileService.create(req)
+                () ->
+                        profileService.create(req)
+        );
+
+        verify(
+                profileRepository,
+                never()
+        ).save(
+                any(Profile.class)
         );
     }
 
-
-    // =========================================================
-    // CREATE - INVALID GENDER
-    // =========================================================
 
     @Test
     void create_ShouldRejectInvalidGender() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
 
         ProfileCreateRequest req =
-                mock(ProfileCreateRequest.class);
-
-        when(req.accountId()).thenReturn(accountId);
-        when(req.gender()).thenReturn("XYZ");
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+                mock(
+                        ProfileCreateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.empty());
+                req.accountId()
+        ).thenReturn(
+                accountId
+        );
+
+        when(
+                req.gender()
+        ).thenReturn(
+                "XYZ"
+        );
+
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThrows(
                 ConflictException.class,
-                () -> profileService.create(req)
+                () ->
+                        profileService.create(req)
         );
     }
 
 
-    // =========================================================
-    // CREATE SUCCESS
-    // =========================================================
-
     @Test
     void create_ShouldCreateProfileSuccessfully() {
 
-        UUID accountId = UUID.randomUUID();
+        UUID accountId =
+                UUID.randomUUID();
 
         Account account =
-                account(accountId, "customer01");
+                account(
+                        accountId,
+                        "customer01"
+                );
 
         ProfileCreateRequest req =
-                mock(ProfileCreateRequest.class);
-
-        when(req.accountId()).thenReturn(accountId);
-        when(req.fullName()).thenReturn("Nguyen Van B");
-        when(req.dateOfBirth()).thenReturn(LocalDate.of(2001, 5, 10));
-        when(req.gender()).thenReturn("male");
-        when(req.phone()).thenReturn("0911111111");
-        when(req.email()).thenReturn("b@gmail.com");
-        when(req.address()).thenReturn("Ha Noi");
-
-        when(accountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
+                mock(
+                        ProfileCreateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByAccount_AccountId(accountId)
-        ).thenReturn(Optional.empty());
+                req.accountId()
+        ).thenReturn(
+                accountId
+        );
 
         when(
-                profileRepository.findFirstByPhone("0911111111")
-        ).thenReturn(Optional.empty());
+                req.fullName()
+        ).thenReturn(
+                "Nguyen Van B"
+        );
 
         when(
-                profileRepository.findFirstByEmail("b@gmail.com")
-        ).thenReturn(Optional.empty());
+                req.dateOfBirth()
+        ).thenReturn(
+                LocalDate.of(
+                        2001,
+                        5,
+                        10
+                )
+        );
 
-        when(profileRepository.save(any(Profile.class)))
-                .thenAnswer(i -> {
-                    Profile p = i.getArgument(0);
-                    p.setProfileId(UUID.randomUUID());
+        when(
+                req.gender()
+        ).thenReturn(
+                "male"
+        );
+
+        when(
+                req.phone()
+        ).thenReturn(
+                "0911111111"
+        );
+
+        when(
+                req.email()
+        ).thenReturn(
+                "b@gmail.com"
+        );
+
+        when(
+                req.address()
+        ).thenReturn(
+                "Ha Noi"
+        );
+
+        when(
+                accountRepository.findById(
+                        accountId
+                )
+        ).thenReturn(
+                Optional.of(account)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByAccount_AccountId(
+                                accountId
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                profileRepository.save(
+                        any(Profile.class)
+                )
+        ).thenAnswer(
+                invocation -> {
+
+                    Profile p =
+                            invocation.getArgument(0);
+
+                    p.setProfileId(
+                            UUID.randomUUID()
+                    );
+
                     return p;
-                });
+                }
+        );
 
         var result =
                 profileService.create(req);
 
         assertNotNull(result);
 
-        verify(profileRepository)
-                .save(argThat(p ->
-                        p.getAccount() == account
-                                && "Nguyen Van B".equals(p.getFullName())
-                                && p.getGender() == Gender.MALE
-                                && "0911111111".equals(p.getPhone())
-                                && "b@gmail.com".equals(p.getEmail())
-                ));
+        verify(
+                profileRepository
+        ).findFirstByPhone(
+                "0911111111"
+        );
+
+        verify(
+                profileRepository
+        ).findFirstByEmailIgnoreCase(
+                "b@gmail.com"
+        );
+
+        verify(
+                profileRepository
+        ).save(
+                argThat(
+                        p ->
+                                p.getAccount()
+                                        == account
+                                        &&
+                                        "Nguyen Van B"
+                                                .equals(
+                                                        p.getFullName()
+                                                )
+                                        &&
+                                        p.getGender()
+                                                == Gender.MALE
+                                        &&
+                                        "0911111111"
+                                                .equals(
+                                                        p.getPhone()
+                                                )
+                                        &&
+                                        "b@gmail.com"
+                                                .equals(
+                                                        p.getEmail()
+                                                )
+                )
+        );
     }
 
 
     // =========================================================
-    // UPDATE - BASIC FIELDS
+    // UPDATE
     // =========================================================
 
     @Test
     void update_ShouldUpdateAllBasicFields() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer")
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
                 );
 
         ProfileUpdateRequest req =
-                mock(ProfileUpdateRequest.class);
+                mock(
+                        ProfileUpdateRequest.class
+                );
 
-        when(req.fullName()).thenReturn("New Name");
-        when(req.dateOfBirth()).thenReturn(LocalDate.of(1999, 10, 10));
-        when(req.gender()).thenReturn("female");
-        when(req.bloodType()).thenReturn(BloodType.A_POSITIVE);
-        when(req.address()).thenReturn("Da Nang");
-        when(req.insuranceId()).thenReturn("BH001");
-        when(req.height()).thenReturn(170);
-        when(req.weight()).thenReturn(60);
+        when(
+                req.fullName()
+        ).thenReturn(
+                "New Name"
+        );
 
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(p));
+        when(
+                req.dateOfBirth()
+        ).thenReturn(
+                LocalDate.of(
+                        1999,
+                        10,
+                        10
+                )
+        );
 
-        when(profileRepository.save(p))
-                .thenReturn(p);
+        when(
+                req.gender()
+        ).thenReturn(
+                "female"
+        );
+
+        when(
+                req.bloodType()
+        ).thenReturn(
+                BloodType.A_POSITIVE
+        );
+
+        when(
+                req.address()
+        ).thenReturn(
+                "Da Nang"
+        );
+
+        when(
+                req.insuranceId()
+        ).thenReturn(
+                "BH001"
+        );
+
+        when(
+                req.height()
+        ).thenReturn(
+                170
+        );
+
+        when(
+                req.weight()
+        ).thenReturn(
+                60
+        );
+
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        when(
+                profileRepository.save(p)
+        ).thenReturn(p);
 
         var result =
-                profileService.update(id, req);
+                profileService.update(
+                        id,
+                        req
+                );
 
         assertNotNull(result);
 
-        assertEquals("New Name", p.getFullName());
-        assertEquals(LocalDate.of(1999, 10, 10), p.getDateOfBirth());
-        assertEquals(Gender.FEMALE, p.getGender());
-        assertEquals(BloodType.A_POSITIVE, p.getBloodType());
-        assertEquals("Da Nang", p.getAddress());
-        assertEquals("BH001", p.getInsuranceId());
-        assertEquals(170, p.getHeight());
-        assertEquals(60, p.getWeight());
+        assertEquals(
+                "New Name",
+                p.getFullName()
+        );
+
+        assertEquals(
+                LocalDate.of(
+                        1999,
+                        10,
+                        10
+                ),
+                p.getDateOfBirth()
+        );
+
+        assertEquals(
+                Gender.FEMALE,
+                p.getGender()
+        );
+
+        assertEquals(
+                BloodType.A_POSITIVE,
+                p.getBloodType()
+        );
+
+        assertEquals(
+                "Da Nang",
+                p.getAddress()
+        );
+
+        assertEquals(
+                "BH001",
+                p.getInsuranceId()
+        );
+
+        assertEquals(
+                170,
+                p.getHeight()
+        );
+
+        assertEquals(
+                60,
+                p.getWeight()
+        );
     }
 
 
-    // =========================================================
-    // UPDATE - ALLERGIES
-    // =========================================================
+    @Test
+    void update_ShouldNormalizeFullName() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        Profile p =
+                profile(
+                        id,
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
+                );
+
+        ProfileUpdateRequest req =
+                mock(
+                        ProfileUpdateRequest.class
+                );
+
+        when(
+                req.fullName()
+        ).thenReturn(
+                "  Nguyen   Van   B  "
+        );
+
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        when(
+                profileRepository.save(p)
+        ).thenReturn(p);
+
+        profileService.update(
+                id,
+                req
+        );
+
+        assertEquals(
+                "Nguyen Van B",
+                p.getFullName()
+        );
+    }
+
 
     @Test
     void update_ShouldTrimRemoveBlankAndDistinctAllergies() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer")
-                );
-
-        ProfileUpdateRequest req =
-                mock(ProfileUpdateRequest.class);
-
-        when(req.allergies())
-                .thenReturn(
-                        List.of(
-                                " Penicillin ",
-                                "",
-                                "  ",
-                                "Seafood",
-                                "Penicillin"
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
                         )
                 );
 
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(p));
+        ProfileUpdateRequest req =
+                mock(
+                        ProfileUpdateRequest.class
+                );
 
-        when(profileRepository.save(p))
-                .thenReturn(p);
+        when(
+                req.allergies()
+        ).thenReturn(
+                List.of(
+                        " Penicillin ",
+                        "",
+                        "  ",
+                        "Seafood",
+                        "Penicillin"
+                )
+        );
 
-        profileService.update(id, req);
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        when(
+                profileRepository.save(p)
+        ).thenReturn(p);
+
+        profileService.update(
+                id,
+                req
+        );
 
         assertEquals(
                 "Penicillin\nSeafood",
@@ -1098,80 +1939,127 @@ class ProfileServiceTest {
     }
 
 
-    // =========================================================
-    // UPDATE PHONE - DUPLICATE OTHER PROFILE
-    // =========================================================
-
     @Test
     void update_ShouldRejectPhoneUsedByDifferentProfile() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer")
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
                 );
 
         Profile other =
                 profile(
                         UUID.randomUUID(),
-                        account(UUID.randomUUID(), "other")
+                        account(
+                                UUID.randomUUID(),
+                                "other"
+                        )
                 );
 
         ProfileUpdateRequest req =
-                mock(ProfileUpdateRequest.class);
-
-        when(req.phone())
-                .thenReturn("0999999999");
-
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(p));
+                mock(
+                        ProfileUpdateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByPhone("0999999999")
-        ).thenReturn(Optional.of(other));
+                req.phone()
+        ).thenReturn(
+                "0999999999"
+        );
+
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        when(
+                profileRepository.findFirstByPhone(
+                        "0999999999"
+                )
+        ).thenReturn(
+                Optional.of(other)
+        );
 
         assertThrows(
                 ConflictException.class,
-                () -> profileService.update(id, req)
+                () ->
+                        profileService.update(
+                                id,
+                                req
+                        )
+        );
+
+        verify(
+                profileRepository,
+                never()
+        ).save(
+                any(Profile.class)
         );
     }
 
 
-    // =========================================================
-    // UPDATE PHONE - SAME PROFILE ALLOWED
-    // =========================================================
-
     @Test
     void update_ShouldAllowPhoneOwnedBySameProfile() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer")
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
                 );
 
         ProfileUpdateRequest req =
-                mock(ProfileUpdateRequest.class);
-
-        when(req.phone())
-                .thenReturn("0999999999");
-
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(p));
+                mock(
+                        ProfileUpdateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByPhone("0999999999")
-        ).thenReturn(Optional.of(p));
+                req.phone()
+        ).thenReturn(
+                "0999999999"
+        );
 
-        when(profileRepository.save(p))
-                .thenReturn(p);
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        when(
+                profileRepository.findFirstByPhone(
+                        "0999999999"
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        when(
+                profileRepository.save(p)
+        ).thenReturn(p);
 
         assertDoesNotThrow(
-                () -> profileService.update(id, req)
+                () ->
+                        profileService.update(
+                                id,
+                                req
+                        )
         );
 
         assertEquals(
@@ -1181,79 +2069,127 @@ class ProfileServiceTest {
     }
 
 
-    // =========================================================
-    // UPDATE EMAIL - DUPLICATE
-    // =========================================================
-
     @Test
     void update_ShouldRejectEmailUsedByDifferentProfile() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer")
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
                 );
 
         Profile other =
                 profile(
                         UUID.randomUUID(),
-                        account(UUID.randomUUID(), "other")
+                        account(
+                                UUID.randomUUID(),
+                                "other"
+                        )
                 );
 
         ProfileUpdateRequest req =
-                mock(ProfileUpdateRequest.class);
-
-        when(req.email())
-                .thenReturn("new@gmail.com");
-
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(p));
+                mock(
+                        ProfileUpdateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByEmail("new@gmail.com")
-        ).thenReturn(Optional.of(other));
+                req.email()
+        ).thenReturn(
+                "new@gmail.com"
+        );
+
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        when(
+                profileRepository
+                        .findFirstByEmailIgnoreCase(
+                                "new@gmail.com"
+                        )
+        ).thenReturn(
+                Optional.of(other)
+        );
 
         assertThrows(
                 ConflictException.class,
-                () -> profileService.update(id, req)
+                () ->
+                        profileService.update(
+                                id,
+                                req
+                        )
+        );
+
+        verify(
+                profileRepository,
+                never()
+        ).save(
+                any(Profile.class)
         );
     }
 
 
-    // =========================================================
-    // UPDATE EMAIL SAME PROFILE
-    // =========================================================
-
     @Test
     void update_ShouldAllowEmailOwnedBySameProfile() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer")
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
                 );
 
         ProfileUpdateRequest req =
-                mock(ProfileUpdateRequest.class);
-
-        when(req.email())
-                .thenReturn("same@gmail.com");
-
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(p));
+                mock(
+                        ProfileUpdateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByEmail("same@gmail.com")
-        ).thenReturn(Optional.of(p));
+                req.email()
+        ).thenReturn(
+                "SAME@GMAIL.COM"
+        );
 
-        when(profileRepository.save(p))
-                .thenReturn(p);
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
 
-        profileService.update(id, req);
+        when(
+                profileRepository
+                        .findFirstByEmailIgnoreCase(
+                                "same@gmail.com"
+                        )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        when(
+                profileRepository.save(p)
+        ).thenReturn(p);
+
+        profileService.update(
+                id,
+                req
+        );
 
         assertEquals(
                 "same@gmail.com",
@@ -1262,44 +2198,61 @@ class ProfileServiceTest {
     }
 
 
-    // =========================================================
-    // UPDATE PHONE ONLY -> KEEP OLD EMAIL
-    // =========================================================
-
     @Test
     void update_ShouldUseOldEmail_WhenOnlyPhoneChanges() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer")
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
                 );
 
-        p.setEmail("old@gmail.com");
+        p.setEmail(
+                "old@gmail.com"
+        );
 
         ProfileUpdateRequest req =
-                mock(ProfileUpdateRequest.class);
-
-        when(req.phone())
-                .thenReturn("0988888888");
-
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(p));
+                mock(
+                        ProfileUpdateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByPhone("0988888888")
-        ).thenReturn(Optional.empty());
+                req.phone()
+        ).thenReturn(
+                "0988888888"
+        );
 
         when(
-                profileRepository.findFirstByEmail("old@gmail.com")
-        ).thenReturn(Optional.of(p));
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
 
-        when(profileRepository.save(p))
-                .thenReturn(p);
+        when(
+                profileRepository
+                        .findFirstByEmailIgnoreCase(
+                                "old@gmail.com"
+                        )
+        ).thenReturn(
+                Optional.of(p)
+        );
 
-        profileService.update(id, req);
+        when(
+                profileRepository.save(p)
+        ).thenReturn(p);
+
+        profileService.update(
+                id,
+                req
+        );
 
         assertEquals(
                 "0988888888",
@@ -1310,47 +2263,69 @@ class ProfileServiceTest {
                 "old@gmail.com",
                 p.getEmail()
         );
+
+        verify(
+                profileRepository
+        ).findFirstByPhone(
+                "0988888888"
+        );
     }
 
-
-    // =========================================================
-    // UPDATE EMAIL ONLY -> KEEP OLD PHONE
-    // =========================================================
 
     @Test
     void update_ShouldUseOldPhone_WhenOnlyEmailChanges() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer")
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
                 );
 
-        p.setPhone("0900000000");
+        p.setPhone(
+                "0900000000"
+        );
 
         ProfileUpdateRequest req =
-                mock(ProfileUpdateRequest.class);
-
-        when(req.email())
-                .thenReturn("new@gmail.com");
-
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(p));
+                mock(
+                        ProfileUpdateRequest.class
+                );
 
         when(
-                profileRepository.findFirstByPhone("0900000000")
-        ).thenReturn(Optional.of(p));
+                req.email()
+        ).thenReturn(
+                "NEW@GMAIL.COM"
+        );
 
         when(
-                profileRepository.findFirstByEmail("new@gmail.com")
-        ).thenReturn(Optional.empty());
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
 
-        when(profileRepository.save(p))
-                .thenReturn(p);
+        when(
+                profileRepository.findFirstByPhone(
+                        "0900000000"
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
 
-        profileService.update(id, req);
+        when(
+                profileRepository.save(p)
+        ).thenReturn(p);
+
+        profileService.update(
+                id,
+                req
+        );
 
         assertEquals(
                 "0900000000",
@@ -1361,101 +2336,573 @@ class ProfileServiceTest {
                 "new@gmail.com",
                 p.getEmail()
         );
+
+        verify(
+                profileRepository
+        ).findFirstByEmailIgnoreCase(
+                "new@gmail.com"
+        );
     }
 
-
-    // =========================================================
-    // UPDATE - NOTHING CHANGED
-    // =========================================================
 
     @Test
     void update_ShouldStillSave_WhenRequestEmpty() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer")
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
                 );
 
         ProfileUpdateRequest req =
-                mock(ProfileUpdateRequest.class);
+                mock(
+                        ProfileUpdateRequest.class
+                );
 
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(p));
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
 
-        when(profileRepository.save(p))
-                .thenReturn(p);
+        when(
+                profileRepository.save(p)
+        ).thenReturn(p);
 
         var result =
-                profileService.update(id, req);
+                profileService.update(
+                        id,
+                        req
+                );
 
         assertNotNull(result);
 
-        verify(profileRepository)
-                .save(p);
+        verify(
+                profileRepository
+        ).save(p);
     }
 
-
-    // =========================================================
-    // UPDATE - INVALID GENDER
-    // =========================================================
 
     @Test
     void update_ShouldRejectInvalidGender() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer")
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
                 );
 
         ProfileUpdateRequest req =
-                mock(ProfileUpdateRequest.class);
+                mock(
+                        ProfileUpdateRequest.class
+                );
 
-        when(req.gender())
-                .thenReturn("abc");
+        when(
+                req.gender()
+        ).thenReturn(
+                "abc"
+        );
 
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(p));
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
 
         assertThrows(
                 ConflictException.class,
-                () -> profileService.update(id, req)
+                () ->
+                        profileService.update(
+                                id,
+                                req
+                        )
+        );
+    }
+
+
+    @Test
+    void update_ShouldRejectOtherGender() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        Profile p =
+                profile(
+                        id,
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
+                );
+
+        ProfileUpdateRequest req =
+                mock(
+                        ProfileUpdateRequest.class
+                );
+
+        when(
+                req.gender()
+        ).thenReturn(
+                "OTHER"
+        );
+
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        assertThrows(
+                ConflictException.class,
+                () ->
+                        profileService.update(
+                                id,
+                                req
+                        )
         );
     }
 
 
     // =========================================================
-    // UPDATE - OTHER GENDER
+    // VALIDATION AFTER UPDATE
     // =========================================================
 
     @Test
-    void update_ShouldRejectOtherGender() {
+    void update_ShouldRejectBlankFullName() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
         Profile p =
                 profile(
                         id,
-                        account(UUID.randomUUID(), "customer")
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
                 );
 
         ProfileUpdateRequest req =
-                mock(ProfileUpdateRequest.class);
+                mock(
+                        ProfileUpdateRequest.class
+                );
 
-        when(req.gender())
-                .thenReturn("OTHER");
+        when(
+                req.fullName()
+        ).thenReturn(
+                " "
+        );
 
-        when(profileRepository.findById(id))
-                .thenReturn(Optional.of(p));
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
 
         assertThrows(
-                ConflictException.class,
-                () -> profileService.update(id, req)
+                BadRequestException.class,
+                () ->
+                        profileService.update(
+                                id,
+                                req
+                        )
+        );
+
+        verify(
+                profileRepository,
+                never()
+        ).save(
+                any(Profile.class)
+        );
+    }
+
+
+    @Test
+    void update_ShouldRejectFullNameContainingNumber() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        Profile p =
+                profile(
+                        id,
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
+                );
+
+        ProfileUpdateRequest req =
+                mock(
+                        ProfileUpdateRequest.class
+                );
+
+        when(
+                req.fullName()
+        ).thenReturn(
+                "Nguyen Van 123"
+        );
+
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        profileService.update(
+                                id,
+                                req
+                        )
+        );
+    }
+
+
+    @Test
+    void update_ShouldRejectFutureDateOfBirth() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        Profile p =
+                profile(
+                        id,
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
+                );
+
+        ProfileUpdateRequest req =
+                mock(
+                        ProfileUpdateRequest.class
+                );
+
+        when(
+                req.dateOfBirth()
+        ).thenReturn(
+                LocalDate.now()
+                        .plusDays(1)
+        );
+
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        profileService.update(
+                                id,
+                                req
+                        )
+        );
+    }
+
+
+    @Test
+    void update_ShouldReject_WhenBothPhoneAndEmailBecomeBlank() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        Profile p =
+                profile(
+                        id,
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
+                );
+
+        ProfileUpdateRequest req =
+                mock(
+                        ProfileUpdateRequest.class
+                );
+
+        when(
+                req.phone()
+        ).thenReturn(
+                " "
+        );
+
+        when(
+                req.email()
+        ).thenReturn(
+                " "
+        );
+
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        profileService.update(
+                                id,
+                                req
+                        )
+        );
+
+        verify(
+                profileRepository,
+                never()
+        ).save(
+                any(Profile.class)
+        );
+    }
+
+
+    // =========================================================
+    // UPDATE SELF
+    // =========================================================
+
+    @Test
+    void updateSelf_ShouldRejectPhoneChange() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        Profile p =
+                profile(
+                        id,
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
+                );
+
+        ProfileUpdateRequest req =
+                mock(
+                        ProfileUpdateRequest.class
+                );
+
+        when(
+                req.phone()
+        ).thenReturn(
+                "0999999999"
+        );
+
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        profileService
+                                .updateSelf(
+                                        id,
+                                        req
+                                )
+        );
+    }
+
+
+    @Test
+    void updateSelf_ShouldRejectEmailChange() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        Profile p =
+                profile(
+                        id,
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
+                );
+
+        ProfileUpdateRequest req =
+                mock(
+                        ProfileUpdateRequest.class
+                );
+
+        when(
+                req.email()
+        ).thenReturn(
+                "other@gmail.com"
+        );
+
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        profileService
+                                .updateSelf(
+                                        id,
+                                        req
+                                )
+        );
+    }
+
+
+    @Test
+    void updateSelf_ShouldRejectInsuranceChange() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        Profile p =
+                profile(
+                        id,
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
+                );
+
+        p.setInsuranceId(
+                "OLD"
+        );
+
+        ProfileUpdateRequest req =
+                mock(
+                        ProfileUpdateRequest.class
+                );
+
+        when(
+                req.insuranceId()
+        ).thenReturn(
+                "NEW"
+        );
+
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        assertThrows(
+                BadRequestException.class,
+                () ->
+                        profileService
+                                .updateSelf(
+                                        id,
+                                        req
+                                )
+        );
+    }
+
+
+    @Test
+    void updateSelf_ShouldAllowSafeProfileFields() {
+
+        UUID id =
+                UUID.randomUUID();
+
+        Profile p =
+                profile(
+                        id,
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
+                );
+
+        ProfileUpdateRequest req =
+                mock(
+                        ProfileUpdateRequest.class
+                );
+
+        when(
+                req.fullName()
+        ).thenReturn(
+                "Nguyen Van B"
+        );
+
+        when(
+                req.address()
+        ).thenReturn(
+                "Da Nang"
+        );
+
+        when(
+                profileRepository.findById(
+                        id
+                )
+        ).thenReturn(
+                Optional.of(p)
+        );
+
+        when(
+                profileRepository.save(p)
+        ).thenReturn(p);
+
+        var result =
+                profileService
+                        .updateSelf(
+                                id,
+                                req
+                        );
+
+        assertNotNull(result);
+
+        assertEquals(
+                "Nguyen Van B",
+                p.getFullName()
+        );
+
+        assertEquals(
+                "Da Nang",
+                p.getAddress()
+        );
+
+        assertEquals(
+                "0901234567",
+                p.getPhone()
+        );
+
+        assertEquals(
+                "test@gmail.com",
+                p.getEmail()
         );
     }
 
@@ -1467,32 +2914,56 @@ class ProfileServiceTest {
     @Test
     void delete_ShouldThrow_WhenProfileMissing() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
-        when(profileRepository.existsById(id))
-                .thenReturn(false);
+        when(
+                profileRepository.existsById(id)
+        ).thenReturn(false);
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> profileService.delete(id)
+                () ->
+                        profileService.delete(id)
         );
 
-        verify(profileRepository, never())
-                .deleteById(id);
+        verify(
+                profileRepository,
+                never()
+        ).deleteById(
+                any(UUID.class)
+        );
     }
 
+
     @Test
-    void delete_ShouldDelete_WhenExists() {
+    void delete_ShouldRejectDeletion_WhenProfileExists() {
 
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
-        when(profileRepository.existsById(id))
-                .thenReturn(true);
+        when(
+                profileRepository.existsById(id)
+        ).thenReturn(true);
 
-        profileService.delete(id);
+        ConflictException exception =
+                assertThrows(
+                        ConflictException.class,
+                        () ->
+                                profileService.delete(id)
+                );
 
-        verify(profileRepository)
-                .deleteById(id);
+        assertEquals(
+                "Không thể xóa hồ sơ cá nhân đã tạo. Vui lòng khóa tài khoản để ngừng sử dụng và giữ nguyên lịch sử",
+                exception.getMessage()
+        );
+
+        verify(
+                profileRepository,
+                never()
+        ).deleteById(
+                any(UUID.class)
+        );
     }
 
 
@@ -1504,12 +2975,18 @@ class ProfileServiceTest {
     void search_ShouldReturnMappedPage() {
 
         var pageable =
-                PageRequest.of(0, 10);
+                PageRequest.of(
+                        0,
+                        10
+                );
 
         Profile p =
                 profile(
                         UUID.randomUUID(),
-                        account(UUID.randomUUID(), "customer")
+                        account(
+                                UUID.randomUUID(),
+                                "customer"
+                        )
                 );
 
         when(
@@ -1518,7 +2995,9 @@ class ProfileServiceTest {
                         pageable
                 )
         ).thenReturn(
-                new PageImpl<>(List.of(p))
+                new PageImpl<>(
+                        List.of(p)
+                )
         );
 
         var result =
@@ -1529,10 +3008,40 @@ class ProfileServiceTest {
 
         assertNotNull(result);
 
-        verify(profileRepository)
-                .search(
-                        "nguyen",
-                        pageable
+        verify(
+                profileRepository
+        ).search(
+                "nguyen",
+                pageable
+        );
+    }
+
+
+    @Test
+    void search_ShouldReturnEmptyPage() {
+
+        var pageable =
+                PageRequest.of(
+                        0,
+                        10
                 );
+
+        when(
+                profileRepository.search(
+                        null,
+                        pageable
+                )
+        ).thenReturn(
+                new PageImpl<>(
+                        List.of()
+                )
+        );
+
+        assertNotNull(
+                profileService.search(
+                        null,
+                        pageable
+                )
+        );
     }
 }

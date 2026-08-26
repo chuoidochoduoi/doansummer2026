@@ -59,6 +59,19 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
     @Query("SELECT a FROM Appointment a WHERE a.isGuest = true AND (a.guestPhone IN :phones OR a.guestEmail IN :emails)")
     List<Appointment> findGuestAppointmentsByPhonesOrEmails(@Param("phones") Collection<String> phones, @Param("emails") Collection<String> emails);
 
+    @Query("select distinct a from Appointment a left join fetch a.services " +
+            "where a.scheduledAt >= :from and a.scheduledAt < :to and a.status in :statuses")
+    List<Appointment> findActiveBetween(@Param("from") LocalDateTime from,
+                                        @Param("to") LocalDateTime to,
+                                        @Param("statuses") Collection<AppointmentStatus> statuses);
+
+    @Query("select distinct a from Appointment a left join fetch a.services " +
+            "where a.shiftVersion.shift.shiftId = :shiftId and a.scheduledAt >= :from " +
+            "and a.status in :statuses")
+    List<Appointment> findActiveByShiftFrom(@Param("shiftId") UUID shiftId,
+                                            @Param("from") LocalDateTime from,
+                                            @Param("statuses") Collection<AppointmentStatus> statuses);
+
 }
 
 

@@ -23,6 +23,7 @@ public record ProfileResponse(
         Integer height,
         Integer weight,
         List<String> allergies,
+        org.example.doansummer2026.enums.AllergyStatus allergyStatus,
         Boolean hasStaffInfo,
         UUID staffId
 ) {
@@ -42,10 +43,8 @@ public record ProfileResponse(
                 p.getInsuranceId(),
                 p.getHeight(),
                 p.getWeight(),
-                p.getAllergies() == null || p.getAllergies().isBlank()
-                        ? List.of()
-                        : java.util.Arrays.stream(p.getAllergies().split("\\r?\\n"))
-                                .map(String::trim).filter(value -> !value.isBlank()).toList(),
+                org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(p).items(),
+                org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(p).status(),
                 null,
                 null
         );

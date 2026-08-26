@@ -31,7 +31,7 @@ public interface TestRequestServiceInterface {
     TestResultResponse getResult(UUID testRequestId);
     TestResultResponse createResult(UUID testRequestId, TestResultCreateRequest req);
     TestResultResponse updateResult(UUID testRequestId, TestResultUpdateRequest req);
-    TestResultResponse completeResult(UUID testRequestId, TestResultCreateRequest req, UUID verifiedById);
+    TestResultResponse completeResult(UUID testRequestId, TestResultCreateRequest req);
 
     /** Upload ket qua xet nghiem, luu file va tra ve URL. */
     String uploadResultFile(UUID testRequestId, MultipartFile file) throws IOException;

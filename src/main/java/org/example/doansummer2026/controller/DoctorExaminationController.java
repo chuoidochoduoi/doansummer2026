@@ -34,12 +34,22 @@ import java.util.UUID;
 public class DoctorExaminationController {
 
     private final QueueTicketService service;
+    private final org.example.doansummer2026.service.SameDayParaclinicalResultService sameDayResultService;
 
     /** Load the examination (medical record + nested details) the doctor is editing. */
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     public ResponseEntity<MedicalRecordResponse> load(@PathVariable UUID id) {
         return RestResponses.ok(service.loadExamination(id));
+    }
+
+    /** Ket qua CLS da ky cua cac luot khac trong cung ngay, chi de tham chieu. */
+    @GetMapping("/{id}/same-day-paraclinical-results")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    public ResponseEntity<java.util.List<org.example.doansummer2026.dto.medicalHistory.SameDayParaclinicalResultResponse>>
+    sameDayResults(@PathVariable UUID id) {
+        MedicalRecordResponse examination = service.loadExamination(id);
+        return RestResponses.ok(sameDayResultService.findForRecord(examination.recordId()));
     }
 
     /**

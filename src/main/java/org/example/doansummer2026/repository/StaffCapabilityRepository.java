@@ -13,6 +13,8 @@ public interface StaffCapabilityRepository extends JpaRepository<StaffCapability
     boolean existsByStaff_StaffIdAndCapability_CapabilityIdAndStatus(UUID staffId, UUID capabilityId, StaffCapabilityStatus status);
     void deleteAllByStaff_StaffId(UUID staffId);
 
+    List<StaffCapability> findAllByStaff_StaffIdAndStatus(UUID staffId, StaffCapabilityStatus status);
+
     @Query(value = "SELECT COUNT(*) FROM staff_capability " +
             "WHERE capability_id = :capabilityId AND deleted = false", nativeQuery = true)
     long countActiveReferencesToCapability(@Param("capabilityId") UUID capabilityId);

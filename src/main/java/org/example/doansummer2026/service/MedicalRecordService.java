@@ -10,6 +10,7 @@ import org.example.doansummer2026.dto.medicalRecord.ReceptionistRecordResponse;
 import org.example.doansummer2026.dto.medicalRecord.ReceptionistCustomerResponse;
 import org.example.doansummer2026.dto.medicalRecord.ReceptionistAllCustomerResponse;
 import org.example.doansummer2026.dto.medicalHistory.MedicalHistoryResponse;
+import org.example.doansummer2026.dto.medicalHistory.VisitHistorySummaryResponse;
 import org.example.doansummer2026.enums.BloodType;
 import org.example.doansummer2026.enums.Gender;
 import org.example.doansummer2026.dto.medicalRecord.PrescriptionItemCreateRequest;
@@ -41,7 +42,9 @@ import org.example.doansummer2026.repository.InvoiceRepository;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.enums.InvoiceStatus;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.example.doansummer2026.service.interfaces.MedicalRecordServiceInterface;
 import org.springframework.transaction.annotation.Transactional;
@@ -71,6 +74,11 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     private final org.example.doansummer2026.repository.ShiftConfigRepository shiftConfigRepository;
     private final NotificationService notificationService;
     private final AuthService authService;
+    private final ClinicalFormTemplateService clinicalFormTemplateService;
+    private final ClinicalFormEngine clinicalFormEngine;
+    private final org.example.doansummer2026.repository.TestResultRevisionRepository testResultRevisionRepo;
+    private final org.example.doansummer2026.repository.TestResultAttachmentRepository testResultAttachmentRepo;
+    private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
 
     @Transactional(readOnly = true)
     public PageResponse<MedicalRecordResponse> search(UUID doctorId, MedicalRecordStatus status,
@@ -455,12 +463,14 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     }
 
     private void updateMedicalRecordFields(MedicalRecord r, MedicalRecordUpdateRequest req) {
+        validatePrescriptionAllergyStatus(r, req.prescriptionItems());
         if (req.chiefComplaint() != null) r.setChiefComplaint(req.chiefComplaint());
         if (req.clinicalFindings() != null) r.setClinicalFindings(req.clinicalFindings());
         if (req.diagnosis() != null) r.setDiagnosis(req.diagnosis());
         if (req.prescriptionNote() != null) r.setPrescriptionNote(req.prescriptionNote());
         if (req.conclusion() != null) r.setConclusion(req.conclusion());
         if (req.patientInstruction() != null) r.setPatientInstruction(req.patientInstruction());
+        applySpecialtyData(r, req);
 
         // Cap nhat thuoc trong don
         if (req.prescriptionItems() != null) {
@@ -520,6 +530,147 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             if (req.weight() != null) v.setWeight(req.weight());
             if (req.height() != null) v.setHeight(req.height());
         }
+    }
+
+    private void applySpecialtyData(MedicalRecord record, MedicalRecordUpdateRequest req) {
+        if (req.specialtyData() == null && req.formTemplateVersionId() == null) return;
+        if (record.getQueueTicket() == null || record.getQueueTicket().getService() == null)
+            throw new BadRequestException("Hồ sơ chưa gắn dịch vụ để xác định biểu mẫu chuyên khoa");
+        var version = clinicalFormTemplateService.resolveVersion(
+                record.getQueueTicket().getService().getServiceId(), req.formTemplateVersionId());
+        Profile patient = record.getVisit() == null ? null : record.getVisit().getCustomer();
+        var normalized = clinicalFormEngine.validateAndEnrich(version.getSchemaJson(), req.specialtyData(),
+                patient == null ? null : patient.getDateOfBirth(), patient == null ? null : patient.getGender(), LocalDate.now());
+        record.setFormTemplateVersion(version);
+        record.setSpecialtyData(normalized);
+    }
+
+    @Transactional(readOnly = true)
+    public org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse getClinicalForm(UUID recordId) {
+        MedicalRecord record = findById(recordId);
+        if (record.getQueueTicket() == null || record.getQueueTicket().getService() == null)
+            throw new ResourceNotFoundException("Hồ sơ chưa gắn dịch vụ để xác định biểu mẫu chuyên khoa");
+        var version = record.getFormTemplateVersion() != null ? record.getFormTemplateVersion()
+                : clinicalFormTemplateService.resolveVersion(record.getQueueTicket().getService().getServiceId(), null);
+        return clinicalFormTemplateService.resolvedResponse(version, record.getSpecialtyData());
+    }
+
+    @Transactional(readOnly = true)
+    public org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse getClinicalFormForPatient(
+            UUID recordId, UUID profileId) {
+        MedicalRecord record = findById(recordId);
+        UUID ownerId = record.getVisit() == null || record.getVisit().getCustomer() == null
+                ? null : record.getVisit().getCustomer().getProfileId();
+        if (profileId == null || !profileId.equals(ownerId))
+            throw new org.springframework.security.access.AccessDeniedException("Không có quyền xem biểu mẫu hồ sơ này");
+        return getClinicalForm(recordId);
+    }
+
+    @Transactional(readOnly = true)
+    public org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse getPatientAllergies(UUID recordId) {
+        return org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(patientProfile(findById(recordId)));
+    }
+
+    public org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse updatePatientAllergies(
+            UUID recordId, org.example.doansummer2026.dto.medicalRecord.PatientAllergyRequest request) {
+        MedicalRecord record = findById(recordId);
+        Profile profile = patientProfile(record);
+        if (profile == null) {
+            throw new BadRequestException("Bệnh nhân vãng lai chưa có hồ sơ để cập nhật dị ứng");
+        }
+        if (request.status() == org.example.doansummer2026.enums.AllergyStatus.UNVERIFIED) {
+            throw new BadRequestException("Vui lòng xác nhận không ghi nhận dị ứng hoặc nhập ít nhất một dị ứng");
+        }
+        var items = org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.normalize(request.items());
+        if (request.status() == org.example.doansummer2026.enums.AllergyStatus.REPORTED && items.isEmpty()) {
+            throw new BadRequestException("Vui lòng nhập ít nhất một dị ứng");
+        }
+        if (request.status() == org.example.doansummer2026.enums.AllergyStatus.NONE_REPORTED && !items.isEmpty()) {
+            throw new BadRequestException("Không thể vừa xác nhận không dị ứng vừa gửi danh sách dị ứng");
+        }
+        profile.setAllergies(request.status() == org.example.doansummer2026.enums.AllergyStatus.NONE_REPORTED
+                ? "" : String.join("\n", items));
+        return org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(profileRepo.save(profile));
+    }
+
+    public void validatePrescriptionAllergyStatus(MedicalRecord record,
+            java.util.Collection<PrescriptionItemCreateRequest> requestedItems) {
+        if (requestedItems == null || requestedItems.stream().noneMatch(item -> item != null
+                && item.medicineName() != null && !item.medicineName().isBlank()
+                && item.quantity() != null)) return;
+        Profile profile = patientProfile(record);
+        if (profile != null && profile.getAllergies() == null) {
+            throw new BadRequestException("Vui lòng xác minh dị ứng của bệnh nhân trước khi lưu đơn thuốc");
+        }
+    }
+
+    public void ensureAllergiesVerifiedForExistingPrescription(MedicalRecord record) {
+        if (record.getPrescriptionItems() == null || record.getPrescriptionItems().isEmpty()) return;
+        Profile profile = patientProfile(record);
+        if (profile != null && profile.getAllergies() == null) {
+            throw new BadRequestException("Vui lòng xác minh dị ứng của bệnh nhân trước khi hoàn tất hồ sơ có đơn thuốc");
+        }
+    }
+
+    public void validateVitalSignsForCompletion(MedicalRecord record) {
+        VitalSigns vitalSigns = record.getVitalSigns();
+        java.util.List<String> errors = new java.util.ArrayList<>();
+
+        if (vitalSigns == null) {
+            throw new BadRequestException(
+                    "Vui lòng nhập đầy đủ nhịp tim, huyết áp, thân nhiệt, chiều cao và cân nặng trước khi hoàn thành");
+        }
+
+        Integer heartRate = vitalSigns.getHeartRate();
+        if (heartRate == null) errors.add("nhịp tim đang thiếu");
+        else if (heartRate < 30 || heartRate > 220) errors.add("nhịp tim phải từ 30 đến 220 BPM");
+
+        String bloodPressure = vitalSigns.getBloodPressure();
+        if (bloodPressure == null || bloodPressure.isBlank()) errors.add("huyết áp đang thiếu");
+        else {
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                    .compile("^(\\d{2,3})\\s*/\\s*(\\d{2,3})$")
+                    .matcher(bloodPressure.trim());
+            if (!matcher.matches()) errors.add("huyết áp phải theo định dạng SYS/DIA");
+            else {
+                int systolic = Integer.parseInt(matcher.group(1));
+                int diastolic = Integer.parseInt(matcher.group(2));
+                if (systolic < 60 || systolic > 250) errors.add("huyết áp tâm thu phải từ 60 đến 250 mmHg");
+                if (diastolic < 40 || diastolic > 150) errors.add("huyết áp tâm trương phải từ 40 đến 150 mmHg");
+                if (systolic - diastolic < 10) errors.add("huyết áp tâm thu phải lớn hơn tâm trương ít nhất 10 mmHg");
+            }
+        }
+
+        BigDecimal temperature = vitalSigns.getTemperature();
+        if (temperature == null) errors.add("thân nhiệt đang thiếu");
+        else if (temperature.compareTo(new BigDecimal("34.0")) < 0
+                || temperature.compareTo(new BigDecimal("43.0")) > 0
+                || !hasAtMostOneDecimal(temperature))
+            errors.add("thân nhiệt phải từ 34,0 đến 43,0 °C và có tối đa 1 số thập phân");
+
+        BigDecimal height = vitalSigns.getHeight();
+        if (height == null) errors.add("chiều cao đang thiếu");
+        else if (height.compareTo(new BigDecimal("30")) < 0 || height.compareTo(new BigDecimal("250")) > 0)
+            errors.add("chiều cao phải từ 30 đến 250 cm");
+
+        BigDecimal weight = vitalSigns.getWeight();
+        if (weight == null) errors.add("cân nặng đang thiếu");
+        else if (weight.compareTo(new BigDecimal("1.0")) < 0
+                || weight.compareTo(new BigDecimal("300.0")) > 0
+                || !hasAtMostOneDecimal(weight))
+            errors.add("cân nặng phải từ 1,0 đến 300,0 kg và có tối đa 1 số thập phân");
+
+        if (!errors.isEmpty()) {
+            throw new BadRequestException("Chỉ số sinh hiệu không hợp lệ: " + String.join("; ", errors));
+        }
+    }
+
+    private boolean hasAtMostOneDecimal(BigDecimal value) {
+        return value.stripTrailingZeros().scale() <= 1;
+    }
+
+    private Profile patientProfile(MedicalRecord record) {
+        return record.getVisit() == null ? null : record.getVisit().getCustomer();
     }
 
     private boolean hasVitalSignsUpdate(MedicalRecordUpdateRequest req) {
@@ -586,6 +737,8 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         if (req != null) {
             updateMedicalRecordFields(r, req);
         }
+        validateVitalSignsForCompletion(r);
+        ensureAllergiesVerifiedForExistingPrescription(r);
 
         // Kiem tra bat buoc nhap chan doan hoac ket luan
         boolean hasDiagnosis = r.getDiagnosis() != null && !r.getDiagnosis().trim().isEmpty();
@@ -667,6 +820,91 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return PageResponse.from(page, MedicalHistoryResponse::from);
     }
 
+    /** Danh sach lich su theo luot kham; mot CustomerVisit chi xuat hien mot lan. */
+    @Transactional(readOnly = true)
+    public PageResponse<VisitHistorySummaryResponse> getVisitHistoryForPatient(
+            UUID profileId, String search, Pageable pageable) {
+        Pageable sorted = pageable.getSort().isSorted() ? pageable
+                : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
+                Sort.by(Sort.Direction.DESC, "checkInTime"));
+        Page<CustomerVisit> page = visitRepo.findMedicalHistoryVisits(
+                profileId, search == null ? "" : search.trim(), sorted);
+        return PageResponse.from(page, this::toVisitHistorySummary);
+    }
+
+    private VisitHistorySummaryResponse toVisitHistorySummary(CustomerVisit visit) {
+        java.util.List<MedicalRecord> examinations = repo
+                .findAllByVisit_VisitIdOrderByCreatedAtAsc(visit.getVisitId()).stream()
+                .filter(record -> record.getStatus() == MedicalRecordStatus.COMPLETED)
+                .filter(record -> record.getQueueTicket() != null
+                        && record.getQueueTicket().getDepartment() != null
+                        && record.getQueueTicket().getDepartment().getDepartmentType()
+                        == org.example.doansummer2026.enums.DepartmentType.EXAMINATION)
+                .toList();
+        java.util.List<org.example.doansummer2026.model.TestRequest> requests =
+                testRequestRepo.findAllByVisitIdWithDetails(visit.getVisitId());
+        java.util.List<String> services = examinations.stream()
+                .map(record -> record.getQueueTicket().getService() != null
+                        ? record.getQueueTicket().getService().getName() : "Khám bệnh")
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        java.util.List<String> doctors = examinations.stream()
+                .map(record -> record.getDoctor() != null && record.getDoctor().getProfile() != null
+                        ? record.getDoctor().getProfile().getFullName() : null)
+                .filter(name -> name != null && !name.isBlank()).distinct().toList();
+        String diagnoses = examinations.stream()
+                .map(MedicalRecord::getDiagnosis)
+                .filter(value -> value != null && !value.isBlank())
+                .distinct().collect(java.util.stream.Collectors.joining("; "));
+        int signedTestCount = (int) requests.stream()
+                .filter(request -> request.getStatus() == TestRequestStatus.COMPLETED)
+                .filter(request -> request.getTestResult() != null)
+                .filter(request -> testResultRevisionRepo
+                        .findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
+                                request.getTestResult().getResultId(),
+                                org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED)
+                        .isPresent())
+                .count();
+        LocalDateTime checkedIn = visit.getCheckInTime();
+        return new VisitHistorySummaryResponse(
+                visit.getVisitId(), visit.getVisitId(),
+                "VIS-" + visit.getVisitId().toString().substring(0, 8).toUpperCase(),
+                checkedIn != null ? checkedIn.toLocalDate().toString() : null,
+                checkedIn != null ? checkedIn.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm")) : null,
+                visit.getStatus() != null ? visit.getStatus().name() : null,
+                services, examinations.size(), signedTestCount, doctors,
+                diagnoses.isBlank() ? null : diagnoses);
+    }
+
+    /** Chi tiet customer theo visitId; chi dua noi dung chuyen mon da hoan thanh ra ngoai. */
+    @Transactional(readOnly = true)
+    public org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse getPatientVisitDetail(
+            UUID visitId, UUID profileId) {
+        CustomerVisit visit = visitRepo.findById(visitId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lượt khám"));
+        if (visit.getCustomer() == null || !visit.getCustomer().getProfileId().equals(profileId)) {
+            throw new ResourceNotFoundException("Không tìm thấy lượt khám");
+        }
+        java.util.List<MedicalRecord> completedRecords = repo
+                .findAllByVisit_VisitIdOrderByCreatedAtAsc(visitId).stream()
+                .filter(record -> record.getStatus() == MedicalRecordStatus.COMPLETED)
+                .toList();
+        if (completedRecords.isEmpty()) {
+            throw new ResourceNotFoundException("Lượt khám chưa có bệnh án hoàn thành");
+        }
+        var requests = testRequestRepo.findAllByVisitIdWithDetails(visitId).stream()
+                .filter(request -> request.getStatus() == TestRequestStatus.COMPLETED)
+                .filter(request -> request.getTestResult() != null)
+                .filter(request -> testResultRevisionRepo
+                        .findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
+                                request.getTestResult().getResultId(),
+                                org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED)
+                        .isPresent())
+                .toList();
+        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
+                completedRecords, requests, signedResultAttachments(requests),
+                sameDayParaclinicalResultService.findForVisit(visitId));
+    }
+
     /** Lich su de bac si tham khao trong luc dang kham; khong tra lai ho so hien tai. */
     @Transactional(readOnly = true)
     public java.util.List<MedicalHistoryResponse> getPreviousHistoryForDoctor(UUID currentRecordId) {
@@ -724,9 +962,10 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         }
 
         UUID resolvedVisitId = record.getVisit().getVisitId();
+        var requests = testRequestRepo.findAllByVisitIdWithDetails(resolvedVisitId);
         return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
-                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(resolvedVisitId),
-                testRequestRepo.findAllByVisitIdWithDetails(resolvedVisitId));
+                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(resolvedVisitId), requests,
+                signedResultAttachments(requests), sameDayParaclinicalResultService.findForVisit(resolvedVisitId));
     }
 
     /**
@@ -744,9 +983,38 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         }
 
         UUID resolvedVisitId = record.getVisit().getVisitId();
+        var requests = testRequestRepo.findAllByVisitIdWithDetails(resolvedVisitId);
         return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
-                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(resolvedVisitId),
-                testRequestRepo.findAllByVisitIdWithDetails(resolvedVisitId));
+                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(resolvedVisitId), requests,
+                signedResultAttachments(requests), sameDayParaclinicalResultService.findForVisit(resolvedVisitId));
+    }
+
+    @Transactional(readOnly = true)
+    public org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse getVisitDetailForStaff(UUID recordId) {
+        MedicalRecord record = findById(recordId);
+        if (record.getVisit() == null) throw new ResourceNotFoundException("Hồ sơ chưa gắn lượt khám");
+        UUID visitId = record.getVisit().getVisitId();
+        var requests = testRequestRepo.findAllByVisitIdWithDetails(visitId);
+        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
+                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(visitId), requests,
+                signedResultAttachments(requests), sameDayParaclinicalResultService.findForVisit(visitId));
+    }
+
+    private java.util.Map<UUID, java.util.List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>>
+    signedResultAttachments(java.util.List<org.example.doansummer2026.model.TestRequest> requests) {
+        java.util.Map<UUID, java.util.List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> result
+                = new java.util.HashMap<>();
+        for (var request : requests) {
+            var testResult = request.getTestResult();
+            if (testResult == null) continue;
+            var signed = testResultRevisionRepo.findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
+                    testResult.getResultId(), org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED);
+            if (signed.isEmpty()) continue;
+            result.put(testResult.getResultId(), testResultAttachmentRepo
+                    .findByRevision_RevisionIdOrderByDisplayOrder(signed.get().getRevisionId()).stream()
+                    .map(org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse::from).toList());
+        }
+        return result;
     }
 
     /**

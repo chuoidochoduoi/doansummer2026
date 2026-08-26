@@ -33,9 +33,10 @@ public class CustomerVisitController {
 
     private final CustomerVisitService service;
     private final AuthService authService;
+    private final org.example.doansummer2026.service.SameDayParaclinicalResultService sameDayResultService;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<CustomerVisitResponse>> list(
             @RequestParam(required = false) UUID customerId,
             @RequestParam(required = false) VisitStatus status,
@@ -46,13 +47,27 @@ public class CustomerVisitController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<CustomerVisitResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
+    @GetMapping("/customers/{customerId}/same-day-paraclinical-results")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<java.util.List<org.example.doansummer2026.dto.medicalHistory.SameDayParaclinicalResultResponse>>
+    sameDayResultsForReception(@PathVariable UUID customerId) {
+        return RestResponses.ok(sameDayResultService.findForCustomerToday(customerId));
+    }
+
+    @GetMapping("/customers/{customerId}/same-day-examination-services")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<java.util.List<org.example.doansummer2026.dto.customerVisit.SameDayExaminationServiceResponse>>
+    sameDayExaminationServices(@PathVariable UUID customerId) {
+        return RestResponses.ok(service.getSameDayExaminationServices(customerId));
+    }
+
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<CustomerVisitResponse> create(@Valid @RequestBody CustomerVisitCreateRequest req) {
         UUID issuedById = authService.currentStaffId();
         var updatedReq = new CustomerVisitCreateRequest(
@@ -65,6 +80,11 @@ public class CustomerVisitController {
                 req.guestAddress(),
                 req.guestDateOfBirth(),
                 req.guestGender(),
+                req.guestEmail(),
+                req.guestBloodType(),
+                req.allergyStatus(),
+                req.guestAllergies(),
+                req.updatePatientProfile(),
                 req.insuranceId()
         );
         CustomerVisitResponse created = service.create(updatedReq);
@@ -72,14 +92,14 @@ public class CustomerVisitController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<CustomerVisitResponse> update(@PathVariable UUID id,
                                                         @Valid @RequestBody CustomerVisitUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();

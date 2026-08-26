@@ -41,7 +41,7 @@ public class DepartmentController {
 
     /** API cho ADMIN - xem danh sach phong voi tat ca truong */
     @GetMapping("/admin")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<DepartmentResponse>> listForAdmin(
             @RequestParam(required = false) DepartmentType[] departmentTypes,
             Pageable pageable) {
@@ -82,7 +82,7 @@ public class DepartmentController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "Department")
     public ResponseEntity<DepartmentResponse> create(@Valid @RequestBody DepartmentCreateRequest req) {
         DepartmentResponse created = service.create(req);
@@ -90,7 +90,7 @@ public class DepartmentController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.UPDATE, entityName = "Department", idParamName = "id")
     public ResponseEntity<DepartmentResponse> update(@PathVariable UUID id,
                                                      @Valid @RequestBody DepartmentUpdateRequest req) {
@@ -98,7 +98,7 @@ public class DepartmentController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.DELETE, entityName = "Department", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
@@ -106,7 +106,7 @@ public class DepartmentController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Department", idParamName = "id")
     public ResponseEntity<DepartmentResponse> updateStatus(@PathVariable UUID id, @RequestBody java.util.Map<String, String> payload) {
         String statusStr = payload.get("status");
@@ -122,14 +122,14 @@ public class DepartmentController {
      * Dung cho form tao/sua department.
      */
     @GetMapping("/doctors")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<List<StaffOptionResponse>> listDoctors() {
         var doctors = staffService.findAllDoctors();
         return RestResponses.ok(doctors);
     }
 
     @GetMapping("/nurses")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<List<StaffOptionResponse>> listNurses() {
         var nurses = staffService.findAllNurses();
         return RestResponses.ok(nurses);
@@ -144,4 +144,3 @@ public class DepartmentController {
 
 
 }
-

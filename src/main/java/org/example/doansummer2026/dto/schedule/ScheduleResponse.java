@@ -28,7 +28,7 @@ public record ScheduleResponse(
                 code,
                 name,
                 s.getWorkDate(),
-                ShiftResponse.from(s.getShift()),
+                ShiftResponse.from(s),
                 s.getStatus(),
                 s.getIsCustom(),
                 s.getNote(),

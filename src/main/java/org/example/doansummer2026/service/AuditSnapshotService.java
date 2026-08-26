@@ -5,6 +5,7 @@ import org.example.doansummer2026.repository.InvoiceRepository;
 import org.example.doansummer2026.repository.MedicalRecordRepository;
 import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.example.doansummer2026.repository.TestRequestRepository;
+import org.example.doansummer2026.repository.ContactRequestRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -20,6 +21,7 @@ public class AuditSnapshotService {
     private final QueueTicketRepository queueTicketRepository;
     private final MedicalRecordRepository medicalRecordRepository;
     private final TestRequestRepository testRequestRepository;
+    private final ContactRequestRepository contactRequestRepository;
     private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
@@ -55,6 +57,15 @@ public class AuditSnapshotService {
                 data.put("testRequestId", value.getTestRequestId());
                 data.put("status", value.getStatus());
                 data.put("performedAt", value.getPerformedAt());
+                data.put("completedAt", value.getCompletedAt());
+            });
+            case "ContactRequest" -> contactRequestRepository.findById(id).ifPresent(value -> {
+                data.put("contactRequestId", value.getContactRequestId());
+                data.put("requestCode", value.getRequestCode());
+                data.put("status", value.getStatus());
+                data.put("assignedStaffId", value.getAssignedStaff() == null
+                        ? null : value.getAssignedStaff().getStaffId());
+                data.put("acceptedAt", value.getAcceptedAt());
                 data.put("completedAt", value.getCompletedAt());
             });
             default -> { return null; }

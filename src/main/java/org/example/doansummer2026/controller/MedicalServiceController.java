@@ -37,7 +37,7 @@ public class MedicalServiceController {
     private final MedicalServiceService service;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR', 'ROLE_RECEPTIONIST')")
     public ResponseEntity<PageResponse<MedicalServiceResponse>> list(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) DepartmentType departmentType,
@@ -72,7 +72,7 @@ public class MedicalServiceController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @Auditable(action = AuditAction.CREATE, entityName = "ServiceItem")
     public ResponseEntity<MedicalServiceResponse> create(@Valid @RequestBody MedicalServiceCreateRequest req) {
         MedicalServiceResponse created = service.create(req);
@@ -80,7 +80,7 @@ public class MedicalServiceController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @Auditable(action = AuditAction.UPDATE, entityName = "ServiceItem", idParamName = "id")
     public ResponseEntity<MedicalServiceResponse> update(@PathVariable UUID id,
                                                           @Valid @RequestBody MedicalServiceUpdateRequest req) {
@@ -88,7 +88,7 @@ public class MedicalServiceController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @Auditable(action = AuditAction.DELETE, entityName = "ServiceItem", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
@@ -97,7 +97,7 @@ public class MedicalServiceController {
 
     /** Ngung hoat dong dich vu - chi dich vu ACTIVE moi duoc ngung. */
     @PatchMapping("/{id}/deactivate")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "ServiceItem", idParamName = "id")
     public ResponseEntity<MedicalServiceResponse> deactivate(@PathVariable UUID id) {
         return RestResponses.ok(service.deactivate(id));
@@ -105,12 +105,9 @@ public class MedicalServiceController {
 
     /** Phat hanh dich vu - chi dich vu DRAFT moi duoc phat hanh. */
     @PatchMapping("/{id}/publish")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "ServiceItem", idParamName = "id")
     public ResponseEntity<MedicalServiceResponse> publish(@PathVariable UUID id) {
         return RestResponses.ok(service.publish(id));
     }
 }
-
-
-

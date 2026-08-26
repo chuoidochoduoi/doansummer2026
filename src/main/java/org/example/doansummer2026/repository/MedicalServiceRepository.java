@@ -15,9 +15,12 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
 
 @Repository
 public interface MedicalServiceRepository extends JpaRepository<MedicalService, UUID>, JpaSpecificationExecutor<MedicalService> {
+
+    List<MedicalService> findAllByStatus(ServiceStatus status);
 
     boolean existsByName(String name);
 
@@ -78,9 +81,6 @@ public interface MedicalServiceRepository extends JpaRepository<MedicalService, 
     default Page<MedicalService> searchCustomerBookable(String keyword, DepartmentType departmentType,
                                                          Pageable pageable) {
         Specification<MedicalService> spec = (root, query, cb) -> cb.equal(root.get("status"), ServiceStatus.ACTIVE);
-        spec = spec.and((root, query, cb) -> cb.or(
-                cb.isNull(root.get("allowCustomerBooking")),
-                cb.isTrue(root.get("allowCustomerBooking"))));
         if (keyword != null && !keyword.isBlank()) {
             spec = spec.and((root, query, cb) -> cb.or(
                     cb.like(cb.lower(root.get("name")), "%" + keyword.toLowerCase() + "%"),

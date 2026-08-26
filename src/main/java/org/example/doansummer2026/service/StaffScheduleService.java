@@ -18,6 +18,8 @@ import org.example.doansummer2026.repository.StaffScheduleRepository;
 import org.example.doansummer2026.repository.StaffScheduleTemplateRepository;
 import org.example.doansummer2026.repository.StaffAttendanceRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
+import org.example.doansummer2026.repository.AppointmentRepository;
+import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.dto.notification.NotificationCreateRequest;
 import org.example.doansummer2026.enums.NotificationType;
 import org.example.doansummer2026.enums.NotificationChannel;
@@ -51,6 +53,9 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     private final NotificationService notificationService;
     private final StaffAttendanceRepository attendanceRepository;
     private final StaffInfoRepository staffInfoRepository;
+    private final ShiftScheduleResolver shiftScheduleResolver;
+    private final ServiceAvailabilityService serviceAvailabilityService;
+    private final AppointmentRepository appointmentRepository;
 
     public ScheduleResponse create(ScheduleCreateRequest req) {
         if (req.workDate().isBefore(LocalDate.now(CLINIC_ZONE))) {
@@ -63,6 +68,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         if (Boolean.FALSE.equals(shift.getIsActive())) {
             throw new ConflictException("Ca làm việc đã ngừng hoạt động và không thể dùng cho lịch trực mới");
         }
+        ShiftScheduleResolver.ResolvedShift resolved = requireOpenShift(req.workDate(), shift);
         if (!findExactSchedules(staff, req.workDate(), shift).isEmpty()) {
             throw new ConflictException("Nhân sự đã được phân công vào ca này");
         }
@@ -71,6 +77,9 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                 .staff(staff)
                 .workDate(req.workDate())
                 .shift(shift)
+                .shiftVersion(resolved.version())
+                .actualStartTime(resolved.startTime())
+                .actualEndTime(resolved.endTime())
                 .status(ScheduleStatus.SCHEDULED)
                 .isCustom(req.isCustom() != null && req.isCustom())
                 .note(req.note())
@@ -112,8 +121,13 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
             if (Boolean.FALSE.equals(shift.getIsActive())) {
                 throw new ConflictException("Ca làm việc đã ngừng hoạt động và không thể gán cho lịch trực");
             }
+            ensureCoverageCanBeRemoved(s);
+            ShiftScheduleResolver.ResolvedShift resolved = requireOpenShift(s.getWorkDate(), shift);
             validateNoOverlappingShift(s.getStaff(), s.getWorkDate(), shift, s.getScheduleId());
             s.setShift(shift);
+            s.setShiftVersion(resolved.version());
+            s.setActualStartTime(resolved.startTime());
+            s.setActualEndTime(resolved.endTime());
         }
         if (req.status() != null) s.setStatus(req.status());
         if (req.isCustom() != null) s.setIsCustom(req.isCustom());
@@ -148,6 +162,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         if (attendanceRepository.findBySchedule_ScheduleId(id).isPresent()) {
             throw new ConflictException("Không thể xóa lịch trực đã phát sinh dữ liệu điểm danh");
         }
+        ensureCoverageCanBeRemoved(s);
         
         if (s.getStaff() != null && s.getStaff().getProfile() != null) {
             try {
@@ -233,10 +248,14 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                     scheduleRepo.flush();
                 }
                 validateNoOverlappingShift(staff, workDate, t.getShift(), null);
+                ShiftScheduleResolver.ResolvedShift resolved = requireOpenShift(workDate, t.getShift());
                 StaffSchedule schedule = StaffSchedule.builder()
                         .staff(staff)
                         .workDate(workDate)
                         .shift(t.getShift())
+                        .shiftVersion(resolved.version())
+                        .actualStartTime(resolved.startTime())
+                        .actualEndTime(resolved.endTime())
                         .status(ScheduleStatus.SCHEDULED)
                         .isCustom(false)
                         .template(t)
@@ -300,6 +319,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
             if (hasAttendance) {
                 throw new ConflictException("Không thể gỡ ca đã phát sinh dữ liệu điểm danh");
             }
+            exactSchedules.forEach(this::ensureCoverageCanBeRemoved);
             // Xoa tat ca ban trung cu neu du lieu cu da tung bi lap.
             scheduleRepo.deleteByStaffAndWorkDateAndShift(staff, date, shift);
             return;
@@ -310,6 +330,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         if (!Boolean.TRUE.equals(shift.getIsActive())) {
             throw new ConflictException("Ca làm việc đã ngừng hoạt động và không thể phân công");
         }
+        ShiftScheduleResolver.ResolvedShift resolved = requireOpenShift(date, shift);
         if (staff.getProfile() == null || staff.getProfile().getAccount() == null
                 || !Boolean.TRUE.equals(staff.getProfile().getAccount().getIsActive())) {
             throw new ConflictException("Nhân sự đã ngừng hoạt động và không thể phân công");
@@ -323,6 +344,9 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                 .staff(staff)
                 .workDate(date)
                 .shift(shift)
+                .shiftVersion(resolved.version())
+                .actualStartTime(resolved.startTime())
+                .actualEndTime(resolved.endTime())
                 .status(org.example.doansummer2026.enums.ScheduleStatus.SCHEDULED)
                 .isCustom(true)
                 .build());
@@ -358,6 +382,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
             throw new ConflictException(
                     "Không thể ghi đè tuần đã phát sinh dữ liệu điểm danh");
         }
+        targetSchedules.forEach(this::ensureCoverageCanBeRemoved);
 
         // Sao chep la thao tac thay the: xoa lich tuan dich truoc khi tao lai.
         // Nhờ vậy gọi API nhiều lần liên tiếp vẫn cho cùng một kết quả.
@@ -379,18 +404,17 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
             uniqueSourceSchedules.putIfAbsent(key, source);
         }
 
-        List<StaffSchedule> replacements = uniqueSourceSchedules.values().stream()
-                .map(source -> StaffSchedule.builder()
-                        .staff(source.getStaff())
-                        .workDate(targetStart.plusDays(
-                                source.getWorkDate().getDayOfWeek().getValue()
-                                        - DayOfWeek.MONDAY.getValue()))
-                        .shift(source.getShift())
-                        .status(source.getStatus())
-                        .isCustom(true)
-                        .note(source.getNote())
-                        .build())
-                .toList();
+        List<StaffSchedule> replacements = new ArrayList<>();
+        for (StaffSchedule source : uniqueSourceSchedules.values()) {
+            LocalDate targetDate = targetStart.plusDays(source.getWorkDate().getDayOfWeek().getValue()
+                    - DayOfWeek.MONDAY.getValue());
+            ShiftScheduleResolver.ResolvedShift resolved = requireOpenShift(targetDate, source.getShift());
+            replacements.add(StaffSchedule.builder().staff(source.getStaff()).workDate(targetDate)
+                    .shift(source.getShift()).shiftVersion(resolved.version())
+                    .actualStartTime(resolved.startTime()).actualEndTime(resolved.endTime())
+                    .status(source.getStatus())
+                    .isCustom(true).note(source.getNote()).build());
+        }
         return scheduleRepo.saveAll(replacements);
     }
 
@@ -420,20 +444,57 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
 
     private void validateNoOverlappingShift(StaffInfo staff, LocalDate date,
                                             ShiftConfig shift, UUID excludedScheduleId) {
-        LocalTime newStart = LocalTime.parse(shift.getStartTime());
-        LocalTime newEnd = LocalTime.parse(shift.getEndTime());
+        ShiftScheduleResolver.ResolvedShift requested = requireOpenShift(date, shift);
+        LocalTime newStart = requested.startTime();
+        LocalTime newEnd = requested.endTime();
         boolean overlaps = scheduleRepo.findAllByStaff_StaffIdAndWorkDate(staff.getStaffId(), date)
                 .stream()
                 .filter(schedule -> schedule.getShift() != null)
                 .filter(schedule -> excludedScheduleId == null
                         || !schedule.getScheduleId().equals(excludedScheduleId))
                 .anyMatch(schedule -> {
-                    LocalTime existingStart = LocalTime.parse(schedule.getShift().getStartTime());
-                    LocalTime existingEnd = LocalTime.parse(schedule.getShift().getEndTime());
+                    ShiftScheduleResolver.ResolvedShift existing = shiftScheduleResolver.resolve(schedule.getShift(), date);
+                    if (!existing.available()) return false;
+                    LocalTime existingStart = existing.startTime();
+                    LocalTime existingEnd = existing.endTime();
                     return newStart.isBefore(existingEnd) && existingStart.isBefore(newEnd);
                 });
         if (overlaps) {
             throw new ConflictException("Nhân sự đã có ca làm việc trùng thời gian trong ngày này");
+        }
+    }
+
+    private ShiftScheduleResolver.ResolvedShift requireOpenShift(LocalDate date, ShiftConfig shift) {
+        ShiftScheduleResolver.ResolvedShift resolved = shiftScheduleResolver.resolve(shift, date);
+        if (!resolved.available()) {
+            throw new ConflictException("Không thể phân lịch: ngày hoặc ca không hoạt động ("
+                    + resolved.unavailableReason() + ")");
+        }
+        return resolved;
+    }
+
+    private void ensureCoverageCanBeRemoved(StaffSchedule schedule) {
+        if (schedule.getStatus() != ScheduleStatus.SCHEDULED || schedule.getShift() == null) return;
+        LocalDate date = schedule.getWorkDate();
+        List<org.example.doansummer2026.model.Appointment> appointments = appointmentRepository.findActiveBetween(
+                date.atStartOfDay(), date.plusDays(1).atStartOfDay(),
+                List.of(AppointmentStatus.PENDING, AppointmentStatus.RESCHEDULED)).stream()
+                .filter(a -> a.getShiftVersion() != null
+                        && a.getShiftVersion().getShift().getShiftId().equals(schedule.getShift().getShiftId())
+                        || a.getShiftVersion() == null && Objects.equals(a.getShiftName(), schedule.getShift().getName()))
+                .toList();
+        Set<String> uncovered = new LinkedHashSet<>();
+        for (var appointment : appointments) {
+            for (var service : appointment.getServices()) {
+                var before = serviceAvailabilityService.evaluate(service, date, schedule.getShift(), false);
+                var after = serviceAvailabilityService.evaluate(service, date, schedule.getShift(), false,
+                        schedule.getStaff().getStaffId());
+                if (before.available() && !after.available()) uncovered.add(service.getName());
+            }
+        }
+        if (!uncovered.isEmpty()) {
+            throw new ConflictException("Không thể gỡ nhân sự đủ chuẩn cuối cùng; các dịch vụ đã có lịch hẹn sẽ mất người thực hiện: "
+                    + String.join(", ", uncovered));
         }
     }
 }

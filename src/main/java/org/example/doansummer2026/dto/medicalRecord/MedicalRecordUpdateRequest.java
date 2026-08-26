@@ -6,6 +6,7 @@ import org.example.doansummer2026.dto.icd.ICD10SelectionCreateRequest;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import tools.jackson.databind.JsonNode;
 
 public record MedicalRecordUpdateRequest(
         @Size(max = 2000) String chiefComplaint,
@@ -30,8 +31,8 @@ public record MedicalRecordUpdateRequest(
         List<TestRequestInExaminationRequest> testRequests,
         // Yeu cau tai kham (follow-up)
         FollowUpRequest followUp,
+        UUID formTemplateVersionId,
+        JsonNode specialtyData,
         Long version
 ) {}
-
-
 

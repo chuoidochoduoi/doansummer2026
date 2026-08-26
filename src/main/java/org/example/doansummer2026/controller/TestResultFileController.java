@@ -9,8 +9,6 @@ import org.example.doansummer2026.model.TestResult;
 import org.example.doansummer2026.repository.TestResultRepository;
 import org.example.doansummer2026.service.AuthService;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -23,8 +21,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.MalformedURLException;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.UUID;
@@ -35,6 +34,7 @@ import java.util.UUID;
 public class TestResultFileController {
 
     private final TestResultRepository resultRepository;
+    private final org.example.doansummer2026.repository.TestResultAttachmentRepository attachmentRepository;
     private final AuthService authService;
 
     @Value("${app.upload.root:uploads}")
@@ -42,9 +42,8 @@ public class TestResultFileController {
 
     @GetMapping("/{resultId}/file")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Resource> viewFile(@PathVariable UUID resultId,
-                                             @RequestParam(defaultValue = "inline") String disposition)
-            throws MalformedURLException {
+    public ResponseEntity<byte[]> viewFile(@PathVariable UUID resultId,
+                                           @RequestParam(defaultValue = "inline") String disposition) {
         TestResult result = resultRepository.findById(resultId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phiếu kết quả"));
         verifyAccess(result, authService.currentAccount());
@@ -57,18 +56,50 @@ public class TestResultFileController {
         Path root = Paths.get(uploadRoot).toAbsolutePath().normalize();
         Path resultDirectory = root.resolve("test-results").normalize();
         Path file = resultDirectory.resolve(fileName).normalize();
-        if (!file.startsWith(resultDirectory) || !file.toFile().isFile()) {
+        if (!file.startsWith(resultDirectory) || !Files.isRegularFile(file) || !Files.isReadable(file)) {
             throw new ResourceNotFoundException("Tệp kết quả không tồn tại");
         }
 
-        Resource resource = new UrlResource(file.toUri());
+        byte[] content;
+        try {
+            content = Files.readAllBytes(file);
+        } catch (IOException ex) {
+            throw new BadRequestException("Không thể đọc tệp kết quả. Vui lòng tải lại tệp PDF");
+        }
         ContentDisposition contentDisposition = "attachment".equalsIgnoreCase(disposition)
                 ? ContentDisposition.attachment().filename(fileName, StandardCharsets.UTF_8).build()
                 : ContentDisposition.inline().filename(fileName, StandardCharsets.UTF_8).build();
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
+                .contentLength(content.length)
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
-                .body(resource);
+                .body(content);
+    }
+
+    @GetMapping("/attachments/{attachmentId}/file")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<byte[]> viewAttachment(@PathVariable UUID attachmentId,
+                                                  @RequestParam(defaultValue = "inline") String disposition) {
+        var attachment = attachmentRepository.findById(attachmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tệp đính kèm"));
+        TestResult result = attachment.getRevision().getTestResult();
+        verifyAccess(result, authService.currentAccount());
+        Path root = Paths.get(uploadRoot).toAbsolutePath().normalize();
+        Path attachmentDirectory = root.resolve("test-results").resolve("attachments").normalize();
+        Path stored = Paths.get(attachment.getStoragePath()).toAbsolutePath().normalize();
+        if (!stored.startsWith(attachmentDirectory) || !Files.isRegularFile(stored) || !Files.isReadable(stored))
+            throw new ResourceNotFoundException("Tệp đính kèm không tồn tại");
+        try {
+            byte[] content = Files.readAllBytes(stored);
+            ContentDisposition contentDisposition = "attachment".equalsIgnoreCase(disposition)
+                    ? ContentDisposition.attachment().filename(attachment.getOriginalName(), StandardCharsets.UTF_8).build()
+                    : ContentDisposition.inline().filename(attachment.getOriginalName(), StandardCharsets.UTF_8).build();
+            return ResponseEntity.ok().contentType(MediaType.parseMediaType(attachment.getContentType()))
+                    .contentLength(content.length)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString()).body(content);
+        } catch (IOException ex) {
+            throw new BadRequestException("Không thể đọc tệp đính kèm");
+        }
     }
 
     private void verifyAccess(TestResult result, Account account) {
@@ -107,7 +138,11 @@ public class TestResultFileController {
                 && staffId.equals(request.getRequestedBy().getStaffId());
         boolean recordDoctor = staffId != null && record != null && record.getDoctor() != null
                 && staffId.equals(record.getDoctor().getStaffId());
-        if (!assignedToDepartment && !orderingDoctor && !recordDoctor) {
+        boolean recordHeadDoctor = staffId != null && record != null
+                && record.getQueueTicket() != null && record.getQueueTicket().getDepartment() != null
+                && record.getQueueTicket().getDepartment().getHeadDoctor() != null
+                && staffId.equals(record.getQueueTicket().getDepartment().getHeadDoctor().getStaffId());
+        if (!assignedToDepartment && !orderingDoctor && !recordDoctor && !recordHeadDoctor) {
             throw new AccessDeniedException("Không có quyền xem phiếu kết quả này");
         }
     }

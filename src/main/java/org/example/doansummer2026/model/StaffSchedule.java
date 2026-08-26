@@ -20,6 +20,7 @@ import lombok.Setter;
 import org.example.doansummer2026.common.BaseEntity;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 import org.example.doansummer2026.enums.ScheduleStatus;
 
@@ -53,6 +54,17 @@ public class StaffSchedule extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "shift_id")
     private ShiftConfig shift;
+
+    /** Version resolved for workDate; nullable for legacy data. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shift_version_id")
+    private ShiftVersion shiftVersion;
+
+    @Column(name = "actual_start_time")
+    private LocalTime actualStartTime;
+
+    @Column(name = "actual_end_time")
+    private LocalTime actualEndTime;
 
     @NotNull
     @Enumerated(EnumType.STRING)

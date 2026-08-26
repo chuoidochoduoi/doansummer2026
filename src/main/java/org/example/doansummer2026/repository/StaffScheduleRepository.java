@@ -59,6 +59,15 @@ public interface StaffScheduleRepository extends JpaRepository<StaffSchedule, UU
     Optional<StaffSchedule> findByStaffAndWorkDateAndShift(StaffInfo staff, LocalDate workDate, ShiftConfig shift);
     List<StaffSchedule> findAllByStaff_StaffIdAndWorkDate(UUID staffId, LocalDate workDate);
 
+    List<StaffSchedule> findAllByWorkDateAndShift_ShiftIdAndStatus(
+            LocalDate workDate, UUID shiftId, org.example.doansummer2026.enums.ScheduleStatus status);
+
+    List<StaffSchedule> findAllByWorkDateAndStatus(
+            LocalDate workDate, org.example.doansummer2026.enums.ScheduleStatus status);
+
+    long countByWorkDateAndShift_ShiftIdAndStatus(
+            LocalDate workDate, UUID shiftId, org.example.doansummer2026.enums.ScheduleStatus status);
+
     long countByShift_ShiftId(UUID shiftId);
 
     long countByTemplate_TemplateId(UUID templateId);

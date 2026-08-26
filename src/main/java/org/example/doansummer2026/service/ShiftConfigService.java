@@ -12,6 +12,8 @@ import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.repository.StaffScheduleRepository;
 import org.example.doansummer2026.repository.StaffScheduleTemplateRepository;
+import org.example.doansummer2026.repository.ShiftVersionRepository;
+import org.example.doansummer2026.model.ShiftVersion;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,22 +32,25 @@ public class ShiftConfigService {
     private final AppointmentRepository appointmentRepository;
     private final StaffScheduleRepository staffScheduleRepository;
     private final StaffScheduleTemplateRepository staffScheduleTemplateRepository;
+    private final ShiftVersionRepository shiftVersionRepository;
 
     @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
     public void initDefaultShifts() {
         if (shiftConfigRepository.count() == 0) {
-            shiftConfigRepository.save(ShiftConfig.builder()
+            ShiftConfig morning = shiftConfigRepository.save(ShiftConfig.builder()
                     .name("Ca Sáng")
                     .startTime("07:30")
                     .endTime("11:30")
                     .isActive(true)
                     .build());
-            shiftConfigRepository.save(ShiftConfig.builder()
+            ShiftConfig afternoon = shiftConfigRepository.save(ShiftConfig.builder()
                     .name("Ca Chiều")
                     .startTime("13:30")
                     .endTime("17:30")
                     .isActive(true)
                     .build());
+            createInitialVersion(morning);
+            createInitialVersion(afternoon);
         }
     }
 
@@ -53,7 +58,7 @@ public class ShiftConfigService {
     public List<ShiftConfigResponse> getAllActiveShifts() {
         return shiftConfigRepository.findAllByIsActiveTrueOrderByStartTimeAsc()
                 .stream()
-                .map(ShiftConfigResponse::from)
+                .map(this::currentResponse)
                 .collect(Collectors.toList());
     }
 
@@ -61,7 +66,7 @@ public class ShiftConfigService {
     public List<ShiftConfigResponse> getAllShifts() {
         return shiftConfigRepository.findAllByOrderByStartTimeAsc()
                 .stream()
-                .map(ShiftConfigResponse::from)
+                .map(this::currentResponse)
                 .collect(Collectors.toList());
     }
 
@@ -82,15 +87,20 @@ public class ShiftConfigService {
                 .endTime(request.endTime())
                 .isActive(active)
                 .build();
-        return ShiftConfigResponse.from(shiftConfigRepository.save(shiftConfig));
+        ShiftConfig saved = shiftConfigRepository.save(shiftConfig);
+        createInitialVersion(saved);
+        return ShiftConfigResponse.from(saved);
     }
 
     public ShiftConfigResponse updateShift(UUID shiftId, ShiftConfigUpdateRequest request) {
         ShiftConfig shiftConfig = shiftConfigRepository.findById(shiftId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy ca khám"));
 
-        boolean changesDefinition = request.name() != null
-                || request.startTime() != null || request.endTime() != null;
+        boolean changesTime = request.startTime() != null || request.endTime() != null;
+        if (changesTime) {
+            throw new ConflictException("Không sửa trực tiếp giờ ca. Vui lòng tạo phiên bản giờ mới có ngày áp dụng");
+        }
+        boolean changesDefinition = request.name() != null;
         if (changesDefinition && staffScheduleRepository.countByShift_ShiftId(shiftId) > 0) {
             throw new ConflictException(
                     "Không thể sửa tên hoặc khung giờ của ca đã phát sinh lịch trực. "
@@ -149,9 +159,19 @@ public class ShiftConfigService {
                         shiftId, java.time.LocalDate.now(CLINIC_ZONE), org.example.doansummer2026.enums.ScheduleStatus.SCHEDULED);
         boolean hasActiveTemplate = staffScheduleTemplateRepository
                 .existsByShift_ShiftIdAndIsActiveTrue(shiftId);
-        if (hasFutureSchedule || hasActiveTemplate) {
+        ShiftConfig shift = shiftConfigRepository.findById(shiftId).orElse(null);
+        boolean hasFutureAppointments = shift != null && appointmentRepository.findActiveBetween(
+                        java.time.LocalDate.now(CLINIC_ZONE).atStartOfDay(),
+                        java.time.LocalDateTime.of(9999, 12, 31, 23, 59),
+                        java.util.List.of(org.example.doansummer2026.enums.AppointmentStatus.PENDING,
+                                org.example.doansummer2026.enums.AppointmentStatus.RESCHEDULED))
+                .stream().anyMatch(appointment -> appointment.getShiftVersion() != null
+                        && appointment.getShiftVersion().getShift().getShiftId().equals(shiftId)
+                        || appointment.getShiftVersion() == null
+                        && java.util.Objects.equals(appointment.getShiftName(), shift.getName()));
+        if (hasFutureSchedule || hasActiveTemplate || hasFutureAppointments) {
             throw new ConflictException(
-                    "Không thể ngừng ca làm khi còn lịch trực tương lai hoặc mẫu lịch đang hoạt động. "
+                    "Không thể ngừng ca làm khi còn lịch hẹn, lịch trực tương lai hoặc mẫu lịch đang hoạt động. "
                             + "Vui lòng xử lý các lịch liên quan trước."
             );
         }
@@ -183,11 +203,15 @@ public class ShiftConfigService {
         for (ShiftConfig shift : allShifts) {
             if (excludeId != null && shift.getShiftId().equals(excludeId)) continue;
             if (!Boolean.TRUE.equals(shift.getIsActive())) continue;
-            int sStart = toMinutes(shift.getStartTime());
-            int sEnd = toMinutes(shift.getEndTime());
+            var version = shiftVersionRepository.findEffective(shift.getShiftId(),
+                    java.time.LocalDate.now(CLINIC_ZONE)).stream().findFirst().orElse(null);
+            String effectiveStart = version == null ? shift.getStartTime() : version.getStartTime().toString();
+            String effectiveEnd = version == null ? shift.getEndTime() : version.getEndTime().toString();
+            int sStart = toMinutes(effectiveStart);
+            int sEnd = toMinutes(effectiveEnd);
             if (start < sEnd && end > sStart) {
                 throw new BadRequestException(String.format("Thời gian ca khám bị trùng lặp với '%s' (%s - %s)",
-                        shift.getName(), shift.getStartTime(), shift.getEndTime()));
+                        shift.getName(), effectiveStart, effectiveEnd));
             }
         }
     }
@@ -198,5 +222,25 @@ public class ShiftConfigService {
             throw new BadRequestException("Tên ca không được để trống");
         }
         return normalized;
+    }
+
+    private void createInitialVersion(ShiftConfig shift) {
+        if (shiftVersionRepository.existsByShift_ShiftId(shift.getShiftId())) return;
+        shiftVersionRepository.save(ShiftVersion.builder()
+                .shift(shift)
+                .startTime(java.time.LocalTime.parse(shift.getStartTime()))
+                .endTime(java.time.LocalTime.parse(shift.getEndTime()))
+                .effectiveFrom(java.time.LocalDate.of(1970, 1, 1))
+                .changeReason("Initial shift configuration")
+                .build());
+    }
+
+    private ShiftConfigResponse currentResponse(ShiftConfig shift) {
+        var version = shiftVersionRepository.findEffective(shift.getShiftId(),
+                java.time.LocalDate.now(CLINIC_ZONE)).stream().findFirst().orElse(null);
+        return new ShiftConfigResponse(shift.getShiftId(), shift.getName(),
+                version == null ? shift.getStartTime() : version.getStartTime().toString(),
+                version == null ? shift.getEndTime() : version.getEndTime().toString(),
+                shift.getIsActive());
     }
 }

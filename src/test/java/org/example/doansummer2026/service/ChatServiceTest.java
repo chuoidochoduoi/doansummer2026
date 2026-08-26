@@ -166,27 +166,58 @@ class ChatServiceTest {
     @Test
     void startOrGetActiveSession_ShouldThrow_WhenProfileMissing() {
 
-        UUID customerId = UUID.randomUUID();
+        UUID customerId =
+                UUID.randomUUID();
 
-        when(sessionRepo.findByCustomer_ProfileId(customerId))
-                .thenReturn(List.of());
+        when(
+                sessionRepo.findByCustomer_ProfileId(
+                        customerId
+                )
+        ).thenReturn(
+                List.of()
+        );
 
-        when(profileRepo.findById(customerId))
-                .thenReturn(Optional.empty());
+        when(
+                profileRepo.findById(
+                        customerId
+                )
+        ).thenReturn(
+                Optional.empty()
+        );
 
-        RuntimeException ex =
+        RuntimeException exception =
                 assertThrows(
                         RuntimeException.class,
-                        () -> chatService.startOrGetActiveSession(customerId)
+                        () ->
+                                chatService
+                                        .startOrGetActiveSession(
+                                                customerId
+                                        )
                 );
 
         assertEquals(
-                "Profile not found",
-                ex.getMessage()
+                "Không tìm thấy hồ sơ khách hàng",
+                exception.getMessage()
         );
 
-        verify(sessionRepo, never())
-                .save(any());
+        verify(
+                sessionRepo
+        ).findByCustomer_ProfileId(
+                customerId
+        );
+
+        verify(
+                profileRepo
+        ).findById(
+                customerId
+        );
+
+        verify(
+                sessionRepo,
+                never()
+        ).save(
+                any(ChatSession.class)
+        );
     }
 
 

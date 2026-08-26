@@ -85,6 +85,7 @@ public class InvoiceService implements InvoiceServiceInterface {
     private final InsuranceRepository insuranceRepository;
     private final InsuranceRuleRepository insuranceRuleRepository;
     private final BhxhIntegrationService bhxhIntegrationService;
+    private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
 
     @Transactional(readOnly = true)
     public PageResponse<InvoiceResponse> search(UUID customerId, InvoiceStatus status,
@@ -231,7 +232,7 @@ public class InvoiceService implements InvoiceServiceInterface {
         String patientName = invoice.getCustomer() != null ? invoice.getCustomer().getFullName() : (invoice.getVisit() != null && invoice.getVisit().getAppointment() != null ? invoice.getVisit().getAppointment().getGuestFullName() : "Khach");
         if (patientName == null) patientName = "Khach";
         String content = String.format("Co hoa don moi (Ma: %s) can thanh toan tu benh nhan %s", invoice.getInvoiceCode(), patientName);
-        
+
         List<StaffInfo> cashiers = staffRepo.findAllBySystemRoleIn(List.of(org.example.doansummer2026.enums.SystemRole.CASHIER));
         for (StaffInfo staff : cashiers) {
             if (staff.getProfile() != null) {
@@ -337,6 +338,13 @@ public class InvoiceService implements InvoiceServiceInterface {
                 || verifiedDateOfBirth == null || verifiedDateOfBirth.isBlank()) {
             throw new BadRequestException("Hệ thống BHYT không trả đủ thông tin định danh người tham gia");
         }
+
+        // --- BYPASS VALIDATION NẾU LÀ MOCK ---
+        if ("SKIP_VALIDATION".equals(verifiedName)) {
+            return; // Bỏ qua kiểm tra tên và ngày sinh
+        }
+        // -------------------------------------
+
         if (!normalizePersonName(invoice.getCustomer().getFullName())
                 .equals(normalizePersonName(verifiedName))) {
             throw new BadRequestException("Họ tên trên thẻ BHYT không khớp với bệnh nhân");
@@ -551,6 +559,9 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .comparing((InvoiceItem item) -> item.getService() == null
                         || item.getService().getDepartmentType() != DepartmentType.EXAMINATION)
                 .thenComparing((InvoiceItem item) -> item.getService() != null && item.getService().getWorkflowPriority() != null ? item.getService().getWorkflowPriority() : 1, java.util.Comparator.reverseOrder())
+                .thenComparing((InvoiceItem item) -> item.getService() != null
+                                ? item.getService().getServiceCode() : null,
+                        java.util.Comparator.nullsLast(String::compareTo))
                 .thenComparing((InvoiceItem item) -> item.getService() != null && item.getService().getResultWaitMinutes() != null ? item.getService().getResultWaitMinutes() : 0, java.util.Comparator.reverseOrder()));
         int dispatchedItemCount = 0;
         for (InvoiceItem item : workflowItems) {
@@ -661,6 +672,14 @@ public class InvoiceService implements InvoiceServiceInterface {
         if (service.getStatus() != org.example.doansummer2026.enums.ServiceStatus.ACTIVE) {
             throw new ConflictException("Dịch vụ " + service.getName() + " hiện không áp dụng");
         }
+        if (invoice.getVisit() != null && service.getDepartmentType() != null
+                && service.getDepartmentType().isParaclinical()
+                && sameDayParaclinicalResultService.hasReusableResult(
+                        invoice.getVisit(), service.getServiceId())) {
+            throw new ConflictException(
+                    "Dịch vụ cận lâm sàng này đã có kết quả được ký trong ngày; không được tạo hóa đơn lại"
+            );
+        }
         // Gia dich vu luon lay tu danh muc backend; khong tin gia frontend gui len.
         BigDecimal unitPrice = service.getPrice();
         BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(req.quantity()));
@@ -686,23 +705,67 @@ public class InvoiceService implements InvoiceServiceInterface {
     private void validateSingleExaminationService(List<InvoiceItemCreateRequest> items,
                                                     UUID visitId, UUID excludedInvoiceId) {
         if (items == null || items.isEmpty()) return;
-        long requestedExaminations = items.stream()
+        java.util.List<UUID> requestedServiceIds = items.stream()
                 .map(InvoiceItemCreateRequest::serviceId)
                 .filter(java.util.Objects::nonNull)
-                .distinct()
+                .toList();
+        if (requestedServiceIds.size() != new java.util.HashSet<>(requestedServiceIds).size()) {
+            throw new BadRequestException("Không được thêm trùng dịch vụ trong cùng một hóa đơn");
+        }
+        java.util.Set<UUID> requestedExaminations = requestedServiceIds.stream()
                 .map(serviceRepo::findById)
                 .flatMap(java.util.Optional::stream)
                 .filter(service -> service.getDepartmentType() != null
                         && service.getDepartmentType().normalized() == DepartmentType.EXAMINATION)
-                .count();
-        long existingExaminations = visitId == null ? 0
-                : excludedInvoiceId == null
-                ? itemRepo.countExaminationItemsByVisit(visitId)
-                : itemRepo.countExaminationItemsByVisitExcludingInvoice(visitId, excludedInvoiceId);
-        if (requestedExaminations > 1
-                || (requestedExaminations == 1 && existingExaminations > 0)) {
+                .map(MedicalService::getServiceId)
+                .collect(java.util.stream.Collectors.toSet());
+        java.util.Set<UUID> allExaminations = new java.util.HashSet<>(requestedExaminations);
+        if (visitId != null) {
+            CustomerVisit targetVisit = visitRepo.findById(visitId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
+            if (targetVisit.getCustomer() != null && !requestedExaminations.isEmpty()) {
+                profileRepo.findByIdForUpdate(targetVisit.getCustomer().getProfileId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
+                LocalDate businessDate = targetVisit.getCheckInTime().toLocalDate();
+                itemRepo.findSameDayExaminationRegistrations(
+                                targetVisit.getCustomer().getProfileId(),
+                                businessDate.atStartOfDay(), businessDate.plusDays(1).atStartOfDay(),
+                                excludedInvoiceId)
+                        .stream()
+                        .filter(existingItem -> existingItem.getInvoice().getVisit() != null
+                                && !existingItem.getInvoice().getVisit().getVisitId().equals(visitId)
+                                && existingItem.getService() != null
+                                && requestedExaminations.contains(existingItem.getService().getServiceId()))
+                        .findFirst()
+                        .ifPresent(existingItem -> {
+                            String code = "VIS-" + existingItem.getInvoice().getVisit().getVisitId().toString()
+                                    .replace("-", "").substring(0, 8).toUpperCase();
+                            throw new ConflictException("Dịch vụ " + existingItem.getService().getName()
+                                    + " đã được đăng ký hôm nay trong lượt " + code);
+                        });
+            }
+            java.util.List<UUID> existing = itemRepo.findDistinctExaminationServiceIdsByVisit(
+                    visitId, excludedInvoiceId);
+            if (existing.stream().anyMatch(requestedExaminations::contains)) {
+                throw new BadRequestException("Dịch vụ khám bệnh này đã có trong lượt khám hiện tại");
+            }
+            allExaminations.addAll(existing);
+            java.util.Set<UUID> queuedExaminations = queueTicketRepo.findAllByVisit_VisitId(visitId).stream()
+                    .filter(ticket -> ticket.getService() != null
+                            && ticket.getService().getDepartmentType() != null
+                            && ticket.getService().getDepartmentType().normalized() == DepartmentType.EXAMINATION)
+                    .map(ticket -> ticket.getService().getServiceId())
+                    .collect(java.util.stream.Collectors.toSet());
+            if (queuedExaminations.stream().anyMatch(requestedExaminations::contains)) {
+                throw new BadRequestException("Dịch vụ khám bệnh này đã có trong lượt khám hiện tại");
+            }
+            allExaminations.addAll(queuedExaminations);
+        }
+        // Mot CustomerVisit chi dai dien cho mot dich vu kham. Dich vu kham
+        // khac phai nam trong CustomerVisit rieng; cac visit co the cung cho.
+        if (allExaminations.size() > 1) {
             throw new BadRequestException(
-                    "Mỗi lượt khám chỉ được có một dịch vụ khám bệnh. Các dịch vụ cận lâm sàng vẫn có thể chọn nhiều"
+                    "Mỗi lượt khám chỉ được có tối đa 1 dịch vụ khám bệnh"
             );
         }
     }

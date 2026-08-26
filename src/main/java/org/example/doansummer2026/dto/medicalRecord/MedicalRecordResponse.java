@@ -11,9 +11,11 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
+import tools.jackson.databind.JsonNode;
 
 public record MedicalRecordResponse(
         UUID recordId,
+        String recordCode,
         UUID visitId,
         UUID doctorId,
         String doctorName,
@@ -41,6 +43,9 @@ public record MedicalRecordResponse(
         ,UUID doctorConfirmedById
         ,String doctorConfirmedByName
         ,LocalDateTime doctorConfirmedAt
+        ,UUID formTemplateVersionId
+        ,JsonNode specialtyData
+        ,org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse clinicalForm
 ) {
     public static MedicalRecordResponse from(MedicalRecord r, boolean includeNested) {
         UUID visitId = r.getVisit() != null ? r.getVisit().getVisitId() : null;
@@ -56,7 +61,7 @@ public record MedicalRecordResponse(
         Set<ICD10SelectionResponse> icdSelections = includeNested && r.getIcdSelections() != null
                 ? r.getIcdSelections().stream().map(ICD10SelectionResponse::from).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
                 : new LinkedHashSet<>();
-        return new MedicalRecordResponse(r.getRecordId(), visitId, doctorId, doctorName,
+        return new MedicalRecordResponse(r.getRecordId(), r.getRecordCode(), visitId, doctorId, doctorName,
                 r.getChiefComplaint(), r.getClinicalFindings(), r.getDiagnosis(),
                 r.getPrescriptionNote(), r.getConclusion(), r.getPatientInstruction(),
                 r.getFollowUpNote(), r.getFollowUpDate(),
@@ -68,8 +73,18 @@ public record MedicalRecordResponse(
                 r.getNursingUpdatedAt(),
                 r.getDoctorConfirmedBy()!=null?r.getDoctorConfirmedBy().getStaffId():null,
                 r.getDoctorConfirmedBy()!=null&&r.getDoctorConfirmedBy().getProfile()!=null?r.getDoctorConfirmedBy().getProfile().getFullName():null,
-                r.getDoctorConfirmedAt());
+                r.getDoctorConfirmedAt(),
+                r.getFormTemplateVersion() == null ? null : r.getFormTemplateVersion().getVersionId(),
+                r.getSpecialtyData(), includeNested ? resolvedClinicalForm(r) : null);
+    }
+
+    private static org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse resolvedClinicalForm(
+            MedicalRecord record) {
+        var version = record.getFormTemplateVersion();
+        if (version == null || version.getTemplate() == null) return null;
+        var template = version.getTemplate();
+        return new org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse(
+                template.getTemplateId(), version.getVersionId(), version.getVersionNo(), template.getCode(),
+                template.getName(), template.getContext(), version.getSchemaJson(), record.getSpecialtyData());
     }
 }
-
-

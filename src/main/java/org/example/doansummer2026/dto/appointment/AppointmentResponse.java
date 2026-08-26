@@ -28,7 +28,8 @@ public record AppointmentResponse(
         Gender guestGender,
         List<ServiceInfo> services,
         String shiftName,
-        String shiftTime
+        String shiftTime,
+        UUID shiftVersionId
 ) {
     public static AppointmentResponse from(Appointment a) {
         // Copy thong tin tu profile sang guest fields khi co customer
@@ -64,7 +65,8 @@ public record AppointmentResponse(
                 a.getScheduledAt(), a.getStatus(), a.getCancelReason(), a.getCreatedAt(),
                 a.getIsGuest(), guestFullName, guestPhone, guestEmail, guestAddress,
                 guestAge, a.getCustomer() != null ? a.getCustomer().getDateOfBirth() : null,
-                guestGender, serviceInfos, a.getShiftName(), a.getShiftTime()
+                guestGender, serviceInfos, a.getShiftName(), a.getShiftTime(),
+                a.getShiftVersion() == null ? null : a.getShiftVersion().getShiftVersionId()
         );
     }
 }

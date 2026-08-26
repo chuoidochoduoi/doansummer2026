@@ -17,6 +17,7 @@ public record TestResponse(
         List<TestResultResponse> results,
         String conclusion,
         String pdfUrl,
+        List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse> attachments,
         String performedBy,
         UUID performedById,
         String performedAt,
@@ -24,7 +25,10 @@ public record TestResponse(
         String sampleType,
         String sampleStatus,
         String collectedAt,
-        String collectedBy
+        String collectedBy,
+        UUID orderingRecordId,
+        String orderingRecordCode,
+        String orderingServiceName
 ) {
     public record TestResultResponse(
             String name,
