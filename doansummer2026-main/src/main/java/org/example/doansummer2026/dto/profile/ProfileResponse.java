@@ -1,0 +1,55 @@
+package org.example.doansummer2026.dto.profile;
+
+import org.example.doansummer2026.enums.BloodType;
+import org.example.doansummer2026.enums.Gender;
+import org.example.doansummer2026.model.Profile;
+
+import java.time.LocalDate;
+import java.util.UUID;
+import java.util.List;
+
+public record ProfileResponse(
+        UUID profileId,
+        UUID accountId,
+        String username,
+        String fullName,
+        LocalDate dateOfBirth,
+        Gender gender,
+        String phone,
+        String email,
+        String address,
+        String avatarUrl, // Bổ sung trường ảnh đại diện riêng
+        BloodType bloodType,
+        String insuranceId,
+        Integer height,
+        Integer weight,
+        List<String> allergies,
+        org.example.doansummer2026.enums.AllergyStatus allergyStatus,
+        Boolean hasStaffInfo,
+        UUID staffId
+) {
+    public static ProfileResponse from(Profile p) {
+        if (p == null) return null;
+        boolean hasStaff = p.getAccount() != null;
+        return new ProfileResponse(
+                p.getProfileId(),
+                hasStaff ? p.getAccount().getAccountId() : null,
+                hasStaff ? p.getAccount().getUsername() : null,
+                p.getFullName(),
+                p.getDateOfBirth(),
+                p.getGender(),
+                p.getPhone(),
+                p.getEmail(),
+                p.getAddress(),
+                p.getAvatarUrl(), // Map avatarUrl từ Profile
+                p.getBloodType(),
+                p.getInsuranceId(),
+                p.getHeight(),
+                p.getWeight(),
+                org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(p).items(),
+                org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(p).status(),
+                null,
+                null
+        );
+    }
+}

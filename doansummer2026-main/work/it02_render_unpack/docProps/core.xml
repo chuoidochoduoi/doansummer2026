@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Test case</dc:title><dc:subject>v1/0</dc:subject><dc:creator>Kien Nguyen</dc:creator><dc:description>Updates sheet Cover: Add logo, document code, creator, reviewer/approver._x000d_
+Add sheet Test Case List._x000d_
+Change Sheet Company, User, Provider to Modules. Add column Inter-test case dependent. Update these sheets._x000d_
+Update Test Report</dc:description><cp:lastModifiedBy>ADMINS</cp:lastModifiedBy><cp:lastPrinted>2010-11-12T10:33:20Z</cp:lastPrinted><dcterms:created xsi:type="dcterms:W3CDTF">2020-03-17T17:34:29Z</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">2024-07-19T23:58:40Z</dcterms:modified><cp:category>BM</cp:category></cp:coreProperties>

@@ -1,0 +1,9 @@
+[
+  {
+    "name": "VitalSignsService_UnitTestCase_Template_FIXED_v2.xlsx",
+    "ok": true,
+    "output": "D:/gitlap/doAnSummer2026/outputs/019ff5dc-080c-7230-b9b2-751838ad3212/unit_test_normalized/VitalSignsService_UnitTestCase_Template_FIXED_v2.xlsx",
+    "functionSheets": 5,
+    "errorScan": "{\"kind\":\"notice\",\"message\":\"Cell search matched 0 entries.\"}"
+  }
+]
