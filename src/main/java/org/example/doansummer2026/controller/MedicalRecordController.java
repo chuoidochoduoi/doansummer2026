@@ -34,6 +34,7 @@ import org.example.doansummer2026.aop.Auditable;
 import org.example.doansummer2026.enums.AuditAction;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -140,7 +141,7 @@ public class MedicalRecordController {
     /** Bac si dat lich tai kham truc tiep cho benh nhan dang kham. */
     @PostMapping("/api/v1/medical-records/{id}/follow-up-appointment")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
-    @Auditable(action = AuditAction.CREATE, entityName = "Appointment", idParamName = "id", description = "Tao lich tai kham")
+    @Auditable(action = AuditAction.CREATE, entityName = "Appointment", idParamName = "id", description = "Tạo lịch tái khám")
     public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> createFollowUpAppointment(
             @PathVariable UUID id,
             @Valid @RequestBody org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {
@@ -251,6 +252,12 @@ public class MedicalRecordController {
                 || authService.getCurrentSystemRole() == org.example.doansummer2026.enums.SystemRole.RECEPTIONIST)
                 ? null : authService.currentStaffId();
         return RestResponses.ok(service.listFeedbacks(doctorId, pageable));
+    }
+
+    @GetMapping("/api/v1/feedbacks/stats/unanswered-count")
+    @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER','ROLE_RECEPTIONIST')")
+    public ResponseEntity<Map<String, Long>> countUnansweredFeedbacks() {
+        return RestResponses.ok(Map.of("count", service.countUnansweredFeedbacks()));
     }
 
     @PutMapping("/api/v1/feedbacks/{id}/respond")

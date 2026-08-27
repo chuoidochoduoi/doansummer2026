@@ -4,9 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.RestResponses;
 import org.springframework.http.ResponseEntity;
-import org.example.doansummer2026.dto.shift.ShiftConfigCreateRequest;
 import org.example.doansummer2026.dto.shift.ShiftConfigResponse;
-import org.example.doansummer2026.dto.shift.ShiftConfigUpdateRequest;
 import org.example.doansummer2026.service.ShiftConfigService;
 import org.example.doansummer2026.service.ShiftAvailabilityService;
 import org.example.doansummer2026.service.ClinicScheduleManagementService;
@@ -49,28 +47,6 @@ public class ShiftConfigController {
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<List<ShiftConfigResponse>> getAllShifts() {
         return RestResponses.ok(shiftConfigService.getAllShifts());
-    }
-
-    @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    @Auditable(action = AuditAction.CREATE, entityName = "ShiftConfig")
-    public ResponseEntity<ShiftConfigResponse> createShift(@RequestBody @Valid ShiftConfigCreateRequest request) {
-        return RestResponses.ok(shiftConfigService.createShift(request));
-    }
-
-    @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    @Auditable(action = AuditAction.UPDATE, entityName = "ShiftConfig", idParamName = "id")
-    public ResponseEntity<ShiftConfigResponse> updateShift(@PathVariable UUID id, @RequestBody @Valid ShiftConfigUpdateRequest request) {
-        return RestResponses.ok(shiftConfigService.updateShift(id, request));
-    }
-
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    @Auditable(action = AuditAction.DELETE, entityName = "ShiftConfig", idParamName = "id")
-    public ResponseEntity<Void> deleteShift(@PathVariable UUID id) {
-        shiftConfigService.deleteShift(id);
-        return RestResponses.ok(null);
     }
 
     @GetMapping("/{id}/versions")

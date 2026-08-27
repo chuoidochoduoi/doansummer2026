@@ -1,246 +1,135 @@
 package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
-import org.example.doansummer2026.dto.shift.ShiftConfigCreateRequest;
 import org.example.doansummer2026.dto.shift.ShiftConfigResponse;
-import org.example.doansummer2026.dto.shift.ShiftConfigUpdateRequest;
-import org.example.doansummer2026.exception.BadRequestException;
-import org.example.doansummer2026.exception.ConflictException;
-import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.ShiftConfig;
-import org.example.doansummer2026.repository.ShiftConfigRepository;
-import org.example.doansummer2026.repository.AppointmentRepository;
-import org.example.doansummer2026.repository.StaffScheduleRepository;
-import org.example.doansummer2026.repository.StaffScheduleTemplateRepository;
-import org.example.doansummer2026.repository.ShiftVersionRepository;
 import org.example.doansummer2026.model.ShiftVersion;
+import org.example.doansummer2026.repository.ShiftConfigRepository;
+import org.example.doansummer2026.repository.ShiftVersionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.util.Comparator;
 import java.util.List;
-import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 @Transactional
 @RequiredArgsConstructor
 public class ShiftConfigService {
 
-    private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final ZoneId CLINIC_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    public static final String MORNING = "Ca Sáng";
+    public static final String AFTERNOON = "Ca Chiều";
+    public static final String EVENING = "Ca Tối";
+    public static final Set<String> FIXED_SHIFT_NAMES = Set.of(MORNING, AFTERNOON, EVENING);
+    private static final Map<String, Integer> SHIFT_ORDER = Map.of(MORNING, 1, AFTERNOON, 2, EVENING, 3);
+    private static final List<DefaultShift> DEFAULT_SHIFTS = List.of(
+            new DefaultShift(MORNING, "00:00", "08:00"),
+            new DefaultShift(AFTERNOON, "08:00", "16:00"),
+            new DefaultShift(EVENING, "16:00", "23:59:59")
+    );
 
     private final ShiftConfigRepository shiftConfigRepository;
-    private final AppointmentRepository appointmentRepository;
-    private final StaffScheduleRepository staffScheduleRepository;
-    private final StaffScheduleTemplateRepository staffScheduleTemplateRepository;
     private final ShiftVersionRepository shiftVersionRepository;
 
     @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
     public void initDefaultShifts() {
-        if (shiftConfigRepository.count() == 0) {
-            ShiftConfig morning = shiftConfigRepository.save(ShiftConfig.builder()
-                    .name("Ca Sáng")
-                    .startTime("07:30")
-                    .endTime("11:30")
-                    .isActive(true)
-                    .build());
-            ShiftConfig afternoon = shiftConfigRepository.save(ShiftConfig.builder()
-                    .name("Ca Chiều")
-                    .startTime("13:30")
-                    .endTime("17:30")
-                    .isActive(true)
-                    .build());
-            createInitialVersion(morning);
-            createInitialVersion(afternoon);
+        for (DefaultShift definition : DEFAULT_SHIFTS) {
+            ShiftConfig shift = shiftConfigRepository.findFirstByNameIgnoreCase(definition.name())
+                    .orElseGet(() -> shiftConfigRepository.save(ShiftConfig.builder()
+                            .name(definition.name())
+                            .startTime(definition.startTime())
+                            .endTime(definition.endTime())
+                            .isActive(true)
+                            .build()));
+            if (!definition.startTime().equals(shift.getStartTime())
+                    || !definition.endTime().equals(shift.getEndTime())) {
+                shift.setStartTime(definition.startTime());
+                shift.setEndTime(definition.endTime());
+            }
+            if (!Boolean.TRUE.equals(shift.getIsActive())) {
+                shift.setIsActive(true);
+            }
+            shiftConfigRepository.save(shift);
+            synchronizeDefaultVersion(shift, definition);
         }
     }
 
     @Transactional(readOnly = true)
     public List<ShiftConfigResponse> getAllActiveShifts() {
-        return shiftConfigRepository.findAllByIsActiveTrueOrderByStartTimeAsc()
-                .stream()
-                .map(this::currentResponse)
-                .collect(Collectors.toList());
+        return fixedShifts().stream().map(this::currentResponse).toList();
     }
 
     @Transactional(readOnly = true)
     public List<ShiftConfigResponse> getAllShifts() {
-        return shiftConfigRepository.findAllByOrderByStartTimeAsc()
-                .stream()
-                .map(this::currentResponse)
-                .collect(Collectors.toList());
+        return fixedShifts().stream().map(this::currentResponse).toList();
     }
 
-    public ShiftConfigResponse createShift(ShiftConfigCreateRequest request) {
-        String name = normalizeName(request.name());
-        if (shiftConfigRepository.existsByNameIgnoreCase(name)) {
-            throw new ConflictException("Tên ca làm đã tồn tại");
-        }
-        validateTimeFormat(request.startTime());
-        validateTimeFormat(request.endTime());
-        validateTimeLogic(request.startTime(), request.endTime());
-        boolean active = request.isActive() == null || request.isActive();
-        if (active) validateOverlap(request.startTime(), request.endTime(), null);
-
-        ShiftConfig shiftConfig = ShiftConfig.builder()
-                .name(name)
-                .startTime(request.startTime())
-                .endTime(request.endTime())
-                .isActive(active)
-                .build();
-        ShiftConfig saved = shiftConfigRepository.save(shiftConfig);
-        createInitialVersion(saved);
-        return ShiftConfigResponse.from(saved);
+    public static boolean isFixedShift(ShiftConfig shift) {
+        return shift != null && FIXED_SHIFT_NAMES.contains(shift.getName());
     }
 
-    public ShiftConfigResponse updateShift(UUID shiftId, ShiftConfigUpdateRequest request) {
-        ShiftConfig shiftConfig = shiftConfigRepository.findById(shiftId)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy ca khám"));
-
-        boolean changesTime = request.startTime() != null || request.endTime() != null;
-        if (changesTime) {
-            throw new ConflictException("Không sửa trực tiếp giờ ca. Vui lòng tạo phiên bản giờ mới có ngày áp dụng");
-        }
-        boolean changesDefinition = request.name() != null;
-        if (changesDefinition && staffScheduleRepository.countByShift_ShiftId(shiftId) > 0) {
-            throw new ConflictException(
-                    "Không thể sửa tên hoặc khung giờ của ca đã phát sinh lịch trực. "
-                            + "Hãy tạo ca mới và ngừng ca cũ để giữ đúng lịch sử");
-        }
-
-        String newStart = request.startTime() != null ? request.startTime() : shiftConfig.getStartTime();
-        String newEnd = request.endTime() != null ? request.endTime() : shiftConfig.getEndTime();
-        boolean targetActive = request.isActive() != null ? request.isActive() : shiftConfig.getIsActive();
-
-        if (request.name() != null) {
-            String name = normalizeName(request.name());
-            if (shiftConfigRepository.existsByNameIgnoreCaseAndShiftIdNot(name, shiftId)) {
-                throw new ConflictException("Tên ca làm đã tồn tại");
-            }
-            shiftConfig.setName(name);
-        }
-
-        if (request.startTime() != null || request.endTime() != null) {
-            validateTimeFormat(newStart);
-            validateTimeFormat(newEnd);
-            validateTimeLogic(newStart, newEnd);
-        }
-        if (targetActive && (request.startTime() != null || request.endTime() != null
-                || Boolean.TRUE.equals(request.isActive()))) {
-            validateOverlap(newStart, newEnd, shiftId);
-        }
-
-        if (request.startTime() != null) shiftConfig.setStartTime(request.startTime());
-        if (request.endTime() != null) shiftConfig.setEndTime(request.endTime());
-        if (request.isActive() != null) {
-            if (!request.isActive()) validateCanDeactivate(shiftId);
-            shiftConfig.setIsActive(request.isActive());
-        }
-
-        return ShiftConfigResponse.from(shiftConfigRepository.save(shiftConfig));
+    public static int fixedOrder(ShiftConfig shift) {
+        return shift == null ? Integer.MAX_VALUE : SHIFT_ORDER.getOrDefault(shift.getName(), Integer.MAX_VALUE);
     }
 
-    public void deleteShift(UUID shiftId) {
-        ShiftConfig shift = shiftConfigRepository.findById(shiftId)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy ca khám"));
-        long scheduleCount = staffScheduleRepository.countByShift_ShiftId(shiftId);
-        long templateCount = staffScheduleTemplateRepository.countByShift_ShiftId(shiftId);
-        if (scheduleCount == 0 && templateCount == 0) {
-            shiftConfigRepository.delete(shift);
+    private List<ShiftConfig> fixedShifts() {
+        return shiftConfigRepository.findAll().stream()
+                .filter(ShiftConfigService::isFixedShift)
+                .sorted(Comparator.comparingInt(ShiftConfigService::fixedOrder))
+                .toList();
+    }
+
+    private void synchronizeDefaultVersion(ShiftConfig shift, DefaultShift definition) {
+        List<ShiftVersion> versions = shiftVersionRepository
+                .findAllByShift_ShiftIdOrderByEffectiveFromDesc(shift.getShiftId());
+        LocalTime defaultStart = LocalTime.parse(definition.startTime());
+        LocalTime defaultEnd = LocalTime.parse(definition.endTime());
+
+        if (versions.isEmpty()) {
+            shiftVersionRepository.save(ShiftVersion.builder()
+                    .shift(shift)
+                    .startTime(defaultStart)
+                    .endTime(defaultEnd)
+                    .effectiveFrom(LocalDate.of(1970, 1, 1))
+                    .changeReason("Khởi tạo khung giờ cố định " + shift.getName().toLowerCase())
+                    .build());
             return;
         }
-        validateCanDeactivate(shiftId);
-        shift.setIsActive(false);
-        shiftConfigRepository.save(shift);
-    }
 
-    private void validateCanDeactivate(UUID shiftId) {
-        boolean hasFutureSchedule = staffScheduleRepository
-                .existsByShift_ShiftIdAndWorkDateGreaterThanEqualAndStatus(
-                        shiftId, java.time.LocalDate.now(CLINIC_ZONE), org.example.doansummer2026.enums.ScheduleStatus.SCHEDULED);
-        boolean hasActiveTemplate = staffScheduleTemplateRepository
-                .existsByShift_ShiftIdAndIsActiveTrue(shiftId);
-        ShiftConfig shift = shiftConfigRepository.findById(shiftId).orElse(null);
-        boolean hasFutureAppointments = shift != null && appointmentRepository.findActiveBetween(
-                        java.time.LocalDate.now(CLINIC_ZONE).atStartOfDay(),
-                        java.time.LocalDateTime.of(9999, 12, 31, 23, 59),
-                        java.util.List.of(org.example.doansummer2026.enums.AppointmentStatus.PENDING,
-                                org.example.doansummer2026.enums.AppointmentStatus.RESCHEDULED))
-                .stream().anyMatch(appointment -> appointment.getShiftVersion() != null
-                        && appointment.getShiftVersion().getShift().getShiftId().equals(shiftId)
-                        || appointment.getShiftVersion() == null
-                        && java.util.Objects.equals(appointment.getShiftName(), shift.getName()));
-        if (hasFutureSchedule || hasActiveTemplate || hasFutureAppointments) {
-            throw new ConflictException(
-                    "Không thể ngừng ca làm khi còn lịch hẹn, lịch trực tương lai hoặc mẫu lịch đang hoạt động. "
-                            + "Vui lòng xử lý các lịch liên quan trước."
-            );
-        }
-    }
-
-    private void validateTimeFormat(String time) {
-        if (!time.matches("^([01]?[0-9]|2[0-3]):[0-5][0-9]$")) {
-            throw new BadRequestException("Định dạng giờ không hợp lệ (HH:mm)");
-        }
-    }
-
-    private int toMinutes(String time) {
-        String[] parts = time.split(":");
-        return Integer.parseInt(parts[0]) * 60 + Integer.parseInt(parts[1]);
-    }
-
-    private void validateTimeLogic(String startTime, String endTime) {
-        int start = toMinutes(startTime);
-        int end = toMinutes(endTime);
-        if (start >= end) {
-            throw new BadRequestException("Thời gian bắt đầu phải trước thời gian kết thúc");
-        }
-    }
-
-    private void validateOverlap(String startTime, String endTime, UUID excludeId) {
-        int start = toMinutes(startTime);
-        int end = toMinutes(endTime);
-        List<ShiftConfig> allShifts = shiftConfigRepository.findAll();
-        for (ShiftConfig shift : allShifts) {
-            if (excludeId != null && shift.getShiftId().equals(excludeId)) continue;
-            if (!Boolean.TRUE.equals(shift.getIsActive())) continue;
-            var version = shiftVersionRepository.findEffective(shift.getShiftId(),
-                    java.time.LocalDate.now(CLINIC_ZONE)).stream().findFirst().orElse(null);
-            String effectiveStart = version == null ? shift.getStartTime() : version.getStartTime().toString();
-            String effectiveEnd = version == null ? shift.getEndTime() : version.getEndTime().toString();
-            int sStart = toMinutes(effectiveStart);
-            int sEnd = toMinutes(effectiveEnd);
-            if (start < sEnd && end > sStart) {
-                throw new BadRequestException(String.format("Thời gian ca khám bị trùng lặp với '%s' (%s - %s)",
-                        shift.getName(), effectiveStart, effectiveEnd));
+        // Chỉ nâng cấp dữ liệu nền cũ khi chưa từng có phiên bản do người dùng tạo.
+        // Phiên bản cũ được giữ lại để lịch hẹn/lịch trực đã phát sinh vẫn có snapshot.
+        if (versions.size() == 1) {
+            ShiftVersion baseline = versions.get(0);
+            boolean alreadyUsesDefault = defaultStart.equals(baseline.getStartTime())
+                    && defaultEnd.equals(baseline.getEndTime());
+            LocalDate today = LocalDate.now(CLINIC_ZONE);
+            if (!alreadyUsesDefault && baseline.getEffectiveFrom().isBefore(today)) {
+                baseline.setEffectiveTo(today.minusDays(1));
+                shiftVersionRepository.save(baseline);
+                shiftVersionRepository.save(ShiftVersion.builder()
+                        .shift(shift)
+                        .startTime(defaultStart)
+                        .endTime(defaultEnd)
+                        .effectiveFrom(today)
+                        .changeReason("Chuẩn hóa khung giờ kiểm thử 24 giờ")
+                        .build());
             }
         }
-    }
-
-    private String normalizeName(String name) {
-        String normalized = name == null ? "" : name.trim().replaceAll("\\s+", " ");
-        if (normalized.isBlank()) {
-            throw new BadRequestException("Tên ca không được để trống");
-        }
-        return normalized;
-    }
-
-    private void createInitialVersion(ShiftConfig shift) {
-        if (shiftVersionRepository.existsByShift_ShiftId(shift.getShiftId())) return;
-        shiftVersionRepository.save(ShiftVersion.builder()
-                .shift(shift)
-                .startTime(java.time.LocalTime.parse(shift.getStartTime()))
-                .endTime(java.time.LocalTime.parse(shift.getEndTime()))
-                .effectiveFrom(java.time.LocalDate.of(1970, 1, 1))
-                .changeReason("Initial shift configuration")
-                .build());
     }
 
     private ShiftConfigResponse currentResponse(ShiftConfig shift) {
         var version = shiftVersionRepository.findEffective(shift.getShiftId(),
-                java.time.LocalDate.now(CLINIC_ZONE)).stream().findFirst().orElse(null);
+                LocalDate.now(CLINIC_ZONE)).stream().findFirst().orElse(null);
         return new ShiftConfigResponse(shift.getShiftId(), shift.getName(),
                 version == null ? shift.getStartTime() : version.getStartTime().toString(),
-                version == null ? shift.getEndTime() : version.getEndTime().toString(),
-                shift.getIsActive());
+                version == null ? shift.getEndTime() : version.getEndTime().toString(), true);
     }
+
+    private record DefaultShift(String name, String startTime, String endTime) {}
 }

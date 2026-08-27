@@ -114,11 +114,12 @@ public class AuditLogAspect {
             if (controllerName.endsWith("Controller")) {
                 controllerName = controllerName.substring(0, controllerName.length() - "Controller".length());
             }
-            AuditAction action = switch (request.getMethod()) {
-                case "POST" -> AuditAction.CREATE;
-                case "DELETE" -> AuditAction.DELETE;
-                default -> AuditAction.UPDATE;
-            };
+            String requestPath = request.getRequestURI();
+            AuditAction action = resolveFallbackAction(request.getMethod(), requestPath);
+            String technicalContext = objectMapper.writeValueAsString(java.util.Map.of(
+                    "method", request.getMethod(),
+                    "path", requestPath
+            ));
             auditLogService.create(new AuditLogCreateRequest(
                     action,
                     controllerName,
@@ -127,8 +128,8 @@ public class AuditLogAspect {
                     truncate(request.getRemoteAddr(), 50),
                     truncate(request.getHeader("User-Agent"), 500),
                     null,
-                    null,
-                    request.getMethod() + " " + request.getRequestURI()
+                    technicalContext,
+                    resolveFallbackDescription(action, controllerName, requestPath)
             ));
         } catch (Exception ex) {
             log.error("Failed to create fallback audit log", ex);
@@ -175,7 +176,20 @@ public class AuditLogAspect {
             case DELETE -> "Xóa";
             case LOGIN -> "Đăng nhập";
             case LOGOUT -> "Đăng xuất";
-            default -> action.name();
+            case LOGIN_FAILED -> "Đăng nhập thất bại";
+            case EXPORT -> "Xuất dữ liệu";
+            case IMPORT -> "Nhập dữ liệu";
+            case VIEW -> "Xem dữ liệu";
+            case STATUS_CHANGE -> "Đổi trạng thái";
+            case PAYMENT_CONFIRMED -> "Xác nhận thanh toán";
+            case PATIENT_CALLED -> "Gọi bệnh nhân";
+            case QUEUE_SKIPPED -> "Đánh dấu vắng";
+            case EXAM_STARTED -> "Bắt đầu phục vụ";
+            case DRAFT_SAVED -> "Lưu nháp";
+            case RECORD_COMPLETED -> "Hoàn thành hồ sơ";
+            case RESULT_UPLOADED -> "Tải lên kết quả";
+            case RESULT_SIGNED -> "Ký kết quả";
+            case COMPLETED_RECORD_EDITED -> "Sửa hồ sơ đã hoàn thành";
         };
     }
 
@@ -183,13 +197,64 @@ public class AuditLogAspect {
         if (entityName == null) return "Dữ liệu";
         return switch (entityName) {
             case "Account" -> "Tài khoản";
-            case "StaffInfo" -> "Nhân sự";
+            case "Staff", "StaffInfo" -> "Nhân sự";
             case "PatientProfile" -> "Bệnh nhân";
             case "Department" -> "Phòng/Khoa";
-            case "ServiceItem" -> "Dịch vụ";
+            case "MedicalService", "ServiceItem" -> "Dịch vụ y tế";
             case "Appointment" -> "Lịch hẹn";
+            case "ClinicInformation" -> "Thông tin phòng khám";
             case "System" -> "Hệ thống";
-            default -> entityName;
+            case "Attendance" -> "Điểm danh";
+            case "AuditLog" -> "Nhật ký hệ thống";
+            case "Auth" -> "Xác thực tài khoản";
+            case "Bhxh", "Insurance" -> "Bảo hiểm y tế";
+            case "Chat" -> "Hỗ trợ trực tuyến";
+            case "ClinicalFormTemplate", "ClinicalFormTemplateBinding" -> "Biểu mẫu lâm sàng";
+            case "ClinicSchedule", "ClinicScheduleException" -> "Lịch hoạt động phòng khám";
+            case "ContactRequest" -> "Yêu cầu liên hệ";
+            case "CustomerVisit" -> "Lượt khám";
+            case "DoctorExamination" -> "Khám bệnh";
+            case "Icd10Code" -> "Danh mục ICD-10";
+            case "Invoice", "Transaction" -> "Thanh toán";
+            case "MedicalRecord", "PatientAllergy", "Profile", "VitalSigns" -> "Hồ sơ bệnh nhân";
+            case "MedicineCatalog" -> "Danh mục thuốc";
+            case "Notification" -> "Thông báo";
+            case "PatientJourney" -> "Hành trình bệnh nhân";
+            case "PayOSWebhook" -> "Thanh toán trực tuyến";
+            case "PublicAnnouncement" -> "Thông báo công khai";
+            case "QueueTicket", "QueueTicketSkip" -> "Hàng chờ";
+            case "Report" -> "Báo cáo";
+            case "ServiceCapability" -> "Danh mục kỹ thuật";
+            case "ServiceCategory" -> "Nhóm dịch vụ";
+            case "ShiftConfig", "ShiftVersion" -> "Cấu hình ca";
+            case "Specialization" -> "Chuyên khoa";
+            case "StaffSchedule", "ScheduleTemplate", "StaffScheduleTemplate" -> "Lịch trực nhân sự";
+            case "TestRequest", "TestRequestCancel", "TestResult", "TestResultAttachment", "TestResultFile", "TestResultRevision" -> "Cận lâm sàng";
+            default -> "Phân hệ khác";
+        };
+    }
+
+    private AuditAction resolveFallbackAction(String method, String requestPath) {
+        if ("/api/auth/login".equals(requestPath)) {
+            return AuditAction.LOGIN;
+        }
+        return switch (method) {
+            case "POST" -> AuditAction.CREATE;
+            case "DELETE" -> AuditAction.DELETE;
+            default -> AuditAction.UPDATE;
+        };
+    }
+
+    private String resolveFallbackDescription(AuditAction action, String entityName, String requestPath) {
+        return switch (requestPath) {
+            case "/api/auth/login" -> "Đăng nhập vào hệ thống";
+            case "/api/auth/register" -> "Đăng ký tài khoản bệnh nhân";
+            case "/api/auth/send-otp", "/api/auth/send-register-otp" -> "Gửi mã xác thực OTP";
+            case "/api/auth/verify-register-otp" -> "Xác thực mã OTP đăng ký";
+            case "/api/auth/reset-password" -> "Đặt lại mật khẩu";
+            case "/api/auth/refresh" -> "Làm mới phiên đăng nhập";
+            case "/api/auth/me/password" -> "Đổi mật khẩu tài khoản";
+            default -> getVietnameseAction(action) + " trong phân hệ " + getVietnameseEntity(entityName);
         };
     }
 

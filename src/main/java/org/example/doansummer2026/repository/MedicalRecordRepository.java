@@ -26,6 +26,12 @@ public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UU
     Optional<MedicalRecord> findFirstByVisit_VisitIdOrderByCreatedAtDesc(UUID visitId);
     Optional<MedicalRecord> findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(UUID visitId);
     Page<MedicalRecord> findByRatingScoreIsNotNull(Pageable pageable);
+    @Query("""
+            SELECT COUNT(m) FROM MedicalRecord m
+            WHERE m.ratingScore IS NOT NULL
+              AND (m.managerResponse IS NULL OR TRIM(m.managerResponse) = '')
+            """)
+    long countUnansweredFeedbacks();
     @Query("SELECT DISTINCT m FROM MedicalRecord m LEFT JOIN m.feedbackTargets ft WHERE m.ratingScore IS NOT NULL AND (m.doctor.staffId = :doctorId OR ft.staff.staffId = :doctorId)")
     Page<MedicalRecord> findFeedbacksForStaff(@Param("doctorId") UUID doctorId, Pageable pageable);
     Optional<MedicalRecord> findByQueueTicket_TicketId(UUID ticketId);

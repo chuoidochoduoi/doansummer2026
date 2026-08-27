@@ -37,8 +37,8 @@ public class AttendanceService {
    .orElseThrow(()->new BadRequestException("Mã QR điểm danh không hợp lệ"));
   LocalDateTime now=LocalDateTime.now();
   if(token.getExpiresAt().isBefore(now)){token.setActive(false);throw new BadRequestException("Mã QR đã hết hạn, vui lòng quét mã mới");}
-  StaffSchedule schedule=currentSchedule(staffId,now); LocalDateTime start=LocalDateTime.of(schedule.getWorkDate(),start(schedule.getShift()));
-  LocalDateTime end=LocalDateTime.of(schedule.getWorkDate(),end(schedule.getShift()));
+  StaffSchedule schedule=currentSchedule(staffId,now); LocalDateTime start=LocalDateTime.of(schedule.getWorkDate(),start(schedule));
+  LocalDateTime end=LocalDateTime.of(schedule.getWorkDate(),end(schedule));
   StaffAttendance a=attendances.findBySchedule_ScheduleId(schedule.getScheduleId()).orElse(null);
   if(a==null) a=StaffAttendance.builder().schedule(schedule).staff(staff(staffId)).checkInAt(now).checkInIp(ip)
    .deviceInfo(limit(agent)).status(now.isAfter(start.plusMinutes(5))?AttendanceStatus.LATE:AttendanceStatus.ON_TIME).build();
@@ -48,10 +48,10 @@ public class AttendanceService {
   return AttendanceResponse.from(attendances.save(a));
  }
  @Transactional(readOnly=true) public List<AttendanceTodayResponse> today(UUID staffId){return schedules.findAllByStaff_StaffIdAndWorkDate(staffId,LocalDate.now()).stream()
-  .sorted(Comparator.comparing(s->start(s.getShift()))).map(s->{StaffAttendance a=attendances.findBySchedule_ScheduleId(s.getScheduleId()).orElse(null);
-   return new AttendanceTodayResponse(s.getScheduleId(),s.getWorkDate(),s.getShift().getName(),start(s.getShift()),end(s.getShift()),a==null?null:a.getAttendanceId(),status(s,a),a==null?null:a.getCheckInAt(),a==null?null:a.getCheckOutAt());}).toList();}
+  .sorted(Comparator.comparing(this::start)).map(s->{StaffAttendance a=attendances.findBySchedule_ScheduleId(s.getScheduleId()).orElse(null);
+   return new AttendanceTodayResponse(s.getScheduleId(),s.getWorkDate(),s.getShift().getName(),start(s),end(s),a==null?null:a.getAttendanceId(),status(s,a),a==null?null:a.getCheckInAt(),a==null?null:a.getCheckOutAt());}).toList();}
  @Transactional(readOnly=true) public List<AttendanceManagementResponse> manage(LocalDate date){return schedules.findAllByWorkDateBetween(date,date).stream()
-  .sorted(Comparator.comparing((StaffSchedule s)->name(s.getStaff())).thenComparing(s->start(s.getShift()))).map(s->{StaffAttendance a=attendances.findBySchedule_ScheduleId(s.getScheduleId()).orElse(null);
+  .sorted(Comparator.comparing((StaffSchedule s)->name(s.getStaff())).thenComparing(this::start)).map(s->{StaffAttendance a=attendances.findBySchedule_ScheduleId(s.getScheduleId()).orElse(null);
    return new AttendanceManagementResponse(s.getScheduleId(),s.getStaff().getStaffId(),s.getStaff().getStaffCode(),name(s.getStaff()),s.getWorkDate(),s.getShift().getName(),status(s,a),a==null?null:a.getCheckInAt(),a==null?null:a.getCheckOutAt());}).toList();}
  @Transactional public AdjustmentResponse request(UUID staffId,AdjustmentRequest req){
   StaffSchedule s=schedules.findById(req.scheduleId()).orElseThrow(()->new ResourceNotFoundException("Không tìm thấy ca làm việc"));
@@ -69,13 +69,13 @@ public class AttendanceService {
   a.setStatus(a.getCheckInAt()==null?AttendanceStatus.ABSENT:a.getCheckOutAt()==null?AttendanceStatus.WORKING:AttendanceStatus.COMPLETED);return AdjustmentResponse.from(adjustments.save(x));
  }
  private StaffSchedule currentSchedule(UUID staffId,LocalDateTime now){return schedules.findAllByStaff_StaffIdAndWorkDate(staffId,now.toLocalDate()).stream().filter(s->s.getStatus()==ScheduleStatus.SCHEDULED)
-  .filter(s->!now.isBefore(LocalDateTime.of(s.getWorkDate(),start(s.getShift())).minusMinutes(30))).filter(s->!now.isAfter(LocalDateTime.of(s.getWorkDate(),end(s.getShift())).plusMinutes(60)))
-  .min(Comparator.comparingLong(s->Math.abs(Duration.between(now,LocalDateTime.of(s.getWorkDate(),start(s.getShift()))).toMinutes()))).orElseThrow(()->new BadRequestException("Không có ca làm việc phù hợp để điểm danh lúc này"));}
- private String status(StaffSchedule s,StaffAttendance a){if(a!=null)return a.getStatus().name();return LocalDateTime.now().isAfter(LocalDateTime.of(s.getWorkDate(),end(s.getShift())).plusMinutes(60))?AttendanceStatus.ABSENT.name():"NOT_CHECKED_IN";}
+  .filter(s->!now.isBefore(LocalDateTime.of(s.getWorkDate(),start(s)).minusMinutes(30))).filter(s->!now.isAfter(LocalDateTime.of(s.getWorkDate(),end(s)).plusMinutes(60)))
+  .min(Comparator.comparingLong(s->Math.abs(Duration.between(now,LocalDateTime.of(s.getWorkDate(),start(s))).toMinutes()))).orElseThrow(()->new BadRequestException("Không có ca làm việc phù hợp để điểm danh lúc này"));}
+ private String status(StaffSchedule s,StaffAttendance a){if(a!=null)return a.getStatus().name();return LocalDateTime.now().isAfter(LocalDateTime.of(s.getWorkDate(),end(s)).plusMinutes(60))?AttendanceStatus.ABSENT.name():"NOT_CHECKED_IN";}
  private StaffInfo staff(UUID id){return staffRepo.findById(id).orElseThrow(()->new ResourceNotFoundException("Không tìm thấy nhân viên"));}
  private String name(StaffInfo s){return s.getProfile()!=null&&s.getProfile().getFullName()!=null?s.getProfile().getFullName():s.getStaffCode();}
- private LocalTime start(ShiftConfig s){return LocalTime.parse(s.getStartTime());}
- private LocalTime end(ShiftConfig s){return LocalTime.parse(s.getEndTime());}
+ private LocalTime start(StaffSchedule s){return s.getActualStartTime()!=null?s.getActualStartTime():LocalTime.parse(s.getShift().getStartTime());}
+ private LocalTime end(StaffSchedule s){return s.getActualEndTime()!=null?s.getActualEndTime():LocalTime.parse(s.getShift().getEndTime());}
  private String limit(String s){return s==null?null:s.substring(0,Math.min(500,s.length()));}
  private String hash(String s){try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8)));}catch(Exception e){throw new IllegalStateException(e);}}
 }

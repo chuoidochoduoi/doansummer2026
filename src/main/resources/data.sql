@@ -229,8 +229,8 @@ INSERT INTO staff_info (staff_id, created_at, updated_at, deleted, profile_id, s
                                                                                                                                                                                                                      ('90000012-5555-5555-5555-555555555555', NOW(), NOW(), false, '20000013-3333-3333-3333-333333333333', 'STF-REC-001', 'RECEPTIONIST', '001095123456', NULL, NULL, NULL, NULL, NULL, NULL),
                                                                                                                                                                                                                      ('90000013-6666-6666-6666-666666666666', NOW(), NOW(), false, '20000014-4444-4444-4444-444444444444', 'STF-CAS-001', 'CASHIER', '001092123456', NULL, NULL, NULL, NULL, NULL, NULL);
 
--- Bo sung 14 nhan su; cung 2 bac si can lam sang o duoi tao thanh
--- 22 tai khoan nhan vien de phu day cac vai tro va phong nghiep vu.
+-- Bo sung 14 nhan su; cung nhom can lam sang va hai nhan su ca toi tao thanh
+-- bo tai khoan nhan vien phu day cac vai tro va phong nghiep vu.
 -- Tat ca tai khoan trinh dien dung mat khau: 88888888.
 INSERT INTO account (account_id, created_at, is_active, password_hash, role, username)
 SELECT format('31000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
@@ -244,7 +244,7 @@ SELECT format('31000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
 FROM generate_series(1, 14) AS g(i);
 
 -- ===================================================================
--- Hai tai khoan bac si can lam sang con thieu trong bo du lieu goc.
+-- Cac tai khoan bac si can lam sang con thieu trong bo du lieu goc.
 -- Bon nhom nghiep vu: doctor1 (kham), doctor_lab (xet nghiem),
 -- doctor_biochem (sinh hoa), doctor8 (sieu am), doctor_xray (X-quang).
 -- Mat khau chung: 88888888.
@@ -273,6 +273,33 @@ INSERT INTO staff_info (
 ('93000000-0000-0000-0000-000000000003', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000003', 'STF-DOC-BIO', 'DOCTOR', '001085000003', NULL, 'Bác sĩ chuyên khoa xét nghiệm', 'Đại học Y Hà Nội', 'CCHN-BIO-001', NULL, 'cccccccc-cccc-cccc-cccc-cccccccccccc'),
 ('93000000-0000-0000-0000-000000000004', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000004', 'STF-DOC-XRAY', 'DOCTOR', '001087000004', NULL, 'Bác sĩ chẩn đoán hình ảnh', 'Đại học Y Hà Nội', 'CCHN-XRAY-001', NULL, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'),
 ('93000000-0000-0000-0000-000000000005', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000005', 'STF-DOC-PED-002', 'DOCTOR', '001089000005', NULL, 'Bác sĩ chuyên khoa Nhi', 'Đại học Y Hà Nội', 'CCHN-NHI-002', '00000002-2222-2222-2222-222222222222', '66666666-6666-6666-6666-666666666666');
+
+-- Nhan su chuyen trach ca toi. Le tan 3, thu ngan 3 va dieu duong 3
+-- da co trong nhom tai khoan sinh tu dong ben duoi.
+INSERT INTO account (account_id, created_at, is_active, password_hash, role, username) VALUES
+('34000000-0000-0000-0000-000000000001', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_internal_evening'),
+('34000000-0000-0000-0000-000000000002', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'lab_evening');
+
+INSERT INTO profile (
+    profile_id, account_id, created_at, updated_at, deleted,
+    full_name, date_of_birth, gender, phone, email, address, blood_type
+) VALUES
+('24000000-0000-0000-0000-000000000001', '34000000-0000-0000-0000-000000000001', NOW(), NOW(), false,
+ 'Bác sĩ Nguyễn Tuấn Kiệt', DATE '1984-11-06', 'MALE', '0826153947', 'tuankiet.nguyen@cares.vn', 'Cầu Giấy, Hà Nội', NULL),
+('24000000-0000-0000-0000-000000000002', '34000000-0000-0000-0000-000000000002', NOW(), NOW(), false,
+ 'Kỹ thuật viên Phạm Ngọc Diệp', DATE '1993-03-18', 'FEMALE', '0827364159', 'ngocdiep.pham@cares.vn', 'Nam Từ Liêm, Hà Nội', NULL);
+
+INSERT INTO staff_info (
+    staff_id, created_at, updated_at, deleted, profile_id, staff_code,
+    system_role, national_id, bank_account, highest_degree, university,
+    license_number, specialization_id, department_id
+) VALUES
+('94000000-0000-0000-0000-000000000001', NOW(), NOW(), false, '24000000-0000-0000-0000-000000000001',
+ 'STF-DOC-INT-EVE', 'DOCTOR', '001084613927', NULL, 'Bác sĩ chuyên khoa I', 'Đại học Y Hà Nội',
+ 'CCHN-NOI-2021-0618', '00000001-1111-1111-1111-111111111111', '77777777-7777-7777-7777-777777777777'),
+('94000000-0000-0000-0000-000000000002', NOW(), NOW(), false, '24000000-0000-0000-0000-000000000002',
+ 'STF-LAB-EVE', 'NURSE', '001093527184', NULL, 'Cử nhân kỹ thuật xét nghiệm y học', 'Đại học Y Hà Nội',
+ NULL, NULL, '44444444-4444-4444-4444-444444444444');
 
 INSERT INTO profile (
     profile_id, account_id, created_at, updated_at, deleted,
@@ -396,7 +423,9 @@ INSERT INTO staff_capability (
     issuing_organization, status
 ) VALUES
 ('a2000000-0000-0000-0000-000000000006', NOW(), NOW(), false, '93000000-0000-0000-0000-000000000002', 'ca000008-0000-0000-0000-000000000008', 'NL-TN-2024-006', DATE '2024-03-15', DATE '2030-03-14', 'Sở Y tế Hà Nội', 'ACTIVE'),
-('a2000000-0000-0000-0000-000000000007', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000010', 'ca000006-0000-0000-0000-000000000006', 'NL-ECG-2024-007', DATE '2024-05-20', DATE '2030-05-19', 'Sở Y tế Hà Nội', 'ACTIVE');
+('a2000000-0000-0000-0000-000000000007', NOW(), NOW(), false, '91000000-0000-0000-0000-000000000010', 'ca000006-0000-0000-0000-000000000006', 'NL-ECG-2024-007', DATE '2024-05-20', DATE '2030-05-19', 'Sở Y tế Hà Nội', 'ACTIVE'),
+('a2000000-0000-0000-0000-000000000008', NOW(), NOW(), false, '94000000-0000-0000-0000-000000000002', 'ca000001-0000-0000-0000-000000000001', 'NL-HH-2025-008', DATE '2025-02-10', DATE '2031-02-09', 'Sở Y tế Hà Nội', 'ACTIVE'),
+('a2000000-0000-0000-0000-000000000009', NOW(), NOW(), false, '94000000-0000-0000-0000-000000000002', 'ca000008-0000-0000-0000-000000000008', 'NL-TN-2025-009', DATE '2025-02-10', DATE '2031-02-09', 'Sở Y tế Hà Nội', 'ACTIVE');
 
 UPDATE staff_capability
 SET certificate_number = COALESCE(certificate_number, 'NL-' || upper(substr(replace(staff_capability_id::text, '-', ''), 1, 12))),
@@ -409,8 +438,9 @@ SET certificate_number = COALESCE(certificate_number, 'NL-' || upper(substr(repl
 -- Shift Config
 -- ===================================================================
 INSERT INTO shift_config (shift_id, created_at, updated_at, deleted, name, start_time, end_time, is_active) VALUES
-                                                                                                                ('70000001-1111-1111-1111-111111111111', NOW(), NOW(), false, 'Ca Sáng', '07:30', '11:30', true),
-                                                                                                                ('70000002-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Ca Chiều', '13:30', '17:30', true);
+                                                                                                                ('70000001-1111-1111-1111-111111111111', NOW(), NOW(), false, 'Ca Sáng', '00:00', '08:00', true),
+                                                                                                                ('70000002-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Ca Chiều', '08:00', '16:00', true),
+                                                                                                                ('70000003-3333-3333-3333-333333333333', NOW(), NOW(), false, 'Ca Tối', '16:00', '23:59:59', true);
 
 -- Phien ban gio ca ban dau. Moi lich hen va lich nhan vien moi deu tham chieu
 -- phien ban nay, trong khi shift_name/shift_time van duoc giu lam snapshot.
@@ -418,10 +448,12 @@ INSERT INTO shift_version (
     shift_version_id, shift_id, start_time, end_time, effective_from, effective_to,
     change_reason, created_by, created_at, updated_at, deleted
 ) VALUES
-('71000001-1111-1111-1111-111111111111', '70000001-1111-1111-1111-111111111111', '07:30', '11:30', DATE '2026-01-01', NULL,
+('71000001-1111-1111-1111-111111111111', '70000001-1111-1111-1111-111111111111', '00:00', '08:00', DATE '2026-01-01', NULL,
  'Khởi tạo giờ làm việc ca sáng', '30000013-3333-3333-3333-333333333333', NOW(), NOW(), false),
-('71000002-2222-2222-2222-222222222222', '70000002-2222-2222-2222-222222222222', '13:30', '17:30', DATE '2026-01-01', NULL,
- 'Khởi tạo giờ làm việc ca chiều', '30000013-3333-3333-3333-333333333333', NOW(), NOW(), false);
+('71000002-2222-2222-2222-222222222222', '70000002-2222-2222-2222-222222222222', '08:00', '16:00', DATE '2026-01-01', NULL,
+ 'Khởi tạo giờ làm việc ca chiều', '30000013-3333-3333-3333-333333333333', NOW(), NOW(), false),
+('71000003-3333-3333-3333-333333333333', '70000003-3333-3333-3333-333333333333', '16:00', '23:59:59', DATE '2026-01-01', NULL,
+ 'Khởi tạo giờ làm việc ca tối', '30000013-3333-3333-3333-333333333333', NOW(), NOW(), false);
 
 -- Ngoai le chi nam trong tuan ke tiep, khong trung voi lich hen mau.
 INSERT INTO clinic_schedule_exception (
@@ -434,7 +466,7 @@ INSERT INTO clinic_schedule_exception (
 ('72000002-2222-2222-2222-222222222222', date_trunc('week', CURRENT_DATE)::date + 12, '70000002-2222-2222-2222-222222222222', 'SHIFT_OFF',
  NULL, NULL, 'Tạm nghỉ ca chiều để bảo trì hệ thống điện', '30000013-3333-3333-3333-333333333333', NOW(), NOW(), false),
 ('72000003-3333-3333-3333-333333333333', date_trunc('week', CURRENT_DATE)::date + 11, '70000001-1111-1111-1111-111111111111', 'SPECIAL_HOURS',
- '08:00', '11:00', 'Điều chỉnh giờ ca sáng trong ngày đào tạo nội bộ', '30000013-3333-3333-3333-333333333333', NOW(), NOW(), false);
+ '01:00', '07:00', 'Điều chỉnh giờ ca sáng trong ngày đào tạo nội bộ', '30000013-3333-3333-3333-333333333333', NOW(), NOW(), false);
 
 -- ===================================================================
 -- 12 benh nhan co tai khoan
@@ -460,13 +492,16 @@ WITH roster(staff_id, pattern) AS (
     ('90000009-2222-2222-2222-222222222222'::uuid, 'AM'), -- Clinic Manager
     ('90000012-5555-5555-5555-555555555555'::uuid, 'AM'), -- Receptionist 1
     ('91000000-0000-0000-0000-000000000011'::uuid, 'PM'), -- Receptionist 2
+    ('91000000-0000-0000-0000-000000000012'::uuid, 'EVENING'), -- Receptionist 3
     ('90000013-6666-6666-6666-666666666666'::uuid, 'AM'), -- Cashier 1
     ('91000000-0000-0000-0000-000000000013'::uuid, 'PM'), -- Cashier 2
+    ('91000000-0000-0000-0000-000000000014'::uuid, 'EVENING'), -- Cashier 3
     ('90000011-4444-4444-4444-444444444444'::uuid, 'AM'), -- Nurse 1
     ('91000000-0000-0000-0000-000000000008'::uuid, 'PM'), -- Nurse 2
-    ('91000000-0000-0000-0000-000000000009'::uuid, 'AM'), -- Nurse 3
+    ('91000000-0000-0000-0000-000000000009'::uuid, 'EVENING'), -- Nurse 3
     ('91000000-0000-0000-0000-000000000001'::uuid, 'AM'), -- Internal medicine 1
     ('91000000-0000-0000-0000-000000000005'::uuid, 'PM'), -- Internal medicine 2
+    ('94000000-0000-0000-0000-000000000001'::uuid, 'EVENING'), -- Internal medicine evening
     ('90000010-3333-3333-3333-333333333333'::uuid, 'AM'), -- Surgery 1
     ('91000000-0000-0000-0000-000000000004'::uuid, 'PM'), -- Surgery 2
     ('91000000-0000-0000-0000-000000000002'::uuid, 'AM'), -- Pediatrics 1
@@ -474,6 +509,7 @@ WITH roster(staff_id, pattern) AS (
     ('91000000-0000-0000-0000-000000000006'::uuid, 'OBG'),
     ('91000000-0000-0000-0000-000000000003'::uuid, 'DERM'),
     ('93000000-0000-0000-0000-000000000002'::uuid, 'AM'), -- Hematology / rapid test
+    ('94000000-0000-0000-0000-000000000002'::uuid, 'EVENING'), -- Hematology / rapid test evening
     ('93000000-0000-0000-0000-000000000003'::uuid, 'PM'), -- Biochemistry / urinalysis
     ('91000000-0000-0000-0000-000000000007'::uuid, 'AM'), -- Ultrasound 1
     ('91000000-0000-0000-0000-000000000010'::uuid, 'PM'), -- Ultrasound / ECG
@@ -490,6 +526,7 @@ SELECT gen_random_uuid(), NOW(), NOW(), false, r.staff_id, w.day_name,
        CASE
            WHEN r.pattern = 'AM' THEN '70000001-1111-1111-1111-111111111111'::uuid
            WHEN r.pattern = 'PM' THEN '70000002-2222-2222-2222-222222222222'::uuid
+           WHEN r.pattern = 'EVENING' THEN '70000003-3333-3333-3333-333333333333'::uuid
            WHEN r.pattern IN ('OBG', 'XRAY') AND w.day_no IN (1, 3, 5)
                THEN '70000001-1111-1111-1111-111111111111'::uuid
            WHEN r.pattern = 'DERM' AND w.day_no IN (2, 4, 6)
@@ -627,9 +664,9 @@ SELECT format('51000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
        NOW() - (i || ' hours')::interval, NOW(), false,
        CASE
            WHEN i <= 8 THEN date_trunc('week', CURRENT_DATE)::date + 7 + ((i - 1) / 4)
-                + CASE WHEN i = 5 OR i % 2 = 0 THEN TIME '14:30' ELSE TIME '08:30' END
+                + CASE WHEN i = 5 OR i % 2 = 0 THEN TIME '10:30' ELSE TIME '06:30' END
            ELSE date_trunc('week', CURRENT_DATE)::date
-                + CASE WHEN i % 2 = 1 THEN TIME '08:15' ELSE TIME '14:15' END
+                + CASE WHEN i % 2 = 1 THEN TIME '06:15' ELSE TIME '14:15' END
                 + ((i - 9) / 2) * INTERVAL '30 minutes'
        END,
        CASE WHEN i <= 8 THEN 'PENDING' ELSE 'CHECKED_IN' END,
@@ -637,11 +674,25 @@ SELECT format('51000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
        format('22000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
        NULL, NULL, NULL, NULL, NULL, NULL,
        CASE WHEN i = 5 OR i % 2 = 0 THEN 'Ca Chiều' ELSE 'Ca Sáng' END,
-       CASE WHEN i = 5 OR i % 2 = 0 THEN '13:30 - 17:30' ELSE '07:30 - 11:30' END,
+       CASE WHEN i = 5 OR i % 2 = 0 THEN '08:00 - 16:00' ELSE '00:00 - 08:00' END,
        CASE WHEN i = 5 OR i % 2 = 0 THEN '71000002-2222-2222-2222-222222222222'::uuid
             ELSE '71000001-1111-1111-1111-111111111111'::uuid END,
        NULL
 FROM generate_series(1, 12) AS g(i);
+
+-- Hai lich hen ca toi: kham Noi khoa va xet nghiem co nhan su phu trach.
+INSERT INTO appointment (
+    appointment_id, created_at, updated_at, deleted, scheduled_at, status,
+    is_guest, customer_id, shift_name, shift_time, shift_version_id, cancel_reason
+) VALUES
+('51000000-0000-0000-0000-000000000081', NOW(), NOW(), false,
+ date_trunc('week', CURRENT_DATE)::date + 7 + TIME '18:15', 'PENDING', false,
+ '22000000-0000-0000-0000-000000000001', 'Ca Tối', '16:00 - 23:59',
+ '71000003-3333-3333-3333-333333333333', NULL),
+('51000000-0000-0000-0000-000000000082', NOW(), NOW(), false,
+ date_trunc('week', CURRENT_DATE)::date + 8 + TIME '18:30', 'PENDING', false,
+ '22000000-0000-0000-0000-000000000002', 'Ca Tối', '16:00 - 23:59',
+ '71000003-3333-3333-3333-333333333333', NULL);
 
 INSERT INTO appointment_services (appointment_id, service_id)
 SELECT format('51000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
@@ -651,18 +702,22 @@ FROM (
     FROM generate_series(1, 12) AS g(i)
 ) s;
 
+INSERT INTO appointment_services (appointment_id, service_id) VALUES
+('51000000-0000-0000-0000-000000000081', '40000002-0000-0000-0000-000000000002'),
+('51000000-0000-0000-0000-000000000082', '40000008-0000-0000-0000-000000000008');
+
 -- Hai lich hen lich su de review thao tac huy va doi lich.
 INSERT INTO appointment (
     appointment_id, created_at, updated_at, deleted, scheduled_at, status,
     is_guest, customer_id, shift_name, shift_time, shift_version_id, cancel_reason
 ) VALUES
 ('51000000-0000-0000-0000-000000000091', NOW() - INTERVAL '4 days', NOW() - INTERVAL '3 days', false,
- date_trunc('week', CURRENT_DATE)::date - 3 + TIME '08:30', 'CANCELLED', false,
- '22000000-0000-0000-0000-000000000011', 'Ca Sáng', '07:30 - 11:30',
+ date_trunc('week', CURRENT_DATE)::date - 3 + TIME '06:30', 'CANCELLED', false,
+ '22000000-0000-0000-0000-000000000011', 'Ca Sáng', '00:00 - 08:00',
  '71000001-1111-1111-1111-111111111111', 'Khách hàng bận việc gia đình'),
 ('51000000-0000-0000-0000-000000000092', NOW() - INTERVAL '3 days', NOW() - INTERVAL '2 days', false,
  date_trunc('week', CURRENT_DATE)::date + 8 + TIME '14:30', 'RESCHEDULED', false,
- '22000000-0000-0000-0000-000000000012', 'Ca Chiều', '13:30 - 17:30',
+ '22000000-0000-0000-0000-000000000012', 'Ca Chiều', '08:00 - 16:00',
  '71000002-2222-2222-2222-222222222222', NULL);
 
 INSERT INTO appointment_services (appointment_id, service_id) VALUES
@@ -1242,7 +1297,7 @@ INSERT INTO public_announcement (
 ) VALUES
 ('5d000001-0000-0000-0000-000000000001', NOW(), NOW(), false,
  'Lịch khám trong tuần',
- 'Phòng khám làm việc từ thứ Hai đến thứ Bảy, gồm ca sáng 07:30–11:30 và ca chiều 13:30–17:30.',
+ 'Khung giờ kiểm thử gồm ca sáng 00:00–08:00, ca chiều 08:00–16:00 và ca tối 16:00–23:59.',
  true, date_trunc('week', CURRENT_DATE), date_trunc('week', CURRENT_DATE) + INTERVAL '14 days',
  '30000013-3333-3333-3333-333333333333'),
 ('5d000002-0000-0000-0000-000000000002', NOW(), NOW(), false,
@@ -1254,3 +1309,19 @@ INSERT INTO public_announcement (
  'Thông báo đang soạn',
  'Nội dung nháp dành cho màn hình quản lý thông báo.',
  false, NULL, NULL, '30000013-3333-3333-3333-333333333333');
+
+-- Thông tin công khai và pháp lý của phòng khám (một bản ghi duy nhất).
+INSERT INTO clinic_information (
+    clinic_information_id, created_at, updated_at, deleted, clinic_name, legal_name,
+    tax_code, operating_license, short_description, support_email, phone, address,
+    website_url, facebook_url, youtube_url, zalo_url, latitude, longitude
+) VALUES (
+    '00000000-0000-0000-0000-000000000100', NOW(), NOW(), false,
+    'Phòng khám CareS', 'Công ty TNHH Phòng khám CareS', '0101234567', '000123/HNO-GPHD',
+    'Phòng khám đa khoa cung cấp dịch vụ chăm sóc sức khỏe chất lượng và thuận tiện.',
+    'lienhe@caresclinic.vn', '1900 1234',
+    'Khu Công nghệ cao Hòa Lạc, Thạch Thất, Hà Nội', NULL,
+    'https://www.facebook.com/profile.php?id=61593125259676', NULL, NULL,
+    21.0128000, 105.5259000
+)
+ON CONFLICT (clinic_information_id) DO NOTHING;

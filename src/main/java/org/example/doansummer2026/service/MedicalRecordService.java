@@ -72,6 +72,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     private final InvoiceRepository invoiceRepo;
     private final MedicalServiceRepository medicalServiceRepo;
     private final org.example.doansummer2026.repository.ShiftConfigRepository shiftConfigRepository;
+    private final ShiftScheduleResolver shiftScheduleResolver;
     private final NotificationService notificationService;
     private final AuthService authService;
     private final ClinicalFormTemplateService clinicalFormTemplateService;
@@ -134,9 +135,13 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     @Transactional(readOnly = true)
     public java.util.List<ReceptionistAllCustomerResponse> searchByPhone(String phone) {
         var result = new java.util.ArrayList<ReceptionistAllCustomerResponse>();
+        String normalizedPhone = normalizeReceptionPhone(phone);
+        java.util.List<String> phoneValues = normalizedPhone == null
+                ? java.util.List.of()
+                : java.util.List.of(normalizedPhone, "+84" + normalizedPhone.substring(1));
 
         // Tim trong Profile (chi lay CUSTOMER, khong lay STAFF)
-        profileRepo.findFirstByPhone(phone).ifPresent(p -> {
+        profileRepo.findFirstByPhoneIn(phoneValues).ifPresent(p -> {
             // Chi them neu account role la CUSTOMER
             if (p.getAccount() != null) {
                 var role = p.getAccount().getRole();
@@ -157,7 +162,9 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
         // Neu chua tim thay profile, tim trong Appointment (guest vang lai)
         if (result.isEmpty()) {
-            var guestAppointments = appointmentRepo.findGuestAppointmentsByPhone(phone);
+            var guestAppointments = phoneValues.stream()
+                    .flatMap(value -> appointmentRepo.findGuestAppointmentsByPhone(value).stream())
+                    .toList();
             var seenGuestInfo = new java.util.HashSet<String>();
             for (var a : guestAppointments) {
                 var key = a.getGuestPhone() + "_" + a.getGuestFullName();
@@ -181,6 +188,13 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return result;
     }
 
+    private String normalizeReceptionPhone(String value) {
+        if (value == null) return null;
+        String phone = value.trim().replaceAll("[\\s.-]", "");
+        if (phone.isBlank()) return null;
+        return phone.startsWith("+84") ? "0" + phone.substring(3) : phone;
+    }
+
     private org.springframework.data.jpa.domain.Specification<Profile> searchUniqueCustomerSpec(
             String search, String gender, String age, BloodType bloodType) {
         return (root, query, cb) -> {
@@ -193,12 +207,13 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                     cb.equal(account.get("role"), org.example.doansummer2026.enums.Role.CUSTOMER)
             ));
 
-            // Search theo ten, phone
+            // Search theo ten, phone, email hoac ma benh nhan.
             if (search != null && !search.isEmpty()) {
                 String searchLower = "%" + search.toLowerCase() + "%";
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("fullName")), searchLower),
                         cb.like(cb.lower(root.get("phone")), searchLower),
+                        cb.like(cb.lower(root.get("email")), searchLower),
                         cb.like(cb.lower(root.get("patientCode")), searchLower)
                 ));
             }
@@ -1056,6 +1071,11 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return PageResponse.from(page, org.example.doansummer2026.dto.medicalRecord.FeedbackResponse::from);
     }
 
+    @Transactional(readOnly = true)
+    public long countUnansweredFeedbacks() {
+        return repo.countUnansweredFeedbacks();
+    }
+
     public org.example.doansummer2026.dto.medicalRecord.FeedbackResponse respondFeedback(
             UUID id, UUID staffId, String response) {
         MedicalRecord r = findById(id);
@@ -1097,11 +1117,27 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 ? shiftConfigRepository.findById(req.shiftId())
                     .orElseThrow(() -> new org.example.doansummer2026.exception.ResourceNotFoundException("Ca khám không tồn tại"))
                 : null;
+        ShiftScheduleResolver.ResolvedShift resolvedShift = null;
+        if (shift != null) {
+            if (req.scheduledAt() == null) {
+                throw new BadRequestException("Vui lòng chọn ngày tái khám");
+            }
+            resolvedShift = shiftScheduleResolver.resolve(shift, req.scheduledAt().toLocalDate());
+            if (!resolvedShift.available()) {
+                throw new ConflictException("Ca tái khám không khả dụng: " + resolvedShift.unavailableReason());
+            }
+            var requestedTime = req.scheduledAt().toLocalTime();
+            if (requestedTime.isBefore(resolvedShift.startTime()) || !requestedTime.isBefore(resolvedShift.endTime())) {
+                throw new BadRequestException("Giờ tái khám không thuộc khung giờ thực tế của ca đã chọn");
+            }
+        }
 
         org.example.doansummer2026.model.Appointment appointment = org.example.doansummer2026.model.Appointment.builder()
                 .scheduledAt(req.scheduledAt())
                 .shiftName(shift != null ? shift.getName() : null)
-                .shiftTime(shift != null ? shift.getStartTime() + " - " + shift.getEndTime() : null)
+                .shiftTime(resolvedShift != null
+                        ? resolvedShift.startTime() + " - " + resolvedShift.endTime() : null)
+                .shiftVersion(resolvedShift != null ? resolvedShift.version() : null)
                 .status(org.example.doansummer2026.enums.AppointmentStatus.PENDING)
                 .build();
 

@@ -18,6 +18,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.example.doansummer2026.common.BaseEntity;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -61,9 +63,11 @@ public class StaffSchedule extends BaseEntity {
     private ShiftVersion shiftVersion;
 
     @Column(name = "actual_start_time")
+    @JdbcTypeCode(SqlTypes.LOCAL_TIME)
     private LocalTime actualStartTime;
 
     @Column(name = "actual_end_time")
+    @JdbcTypeCode(SqlTypes.LOCAL_TIME)
     private LocalTime actualEndTime;
 
     @NotNull

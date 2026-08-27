@@ -96,11 +96,10 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
         } else {
             String guestPhone = normalizeVietnamesePhone(req.guestPhone());
             validateGuestInformation(req, guestPhone);
-            // Bệnh nhân từng khám có thể là hồ sơ khách vãng lai chưa có account.
-            // Tái sử dụng hồ sơ theo SĐT thay vì tạo Profile trùng lặp.
-            customer = guestPhone == null || guestPhone.isBlank()
-                    ? null
-                    : profileRepo.findFirstByPhoneIn(phoneVariants(guestPhone)).orElse(null);
+            String guestEmail = normalizeEmail(req.guestEmail());
+            // Bệnh nhân từng khám có thể là hồ sơ khách chưa có account.
+            // Tái sử dụng theo liên hệ duy nhất; không suy đoán bằng họ tên/ngày sinh.
+            customer = findExistingGuestProfile(guestPhone, guestEmail);
             existingProfile = customer != null;
             if (customer == null) {
                 customer = Profile.builder()
@@ -387,8 +386,12 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
         if (fullName.codePoints().anyMatch(Character::isDigit)) {
             throw new BadRequestException("Họ tên không được chứa chữ số");
         }
-        if (phone == null || !phone.matches("^(\\+84|0)\\d{9,10}$")) {
+        if (phone != null && !phone.isBlank() && !phone.matches("^0\\d{9,10}$")) {
             throw new BadRequestException("Số điện thoại Việt Nam không hợp lệ");
+        }
+        String email = normalizeEmail(req.guestEmail());
+        if ((phone == null || phone.isBlank()) && email == null && req.guestDateOfBirth() == null) {
+            throw new BadRequestException("Ngày sinh là bắt buộc khi bệnh nhân chưa có số điện thoại và email");
         }
         if (req.guestGender() == null || req.guestGender() == Gender.OTHER) {
             throw new BadRequestException("Hệ thống chỉ hỗ trợ giới tính Nam hoặc Nữ");
@@ -404,16 +407,20 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
             throw new BadRequestException("Họ tên không được chứa chữ số");
         }
         String phone = normalizeVietnamesePhone(req.guestPhone());
-        if (phone == null || !phone.matches("^0\\d{9,10}$")) {
+        if (phone != null && !phone.matches("^0\\d{9,10}$")) {
             throw new BadRequestException("Số điện thoại Việt Nam không hợp lệ");
         }
-        profileRepo.findFirstByPhoneIn(phoneVariants(phone)).ifPresent(other -> {
-            if (!other.getProfileId().equals(customer.getProfileId())) {
-                throw new ConflictException("Số điện thoại đã được sử dụng bởi hồ sơ bệnh nhân khác");
-            }
-        });
-        String email = req.guestEmail() == null || req.guestEmail().isBlank()
-                ? null : req.guestEmail().trim().toLowerCase(java.util.Locale.ROOT);
+        if (phone != null) {
+            profileRepo.findFirstByPhoneIn(phoneVariants(phone)).ifPresent(other -> {
+                if (!other.getProfileId().equals(customer.getProfileId())) {
+                    throw new ConflictException("Số điện thoại đã được sử dụng bởi hồ sơ bệnh nhân khác");
+                }
+            });
+        }
+        String email = normalizeEmail(req.guestEmail());
+        if (customer.getAccount() != null && phone == null && email == null) {
+            throw new BadRequestException("Hồ sơ đã có tài khoản phải giữ ít nhất một số điện thoại hoặc email đăng nhập");
+        }
         if (email != null) {
             profileRepo.findFirstByEmailIgnoreCase(email).ifPresent(other -> {
                 if (!other.getProfileId().equals(customer.getProfileId())) {
@@ -423,6 +430,9 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
         }
         if (req.guestDateOfBirth() != null && !req.guestDateOfBirth().isBefore(clinicToday())) {
             throw new BadRequestException("Ngày sinh phải là ngày trong quá khứ");
+        }
+        if (phone == null && email == null && req.guestDateOfBirth() == null) {
+            throw new BadRequestException("Ngày sinh là bắt buộc khi bệnh nhân chưa có số điện thoại và email");
         }
         if (req.guestGender() == null || req.guestGender() == Gender.OTHER) {
             throw new BadRequestException("Giới tính chỉ được chọn Nam hoặc Nữ");
@@ -457,7 +467,25 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
     private String normalizeVietnamesePhone(String value) {
         if (value == null) return null;
         String phone = value.trim().replaceAll("[\\s.-]", "");
+        if (phone.isBlank()) return null;
         return phone.startsWith("+84") ? "0" + phone.substring(3) : phone;
+    }
+
+    private String normalizeEmail(String value) {
+        return value == null || value.isBlank()
+                ? null : value.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private Profile findExistingGuestProfile(String phone, String email) {
+        Profile byPhone = phone == null ? null
+                : profileRepo.findFirstByPhoneIn(phoneVariants(phone)).orElse(null);
+        Profile byEmail = email == null ? null
+                : profileRepo.findFirstByEmailIgnoreCase(email).orElse(null);
+        if (byPhone != null && byEmail != null
+                && !byPhone.getProfileId().equals(byEmail.getProfileId())) {
+            throw new ConflictException("Số điện thoại và email đang thuộc hai hồ sơ bệnh nhân khác nhau");
+        }
+        return byPhone != null ? byPhone : byEmail;
     }
 
     private List<String> phoneVariants(String normalizedPhone) {

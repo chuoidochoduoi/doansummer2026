@@ -873,27 +873,6 @@ public class AppointmentService implements AppointmentServiceInterface {
                 .orElseThrow(() -> new ResourceNotFoundException("Ca khám không tồn tại"));
     }
 
-    private void validateAppointmentTiming(LocalDateTime scheduledAt,
-                                           org.example.doansummer2026.model.ShiftConfig shift) {
-        if (scheduledAt == null) {
-            throw new BadRequestException("Vui lòng chọn ngày giờ khám");
-        }
-        if (!scheduledAt.toLocalDate().isAfter(clinicToday())) {
-            throw new BadRequestException("Lịch hẹn phải được đặt từ ngày mai trở đi");
-        }
-        if (shift != null) {
-            if (!Boolean.TRUE.equals(shift.getIsActive())) {
-                throw new ConflictException("Ca khám đã ngừng hoạt động");
-            }
-            java.time.LocalTime start = java.time.LocalTime.parse(shift.getStartTime());
-            java.time.LocalTime end = java.time.LocalTime.parse(shift.getEndTime());
-            java.time.LocalTime appointmentTime = scheduledAt.toLocalTime();
-            if (appointmentTime.isBefore(start) || !appointmentTime.isBefore(end)) {
-                throw new BadRequestException("Giờ hẹn không thuộc khung giờ của ca đã chọn");
-            }
-        }
-    }
-
     private ShiftScheduleResolver.ResolvedShift resolveBookingShift(
             org.example.doansummer2026.model.ShiftConfig shift,
             LocalDateTime requestedAt,
@@ -906,6 +885,9 @@ public class AppointmentService implements AppointmentServiceInterface {
             // Legacy integrations may create an unslotted appointment. Customer
             // booking screens always send shiftId and therefore use full coverage validation.
             return null;
+        }
+        if (!ShiftConfigService.isFixedShift(shift)) {
+            throw new BadRequestException("Ca khám không thuộc ba ca cố định của phòng khám");
         }
         ShiftScheduleResolver.ResolvedShift resolved = shiftScheduleResolver.resolve(shift, requestedAt.toLocalDate());
         if (!resolved.available()) {

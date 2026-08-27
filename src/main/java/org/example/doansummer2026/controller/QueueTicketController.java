@@ -94,7 +94,7 @@ public class QueueTicketController {
 
     @PostMapping("/api/v1/queue-tickets/{id}/finish-service")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
-    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket", idParamName = "id", description = "Hoan thanh thao tac tai phong can lam sang")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket", idParamName = "id", description = "Hoàn thành thao tác tại phòng cận lâm sàng")
     public ResponseEntity<QueueTicketResponse> finishParaclinicalService(@PathVariable UUID id) {
         return RestResponses.ok(service.finishParaclinicalQueue(id));
     }
@@ -108,7 +108,7 @@ public class QueueTicketController {
 
     @PostMapping("/api/v1/queue-tickets/{id}/return")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
-    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket", idParamName = "id", description = "Dua benh nhan vang quay lai hang cho")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket", idParamName = "id", description = "Đưa bệnh nhân vắng quay lại hàng chờ")
     public ResponseEntity<QueueTicketResponse> returnToQueue(@PathVariable UUID id) {
         return RestResponses.ok(service.returnToQueue(id));
     }

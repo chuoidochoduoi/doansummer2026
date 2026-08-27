@@ -1,8 +1,8 @@
 package org.example.doansummer2026.controller;
 
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.dto.capability.*;
+import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.service.ServiceCapabilityService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -12,6 +12,8 @@ import java.util.UUID;
 
 @RestController @RequestMapping("/api/v1/service-capabilities") @RequiredArgsConstructor
 public class ServiceCapabilityController {
+    private static final String FIXED_CATALOG_MESSAGE =
+            "Danh mục kỹ thuật là dữ liệu hệ thống cố định và chỉ được phép xem";
     private final ServiceCapabilityService service;
 
     @GetMapping
@@ -19,11 +21,17 @@ public class ServiceCapabilityController {
     public List<ServiceCapabilityResponse> list() { return service.list(); }
 
     @PostMapping @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ServiceCapabilityResponse create(@Valid @RequestBody ServiceCapabilityRequest request) { return service.create(request); }
+    public ServiceCapabilityResponse create(@RequestBody ServiceCapabilityRequest request) {
+        throw new ConflictException(FIXED_CATALOG_MESSAGE);
+    }
 
     @PutMapping("/{id}") @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ServiceCapabilityResponse update(@PathVariable UUID id, @Valid @RequestBody ServiceCapabilityRequest request) { return service.update(id, request); }
+    public ServiceCapabilityResponse update(@PathVariable UUID id, @RequestBody ServiceCapabilityRequest request) {
+        throw new ConflictException(FIXED_CATALOG_MESSAGE);
+    }
 
     @DeleteMapping("/{id}") @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) { service.delete(id); return ResponseEntity.noContent().build(); }
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        throw new ConflictException(FIXED_CATALOG_MESSAGE);
+    }
 }

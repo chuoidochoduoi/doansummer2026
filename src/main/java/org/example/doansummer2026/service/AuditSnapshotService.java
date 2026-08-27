@@ -6,6 +6,7 @@ import org.example.doansummer2026.repository.MedicalRecordRepository;
 import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.example.doansummer2026.repository.TestRequestRepository;
 import org.example.doansummer2026.repository.ContactRequestRepository;
+import org.example.doansummer2026.repository.ClinicInformationRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -22,10 +23,14 @@ public class AuditSnapshotService {
     private final MedicalRecordRepository medicalRecordRepository;
     private final TestRequestRepository testRequestRepository;
     private final ContactRequestRepository contactRequestRepository;
+    private final ClinicInformationRepository clinicInformationRepository;
     private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
     public String snapshot(String entityName, String entityId) {
+        if (entityId == null && "ClinicInformation".equals(entityName)) {
+            entityId = ClinicInformationService.SINGLETON_ID.toString();
+        }
         if (entityId == null) return null;
         UUID id;
         try { id = UUID.fromString(entityId); }
@@ -67,6 +72,18 @@ public class AuditSnapshotService {
                         ? null : value.getAssignedStaff().getStaffId());
                 data.put("acceptedAt", value.getAcceptedAt());
                 data.put("completedAt", value.getCompletedAt());
+            });
+            case "ClinicInformation" -> clinicInformationRepository.findById(id).ifPresent(value -> {
+                data.put("clinicInformationId", value.getClinicInformationId());
+                data.put("clinicName", value.getClinicName());
+                data.put("legalName", value.getLegalName());
+                data.put("taxCode", value.getTaxCode());
+                data.put("operatingLicense", value.getOperatingLicense());
+                data.put("supportEmail", value.getSupportEmail());
+                data.put("phone", value.getPhone());
+                data.put("address", value.getAddress());
+                data.put("latitude", value.getLatitude());
+                data.put("longitude", value.getLongitude());
             });
             default -> { return null; }
         }

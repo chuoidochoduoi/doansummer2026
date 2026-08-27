@@ -53,14 +53,24 @@ INSERT INTO profile (profile_id, created_at, updated_at, deleted, full_name, dat
 -- ===================================================================
 INSERT INTO service_capability (capability_id, created_at, updated_at, deleted, code, name, description, active) VALUES
 ('ca000001-0000-0000-0000-000000000001', NOW(), NOW(), false, 'HEMATOLOGY', 'Xét nghiệm huyết học', 'Công thức máu và các xét nghiệm liên quan', true),
+('ca000002-0000-0000-0000-000000000002', NOW(), NOW(), false, 'BIOCHEMISTRY', 'Xét nghiệm sinh hóa', 'Sinh hóa máu và chức năng cơ quan', true),
 ('ca000003-0000-0000-0000-000000000003', NOW(), NOW(), false, 'ULTRASOUND', 'Siêu âm', 'Các dịch vụ siêu âm hình ảnh', true),
-('ca000004-0000-0000-0000-000000000004', NOW(), NOW(), false, 'XRAY', 'X-quang', 'Các dịch vụ X-quang', true);
+('ca000004-0000-0000-0000-000000000004', NOW(), NOW(), false, 'XRAY', 'X-quang', 'Các dịch vụ X-quang', true),
+('ca000005-0000-0000-0000-000000000005', NOW(), NOW(), false, 'URINALYSIS', 'Xét nghiệm nước tiểu', 'Phân tích nước tiểu thường quy', true),
+('ca000006-0000-0000-0000-000000000006', NOW(), NOW(), false, 'ECG', 'Điện tim', 'Ghi và đọc điện tâm đồ', true),
+('ca000007-0000-0000-0000-000000000007', NOW(), NOW(), false, 'MICROBIOLOGY', 'Xét nghiệm vi sinh', 'Soi và nuôi cấy vi sinh', true),
+('ca000008-0000-0000-0000-000000000008', NOW(), NOW(), false, 'RAPID_TEST', 'Test nhanh', 'Thực hiện các kỹ thuật test nhanh bệnh truyền nhiễm', true);
 
 -- Link department -> capability
 INSERT INTO department_capability (department_id, capability_id) VALUES
 ('44444444-4444-4444-4444-444444444444', 'ca000001-0000-0000-0000-000000000001'),
+('44444444-4444-4444-4444-444444444444', 'ca000002-0000-0000-0000-000000000002'),
+('44444444-4444-4444-4444-444444444444', 'ca000005-0000-0000-0000-000000000005'),
+('44444444-4444-4444-4444-444444444444', 'ca000007-0000-0000-0000-000000000007'),
+('44444444-4444-4444-4444-444444444444', 'ca000008-0000-0000-0000-000000000008'),
 ('55555555-5555-5555-5555-555555555555', 'ca000003-0000-0000-0000-000000000003'),
-('55555555-5555-5555-5555-555555555555', 'ca000004-0000-0000-0000-000000000004');
+('55555555-5555-5555-5555-555555555555', 'ca000004-0000-0000-0000-000000000004'),
+('55555555-5555-5555-5555-555555555555', 'ca000006-0000-0000-0000-000000000006');
 
 -- ===================================================================
 -- MedicalService (dich vu y te - toi thieu: kham + xn + CDHA)
@@ -167,5 +177,22 @@ INSERT INTO staff_capability (
 -- Shift Config
 -- ===================================================================
 INSERT INTO shift_config (shift_id, created_at, updated_at, deleted, name, start_time, end_time, is_active) VALUES
-('70000001-1111-1111-1111-111111111111', NOW(), NOW(), false, 'Ca Sáng', '07:30', '11:30', true),
-('70000002-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Ca Chiều', '13:30', '17:30', true);
+('70000001-1111-1111-1111-111111111111', NOW(), NOW(), false, 'Ca Sáng', '00:00', '08:00', true),
+('70000002-2222-2222-2222-222222222222', NOW(), NOW(), false, 'Ca Chiều', '08:00', '16:00', true),
+('70000003-3333-3333-3333-333333333333', NOW(), NOW(), false, 'Ca Tối', '16:00', '23:59:59', true);
+
+-- Thông tin công khai và pháp lý của phòng khám (một bản ghi duy nhất).
+INSERT INTO clinic_information (
+    clinic_information_id, created_at, updated_at, deleted, clinic_name, legal_name,
+    tax_code, operating_license, short_description, support_email, phone, address,
+    website_url, facebook_url, youtube_url, zalo_url, latitude, longitude
+) VALUES (
+    '00000000-0000-0000-0000-000000000100', NOW(), NOW(), false,
+    'Phòng khám CareS', 'Công ty TNHH Phòng khám CareS', '0101234567', '000123/HNO-GPHD',
+    'Phòng khám đa khoa cung cấp dịch vụ chăm sóc sức khỏe chất lượng và thuận tiện.',
+    'lienhe@caresclinic.vn', '1900 1234',
+    'Khu Công nghệ cao Hòa Lạc, Thạch Thất, Hà Nội', NULL,
+    'https://www.facebook.com/profile.php?id=61593125259676', NULL, NULL,
+    21.0128000, 105.5259000
+)
+ON CONFLICT (clinic_information_id) DO NOTHING;

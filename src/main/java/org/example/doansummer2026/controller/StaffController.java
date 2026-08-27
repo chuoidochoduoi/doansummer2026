@@ -133,8 +133,13 @@ public class StaffController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR', 'ROLE_NURSE', 'ROLE_RECEPTIONIST', 'ROLE_CASHIER')")
     public ResponseEntity<StaffResponse> get(@PathVariable UUID id) {
+        SystemRole currentRole = authService.getCurrentSystemRole();
+        if (currentRole != SystemRole.ADMIN && currentRole != SystemRole.CLINIC_MANAGER
+                && !java.util.Objects.equals(authService.currentStaffId(), id)) {
+            throw new AccessDeniedException("Không có quyền xem hồ sơ nhân viên khác");
+        }
         return RestResponses.ok(staffService.get(id));
     }
 

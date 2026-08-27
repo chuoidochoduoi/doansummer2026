@@ -113,7 +113,10 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
             if (s.getWorkDate().isBefore(today)
                     || (s.getWorkDate().equals(today)
                     && s.getShift() != null
-                    && !java.time.LocalTime.now(CLINIC_ZONE).isBefore(java.time.LocalTime.parse(s.getShift().getStartTime())))) {
+                    && !java.time.LocalTime.now(CLINIC_ZONE).isBefore(
+                    s.getActualStartTime() != null
+                            ? s.getActualStartTime()
+                            : java.time.LocalTime.parse(s.getShift().getStartTime())))) {
                 throw new ConflictException("Không thể đổi ca trực đã bắt đầu hoặc đã qua");
             }
             ShiftConfig shift = shiftConfigRepo.findByIdForScheduleUpdate(req.shiftId())
@@ -465,6 +468,9 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     }
 
     private ShiftScheduleResolver.ResolvedShift requireOpenShift(LocalDate date, ShiftConfig shift) {
+        if (!ShiftConfigService.isFixedShift(shift)) {
+            throw new ConflictException("Chỉ được phân lịch vào Ca Sáng, Ca Chiều hoặc Ca Tối");
+        }
         ShiftScheduleResolver.ResolvedShift resolved = shiftScheduleResolver.resolve(shift, date);
         if (!resolved.available()) {
             throw new ConflictException("Không thể phân lịch: ngày hoặc ca không hoạt động ("

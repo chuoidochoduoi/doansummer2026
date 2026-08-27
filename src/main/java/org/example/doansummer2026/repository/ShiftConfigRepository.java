@@ -15,9 +15,7 @@ import java.util.UUID;
 @Repository
 public interface ShiftConfigRepository extends JpaRepository<ShiftConfig, UUID> {
     List<ShiftConfig> findAllByIsActiveTrueOrderByStartTimeAsc();
-    List<ShiftConfig> findAllByOrderByStartTimeAsc();
-    boolean existsByNameIgnoreCase(String name);
-    boolean existsByNameIgnoreCaseAndShiftIdNot(String name, UUID shiftId);
+    Optional<ShiftConfig> findFirstByNameIgnoreCase(String name);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT shift FROM ShiftConfig shift WHERE shift.shiftId = :shiftId")

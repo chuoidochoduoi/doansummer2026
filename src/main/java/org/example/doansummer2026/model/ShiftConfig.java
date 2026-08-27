@@ -41,11 +41,11 @@ public class ShiftConfig extends BaseEntity {
 
     @NotBlank
     @Column(name = "start_time", nullable = false, length = 10)
-    private String startTime; // VD: "07:30"
+    private String startTime; // VD: "00:00"
 
     @NotBlank
     @Column(name = "end_time", nullable = false, length = 10)
-    private String endTime; // VD: "11:30"
+    private String endTime; // VD: "08:00"
 
     @NotNull
     @Column(name = "is_active", nullable = false)
