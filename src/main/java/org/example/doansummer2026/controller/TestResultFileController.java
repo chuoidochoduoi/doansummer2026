@@ -36,6 +36,7 @@ public class TestResultFileController {
     private final TestResultRepository resultRepository;
     private final org.example.doansummer2026.repository.TestResultAttachmentRepository attachmentRepository;
     private final AuthService authService;
+    private final org.example.doansummer2026.repository.StaffInfoRepository staffInfoRepository;
 
     @Value("${app.upload.root:uploads}")
     private String uploadRoot;
@@ -129,20 +130,15 @@ public class TestResultFileController {
 
         UUID staffId = authService.currentStaffId();
         var department = request.getPerformingDepartment();
-        boolean assignedToDepartment = staffId != null && department != null
-                && ((department.getHeadDoctor() != null
-                        && staffId.equals(department.getHeadDoctor().getStaffId()))
-                    || (department.getNurses() != null && department.getNurses().stream()
-                        .anyMatch(nurse -> staffId.equals(nurse.getStaffId()))));
+        var staff = staffId == null ? null : staffInfoRepository.findById(staffId).orElse(null);
+        boolean assignedToDepartment = staff != null && department != null
+                && staff.getDepartment() != null
+                && department.getDepartmentId().equals(staff.getDepartment().getDepartmentId());
         boolean orderingDoctor = staffId != null && request.getRequestedBy() != null
                 && staffId.equals(request.getRequestedBy().getStaffId());
         boolean recordDoctor = staffId != null && record != null && record.getDoctor() != null
                 && staffId.equals(record.getDoctor().getStaffId());
-        boolean recordHeadDoctor = staffId != null && record != null
-                && record.getQueueTicket() != null && record.getQueueTicket().getDepartment() != null
-                && record.getQueueTicket().getDepartment().getHeadDoctor() != null
-                && staffId.equals(record.getQueueTicket().getDepartment().getHeadDoctor().getStaffId());
-        if (!assignedToDepartment && !orderingDoctor && !recordDoctor && !recordHeadDoctor) {
+        if (!assignedToDepartment && !orderingDoctor && !recordDoctor) {
             throw new AccessDeniedException("Không có quyền xem phiếu kết quả này");
         }
     }

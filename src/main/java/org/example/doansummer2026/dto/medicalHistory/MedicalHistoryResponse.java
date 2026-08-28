@@ -3,8 +3,6 @@ package org.example.doansummer2026.dto.medicalHistory;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
 import org.example.doansummer2026.model.MedicalRecord;
 
-import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 
@@ -14,6 +12,8 @@ import java.util.UUID;
 public record MedicalHistoryResponse(
         UUID id,
         UUID visitId,
+        String recordCode,
+        String visitCode,
         String date,
         String time,
         String specialty,
@@ -63,6 +63,10 @@ public record MedicalHistoryResponse(
         return new MedicalHistoryResponse(
                 record.getRecordId(),
                 record.getVisit() != null ? record.getVisit().getVisitId() : null,
+                record.getRecordCode(),
+                record.getVisit() != null
+                        ? "VIS-" + record.getVisit().getVisitId().toString().substring(0, 8).toUpperCase(java.util.Locale.ROOT)
+                        : null,
                 date,
                 time,
                 specialty,

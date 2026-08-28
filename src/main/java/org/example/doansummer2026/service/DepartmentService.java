@@ -17,8 +17,10 @@ import org.example.doansummer2026.repository.DepartmentRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.repository.SpecializationRepository;
 import org.example.doansummer2026.repository.ServiceCapabilityRepository;
-import org.example.doansummer2026.repository.StaffCapabilityRepository;
-import org.example.doansummer2026.enums.StaffCapabilityStatus;
+import org.example.doansummer2026.repository.StaffScheduleRepository;
+import org.example.doansummer2026.repository.MedicalRecordRepository;
+import org.example.doansummer2026.enums.ScheduleStatus;
+import org.example.doansummer2026.enums.MedicalRecordStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -28,8 +30,13 @@ import org.example.doansummer2026.model.Account;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Service
 @Transactional
@@ -40,30 +47,32 @@ public class DepartmentService implements DepartmentServiceInterface {
     private final StaffInfoRepository staffRepo;
     private final SpecializationRepository specializationRepo;
     private final ServiceCapabilityRepository capabilityRepo;
-    private final StaffCapabilityRepository staffCapabilityRepo;
+    private final StaffScheduleRepository staffScheduleRepo;
+    private final MedicalRecordRepository medicalRecordRepo;
+    private final StaffDutyService staffDutyService;
     private final AuthService authService;
 
     @Transactional(readOnly = true)
     public PageResponse<DepartmentResponse> listAll(Pageable pageable) {
         Page<Department> page = repo.findAllWithHeadDoctor(pageable);
-        return PageResponse.from(page, DepartmentResponse::from);
+        return PageResponse.from(page, this::toResponse);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<DepartmentResponse> list(DepartmentType departmentType, Pageable pageable) {
         Page<Department> page = repo.findAllByDepartmentType(departmentType, pageable);
-        return PageResponse.from(page, DepartmentResponse::from);
+        return PageResponse.from(page, this::toResponse);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<DepartmentResponse> listMultiple(Pageable pageable, List<DepartmentType> departmentTypes) {
         Page<Department> page = repo.findAllByDepartmentTypeIn(departmentTypes, pageable);
-        return PageResponse.from(page, DepartmentResponse::from);
+        return PageResponse.from(page, this::toResponse);
     }
 
     @Transactional(readOnly = true)
     public DepartmentResponse get(UUID id) {
-        return DepartmentResponse.from(findById(id));
+        return toResponse(findById(id));
     }
 
     public DepartmentResponse create(DepartmentCreateRequest req) {
@@ -114,23 +123,13 @@ public class DepartmentService implements DepartmentServiceInterface {
                 throw new ConflictException("Không thể gán danh mục kỹ thuật đã ngừng hoạt động cho phòng");
             }
         }
-        validateHeadDoctorCapabilities(department);
+        validateClinicalConfiguration(department);
         Department saved = repo.save(department);
-
-        if (req.nurseIds() != null && !req.nurseIds().isEmpty()) {
-            for (UUID nurseId : req.nurseIds()) {
-                StaffInfo nurse = staffRepo.findById(nurseId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Y tá không tồn tại: " + nurseId));
-                if (nurse.getDepartment() != null) {
-                    throw new ConflictException("Y tá này đã được chỉ định cho phòng khác: " + nurseId);
-                }
-                nurse.setDepartment(saved);
-                staffRepo.save(nurse);
-            }
-        }
+        synchronizeClinicalStaff(saved, req.doctorIds(), req.nurseIds(), true);
+        validateCurrentClinicalMembers(saved);
 
         // Fetch again to ensure nurses are loaded in response
-        return DepartmentResponse.from(repo.findById(saved.getDepartmentId()).get());
+        return toResponse(repo.findById(saved.getDepartmentId()).get());
     }
 
     public DepartmentResponse update(UUID id, DepartmentUpdateRequest req) {
@@ -196,34 +195,18 @@ public class DepartmentService implements DepartmentServiceInterface {
                     .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + req.headDoctorId()));
             validateHeadDoctorRole(headDoctor);
             d.setHeadDoctor(headDoctor);
+        } else if (req.doctorIds() != null) {
+            // Request cap nhat day du tu man quan ly phong: cho phep bo thong tin
+            // phu trach chuyen mon ma khong anh huong danh sach bac si thuoc phong.
+            d.setHeadDoctor(null);
         }
 
-        if (req.nurseIds() != null) {
-            // Clear old nurses
-            List<StaffInfo> currentNurses = staffRepo.findByDepartment_DepartmentId(d.getDepartmentId());
-            for (StaffInfo oldNurse : currentNurses) {
-                if (!req.nurseIds().contains(oldNurse.getStaffId())) {
-                    oldNurse.setDepartment(null);
-                    staffRepo.save(oldNurse);
-                }
-            }
-
-            // Set new nurses
-            for (UUID nurseId : req.nurseIds()) {
-                StaffInfo nurse = staffRepo.findById(nurseId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Y tá không tồn tại: " + nurseId));
-                if (nurse.getDepartment() != null && !nurse.getDepartment().getDepartmentId().equals(d.getDepartmentId())) {
-                    throw new ConflictException("Y tá này đã được chỉ định cho phòng khác: " + nurseId);
-                }
-                nurse.setDepartment(d);
-                staffRepo.save(nurse);
-            }
-        }
-        
-        validateHeadDoctorCapabilities(d);
+        validateClinicalConfiguration(d);
         Department saved = repo.save(d);
+        synchronizeClinicalStaff(saved, req.doctorIds(), req.nurseIds(), false);
+        validateCurrentClinicalMembers(saved);
         // Ensure nurses collection is up to date for the response mapping
-        return DepartmentResponse.from(repo.findById(saved.getDepartmentId()).get());
+        return toResponse(repo.findById(saved.getDepartmentId()).get());
     }
 
     public DepartmentResponse updateStatus(UUID id, DepartmentStatus status) {
@@ -233,16 +216,90 @@ public class DepartmentService implements DepartmentServiceInterface {
             validateStatusTransition(d, status);
             d.setStatus(status);
         }
-        return DepartmentResponse.from(repo.save(d));
+        return toResponse(repo.save(d));
     }
 
-    private void validateHeadDoctorCapabilities(Department department) {
-        if (department.getHeadDoctor() == null || department.getCapabilities() == null
-                || department.getCapabilities().isEmpty()) return;
-        boolean matches = department.getCapabilities().stream().anyMatch(capability ->
-                staffCapabilityRepo.existsByStaff_StaffIdAndCapability_CapabilityIdAndStatus(
-                        department.getHeadDoctor().getStaffId(), capability.getCapabilityId(), StaffCapabilityStatus.ACTIVE));
-        if (!matches) throw new BadRequestException("Bác sĩ phụ trách chưa có kỹ thuật được cấp phép đang hiệu lực phù hợp với phòng");
+    private void synchronizeClinicalStaff(Department department, List<UUID> requestedDoctorIds,
+                                          List<UUID> requestedNurseIds, boolean creating) {
+        Set<UUID> doctorIds = requestedDoctorIds == null
+                ? (creating ? new LinkedHashSet<>() : null)
+                : new LinkedHashSet<>(requestedDoctorIds);
+        if (department.getHeadDoctor() != null) {
+            if (doctorIds == null) doctorIds = currentMemberIds(department, true);
+            doctorIds.add(department.getHeadDoctor().getStaffId());
+        }
+        Set<UUID> nurseIds = requestedNurseIds == null
+                ? (creating ? new LinkedHashSet<>() : null)
+                : new LinkedHashSet<>(requestedNurseIds);
+
+        List<StaffInfo> currentMembers = staffRepo.findByDepartment_DepartmentId(department.getDepartmentId());
+        for (StaffInfo member : currentMembers) {
+            boolean doctor = member.getSystemRole() != null && member.getSystemRole().isDoctor();
+            boolean nurse = member.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE;
+            boolean removed = doctor && doctorIds != null && !doctorIds.contains(member.getStaffId())
+                    || nurse && nurseIds != null && !nurseIds.contains(member.getStaffId());
+            if (removed) {
+                ensureCanDetachFromDepartment(member);
+                member.setDepartment(null);
+                staffRepo.save(member);
+            }
+        }
+
+        if (doctorIds != null) {
+            for (UUID doctorId : doctorIds) {
+                StaffInfo doctor = staffRepo.findById(doctorId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Bác sĩ không tồn tại: " + doctorId));
+                validateHeadDoctorRole(doctor);
+                assignMember(department, doctor, "Bác sĩ");
+            }
+        }
+        if (nurseIds != null) {
+            for (UUID nurseId : nurseIds) {
+                StaffInfo nurse = staffRepo.findById(nurseId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Y tá không tồn tại: " + nurseId));
+                if (nurse.getSystemRole() != org.example.doansummer2026.enums.SystemRole.NURSE) {
+                    throw new BadRequestException("Nhân sự được chọn không phải là y tá: " + nurseId);
+                }
+                assignMember(department, nurse, "Y tá");
+            }
+        }
+    }
+
+    private Set<UUID> currentMemberIds(Department department, boolean doctors) {
+        Set<UUID> ids = new LinkedHashSet<>();
+        for (StaffInfo member : staffRepo.findByDepartment_DepartmentId(department.getDepartmentId())) {
+            boolean matches = doctors
+                    ? member.getSystemRole() != null && member.getSystemRole().isDoctor()
+                    : member.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE;
+            if (matches) ids.add(member.getStaffId());
+        }
+        return ids;
+    }
+
+    private void assignMember(Department department, StaffInfo staff, String label) {
+        if (staff.getProfile() == null || staff.getProfile().getAccount() == null
+                || !Boolean.TRUE.equals(staff.getProfile().getAccount().getIsActive())) {
+            throw new ConflictException(label + " đã ngừng hoạt động và không thể thêm vào phòng");
+        }
+        if (staff.getDepartment() != null
+                && !staff.getDepartment().getDepartmentId().equals(department.getDepartmentId())) {
+            throw new ConflictException(label + " đã thuộc phòng khác. Hãy gỡ lịch và chuyển phòng trước: "
+                    + staff.getStaffId());
+        }
+        staffDutyService.requireEligibility(staff, department);
+        staff.setDepartment(department);
+        staffRepo.save(staff);
+    }
+
+    private void ensureCanDetachFromDepartment(StaffInfo staff) {
+        if (staffScheduleRepo.existsByStaff_StaffIdAndWorkDateGreaterThanEqualAndStatus(
+                staff.getStaffId(), LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")), ScheduleStatus.SCHEDULED)) {
+            throw new ConflictException("Không thể gỡ nhân sự khỏi phòng khi còn lịch trực hiện tại hoặc tương lai");
+        }
+        if (medicalRecordRepo.existsByDoctor_StaffIdAndStatusIn(staff.getStaffId(),
+                List.of(MedicalRecordStatus.DRAFT, MedicalRecordStatus.IN_PROGRESS))) {
+            throw new ConflictException("Không thể gỡ bác sĩ khỏi phòng khi còn bệnh án đang xử lý");
+        }
     }
 
     private void validateHeadDoctorRole(StaffInfo staff) {
@@ -252,6 +309,27 @@ public class DepartmentService implements DepartmentServiceInterface {
         if (staff.getProfile() == null || staff.getProfile().getAccount() == null
                 || !Boolean.TRUE.equals(staff.getProfile().getAccount().getIsActive())) {
             throw new ConflictException("Bác sĩ đã ngừng hoạt động và không thể phụ trách phòng");
+        }
+    }
+
+    private void validateClinicalConfiguration(Department department) {
+        DepartmentType type = department.getDepartmentType() == null
+                ? DepartmentType.EXAMINATION : department.getDepartmentType().normalized();
+        if (type == DepartmentType.EXAMINATION && department.getSpecialization() == null) {
+            throw new BadRequestException("Vui lòng chọn chuyên khoa cho phòng khám");
+        }
+        if (type.isParaclinical()
+                && (department.getCapabilities() == null || department.getCapabilities().isEmpty())) {
+            throw new BadRequestException("Vui lòng chọn ít nhất một danh mục kỹ thuật cho phòng cận lâm sàng");
+        }
+    }
+
+    private void validateCurrentClinicalMembers(Department department) {
+        for (StaffInfo member : staffRepo.findByDepartment_DepartmentId(department.getDepartmentId())) {
+            if (member.getSystemRole() != null && (member.getSystemRole().isDoctor()
+                    || member.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE)) {
+                staffDutyService.requireEligibility(member, department);
+            }
         }
     }
 
@@ -265,6 +343,15 @@ public class DepartmentService implements DepartmentServiceInterface {
                     "Không thể chuyển phòng sang bảo trì khi còn ca chưa hoàn thành ("
                             + openQueues + " hàng chờ, " + openTestRequests
                             + " yêu cầu cận lâm sàng). Hãy hoàn thành hoặc điều phối các ca trước.");
+        }
+        boolean hasCurrentOrFutureSchedule = staffScheduleRepo
+                .existsByStaff_Department_DepartmentIdAndWorkDateGreaterThanEqualAndStatus(
+                        department.getDepartmentId(),
+                        LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")),
+                        ScheduleStatus.SCHEDULED);
+        if (hasCurrentOrFutureSchedule) {
+            throw new ConflictException(
+                    "Không thể chuyển phòng sang bảo trì khi còn lịch trực hiện tại hoặc tương lai. Hãy gỡ lịch trước.");
         }
     }
 
@@ -306,14 +393,17 @@ public class DepartmentService implements DepartmentServiceInterface {
         Account acc = authService.currentAccount();
         StaffInfo staff = staffRepo.findFirstByProfile_Account_Username(acc.getUsername())
                 .orElseThrow(() -> new ResourceNotFoundException("Bạn không phải là nhân viên"));
-        // Tim phong theo bac si phu trach truoc
-        Optional<Department> dept = repo.findByHeadDoctor_StaffId(staff.getStaffId());
-        if (dept.isEmpty()) {
-            // Neu la y ta, tim phong duoc phan cong
-            dept = repo.findFirstByNurses_StaffId(staff.getStaffId());
-        }
-        return DepartmentResponse.from(
+        Optional<Department> dept = Optional.ofNullable(staff.getDepartment());
+        return toResponse(
             dept.orElseThrow(() -> new ResourceNotFoundException("Chưa được chỉ định phòng"))
         );
+    }
+
+    private DepartmentResponse toResponse(Department department) {
+        return DepartmentResponse.from(
+                department,
+                staffRepo.findByDepartment_DepartmentId(department.getDepartmentId()),
+                staffDutyService.findOnDutyStaff(
+                        department, LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"))));
     }
 }

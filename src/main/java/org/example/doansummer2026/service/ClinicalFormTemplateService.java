@@ -20,6 +20,9 @@ import java.util.*;
 @RequiredArgsConstructor
 public class ClinicalFormTemplateService {
     private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final Set<String> SYSTEM_LAB_TEMPLATES = Set.of(
+            "LAB_CBC", "LAB_GLUCOSE", "LAB_BIOCHEM", "LAB_LIVER",
+            "LAB_KIDNEY", "LAB_URINALYSIS", "LAB_CRP", "LAB_RAPID_INFECTIOUS");
     private final ClinicalFormTemplateRepository templateRepo;
     private final ClinicalFormTemplateVersionRepository versionRepo;
     private final MedicalServiceFormTemplateRepository bindingRepo;
@@ -51,6 +54,7 @@ public class ClinicalFormTemplateService {
     public ClinicalFormTemplateResponse saveDraft(UUID templateId, ClinicalFormDraftRequest req) {
         engine.validateSchema(req.schemaJson());
         ClinicalFormTemplate template = findTemplate(templateId);
+        ensureNotSystemLabTemplate(template);
         ClinicalFormTemplateVersion latest = versionRepo.findFirstByTemplate_TemplateIdOrderByVersionNoDesc(templateId).orElse(null);
         ClinicalFormTemplateVersion draft;
         if (latest != null && latest.getStatus() == ClinicalTemplateStatus.DRAFT) {
@@ -70,6 +74,7 @@ public class ClinicalFormTemplateService {
     @Transactional
     public ClinicalFormTemplateResponse publish(UUID templateId) {
         ClinicalFormTemplate template = findTemplate(templateId);
+        ensureNotSystemLabTemplate(template);
         ClinicalFormTemplateVersion draft = versionRepo.findFirstByTemplate_TemplateIdAndStatusOrderByVersionNoDesc(
                 templateId, ClinicalTemplateStatus.DRAFT).orElseThrow(() -> new ConflictException("Không có bản nháp để phát hành"));
         engine.validateSchema(draft.getSchemaJson());
@@ -93,6 +98,7 @@ public class ClinicalFormTemplateService {
     @Transactional
     public ClinicalFormTemplateResponse retire(UUID templateId) {
         ClinicalFormTemplate template = findTemplate(templateId);
+        ensureNotSystemLabTemplate(template);
         ClinicalFormTemplateVersion published = versionRepo.findFirstByTemplate_TemplateIdAndStatusOrderByVersionNoDesc(
                 templateId, ClinicalTemplateStatus.PUBLISHED).orElseThrow(() -> new ConflictException("Template chưa được phát hành"));
         published.setStatus(ClinicalTemplateStatus.RETIRED);
@@ -104,6 +110,7 @@ public class ClinicalFormTemplateService {
     @Transactional
     public ClinicalFormTemplateResponse bindServices(UUID templateId, ClinicalFormBindingRequest req) {
         ClinicalFormTemplate template = findTemplate(templateId);
+        ensureNotSystemLabTemplate(template);
         Set<UUID> uniqueIds = new LinkedHashSet<>(req.serviceIds());
         List<MedicalService> services = serviceRepo.findAllById(uniqueIds);
         if (services.size() != uniqueIds.size()) throw new ResourceNotFoundException("Có dịch vụ không tồn tại");
@@ -170,6 +177,11 @@ public class ClinicalFormTemplateService {
 
     private ClinicalFormTemplate findTemplate(UUID id) {
         return templateRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Template không tồn tại: " + id));
+    }
+
+    private void ensureNotSystemLabTemplate(ClinicalFormTemplate template) {
+        if (template != null && SYSTEM_LAB_TEMPLATES.contains(template.getCode()))
+            throw new ConflictException("Biểu mẫu xét nghiệm hệ thống chỉ được cập nhật bằng phiên bản ứng dụng đã kiểm soát");
     }
 
     private StaffInfo currentStaff() {

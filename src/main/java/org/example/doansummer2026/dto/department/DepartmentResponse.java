@@ -19,12 +19,44 @@ public record DepartmentResponse(
         List<CapabilityInfo> capabilities,
         String description,
         HeadDoctor headDoctor,
-        List<NurseInfo> nurses
+        List<DoctorInfo> doctors,
+        List<NurseInfo> nurses,
+        List<DoctorInfo> doctorsOnDuty,
+        List<NurseInfo> nursesOnDuty,
+        String coverageStatus
 ) {
     public static DepartmentResponse from(Department d) {
+        return from(d, d.getNurses() == null ? List.of() : d.getNurses(), List.of());
+    }
+
+    public static DepartmentResponse from(Department d, List<org.example.doansummer2026.model.StaffInfo> onDuty) {
+        return from(d, d.getNurses() == null ? List.of() : d.getNurses(), onDuty);
+    }
+
+    public static DepartmentResponse from(Department d,
+                                          List<org.example.doansummer2026.model.StaffInfo> members,
+                                          List<org.example.doansummer2026.model.StaffInfo> onDuty) {
         HeadDoctor hd = d.getHeadDoctor() != null
                 ? new HeadDoctor(d.getHeadDoctor().getStaffId(), d.getHeadDoctor().getProfile().getFullName())
                 : null;
+        List<DoctorInfo> doctors = members.stream()
+                .filter(n -> n.getSystemRole() != null && n.getSystemRole().isDoctor())
+                .map(n -> new DoctorInfo(n.getStaffId(), n.getProfile().getFullName()))
+                .collect(Collectors.toList());
+        List<NurseInfo> nurses = members.stream()
+                .filter(n -> n.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE)
+                .map(n -> new NurseInfo(n.getStaffId(), n.getProfile().getFullName()))
+                .collect(Collectors.toList());
+        List<DoctorInfo> doctorsOnDuty = onDuty.stream()
+                .filter(n -> n.getSystemRole() != null && n.getSystemRole().isDoctor())
+                .map(n -> new DoctorInfo(n.getStaffId(), n.getProfile().getFullName()))
+                .toList();
+        List<NurseInfo> nursesOnDuty = onDuty.stream()
+                .filter(n -> n.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE)
+                .map(n -> new NurseInfo(n.getStaffId(), n.getProfile().getFullName()))
+                .toList();
+        String coverageStatus = doctorsOnDuty.isEmpty()
+                ? (onDuty.isEmpty() ? "UNASSIGNED" : "MISSING_DOCTOR") : "COVERED";
         return new DepartmentResponse(
                 d.getDepartmentId(),
                 d.getRoomCode(),
@@ -37,13 +69,16 @@ public record DepartmentResponse(
                         .map(c -> new CapabilityInfo(c.getCapabilityId(), c.getCode(), c.getName())).toList(),
                 d.getDescription(),
                 hd,
-                d.getNurses() != null ? d.getNurses().stream()
-                        .map(n -> new NurseInfo(n.getStaffId(), n.getProfile().getFullName()))
-                        .collect(Collectors.toList()) : List.of()
+                doctors,
+                nurses,
+                doctorsOnDuty,
+                nursesOnDuty,
+                coverageStatus
         );
     }
 
     public record HeadDoctor(UUID staffId, String fullName) {}
+    public record DoctorInfo(UUID staffId, String fullName) {}
     public record NurseInfo(UUID staffId, String fullName) {}
     public record CapabilityInfo(UUID capabilityId, String code, String name) {}
 }

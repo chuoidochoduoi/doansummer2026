@@ -10,7 +10,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 public record StaffUpdateRequest(
-        // NOTE: departmentId da duoc xoa - chi dung head_doctor_id o Department
+        // Phong chuyen mon duoc dieu chinh tai man Quan ly phong.
         // Account & Profile
         @Size(max = 50) String username,
         @Size(min = 2, max = 100, message = "Họ tên phải có từ 2 đến 100 ký tự")

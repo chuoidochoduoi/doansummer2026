@@ -56,6 +56,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     private final ShiftScheduleResolver shiftScheduleResolver;
     private final ServiceAvailabilityService serviceAvailabilityService;
     private final AppointmentRepository appointmentRepository;
+    private final StaffDutyService staffDutyService;
 
     public ScheduleResponse create(ScheduleCreateRequest req) {
         if (req.workDate().isBefore(LocalDate.now(CLINIC_ZONE))) {
@@ -73,6 +74,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
             throw new ConflictException("Nhân sự đã được phân công vào ca này");
         }
         validateNoOverlappingShift(staff, req.workDate(), shift, null);
+        validateDepartmentCoverage(staff, req.workDate(), shift);
         StaffSchedule schedule = StaffSchedule.builder()
                 .staff(staff)
                 .workDate(req.workDate())
@@ -317,6 +319,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                 .toList();
 
         if ("remove".equalsIgnoreCase(req.action())) {
+            exactSchedules.forEach(this::ensureScheduleHasNotStarted);
             boolean hasAttendance = exactSchedules.stream().anyMatch(schedule -> attendanceRepository
                     .findBySchedule_ScheduleId(schedule.getScheduleId()).isPresent());
             if (hasAttendance) {
@@ -342,6 +345,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         if (!exactSchedules.isEmpty()) return;
 
         validateNoOverlappingShift(staff, date, shift, null);
+        validateDepartmentCoverage(staff, date, shift);
 
         scheduleRepo.save(StaffSchedule.builder()
                 .staff(staff)
@@ -353,6 +357,29 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                 .status(org.example.doansummer2026.enums.ScheduleStatus.SCHEDULED)
                 .isCustom(true)
                 .build());
+    }
+
+    private void validateDepartmentCoverage(StaffInfo staff, LocalDate date, ShiftConfig shift) {
+        if (staff.getSystemRole() == null) return;
+        boolean professional = staff.getSystemRole().isDoctor()
+                || staff.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE;
+        if (professional && staff.getDepartment() == null) {
+            throw new ConflictException("Nhân sự chuyên môn chưa được cấu hình thuộc phòng nào");
+        }
+        if (professional) staffDutyService.requireEligibility(staff, staff.getDepartment());
+        if (!staff.getSystemRole().isDoctor() || staff.getDepartment() == null) return;
+        boolean otherDoctor = scheduleRepo.findAllByWorkDateAndShift_ShiftIdAndStatus(
+                        date, shift.getShiftId(), ScheduleStatus.SCHEDULED).stream()
+                .map(StaffSchedule::getStaff)
+                .filter(Objects::nonNull)
+                .filter(other -> other.getSystemRole() != null && other.getSystemRole().isDoctor())
+                .filter(other -> other.getDepartment() != null)
+                .anyMatch(other -> staff.getDepartment().getDepartmentId()
+                        .equals(other.getDepartment().getDepartmentId())
+                        && !staff.getStaffId().equals(other.getStaffId()));
+        if (otherDoctor) {
+            throw new ConflictException("Phòng đã có bác sĩ trực trong ngày và ca này");
+        }
     }
 
     /**
@@ -408,11 +435,28 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         }
 
         List<StaffSchedule> replacements = new ArrayList<>();
+        Set<String> doctorCoverage = new HashSet<>();
         for (StaffSchedule source : uniqueSourceSchedules.values()) {
             LocalDate targetDate = targetStart.plusDays(source.getWorkDate().getDayOfWeek().getValue()
                     - DayOfWeek.MONDAY.getValue());
+            StaffInfo targetStaff = source.getStaff();
+            boolean professional = targetStaff.getSystemRole() != null
+                    && (targetStaff.getSystemRole().isDoctor()
+                    || targetStaff.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE);
+            if (professional && targetStaff.getDepartment() == null) {
+                throw new ConflictException("Không thể sao chép: nhân sự chuyên môn chưa thuộc phòng nào");
+            }
+            if (professional) staffDutyService.requireEligibility(targetStaff, targetStaff.getDepartment());
+            if (targetStaff.getSystemRole() != null && targetStaff.getSystemRole().isDoctor()) {
+                String coverageKey = targetStaff.getDepartment().getDepartmentId()
+                        + "|" + targetDate + "|" + source.getShift().getShiftId();
+                if (!doctorCoverage.add(coverageKey)) {
+                    throw new ConflictException(
+                            "Không thể sao chép: một phòng có nhiều hơn một bác sĩ trong cùng ngày và ca");
+                }
+            }
             ShiftScheduleResolver.ResolvedShift resolved = requireOpenShift(targetDate, source.getShift());
-            replacements.add(StaffSchedule.builder().staff(source.getStaff()).workDate(targetDate)
+            replacements.add(StaffSchedule.builder().staff(targetStaff).workDate(targetDate)
                     .shift(source.getShift()).shiftVersion(resolved.version())
                     .actualStartTime(resolved.startTime()).actualEndTime(resolved.endTime())
                     .status(source.getStatus())
@@ -501,6 +545,21 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         if (!uncovered.isEmpty()) {
             throw new ConflictException("Không thể gỡ nhân sự đủ chuẩn cuối cùng; các dịch vụ đã có lịch hẹn sẽ mất người thực hiện: "
                     + String.join(", ", uncovered));
+        }
+    }
+
+    private void ensureScheduleHasNotStarted(StaffSchedule schedule) {
+        LocalDate today = LocalDate.now(CLINIC_ZONE);
+        if (schedule.getWorkDate() == null || schedule.getWorkDate().isBefore(today)) {
+            throw new ConflictException("Không thể gỡ lịch trực đã diễn ra");
+        }
+        if (!schedule.getWorkDate().equals(today)) return;
+        LocalTime start = schedule.getActualStartTime();
+        if (start == null && schedule.getShift() != null) {
+            start = LocalTime.parse(schedule.getShift().getStartTime());
+        }
+        if (start == null || !LocalTime.now(CLINIC_ZONE).isBefore(start)) {
+            throw new ConflictException("Không thể gỡ lịch trực đã bắt đầu");
         }
     }
 }

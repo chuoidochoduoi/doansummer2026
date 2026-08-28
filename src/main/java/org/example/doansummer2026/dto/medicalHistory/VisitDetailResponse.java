@@ -72,7 +72,14 @@ public record VisitDetailResponse(
             List<SameDayParaclinicalResultResponse> sameDayReferencedResults) {
         if (records == null || records.isEmpty()) return null;
 
-        MedicalRecord first = records.get(0);
+        // Ho so tam cua CLS co the duoc tao truoc benh an kham. Khong duoc
+        // dung ho so tam lam noi dung chinh cua trang chi tiet.
+        MedicalRecord first = records.stream()
+                .filter(r -> r.getQueueTicket() != null
+                        && r.getQueueTicket().getDepartment() != null
+                        && r.getQueueTicket().getDepartment().getDepartmentType() == DepartmentType.EXAMINATION)
+                .findFirst()
+                .orElse(records.get(0));
         MedicalRecord feedbackRecord = records.stream()
                 .filter(r -> r.getRatingScore() != null || r.getFeedbackStatus() != null)
                 .findFirst()
@@ -114,9 +121,9 @@ public record VisitDetailResponse(
         return new VisitDetailResponse(
                 first.getRecordId(),
                 visitId,
-                // He thong chua co visitCode luu rieng; dung ma ho so dau tien
-                // de hien thi mot ma de nhan biet, khong tao ma gia tu UUID.
-                first.getRecordCode(),
+                visitId != null
+                        ? "VIS-" + visitId.toString().substring(0, 8).toUpperCase(java.util.Locale.ROOT)
+                        : null,
                 first.getVisit() != null && first.getVisit().getCustomer() != null ? first.getVisit().getCustomer().getFullName() : null,
                 first.getVisit() != null && first.getVisit().getCustomer() != null && first.getVisit().getCustomer().getDateOfBirth() != null ? first.getVisit().getCustomer().getDateOfBirth().toString() : null,
                 first.getVisit() != null && first.getVisit().getCustomer() != null && first.getVisit().getCustomer().getGender() != null ? first.getVisit().getCustomer().getGender().name() : null,

@@ -123,7 +123,6 @@ public class AppointmentService implements AppointmentServiceInterface {
                 validateServiceEligibility(service, age, customer.getGender());
                 services.add(service);
             }
-            validateSingleExaminationService(services);
         }
         ShiftScheduleResolver.ResolvedShift resolved = resolveBookingShift(shift, req.scheduledAt(), services);
         LocalDateTime scheduledAt = resolved == null ? req.scheduledAt()
@@ -175,7 +174,6 @@ public class AppointmentService implements AppointmentServiceInterface {
                 validateServiceEligibility(service, req.guestAge(), req.guestGender());
                 services.add(service);
             }
-            validateSingleExaminationService(services);
         }
         ShiftScheduleResolver.ResolvedShift resolved = resolveBookingShift(shift, req.scheduledAt(), services);
         LocalDateTime scheduledAt = resolved == null ? req.scheduledAt()
@@ -240,7 +238,6 @@ public class AppointmentService implements AppointmentServiceInterface {
                 validateServiceEligibility(service, age, gender);
                 services.add(service);
             }
-            validateSingleExaminationService(services);
             a.setServices(services);
         }
 
@@ -316,7 +313,7 @@ public class AppointmentService implements AppointmentServiceInterface {
     }
 
     /**
-     * Check-in tu appointment: tao CustomerVisit + Invoice cho dich vu dau tien.
+     * Check-in tu appointment: tao mot CustomerVisit + mot Invoice gom toan bo dich vu.
      * - QueueTicket se duoc tao khi Invoice duoc thanh toan (trong InvoiceService).
      * - serviceIds (optional): Cho phep thay doi dich vu khi check-in.
      */
@@ -369,7 +366,6 @@ public class AppointmentService implements AppointmentServiceInterface {
                 validateServiceEligibility(service, age, gender);
                 services.add(service);
             }
-            validateSingleExaminationService(services);
             a.setServices(services);
         } else {
             services = a.getServices();
@@ -377,9 +373,8 @@ public class AppointmentService implements AppointmentServiceInterface {
                 throw new BadRequestException("Lịch hẹn chưa chọn dịch vụ");
             }
         }
-        // Du lieu lich hen cu co the da luu nhieu dich vu kham. Luon kiem tra
-        // lai tai thoi diem check-in de khong tao CustomerVisit sai quy tac moi.
-        validateSingleExaminationService(services);
+        // Mot lich hen co the gom nhieu dich vu kham. Tat ca duoc tiep nhan
+        // trong mot CustomerVisit, sau do moi dich vu co QueueTicket/MedicalRecord rieng.
         validateExaminationAvailabilityForShift(services, resolveAppointmentShift(a), clinicToday());
 
         repo.save(a); // Luu lai appointment voi services moi (neu co)
@@ -757,7 +752,6 @@ public class AppointmentService implements AppointmentServiceInterface {
                 validateServiceEligibility(service, age, customer.getGender());
                 services.add(service);
             }
-            validateSingleExaminationService(services);
             a.setServices(services);
         }
         if (req.scheduledAt() != null || req.shiftId() != null || req.serviceIds() != null) {
@@ -813,7 +807,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                 .count();
         if (examinationCount > 1) {
             throw new BadRequestException(
-                    "Mỗi lịch hẹn chỉ được chọn tối đa 1 dịch vụ khám bệnh"
+                    "Phiếu khám tạo trực tiếp chỉ được chọn tối đa 1 dịch vụ khám bệnh"
             );
         }
     }
@@ -880,6 +874,9 @@ public class AppointmentService implements AppointmentServiceInterface {
         if (requestedAt == null) throw new BadRequestException("Vui lòng chọn ngày khám");
         if (!requestedAt.toLocalDate().isAfter(clinicToday())) {
             throw new BadRequestException("Lịch hẹn phải được đặt từ ngày mai trở đi");
+        }
+        if (requestedAt.toLocalDate().isAfter(clinicToday().plusMonths(12))) {
+            throw new BadRequestException("Lịch hẹn chỉ được đặt trước tối đa 12 tháng");
         }
         if (shift == null) {
             // Legacy integrations may create an unslotted appointment. Customer

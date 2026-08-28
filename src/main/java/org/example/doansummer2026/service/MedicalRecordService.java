@@ -80,6 +80,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     private final org.example.doansummer2026.repository.TestResultRevisionRepository testResultRevisionRepo;
     private final org.example.doansummer2026.repository.TestResultAttachmentRepository testResultAttachmentRepo;
     private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
+    private final StaffDutyService staffDutyService;
 
     @Transactional(readOnly = true)
     public PageResponse<MedicalRecordResponse> search(UUID doctorId, MedicalRecordStatus status,
@@ -409,18 +410,17 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             throw new ConflictException("Không thể cập nhật hồ sơ đã hoàn thành");
         }
         validateVersion(r, req);
-        boolean nurse = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication()
-                .getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_NURSE"));
         var actor = currentStaff().orElse(null);
-        if (!isCurrentAdmin() && actor == null) {
+        if (actor == null) {
             throw new BadRequestException("Không xác định được nhân viên đang thao tác");
         }
+        boolean nurse = actor.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE;
         if (nurse && r.getQueueTicket() == null) {
             throw new BadRequestException("Y tá chỉ được lưu hồ sơ tại phòng đang được phân công");
         }
-        if (nurse && actor != null && r.getQueueTicket() != null
-                && (actor.getDepartment() == null || !actor.getDepartment().getDepartmentId().equals(r.getQueueTicket().getDepartment().getDepartmentId())))
-            throw new BadRequestException("Y tá chỉ được cập nhật hồ sơ tại phòng được phân công");
+        if (nurse && r.getQueueTicket() != null) {
+            staffDutyService.requireCurrentStaffOnDuty(r.getQueueTicket().getDepartment(), false);
+        }
         if (!nurse) ensureDoctorCanEdit(r);
         if (nurse) {
             updateNursingDraftFields(r, req);
@@ -456,24 +456,15 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return staffId == null ? java.util.Optional.empty() : staffRepo.findById(staffId);
     }
 
-    private boolean isCurrentAdmin() {
-        return authService.getCurrentSystemRole() == org.example.doansummer2026.enums.SystemRole.ADMIN;
-    }
-
     private void ensureDoctorCanEdit(MedicalRecord record) {
-        if (isCurrentAdmin()) return;
         StaffInfo actor = currentStaff()
                 .orElseThrow(() -> new BadRequestException("Không xác định được bác sĩ đang thao tác"));
         if (!actor.getSystemRole().isDoctor()) {
-            throw new BadRequestException("Chỉ bác sĩ phụ trách mới được cập nhật hồ sơ khám");
+            throw new BadRequestException("Chỉ bác sĩ điều trị mới được cập nhật hồ sơ khám");
         }
-        UUID responsibleDoctorId = record.getQueueTicket() != null
-                && record.getQueueTicket().getDepartment() != null
-                && record.getQueueTicket().getDepartment().getHeadDoctor() != null
-                ? record.getQueueTicket().getDepartment().getHeadDoctor().getStaffId()
-                : (record.getDoctor() != null ? record.getDoctor().getStaffId() : null);
+        UUID responsibleDoctorId = record.getDoctor() != null ? record.getDoctor().getStaffId() : null;
         if (responsibleDoctorId == null || !responsibleDoctorId.equals(actor.getStaffId())) {
-            throw new BadRequestException("Ca khám này thuộc bác sĩ phụ trách khác");
+            throw new BadRequestException("Ca khám này thuộc bác sĩ điều trị khác");
         }
     }
 
@@ -714,23 +705,14 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         MedicalRecord r = findById(id);
         validateVersion(r, req);
         var actor = currentStaff().orElse(null);
-        if (!isCurrentAdmin() && actor == null) {
+        if (actor == null) {
             throw new BadRequestException("Không xác định được bác sĩ đang thao tác");
         }
-        // Bac si phu trach duoc cau hinh cho phong co quyen ket thuc ca kham.
-        // Bac si luu trong record co the la nguoi tao benh an ban dau, nen chi
-        // dung lam du phong khi queue/phong chua duoc cau hinh bac si phu trach.
-        UUID responsibleDoctorId = r.getQueueTicket() != null
-                && r.getQueueTicket().getDepartment() != null
-                && r.getQueueTicket().getDepartment().getHeadDoctor() != null
-                ? r.getQueueTicket().getDepartment().getHeadDoctor().getStaffId()
-                : (r.getDoctor() != null ? r.getDoctor().getStaffId() : null);
-        if (!isCurrentAdmin()) {
-            if (!actor.getSystemRole().isDoctor()
-                    || responsibleDoctorId == null
-                    || !responsibleDoctorId.equals(actor.getStaffId())) {
-                throw new BadRequestException("Chỉ bác sĩ phụ trách mới được hoàn thành ca khám");
-            }
+        UUID responsibleDoctorId = r.getDoctor() != null ? r.getDoctor().getStaffId() : null;
+        if (!actor.getSystemRole().isDoctor()
+                || responsibleDoctorId == null
+                || !responsibleDoctorId.equals(actor.getStaffId())) {
+            throw new BadRequestException("Chỉ bác sĩ đã bắt đầu bệnh án mới được hoàn thành ca khám");
         }
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
             throw new BadRequestException("Hồ sơ đã được đóng trước đó");
@@ -830,7 +812,10 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     @Transactional(readOnly = true)
     public PageResponse<MedicalHistoryResponse> getMedicalHistoryForPatient(UUID profileId, String search, Pageable pageable) {
         var spec = searchMedicalHistorySpec(profileId, search);
-        var page = repo.findAll(spec, pageable);
+        Pageable sorted = pageable.getSort().isSorted() ? pageable
+                : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+        var page = repo.findAll(spec, sorted);
 
         return PageResponse.from(page, MedicalHistoryResponse::from);
     }
@@ -948,13 +933,20 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
             // Chi lay nhung record da hoan thanh
             predicates.add(cb.equal(root.get("status"), MedicalRecordStatus.COMPLETED));
+            // Ho so tam dung de gan CLS khong phai la benh an kham benh.
+            // Lich su customer chi hien moi dich vu kham thanh mot muc rieng.
+            predicates.add(cb.isNotNull(root.get("queueTicket")));
+            predicates.add(cb.equal(
+                    root.get("queueTicket").get("department").get("departmentType"),
+                    org.example.doansummer2026.enums.DepartmentType.EXAMINATION));
 
             if (search != null && !search.isBlank()) {
                 String searchLower = "%" + search.toLowerCase() + "%";
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("recordCode")), searchLower),
                         cb.like(cb.lower(root.get("diagnosis")), searchLower),
-                        cb.like(cb.lower(visit.get("checkInTime")), searchLower)
+                        cb.like(cb.lower(root.get("queueTicket").get("service").get("name")), searchLower),
+                        cb.like(cb.lower(root.get("doctor").get("profile").get("fullName")), searchLower)
                 ));
             }
 
@@ -999,8 +991,14 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
         UUID resolvedVisitId = record.getVisit().getVisitId();
         var requests = testRequestRepo.findAllByVisitIdWithDetails(resolvedVisitId);
+        // Record dang duoc mo phai la noi dung chinh cua trang. Cac benh an
+        // khac trong cung VIS chi duoc dung cho danh sach chuyen nhanh.
+        java.util.List<MedicalRecord> orderedRecords = new java.util.ArrayList<>(
+                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(resolvedVisitId));
+        orderedRecords.sort(java.util.Comparator.comparingInt(
+                candidate -> candidate.getRecordId().equals(recordId) ? 0 : 1));
         return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
-                repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(resolvedVisitId), requests,
+                orderedRecords, requests,
                 signedResultAttachments(requests), sameDayParaclinicalResultService.findForVisit(resolvedVisitId));
     }
 

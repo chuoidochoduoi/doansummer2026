@@ -1,6 +1,7 @@
 package org.example.doansummer2026.dto.staff;
 
 import java.util.UUID;
+import java.util.List;
 
 /**
  * Response tra danh sach bac si khi chon head doctor cho Department.
@@ -12,7 +13,9 @@ public record StaffOptionResponse(
         String fullName,
         SystemRoleBrief systemRole,
         String specializationName,
-        UUID assignedDepartmentId
+        UUID assignedDepartmentId,
+        UUID specializationId,
+        List<UUID> capabilityIds
 ) {
     public enum SystemRoleBrief {
         DOCTOR, NURSE, RECEPTIONIST, CASHIER, CLINIC_MANAGER, ADMIN
@@ -23,6 +26,12 @@ public record StaffOptionResponse(
     }
 
     public static StaffOptionResponse from(org.example.doansummer2026.model.StaffInfo s, UUID assignedDepartmentId) {
+        return from(s, assignedDepartmentId, List.of());
+    }
+
+    public static StaffOptionResponse from(org.example.doansummer2026.model.StaffInfo s,
+                                           UUID assignedDepartmentId,
+                                           List<UUID> capabilityIds) {
         String specName = s.getSpecialization() != null ? s.getSpecialization().getName() : null;
         String fullName = s.getProfile() != null ? s.getProfile().getFullName() : null;
         return new StaffOptionResponse(
@@ -31,7 +40,9 @@ public record StaffOptionResponse(
                 fullName,
                 SystemRoleBrief.valueOf(s.getSystemRole().normalized().name()),
                 specName,
-                assignedDepartmentId
+                assignedDepartmentId,
+                s.getSpecialization() != null ? s.getSpecialization().getSpecializationId() : null,
+                capabilityIds == null ? List.of() : capabilityIds
         );
     }
 }

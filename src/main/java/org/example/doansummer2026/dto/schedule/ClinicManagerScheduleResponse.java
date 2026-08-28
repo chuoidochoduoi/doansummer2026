@@ -13,8 +13,17 @@ import org.example.doansummer2026.model.StaffSchedule;
 public record ClinicManagerScheduleResponse(
         Map<String, List<StaffScheduleItemResponse>> schedule,
         List<ShiftResponse> shifts,
-        List<StaffScheduleItemResponse> staff
+        List<StaffScheduleItemResponse> staff,
+        Map<String, CoverageInfo> coverage
 ) {
+    public record CoverageInfo(
+            boolean hasDoctor,
+            int nurseCount,
+            boolean hasReceptionist,
+            boolean hasCashier,
+            List<String> missingRoles,
+            String status
+    ) {}
     /**
      * Tao key cho schedule: shiftId_dayKey (vi du: morning_mon, afternoon_tue)
      */
@@ -27,6 +36,11 @@ public record ClinicManagerScheduleResponse(
      * Tao response tu danh sach schedules trong 1 tuan.
      */
     public static ClinicManagerScheduleResponse from(List<StaffSchedule> schedules, LocalDate weekStart, List<ShiftConfig> allShifts) {
+        return from(schedules, weekStart, allShifts, null);
+    }
+
+    public static ClinicManagerScheduleResponse from(List<StaffSchedule> schedules, LocalDate weekStart,
+                                                     List<ShiftConfig> allShifts, String staffGroup) {
         Map<String, List<StaffScheduleItemResponse>> scheduleMap = new LinkedHashMap<>();
         Set<UUID> staffSet = new HashSet<>();
 
@@ -64,6 +78,30 @@ public record ClinicManagerScheduleResponse(
                 }, LinkedHashMap::putAll);
         List<StaffScheduleItemResponse> staffResps = new ArrayList<>(staffMap.values());
 
-        return new ClinicManagerScheduleResponse(scheduleMap, shiftResps, staffResps);
+        Map<String, CoverageInfo> coverage = new LinkedHashMap<>();
+        scheduleMap.forEach((key, people) -> {
+            boolean hasDoctor = people.stream().anyMatch(person -> "BS".equals(person.role()));
+            int nurseCount = (int) people.stream().filter(person -> "YT".equals(person.role())).count();
+            boolean hasReceptionist = people.stream().anyMatch(person -> "LT".equals(person.role()));
+            boolean hasCashier = people.stream().anyMatch(person -> "TN".equals(person.role()));
+            List<String> missingRoles = new ArrayList<>();
+            String status;
+            if ("GENERAL".equalsIgnoreCase(staffGroup)) {
+                if (key.endsWith("_sun")) {
+                    status = "NOT_REQUIRED";
+                } else {
+                    if (!hasReceptionist) missingRoles.add("RECEPTIONIST");
+                    if (!hasCashier) missingRoles.add("CASHIER");
+                    status = missingRoles.isEmpty() ? "COVERED"
+                            : people.isEmpty() ? "UNASSIGNED" : "MISSING_OPERATIONAL_ROLE";
+                }
+            } else {
+                if (!hasDoctor) missingRoles.add("DOCTOR");
+                status = hasDoctor ? "COVERED" : people.isEmpty() ? "UNASSIGNED" : "MISSING_DOCTOR";
+            }
+            coverage.put(key, new CoverageInfo(hasDoctor, nurseCount, hasReceptionist, hasCashier,
+                    List.copyOf(missingRoles), status));
+        });
+        return new ClinicManagerScheduleResponse(scheduleMap, shiftResps, staffResps, coverage);
     }
 }

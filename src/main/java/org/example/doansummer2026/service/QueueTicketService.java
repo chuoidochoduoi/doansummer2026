@@ -72,6 +72,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     private final org.example.doansummer2026.repository.InvoiceRepository invoiceRepo;
     private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
     private final NotificationService notificationService;
+    private final StaffDutyService staffDutyService;
 
     @Autowired
     @Lazy
@@ -136,35 +137,39 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                             && ticket.getService().getDepartmentType().normalized()
                             == org.example.doansummer2026.enums.DepartmentType.EXAMINATION)
                     .anyMatch(ticket -> !service.getServiceId().equals(ticket.getService().getServiceId()));
-            if (hasOtherExamination) {
+            if (hasOtherExamination && visit.getAppointment() == null) {
                 throw new ConflictException(
-                        "Lượt khám đã có dịch vụ khám bệnh; vui lòng tạo lượt mới tại lễ tân"
+                        "Phiếu khám tạo trực tiếp đã có dịch vụ khám bệnh; vui lòng tạo phiếu mới tại lễ tân"
                 );
             }
         }
         LocalDate workDate = req.workDate() != null ? req.workDate() : LocalDate.now(CLINIC_ZONE);
         Integer max = repo.findMaxQueueNumberForDay(req.departmentId(), workDate).orElse(0);
+        // Quyet dinh trang thai truoc khi luu/phat thong bao. Khong tao WAITING
+        // roi moi doi sang BLOCKED, vi bac si co the nhan thong bao sai cho mot
+        // buoc chua den luot trong lich hen nhieu dich vu.
+        boolean workflowAlreadyActive = patientJourneyService.hasActiveStep(visit.getVisitId())
+                || repo.findAllByVisit_VisitId(visit.getVisitId()).stream()
+                .anyMatch(ticket -> ticket.getStatus() == QueueStatus.SKIPPED);
         QueueTicket q = QueueTicket.builder()
                 .visit(visit)
                 .department(dept)
                 .service(service)
                 .workDate(workDate)
                 .queueNumber(max + 1)
-                .status(QueueStatus.WAITING)
+                .status(workflowAlreadyActive ? QueueStatus.BLOCKED : QueueStatus.WAITING)
                 .build();
         QueueTicket saved = repo.save(q);
         updateDepartmentStatus(dept.getDepartmentId());
-        if (dept.getDepartmentType() == org.example.doansummer2026.enums.DepartmentType.EXAMINATION) {
+        if (saved.getStatus() == QueueStatus.WAITING
+                && dept.getDepartmentType() == org.example.doansummer2026.enums.DepartmentType.EXAMINATION) {
             notifyDoctors(saved);
         }
         return toResponse(saved);
     }
     
     private void notifyDoctors(QueueTicket q) {
-        if (q.getDepartment() == null || q.getDepartment().getHeadDoctor() == null
-                || q.getDepartment().getHeadDoctor().getProfile() == null) {
-            return;
-        }
+        if (q.getDepartment() == null) return;
         String patientName = q.getVisit() != null && q.getVisit().getAppointment() != null ? q.getVisit().getAppointment().getGuestFullName() : "Khach";
         if (q.getVisit() != null && q.getVisit().getCustomer() != null) {
             patientName = q.getVisit().getCustomer().getFullName();
@@ -172,19 +177,23 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         String roomName = q.getDepartment() != null ? q.getDepartment().getName() : "";
         String content = String.format("Co benh nhan moi (Ten: %s) xep hang cho kham tai phong %s", patientName, roomName);
         
-        StaffInfo doctor = q.getDepartment().getHeadDoctor();
-        try {
-            notificationService.create(new org.example.doansummer2026.dto.notification.NotificationCreateRequest(
-                    doctor.getProfile().getProfileId(),
-                    org.example.doansummer2026.enums.NotificationType.GENERAL,
-                    org.example.doansummer2026.enums.NotificationChannel.IN_APP,
-                    "Benh nhan moi",
-                    content,
-                    "QueueTicket",
-                    q.getTicketId()
-            ));
-        } catch (Exception e) {
-            // Thong bao khong lam anh huong viec tao hang cho.
+        for (StaffInfo staff : staffDutyService.findOnDutyStaff(q.getDepartment(), LocalDateTime.now(CLINIC_ZONE))) {
+            if (staff.getSystemRole() == null || (!staff.getSystemRole().isDoctor()
+                    && staff.getSystemRole() != org.example.doansummer2026.enums.SystemRole.NURSE)) continue;
+            if (staff.getProfile() == null) continue;
+            try {
+                notificationService.create(new org.example.doansummer2026.dto.notification.NotificationCreateRequest(
+                        staff.getProfile().getProfileId(),
+                        org.example.doansummer2026.enums.NotificationType.GENERAL,
+                        org.example.doansummer2026.enums.NotificationChannel.IN_APP,
+                        "Bệnh nhân mới",
+                        content,
+                        "QueueTicket",
+                        q.getTicketId()
+                ));
+            } catch (Exception ignored) {
+                // Thong bao khong lam anh huong viec tao hang cho.
+            }
         }
     }
 
@@ -236,19 +245,8 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             return toResponse(saved, null, getWaitingCount(q), null);
         }
 
-        // Lay staffId tu SecurityContext (JWT token)
-        UUID currentStaffId = getCurrentStaffId();
-        if (currentStaffId == null) {
-            throw new BadRequestException("Tài khoản hiện tại không phải bác sĩ");
-        }
-        boolean nurse = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_NURSE"));
-        UUID doctorId = currentStaffId;
-        if (nurse) {
-            if (q.getDepartment().getHeadDoctor() == null)
-                throw new BadRequestException("Phòng chưa có bác sĩ phụ trách; y tá không thể bắt đầu ca khám");
-            doctorId = q.getDepartment().getHeadDoctor().getStaffId();
-        }
+        StaffInfo treatingDoctor = staffDutyService.requireCurrentStaffOnDuty(q.getDepartment(), true);
+        UUID doctorId = treatingDoctor.getStaffId();
 
         // Tu dong tao medical record neu chua co, hoac lay record cu
         UUID recordId = null;
@@ -281,17 +279,11 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 .orElseThrow(() -> new ResourceNotFoundException("Chưa có hồ sơ bệnh án cho lượt khám này"));
 
         UUID completingStaffId = getCurrentStaffId();
-        boolean admin = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ADMIN"));
-        // Quyen ket thuc ca kham thuoc ve bac si phu trach phong da duoc cau hinh.
-        // record.doctor chi la bac si da tao/ghi benh an, co the khac khi y ta ho tro
-        // hoac bac si khac bat dau ca, nen khong dung lam dieu kien uu tien.
-        UUID responsibleDoctorId = q.getDepartment() != null && q.getDepartment().getHeadDoctor() != null
-                ? q.getDepartment().getHeadDoctor().getStaffId()
-                : (record.getDoctor() != null ? record.getDoctor().getStaffId() : null);
-        if (!admin && (completingStaffId == null || responsibleDoctorId == null
-                || !responsibleDoctorId.equals(completingStaffId)))
-            throw new BadRequestException("Chỉ bác sĩ phụ trách mới được hoàn thành ca khám");
+        UUID responsibleDoctorId = record.getDoctor() != null ? record.getDoctor().getStaffId() : null;
+        if (completingStaffId == null || responsibleDoctorId == null
+                || !responsibleDoctorId.equals(completingStaffId)) {
+            throw new BadRequestException("Chỉ bác sĩ đã bắt đầu bệnh án mới được hoàn thành ca khám");
+        }
 
         if (req != null && req.version() != null && !java.util.Objects.equals(req.version(), record.getVersion()))
             throw new ConflictException("Hồ sơ đã được nhân viên khác cập nhật. Vui lòng tải lại trước khi hoàn thành");
@@ -305,52 +297,6 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         medicalRecordService.ensureAllergiesVerifiedForExistingPrescription(record);
 
         boolean hasTestRequests = req != null && req.testRequests() != null && !req.testRequests().isEmpty();
-        UUID orderingDoctorId = record.getDoctor() != null ? record.getDoctor().getStaffId() : completingStaffId;
-        if (orderingDoctorId != null) {
-            // CLS da dat va thanh toan truoc duoc gan cho phong kham dau tien
-            // dang xu ly. Khong tao lai Invoice/TestRequest va dam bao ket qua
-            // dua benh nhan quay lai dung MedicalRecord nguon.
-            testRequestService.attachUnlinkedPrepaidRequestsToExamination(
-                    q.getVisit().getVisitId(), record.getRecordId(), orderingDoctorId);
-        }
-        boolean hasIncompletePrepaidTests = testRequestService.hasIncompleteRequestsForRecord(record.getRecordId());
-        boolean shouldWaitForTests = hasTestRequests || hasIncompletePrepaidTests;
-        if (shouldWaitForTests) {
-            // Day moi chi la ket thuc luot kham ban dau de benh nhan sang CLS,
-            // chua phai hoan thanh ho so. Dam bao ca du lieu cu tung bi dong nham
-            // cung quay ve trang thai dang xu ly cho den khi bac si ket luan lai.
-            record.setStatus(MedicalRecordStatus.IN_PROGRESS);
-            record.setCompletedAt(null);
-            record.setDoctorConfirmedBy(null);
-            record.setDoctorConfirmedAt(null);
-            recordRepo.save(record);
-        }
-        if (!shouldWaitForTests && record.getStatus() != MedicalRecordStatus.COMPLETED) {
-            
-            // Validate unpaid invoices
-            boolean hasUnpaidInvoices = invoiceRepo.findAllByMedicalRecord_RecordId(record.getRecordId()).stream()
-                .anyMatch(inv -> inv.getStatus() == org.example.doansummer2026.enums.InvoiceStatus.PENDING);
-            if (hasUnpaidInvoices) {
-                throw new BadRequestException("Bệnh nhân chưa thanh toán hóa đơn cận lâm sàng/dịch vụ");
-            }
-
-            // Validate diagnosis/conclusion/icd10
-            boolean hasDiagnosis = record.getDiagnosis() != null && !record.getDiagnosis().trim().isEmpty();
-            boolean hasConclusion = record.getConclusion() != null && !record.getConclusion().trim().isEmpty();
-            boolean hasIcd10 = record.getIcdSelections() != null && !record.getIcdSelections().isEmpty();
-            
-            if (!hasDiagnosis && !hasConclusion && !hasIcd10) {
-                throw new BadRequestException("Vui lòng nhập chẩn đoán, kết luận hoặc chọn mã ICD-10 trước khi hoàn thành hồ sơ");
-            }
-
-            record.setStatus(MedicalRecordStatus.COMPLETED);
-            record.setCompletedAt(LocalDateTime.now());
-            StaffInfo confirmer = completingStaffId != null ? staffRepo.findById(completingStaffId).orElse(null) : null;
-            record.setDoctorConfirmedBy(confirmer);
-            record.setDoctorConfirmedAt(LocalDateTime.now());
-            recordRepo.save(record);
-        }
-
         boolean waitingForNewTestInvoicePayment = false;
         // Tao TestRequest neu co trong payload (gop voi API hoan thien de tranh goi 2 lan)
         if (hasTestRequests) {
@@ -410,6 +356,41 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                         invoiceItems
                 ));
             }
+        }
+
+        // Chi cac CLS duoc bac si chon trong benh an hien tai moi giu phong
+        // kham o WAITING_FOR_TEST. CLS dat san khac van la buoc doc lap cua visit.
+        boolean hasIncompleteLinkedTests =
+                testRequestService.hasIncompleteRequestsForRecord(record.getRecordId());
+        boolean shouldWaitForTests = waitingForNewTestInvoicePayment || hasIncompleteLinkedTests;
+        if (shouldWaitForTests) {
+            record.setStatus(MedicalRecordStatus.IN_PROGRESS);
+            record.setCompletedAt(null);
+            record.setDoctorConfirmedBy(null);
+            record.setDoctorConfirmedAt(null);
+            recordRepo.save(record);
+        } else if (record.getStatus() != MedicalRecordStatus.COMPLETED) {
+            boolean hasUnpaidInvoices = invoiceRepo.findAllByMedicalRecord_RecordId(record.getRecordId()).stream()
+                    .anyMatch(inv -> inv.getStatus() == org.example.doansummer2026.enums.InvoiceStatus.PENDING);
+            if (hasUnpaidInvoices) {
+                throw new BadRequestException("Bệnh nhân chưa thanh toán hóa đơn cận lâm sàng/dịch vụ");
+            }
+
+            boolean hasDiagnosis = record.getDiagnosis() != null && !record.getDiagnosis().trim().isEmpty();
+            boolean hasConclusion = record.getConclusion() != null && !record.getConclusion().trim().isEmpty();
+            boolean hasIcd10 = record.getIcdSelections() != null && !record.getIcdSelections().isEmpty();
+            if (!hasDiagnosis && !hasConclusion && !hasIcd10) {
+                throw new BadRequestException(
+                        "Vui lòng nhập chẩn đoán, kết luận hoặc chọn mã ICD-10 trước khi hoàn thành hồ sơ");
+            }
+
+            record.setStatus(MedicalRecordStatus.COMPLETED);
+            record.setCompletedAt(LocalDateTime.now());
+            StaffInfo confirmer = completingStaffId != null
+                    ? staffRepo.findById(completingStaffId).orElse(null) : null;
+            record.setDoctorConfirmedBy(confirmer);
+            record.setDoctorConfirmedAt(LocalDateTime.now());
+            recordRepo.save(record);
         }
 
         // Dat status queue ticket:
@@ -699,23 +680,10 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     }
 
     private void ensureCurrentStaffCanOperate(QueueTicket ticket) {
-        var authentication = SecurityContextHolder.getContext().getAuthentication();
-        boolean admin = authentication != null && authentication.getAuthorities().stream()
-                .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
-        if (admin) return;
-
-        UUID staffId = getCurrentStaffId();
-        if (staffId == null || ticket.getDepartment() == null) {
+        if (ticket.getDepartment() == null) {
             throw new BadRequestException("Không xác định được nhân viên hoặc phòng thực hiện");
         }
-        Department department = ticket.getDepartment();
-        boolean headDoctor = department.getHeadDoctor() != null
-                && staffId.equals(department.getHeadDoctor().getStaffId());
-        boolean assignedNurse = department.getNurses() != null && department.getNurses().stream()
-                .anyMatch(nurse -> staffId.equals(nurse.getStaffId()));
-        if (!headDoctor && !assignedNurse) {
-            throw new BadRequestException("Bạn không được phân công thực hiện tại phòng này");
-        }
+        staffDutyService.requireCurrentStaffOnDuty(ticket.getDepartment(), false);
     }
 
     @Transactional(readOnly = true)
@@ -771,32 +739,20 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
     private MedicalRecordResponse getMedicalRecordOrCreate(QueueTicket q, UUID doctorId) {
         if (q.getVisit() == null) return null;
-        var visitId = q.getVisit().getVisitId();
         var existingRecord = recordRepo.findByQueueTicket_TicketId(q.getTicketId()).orElse(null);
         MedicalRecord record;
         if (existingRecord == null) {
             StaffInfo doctor = staffRepo.findById(doctorId)
                     .orElseThrow(() -> new ResourceNotFoundException("Bác sĩ không tồn tại: " + doctorId));
-            // Neu benh nhan da mua CLS kem dich vu kham, TestRequest da nam trong
-            // record tam cua visit. Tai su dung record nay lam record kham chinh
-            // de ket qua CLS tu dong quay lai dung phong kham, khong tao hai benh an.
-            record = recordRepo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId)
-                    .orElse(null);
-            if (record == null) {
-                record = MedicalRecord.builder()
-                        .visit(q.getVisit())
-                        .queueTicket(q)
-                        .doctor(doctor)
-                        .status(MedicalRecordStatus.IN_PROGRESS)
-                        .build();
-            } else {
-                record.setQueueTicket(q);
-                record.setDoctor(doctor);
-                record.setStatus(MedicalRecordStatus.IN_PROGRESS);
-                if ("Dich vu can lam sang".equals(record.getChiefComplaint())) {
-                    record.setChiefComplaint(null);
-                }
-            }
+            // Moi dich vu kham co mot benh an rieng theo QueueTicket. Ho so tam
+            // cua CLS dat san van doc lap; chi khi bac si chon dung dich vu thi
+            // TestRequest moi duoc gan sang benh an nay de cho quay lai phong.
+            record = MedicalRecord.builder()
+                    .visit(q.getVisit())
+                    .queueTicket(q)
+                    .doctor(doctor)
+                    .status(MedicalRecordStatus.IN_PROGRESS)
+                    .build();
             record = recordRepo.save(record);
         } else {
             record = existingRecord;

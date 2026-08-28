@@ -1,7 +1,6 @@
 package org.example.doansummer2026.dto.schedule;
 
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.NotNull;
 
 import java.time.LocalDate;
 import java.util.UUID;

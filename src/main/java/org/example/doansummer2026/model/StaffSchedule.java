@@ -19,6 +19,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.example.doansummer2026.common.BaseEntity;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDate;
@@ -32,6 +34,8 @@ import org.example.doansummer2026.enums.ScheduleStatus;
  */
 @Entity
 @Table(name = "staff_schedule")
+@SQLDelete(sql = "UPDATE staff_schedule SET deleted = true, updated_at = CURRENT_TIMESTAMP WHERE schedule_id = ?")
+@SQLRestriction("deleted = false")
 @Getter
 @Setter
 @NoArgsConstructor

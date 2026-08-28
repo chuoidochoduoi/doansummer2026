@@ -29,6 +29,7 @@ public class VitalSignsService implements VitalSignsServiceInterface {
     private final MedicalRecordRepository medicalRecordRepo;
     private final StaffInfoRepository staffRepo;
     private final AuthService authService;
+    private final StaffDutyService staffDutyService;
 
     @Transactional(readOnly = true)
     public VitalSignsResponse get(UUID id) {
@@ -83,12 +84,6 @@ public class VitalSignsService implements VitalSignsServiceInterface {
     }
 
     private StaffInfo resolveCurrentRecorder(UUID requestedRecorderId) {
-        if (authService.getCurrentSystemRole() == org.example.doansummer2026.enums.SystemRole.ADMIN) {
-            if (requestedRecorderId == null) return null;
-            return staffRepo.findById(requestedRecorderId)
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Nhân viên không tồn tại: " + requestedRecorderId));
-        }
         UUID staffId = authService.currentStaffId();
         if (staffId == null) {
             throw new BadRequestException("Không xác định được nhân viên đang ghi chỉ số sinh hiệu");
@@ -104,26 +99,24 @@ public class VitalSignsService implements VitalSignsServiceInterface {
         if (record.getStatus() == org.example.doansummer2026.enums.MedicalRecordStatus.COMPLETED) {
             throw new ConflictException("Không thể sửa chỉ số sinh hiệu của hồ sơ đã hoàn thành");
         }
-        if (authService.getCurrentSystemRole() == org.example.doansummer2026.enums.SystemRole.ADMIN) return;
-
         UUID staffId = authService.currentStaffId();
         if (staffId == null) {
             throw new BadRequestException("Không xác định được nhân viên đang thao tác");
         }
         if (record.getQueueTicket() != null && record.getQueueTicket().getDepartment() != null) {
-            var department = record.getQueueTicket().getDepartment();
-            boolean headDoctor = department.getHeadDoctor() != null
-                    && staffId.equals(department.getHeadDoctor().getStaffId());
-            boolean assignedNurse = department.getNurses() != null
-                    && department.getNurses().stream()
-                    .anyMatch(nurse -> staffId.equals(nurse.getStaffId()));
-            if (!headDoctor && !assignedNurse) {
-                throw new BadRequestException("Bạn không được phân công cập nhật hồ sơ tại phòng này");
+            StaffInfo actor = staffRepo.findById(staffId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại"));
+            boolean treatingDoctor = record.getDoctor() != null
+                    && actor.getStaffId().equals(record.getDoctor().getStaffId());
+            if (treatingDoctor) return;
+            if (actor.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE) {
+                staffDutyService.requireCurrentStaffOnDuty(record.getQueueTicket().getDepartment(), false);
+                return;
             }
-            return;
+            throw new BadRequestException("Chỉ bác sĩ điều trị hoặc y tá trực được cập nhật chỉ số sinh hiệu");
         }
         if (record.getDoctor() == null || !staffId.equals(record.getDoctor().getStaffId())) {
-            throw new BadRequestException("Bạn không phải bác sĩ phụ trách hồ sơ này");
+            throw new BadRequestException("Bạn không phải bác sĩ điều trị của hồ sơ này");
         }
     }
 }

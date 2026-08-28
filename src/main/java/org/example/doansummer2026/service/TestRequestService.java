@@ -78,6 +78,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     private final ClinicalFormTemplateService clinicalFormTemplateService;
     private final ClinicalFormEngine clinicalFormEngine;
     private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
+    private final StaffDutyService staffDutyService;
 
     @Transactional(readOnly = true)
     public PageResponse<TestRequestResponse> search(UUID recordId, UUID departmentId,
@@ -132,11 +133,6 @@ public class TestRequestService implements TestRequestServiceInterface {
             throw new org.example.doansummer2026.exception.ConflictException(
                     "Dịch vụ cận lâm sàng đã được một phòng khám khác chỉ định");
         }
-        if (existing.getStatus() == TestRequestStatus.COMPLETED) {
-            throw new org.example.doansummer2026.exception.ConflictException(
-                    "Dịch vụ cận lâm sàng đã có kết quả; bác sĩ có thể xem kết quả trong lượt khám");
-        }
-
         StaffInfo doctor = staffRepo.findById(doctorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bác sĩ chỉ định"));
         existing.setMedicalRecord(targetRecord);
@@ -144,29 +140,6 @@ public class TestRequestService implements TestRequestServiceInterface {
         if (notes != null && !notes.isBlank()) existing.setDescription(notes.trim());
         repo.save(existing);
         return true;
-    }
-
-    /**
-     * Gan cac dich vu CLS da mua truc tiep cho phong kham dau tien thuc su xu ly
-     * benh nhan. Nho vay workflow co mot phong nguon ro rang de dua benh nhan
-     * quay lai sau khi tat ca ket qua da san sang.
-     */
-    public int attachUnlinkedPrepaidRequestsToExamination(UUID visitId, UUID medicalRecordId,
-                                                           UUID doctorId) {
-        int attached = 0;
-        for (TestRequest request : repo.findAllByVisitIdWithDetails(visitId)) {
-            MedicalRecord source = request.getMedicalRecord();
-            boolean standalone = source == null || source.getQueueTicket() == null;
-            boolean incomplete = request.getStatus() == TestRequestStatus.BLOCKED
-                    || request.getStatus() == TestRequestStatus.PENDING
-                    || request.getStatus() == TestRequestStatus.IN_PROGRESS;
-            if (!standalone || !incomplete || request.getService() == null) continue;
-            if (attachPrepaidRequestToExamination(visitId, medicalRecordId,
-                    request.getService().getServiceId(), doctorId, request.getDescription())) {
-                attached++;
-            }
-        }
-        return attached;
     }
 
     @Transactional(readOnly = true)
@@ -436,14 +409,16 @@ public class TestRequestService implements TestRequestServiceInterface {
      * TestRequest sinh tu hoa don la yeu cau he thong sau khi thu ngan xac nhan
      * thanh toan; no khong phai chi dinh cua bac si. Vi vay khong duoc chan luong
      * chi vi phong CLS chua gan headDoctor. Uu tien dung nhan vien thu ngan/nguoi
-     * lap hoa don, sau do moi dung bac si phu trach hoac bat ky nhan su cua phong.
+     * lap hoa don, sau do moi dung nhan su dang truc hoac bat ky nhan su cua phong.
      */
     private StaffInfo resolvePaymentRequester(UUID requestedById, Department department) {
         if (requestedById != null) {
             StaffInfo requestedBy = staffRepo.findById(requestedById).orElse(null);
             if (requestedBy != null) return requestedBy;
         }
-        if (department.getHeadDoctor() != null) return department.getHeadDoctor();
+        StaffInfo onDuty = staffDutyService.findOnDutyStaff(department, LocalDateTime.now(CLINIC_ZONE))
+                .stream().findFirst().orElse(null);
+        if (onDuty != null) return onDuty;
         return staffRepo.findByDepartment_DepartmentId(department.getDepartmentId()).stream()
                 .findFirst()
                 .orElse(null);
@@ -466,8 +441,13 @@ public class TestRequestService implements TestRequestServiceInterface {
                 .orElse(null);
         if (standalone != null) return standalone;
 
-        StaffInfo responsibleStaff = department.getHeadDoctor() != null
-                ? department.getHeadDoctor() : requester;
+        StaffInfo responsibleStaff = staffDutyService.findOnDutyStaff(
+                        department, LocalDateTime.now(CLINIC_ZONE)).stream()
+                .filter(staff -> staff.getSystemRole() != null && staff.getSystemRole().isDoctor())
+                .findFirst().orElse(requester);
+        if (responsibleStaff == null) {
+            throw new BadRequestException("Phòng cận lâm sàng chưa có nhân sự trực để tiếp nhận yêu cầu");
+        }
         var created = medicalRecordService.create(
                 new org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest(
                         visitId,
@@ -498,19 +478,23 @@ public class TestRequestService implements TestRequestServiceInterface {
     }
 
     private void notifyNurses(TestRequest t) {
-        String patientName = t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null && t.getMedicalRecord().getVisit().getCustomer() != null ? t.getMedicalRecord().getVisit().getCustomer().getFullName() : "Khach";
-        String serviceName = t.getService() != null ? t.getService().getName() : "Can lam sang";
-        String content = String.format("Co y lenh moi (%s) can thuc hien cho benh nhan %s", serviceName, patientName);
+        String patientName = t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null && t.getMedicalRecord().getVisit().getCustomer() != null ? t.getMedicalRecord().getVisit().getCustomer().getFullName() : "Khách";
+        String serviceName = t.getService() != null ? t.getService().getName() : "Cận lâm sàng";
+        String content = String.format("Có yêu cầu mới (%s) cần thực hiện cho bệnh nhân %s", serviceName, patientName);
         
-        List<StaffInfo> labStaff = staffRepo.findByDepartment_DepartmentId(t.getPerformingDepartment().getDepartmentId());
+        List<StaffInfo> labStaff = staffDutyService.findOnDutyStaff(
+                t.getPerformingDepartment(), LocalDateTime.now(CLINIC_ZONE));
         for (StaffInfo staff : labStaff) {
-            if (staff.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE && staff.getProfile() != null) {
+            boolean clinicalStaff = staff.getSystemRole() != null
+                    && (staff.getSystemRole().isDoctor()
+                    || staff.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE);
+            if (clinicalStaff && staff.getProfile() != null) {
                 try {
                     notificationService.create(new org.example.doansummer2026.dto.notification.NotificationCreateRequest(
                             staff.getProfile().getProfileId(),
                             org.example.doansummer2026.enums.NotificationType.GENERAL,
                             org.example.doansummer2026.enums.NotificationChannel.IN_APP,
-                            "Y lenh moi",
+                            "Yêu cầu cận lâm sàng mới",
                             content,
                             "TestRequest",
                             t.getTestRequestId()
@@ -608,7 +592,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                 .performedBy(performedBy)
                 .performedAt(LocalDateTime.now())
                 .build();
-        applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData());
+        applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData(), false);
         applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         resultRepo.save(r);
         saveDraftRevision(r, performedBy, null);
@@ -640,7 +624,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         updateResultFileUrl(r, req.imageUrl());
         if (req.conclusion() != null) r.setConclusion(req.conclusion());
         if (req.sampleId() != null) r.setSampleId(req.sampleId());
-        applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData());
+        applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData(), false);
         applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
 
         if (t.getStatus() == TestRequestStatus.PENDING) {
@@ -680,7 +664,7 @@ public class TestRequestService implements TestRequestServiceInterface {
             updateResultFileUrl(r, req.imageUrl());
             if (req.conclusion() != null) r.setConclusion(req.conclusion());
             if (req.sampleId() != null) r.setSampleId(req.sampleId());
-            applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData());
+            applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData(), true);
             applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         } else {
             // Tao moi
@@ -693,7 +677,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                     .performedBy(performedBy)
                     .performedAt(LocalDateTime.now())
                     .build();
-            applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData());
+            applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData(), true);
             applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         }
 
@@ -735,10 +719,14 @@ public class TestRequestService implements TestRequestServiceInterface {
 
         // Kiem tra tat ca TestRequest trong medical record de set status TEST_DONE hoac WAITING_FOR_TEST
         if (t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null) {
-            QueueTicket queueTicket = queueTicketRepo.findAllByVisit_VisitId(t.getMedicalRecord().getVisit().getVisitId()).stream()
-                    .filter(qt -> qt.getStatus() == QueueStatus.WAITING_FOR_TEST || qt.getStatus() == QueueStatus.TEST_DONE)
-                    .findFirst()
-                    .orElse(null);
+            // Chi dua benh nhan ve dung phong kham da chi dinh yeu cau nay.
+            // Khong tim "phong dang cho" dau tien cua visit vi mot lich hen co
+            // the co nhieu benh an kham doc lap.
+            QueueTicket queueTicket = t.getMedicalRecord().getQueueTicket();
+            if (queueTicket != null && queueTicket.getStatus() != QueueStatus.WAITING_FOR_TEST
+                    && queueTicket.getStatus() != QueueStatus.TEST_DONE) {
+                queueTicket = null;
+            }
             if (queueTicket != null) {
                 long totalTestRequests = repo.countByMedicalRecord_MedicalRecordId(t.getMedicalRecord().getRecordId());
                 long incompleteCount = repo.countByMedicalRecordAndStatusIn(
@@ -764,16 +752,20 @@ public class TestRequestService implements TestRequestServiceInterface {
     }
 
     private void applyStructuredResult(TestRequest request, TestResult result,
-                                       UUID requestedVersionId, JsonNode input) {
-        if (input == null && requestedVersionId == null) return;
+                                       UUID requestedVersionId, JsonNode input,
+                                       boolean requireComplete) {
+        if (input == null && requestedVersionId == null && !requireComplete) return;
         if (request.getService() == null) throw new BadRequestException("Yêu cầu chưa gắn dịch vụ để xác định biểu mẫu");
+        JsonNode effectiveInput = input != null ? input : result.getResultData();
+        UUID effectiveVersionId = requestedVersionId != null ? requestedVersionId
+                : result.getFormTemplateVersion() == null ? null : result.getFormTemplateVersion().getVersionId();
         var version = clinicalFormTemplateService.resolveVersion(
-                request.getService().getServiceId(), requestedVersionId);
+                request.getService().getServiceId(), effectiveVersionId);
         var patient = request.getMedicalRecord() == null || request.getMedicalRecord().getVisit() == null
                 ? null : request.getMedicalRecord().getVisit().getCustomer();
-        JsonNode normalized = clinicalFormEngine.validateAndEnrich(version.getSchemaJson(), input,
+        JsonNode normalized = clinicalFormEngine.validateAndEnrich(version.getSchemaJson(), effectiveInput,
                 patient == null ? null : patient.getDateOfBirth(),
-                patient == null ? null : patient.getGender(), LocalDate.now(CLINIC_ZONE));
+                patient == null ? null : patient.getGender(), LocalDate.now(CLINIC_ZONE), requireComplete);
         result.setFormTemplateVersion(version);
         result.setResultData(normalized);
     }
@@ -852,7 +844,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                     ? null : request.getMedicalRecord().getVisit().getCustomer();
             revision.setResultData(clinicalFormEngine.validateAndEnrich(version.getSchemaJson(), req.resultData(),
                     patient == null ? null : patient.getDateOfBirth(), patient == null ? null : patient.getGender(),
-                    LocalDate.now(CLINIC_ZONE)));
+                    LocalDate.now(CLINIC_ZONE), false));
             revision.setTemplateVersion(version);
         }
         return TestResultRevisionResponse.from(revisionRepo.save(revision));
@@ -866,6 +858,12 @@ public class TestRequestService implements TestRequestServiceInterface {
         if (revision.getConclusion() == null || revision.getConclusion().isBlank())
             throw new BadRequestException("Vui lòng nhập kết luận đính chính");
         TestResult result = revision.getTestResult();
+        var patient = request.getMedicalRecord() == null || request.getMedicalRecord().getVisit() == null
+                ? null : request.getMedicalRecord().getVisit().getCustomer();
+        revision.setResultData(clinicalFormEngine.validateAndEnrich(
+                revision.getTemplateVersion().getSchemaJson(), revision.getResultData(),
+                patient == null ? null : patient.getDateOfBirth(),
+                patient == null ? null : patient.getGender(), LocalDate.now(CLINIC_ZONE), true));
         revisionRepo.findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
                 result.getResultId(), TestResultRevisionStatus.SIGNED).ifPresent(previous -> {
             previous.setStatus(TestResultRevisionStatus.SUPERSEDED);
@@ -1280,12 +1278,11 @@ public class TestRequestService implements TestRequestServiceInterface {
                 && request.getMedicalRecord().getDoctor() != null
                 && staffId.equals(request.getMedicalRecord().getDoctor().getStaffId());
         Department department = request.getPerformingDepartment();
-        boolean headDoctor = department != null && department.getHeadDoctor() != null
-                && staffId.equals(department.getHeadDoctor().getStaffId());
-        boolean assignedNurse = department != null && department.getNurses() != null
-                && department.getNurses().stream()
-                .anyMatch(nurse -> staffId.equals(nurse.getStaffId()));
-        return requester || recordDoctor || headDoctor || assignedNurse;
+        StaffInfo actor = staffRepo.findById(staffId).orElse(null);
+        boolean departmentMember = department != null && actor != null
+                && actor.getDepartment() != null
+                && department.getDepartmentId().equals(actor.getDepartment().getDepartmentId());
+        return requester || recordDoctor || departmentMember;
     }
 
     private void ensureCurrentStaffCanOperate(TestRequest request) {
@@ -1295,11 +1292,7 @@ public class TestRequestService implements TestRequestServiceInterface {
             throw new org.springframework.security.access.AccessDeniedException(
                     "Không xác định được nhân viên hoặc phòng thực hiện");
         }
-        StaffInfo actor = staffRepo.findById(staffId).orElse(null);
-        if (!isResponsibleDoctor(department, actor) && !isAssignedNurse(department, actor)) {
-            throw new org.springframework.security.access.AccessDeniedException(
-                    "Bạn không được phân công thực hiện tại phòng này");
-        }
+        staffDutyService.requireCurrentStaffOnDuty(department, false);
     }
 
     private void ensureExecutionStarted(TestRequest request) {
@@ -1327,31 +1320,25 @@ public class TestRequestService implements TestRequestServiceInterface {
         Department currentDepartment = request.getPerformingDepartment();
         if (staffId == null || currentDepartment == null) {
             throw new org.springframework.security.access.AccessDeniedException(
-                    "Chỉ bác sĩ phụ trách phòng thực hiện mới được phép thao tác");
+                    "Chỉ bác sĩ trực tại phòng thực hiện mới được phép thao tác");
         }
         Department lockedDepartment = departmentRepo.findByIdForUpdate(currentDepartment.getDepartmentId())
                 .orElseThrow(() -> new ResourceNotFoundException("Phòng thực hiện không tồn tại"));
-        StaffInfo actor = staffRepo.findById(staffId).orElse(null);
-        if (!isResponsibleDoctor(lockedDepartment, actor)) {
-            throw new org.springframework.security.access.AccessDeniedException(
-                    "Chỉ bác sĩ phụ trách phòng thực hiện mới được phép thao tác");
-        }
-        return actor;
+        return staffDutyService.requireCurrentStaffOnDuty(lockedDepartment, true);
     }
 
     private boolean isResponsibleDoctor(Department department, StaffInfo actor) {
         return department != null && actor != null && actor.getSystemRole() != null
                 && actor.getSystemRole().isDoctor()
-                && department.getHeadDoctor() != null
-                && actor.getStaffId().equals(department.getHeadDoctor().getStaffId());
+                && actor.getDepartment() != null
+                && department.getDepartmentId().equals(actor.getDepartment().getDepartmentId());
     }
 
     private boolean isAssignedNurse(Department department, StaffInfo actor) {
         return department != null && actor != null
                 && actor.getSystemRole() == org.example.doansummer2026.enums.SystemRole.NURSE
-                && department.getNurses() != null
-                && department.getNurses().stream()
-                .anyMatch(nurse -> actor.getStaffId().equals(nurse.getStaffId()));
+                && actor.getDepartment() != null
+                && department.getDepartmentId().equals(actor.getDepartment().getDepartmentId());
     }
 
     private boolean isCurrentAdmin() {

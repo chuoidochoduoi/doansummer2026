@@ -640,7 +640,7 @@ public class InvoiceService implements InvoiceServiceInterface {
         if (service.getDepartment() != null
                 && service.getDepartment().getDepartmentType() == DepartmentType.EXAMINATION
                 && service.getDepartment().getStatus() != DepartmentStatus.MAINTENANCE
-                && service.getDepartment().getHeadDoctor() != null) {
+                && hasDoctorMember(service.getDepartment())) {
             return service.getDepartment();
         }
 
@@ -652,15 +652,20 @@ public class InvoiceService implements InvoiceServiceInterface {
         return departmentRepo.findEligibleExaminationRoomsBySpecialization(
                         service.getRequiredSpecialization().getSpecializationId())
                 .stream()
-                // Ưu tiên phòng đã có bác sĩ phụ trách, nhưng vẫn điều phối được
-                // dữ liệu phòng cũ chưa đồng bộ head_doctor_id.
                 .min(java.util.Comparator
-                        .comparing((Department room) -> room.getHeadDoctor() == null)
+                        .comparing((Department room) -> !hasDoctorMember(room))
                         .thenComparingLong(room -> queueTicketRepo
                                 .countActiveTicketsByDepartment(room.getDepartmentId())))
                 .orElseThrow(() -> new BadRequestException("Chưa có phòng khám sẵn sàng "
                         + "cho chuyen khoa '" + service.getRequiredSpecialization().getName()
                         + "' cua dich vu '" + service.getName() + "'"));
+    }
+
+    private boolean hasDoctorMember(Department department) {
+        return staffRepo.findByDepartment_DepartmentId(department.getDepartmentId()).stream()
+                .anyMatch(staff -> staff.getSystemRole() != null && staff.getSystemRole().isDoctor()
+                        && staff.getProfile() != null && staff.getProfile().getAccount() != null
+                        && Boolean.TRUE.equals(staff.getProfile().getAccount().getIsActive()));
     }
 
     private InvoiceItem buildItem(Invoice invoice, InvoiceItemCreateRequest req) {
@@ -720,9 +725,11 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .map(MedicalService::getServiceId)
                 .collect(java.util.stream.Collectors.toSet());
         java.util.Set<UUID> allExaminations = new java.util.HashSet<>(requestedExaminations);
+        boolean appointmentVisit = false;
         if (visitId != null) {
             CustomerVisit targetVisit = visitRepo.findById(visitId)
                     .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
+            appointmentVisit = targetVisit.getAppointment() != null;
             if (targetVisit.getCustomer() != null && !requestedExaminations.isEmpty()) {
                 profileRepo.findByIdForUpdate(targetVisit.getCustomer().getProfileId())
                         .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
@@ -761,11 +768,11 @@ public class InvoiceService implements InvoiceServiceInterface {
             }
             allExaminations.addAll(queuedExaminations);
         }
-        // Mot CustomerVisit chi dai dien cho mot dich vu kham. Dich vu kham
-        // khac phai nam trong CustomerVisit rieng; cac visit co the cung cho.
-        if (allExaminations.size() > 1) {
+        // Lich hen online co the gom nhieu dich vu kham trong mot lan check-in.
+        // Phieu kham do le tan tao truc tiep van chi dai dien cho mot dich vu kham.
+        if (!appointmentVisit && allExaminations.size() > 1) {
             throw new BadRequestException(
-                    "Mỗi lượt khám chỉ được có tối đa 1 dịch vụ khám bệnh"
+                    "Phiếu khám tạo trực tiếp chỉ được có tối đa 1 dịch vụ khám bệnh"
             );
         }
     }

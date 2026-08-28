@@ -17,6 +17,6 @@ public record DepartmentCreateRequest(
         List<UUID> capabilityIds,
         @Size(max = 500) String description,
         UUID headDoctorId,
+        List<UUID> doctorIds,
         List<UUID> nurseIds
 ) {}
-

@@ -13,7 +13,9 @@ public record StaffScheduleItemResponse(
         UUID scheduleId,
         UUID staffId,
         String name,
-        String role
+        String role,
+        UUID departmentId,
+        String departmentName
 ) {
     public static StaffScheduleItemResponse from(StaffSchedule schedule) {
         String role = schedule.getStaff() != null ? getRoleCode(schedule.getStaff().getSystemRole()) : null;
@@ -23,13 +25,19 @@ public record StaffScheduleItemResponse(
         return new StaffScheduleItemResponse(
                 schedule.getScheduleId(),
                 schedule.getStaff() != null ? schedule.getStaff().getStaffId() : null,
-                name, role);
+                name, role,
+                schedule.getStaff() != null && schedule.getStaff().getDepartment() != null
+                        ? schedule.getStaff().getDepartment().getDepartmentId() : null,
+                schedule.getStaff() != null && schedule.getStaff().getDepartment() != null
+                        ? schedule.getStaff().getDepartment().getName() : null);
     }
 
     public static StaffScheduleItemResponse fromStaff(StaffInfo staff) {
         String role = getRoleCode(staff.getSystemRole());
         String name = staff.getProfile() != null ? staff.getProfile().getFullName() : null;
-        return new StaffScheduleItemResponse(null, staff.getStaffId(), name, role);
+        return new StaffScheduleItemResponse(null, staff.getStaffId(), name, role,
+                staff.getDepartment() != null ? staff.getDepartment().getDepartmentId() : null,
+                staff.getDepartment() != null ? staff.getDepartment().getName() : null);
     }
 
     private static String getRoleCode(org.example.doansummer2026.enums.SystemRole systemRole) {

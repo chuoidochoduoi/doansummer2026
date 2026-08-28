@@ -126,7 +126,7 @@ public class AccountService implements AccountServiceInterface {
 
     /**
      * Danh sach tai khoan nhan su (STAFF) voi thong tin StaffInfo.
-     * NOTE: StaffInfo khong con department - department chi quan he voi head_doctor o Department.
+     * StaffInfo.department la phong chuyen mon chinh; headDoctor chi la thong tin quan ly.
      */
     @Transactional(readOnly = true)
     public PageResponse<AccountManagementResponse> listStaff(String search, SystemRole systemRole, Pageable pageable) {
@@ -137,7 +137,7 @@ public class AccountService implements AccountServiceInterface {
                     a,
                     staff.getStaffCode(),
                     staff.getProfile().getFullName(),
-                    null, // department da xoa khoi StaffInfo
+                    staff.getDepartment() != null ? staff.getDepartment().getName() : null,
                     staff.getSystemRole()
             );
         });

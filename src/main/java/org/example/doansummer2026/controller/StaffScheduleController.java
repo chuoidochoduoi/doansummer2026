@@ -80,7 +80,7 @@ public class StaffScheduleController {
 
     @PostMapping("/api/v1/schedules")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule")
+    @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule", description = "Tạo lịch trực nhân sự")
     public ResponseEntity<ScheduleResponse> create(@Valid @RequestBody ScheduleCreateRequest req) {
         ScheduleResponse created = service.create(req);
         return RestResponses.created("/api/v1/schedules/{id}", created.scheduleId(), created);
@@ -88,7 +88,7 @@ public class StaffScheduleController {
 
     @PutMapping("/api/v1/schedules/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    @Auditable(action = AuditAction.UPDATE, entityName = "StaffSchedule", idParamName = "id")
+    @Auditable(action = AuditAction.UPDATE, entityName = "StaffSchedule", idParamName = "id", description = "Cập nhật lịch trực nhân sự")
     public ResponseEntity<ScheduleResponse> update(@PathVariable UUID id,
                                                    @RequestBody ScheduleUpdateRequest req) {
         return RestResponses.ok(service.update(id, req));
@@ -96,7 +96,7 @@ public class StaffScheduleController {
 
     @DeleteMapping("/api/v1/schedules/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    @Auditable(action = AuditAction.DELETE, entityName = "StaffSchedule", idParamName = "id")
+    @Auditable(action = AuditAction.DELETE, entityName = "StaffSchedule", idParamName = "id", description = "Gỡ lịch trực nhân sự")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
@@ -105,7 +105,7 @@ public class StaffScheduleController {
     /** POST tac vu batch - sinh nhieu lich, khong co Location don le -> 200 OK. */
     @PostMapping("/api/v1/schedules/generate")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule")
+    @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule", description = "Sinh lịch trực theo mẫu tuần")
     public ResponseEntity<List<ScheduleResponse>> generate(@RequestBody ScheduleGenerateRequest req) {
         return RestResponses.ok(service.generateFromTemplates(
                 req.weekStart(), req.staffIds(), req.overrideExisting()));
@@ -118,15 +118,39 @@ public class StaffScheduleController {
      * - week: ngay bat ky trong tuan (thu 2 - chu nhat).
      */
     @GetMapping("/api/v1/clinic-manager/schedules")
-    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<ClinicManagerScheduleResponse> getSchedules(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate week) {
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate week,
+            @RequestParam(required = false) UUID departmentId,
+            @RequestParam(required = false) String staffGroup) {
         LocalDate weekStart = week.with(DayOfWeek.MONDAY);
         LocalDate weekEnd = weekStart.plusDays(6);
 
-        var schedules = service.findByWeek(weekStart, weekEnd);
-        var response = ClinicManagerScheduleResponse.from(schedules, weekStart, shiftConfigRepo.findAll());
+        var schedules = service.findByWeek(weekStart, weekEnd).stream()
+                .filter(schedule -> departmentId == null || (schedule.getStaff() != null
+                        && schedule.getStaff().getDepartment() != null
+                        && departmentId.equals(schedule.getStaff().getDepartment().getDepartmentId())))
+                .filter(schedule -> matchesStaffGroup(schedule, staffGroup))
+                .toList();
+        var response = ClinicManagerScheduleResponse.from(
+                schedules, weekStart, shiftConfigRepo.findAllByIsActiveTrueOrderByStartTimeAsc(), staffGroup);
         return RestResponses.ok(response);
+    }
+
+    private boolean matchesStaffGroup(org.example.doansummer2026.model.StaffSchedule schedule,
+                                      String staffGroup) {
+        if (staffGroup == null || staffGroup.isBlank()) return true;
+        if (schedule.getStaff() == null || schedule.getStaff().getSystemRole() == null) return false;
+        var role = schedule.getStaff().getSystemRole();
+        if ("PROFESSIONAL".equalsIgnoreCase(staffGroup)) {
+            return role.isDoctor() || role == org.example.doansummer2026.enums.SystemRole.NURSE;
+        }
+        if ("GENERAL".equalsIgnoreCase(staffGroup)) {
+            return role == org.example.doansummer2026.enums.SystemRole.RECEPTIONIST
+                    || role == org.example.doansummer2026.enums.SystemRole.CASHIER
+                    || role == org.example.doansummer2026.enums.SystemRole.CLINIC_MANAGER;
+        }
+        return true;
     }
 
     /**
@@ -135,7 +159,7 @@ public class StaffScheduleController {
      */
     @PostMapping("/api/v1/clinic-manager/schedules/assign")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    @Auditable(action = AuditAction.UPDATE, entityName = "StaffSchedule")
+    @Auditable(action = AuditAction.UPDATE, entityName = "StaffSchedule", description = "Thay đổi phân công lịch trực")
     public ResponseEntity<Void> assign(@Valid @RequestBody ScheduleAssignRequest req) {
         service.assignStaff(req);
         return RestResponses.noContent();
@@ -146,14 +170,15 @@ public class StaffScheduleController {
      */
     @PostMapping("/api/v1/clinic-manager/schedules/copy")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule")
+    @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule", description = "Sao chép lịch trực tuần trước")
     public ResponseEntity<ClinicManagerScheduleResponse> copy(@Valid @RequestBody ScheduleCopyRequest req) {
         LocalDate weekStart = req.week().with(DayOfWeek.MONDAY);
         LocalDate prevWeekStart = weekStart.minusDays(7);
         LocalDate weekEnd = weekStart.plusDays(6);
 
         var schedules = service.copyWeek(prevWeekStart, weekStart);
-        var response = ClinicManagerScheduleResponse.from(schedules, weekStart, shiftConfigRepo.findAll());
+        var response = ClinicManagerScheduleResponse.from(
+                schedules, weekStart, shiftConfigRepo.findAllByIsActiveTrueOrderByStartTimeAsc());
         return RestResponses.ok(response);
     }
 

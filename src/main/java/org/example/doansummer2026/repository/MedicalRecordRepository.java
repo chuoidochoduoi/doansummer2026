@@ -36,6 +36,8 @@ public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UU
     Page<MedicalRecord> findFeedbacksForStaff(@Param("doctorId") UUID doctorId, Pageable pageable);
     Optional<MedicalRecord> findByQueueTicket_TicketId(UUID ticketId);
 
+    boolean existsByDoctor_StaffIdAndStatusIn(UUID staffId, List<MedicalRecordStatus> statuses);
+
     @Query("""
             SELECT m FROM MedicalRecord m
             LEFT JOIN FETCH m.visit v

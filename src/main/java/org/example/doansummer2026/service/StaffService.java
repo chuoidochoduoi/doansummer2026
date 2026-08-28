@@ -52,7 +52,8 @@ import java.util.Locale;
  *   2. tao Account(role duoc chi dinh) - password BCrypt
  *   3. tao Profile lien ket Account
  *   4. tao StaffInfo lien ket Profile, Specialization
- * NOTE: StaffInfo khong con department - chi quan he Department.headDoctor toi StaffInfo.
+ * StaffInfo.department la phong chuyen mon chinh cua nhan su; Department.headDoctor
+ * chi la thong tin phu trach chuyen mon.
  */
 @Service
 @Transactional
@@ -354,7 +355,7 @@ public class StaffService implements StaffServiceInterface {
                 .filter(item -> item.getProfile() != null
                         && item.getProfile().getAccount() != null
                         && Boolean.TRUE.equals(item.getProfile().getAccount().getIsActive()))
-                .map(StaffOptionResponse::from)
+                .map(this::toStaffOption)
                 .toList();
     }
 
@@ -364,20 +365,36 @@ public class StaffService implements StaffServiceInterface {
     @Transactional(readOnly = true)
     public List<StaffOptionResponse> findAllDoctors() {
         List<StaffInfo> doctors = staffRepo.findAllBySystemRoleIn(doctorRoles());
-                
-        List<Department> allDepts = departmentRepo.findAll();
-        Map<UUID, UUID> doctorToDeptMap = allDepts.stream()
-            .filter(d -> d.getHeadDoctor() != null)
-            .collect(Collectors.toMap(d -> d.getHeadDoctor().getStaffId(), Department::getDepartmentId, (a, b) -> a));
-
-        return doctors.stream().map(d -> StaffOptionResponse.from(d, doctorToDeptMap.get(d.getStaffId()))).toList();
+        return doctors.stream()
+                .filter(this::isActiveStaff)
+                .map(this::toStaffOption)
+                .toList();
     }
 
     @Transactional(readOnly = true)
     public List<StaffOptionResponse> findAllNurses() {
         List<StaffInfo> nurses = staffRepo.findAllBySystemRoleIn(
                 List.of(SystemRole.NURSE));
-        return nurses.stream().map(n -> StaffOptionResponse.from(n, n.getDepartment() != null ? n.getDepartment().getDepartmentId() : null)).toList();
+        return nurses.stream().filter(this::isActiveStaff).map(this::toStaffOption).toList();
+    }
+
+    private boolean isActiveStaff(StaffInfo staff) {
+        return staff.getProfile() != null && staff.getProfile().getAccount() != null
+                && Boolean.TRUE.equals(staff.getProfile().getAccount().getIsActive());
+    }
+
+    private StaffOptionResponse toStaffOption(StaffInfo staff) {
+        List<UUID> capabilityIds = staffCapabilityRepo
+                .findAllByStaff_StaffIdAndStatus(staff.getStaffId(), StaffCapabilityStatus.ACTIVE)
+                .stream()
+                .filter(value -> value.getCapability() != null)
+                .map(value -> value.getCapability().getCapabilityId())
+                .distinct()
+                .toList();
+        return StaffOptionResponse.from(
+                staff,
+                staff.getDepartment() != null ? staff.getDepartment().getDepartmentId() : null,
+                capabilityIds);
     }
 
     private StaffResponse toResponse(StaffInfo s) {

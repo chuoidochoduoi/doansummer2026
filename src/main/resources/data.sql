@@ -150,7 +150,7 @@ UPDATE profile SET account_id = '30000013-3333-3333-3333-333333333333' WHERE pro
 -- ===================================================================
 INSERT INTO staff_info (staff_id, created_at, updated_at, deleted, profile_id, staff_code, system_role, national_id, bank_account, highest_degree, university, license_number, specialization_id, department_id) VALUES
                                                                                                                                                                                                                      ('90000008-1111-1111-1111-111111111111', NOW(), NOW(), false, '20000009-9999-9999-9999-999999999999', 'STF-ADM-001', 'ADMIN', '9123456789', NULL, NULL, NULL, NULL, NULL, NULL),
-                                                                                                                                                                                                                     ('90000009-2222-2222-2222-222222222222', NOW(), NOW(), false, '20000010-0000-0000-0000-000000000001', 'STF-CLM-001', 'CLINIC_MANAGER', '9223456789', NULL, NULL, NULL, NULL, NULL, '33333333-3333-3333-3333-333333333333');
+('90000009-2222-2222-2222-222222222222', NOW(), NOW(), false, '20000010-0000-0000-0000-000000000001', 'STF-CLM-001', 'CLINIC_MANAGER', '9223456789', NULL, NULL, NULL, NULL, NULL, NULL);
 
 -- ===================================================================
 -- Medicine Catalog
@@ -575,6 +575,27 @@ WHERE c.day_name <> 'SUNDAY'
              OR (e.exception_type = 'SHIFT_OFF' AND e.shift_id = t.shift_id))
   );
 
+-- Bao ve du lieu lich: mot nhan vien chi co mot ban ghi hoat dong cho cung ngay va ca.
+-- Khoi nay idempotent, co the chay lai sau khi du lieu cu da tung bi lap.
+WITH ranked_schedule AS (
+    SELECT schedule_id,
+           ROW_NUMBER() OVER (
+               PARTITION BY staff_id, work_date, shift_id
+               ORDER BY is_custom DESC, updated_at DESC, created_at DESC, schedule_id DESC
+           ) AS duplicate_order
+    FROM staff_schedule
+    WHERE deleted = false AND shift_id IS NOT NULL
+)
+UPDATE staff_schedule schedule
+SET deleted = true,
+    updated_at = NOW()
+FROM ranked_schedule ranked
+WHERE schedule.schedule_id = ranked.schedule_id
+  AND ranked.duplicate_order > 1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_staff_schedule_active_slot
+    ON staff_schedule (staff_id, work_date, shift_id)
+    WHERE deleted = false AND shift_id IS NOT NULL;
 
 INSERT INTO profile (
     profile_id, account_id, created_at, updated_at, deleted, patient_code,
@@ -1026,6 +1047,55 @@ FROM generate_series(5, 12) AS g(i)
 JOIN test_request tr ON tr.test_request_id = format('57000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid
 JOIN queue_ticket q ON q.ticket_id = tr.queue_ticket_id;
 
+-- Bộ phiếu labo chuyên biệt để trình diễn đủ tám form kết quả. Các phiếu này
+-- không tạo thêm hóa đơn: chúng mô phỏng chỉ định đã được thanh toán trong lượt.
+INSERT INTO test_request (
+    test_request_id, medical_record_id, service_id, performing_department,
+    queue_ticket_id, description, status, requested_by, completed_at,
+    performed_at, cancel_reason, invoice_item_id, created_at, updated_at, deleted
+)
+SELECT format('57200000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       mr.record_id,
+       format('400000%s-0000-0000-0000-%s', lpad(service_no::text, 2, '0'), lpad(service_no::text, 12, '0'))::uuid,
+       CASE WHEN service_no IN (8,20) THEN '44444444-4444-4444-4444-444444444444'::uuid
+            ELSE 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid END,
+       NULL,
+       'Phiếu trình diễn dữ liệu có cấu trúc cho ' || ms.name,
+       CASE WHEN service_no = 20 THEN 'IN_PROGRESS' ELSE 'COMPLETED' END,
+       mr.doctor_id,
+       CASE WHEN service_no = 20 THEN NULL ELSE NOW() - INTERVAL '20 minutes' END,
+       NOW() - INTERVAL '35 minutes', NULL, NULL, NOW(), NOW(), false
+FROM (VALUES (1,8),(2,9),(3,10),(4,11),(5,12),(6,13),(7,14),(8,20)) seed(i,service_no)
+JOIN medical_record mr ON mr.record_id = format('56000000-0000-0000-0000-%s', lpad((seed.i + 4)::text, 12, '0'))::uuid
+JOIN medical_service ms ON ms.service_id = format('400000%s-0000-0000-0000-%s', lpad(service_no::text, 2, '0'), lpad(service_no::text, 12, '0'))::uuid
+ON CONFLICT (test_request_id) DO NOTHING;
+
+INSERT INTO test_result (
+    result_id, test_request_id, image_url, conclusion, sample_id,
+    sample_type, sample_status, collected_at, collected_by,
+    performed_by, performed_at, verified_by, verified_at,
+    created_at, updated_at, deleted
+)
+SELECT format('58200000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+       req.test_request_id, NULL,
+       CASE WHEN service_no = 20 THEN 'Bản nháp có control không hợp lệ, chưa được phép ký.'
+            ELSE 'Kết quả mẫu được nhập bằng dữ liệu có cấu trúc.' END,
+       'SMP-LAB-' || to_char(CURRENT_DATE, 'YYMMDD') || '-' || lpad(i::text, 3, '0'),
+       CASE WHEN service_no = 13 THEN 'URINE' ELSE 'BLOOD' END,
+       'ACCEPTED', NOW() - INTERVAL '45 minutes',
+       '90000011-4444-4444-4444-444444444444'::uuid,
+       CASE WHEN service_no IN (8,20) THEN '93000000-0000-0000-0000-000000000002'::uuid
+            ELSE '93000000-0000-0000-0000-000000000003'::uuid END,
+       req.performed_at,
+       CASE WHEN service_no = 20 THEN NULL
+            WHEN service_no = 8 THEN '93000000-0000-0000-0000-000000000002'::uuid
+            ELSE '93000000-0000-0000-0000-000000000003'::uuid END,
+       CASE WHEN service_no = 20 THEN NULL ELSE req.completed_at END,
+       NOW(), NOW(), false
+FROM (VALUES (1,8),(2,9),(3,10),(4,11),(5,12),(6,13),(7,14),(8,20)) seed(i,service_no)
+JOIN test_request req ON req.test_request_id = format('57200000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid
+ON CONFLICT (test_request_id) DO NOTHING;
+
 -- Hai dong thuoc cho moi ho so da hoan thanh (benh nhan da xac minh di ung).
 INSERT INTO prescription_item (
     prescription_item_id, record_id, medicine_name, quantity, unit,
@@ -1140,8 +1210,8 @@ SELECT format('5c000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
 FROM generate_series(1, 6) AS g(i);
 
 -- ===================================================================
--- Published dynamic clinical forms. These are UI/demo structures only;
--- laboratory reference ranges must be configured by the Clinic Manager.
+-- Published dynamic clinical forms. Eight laboratory forms receive a
+-- controlled system version below; other forms remain manager-owned.
 -- The finalized medical_service rows above are not changed.
 -- ===================================================================
 INSERT INTO clinical_form_template
@@ -1191,6 +1261,159 @@ VALUES
 ('cf100012-0000-0000-0000-000000000012',NOW(),NOW(),false,'cf000012-0000-0000-0000-000000000012',1,$j${"fields":[{"key":"heartRate","label":"Tần số tim","type":"NUMBER","unit":"bpm","group":"Điện tim","displayOrder":1,"required":true,"min":0},{"key":"rhythmType","label":"Loại nhịp","type":"SELECT","group":"Điện tim","displayOrder":2,"options":["SINUS","ATRIAL_FIBRILLATION","OTHER"]},{"key":"ecgDescription","label":"Mô tả","type":"TEXTAREA","group":"Điện tim","displayOrder":3,"normalValue":"Nhịp xoang đều."},{"key":"ecgConclusion","label":"Kết luận","type":"TEXTAREA","group":"Kết luận","displayOrder":4,"required":true,"normalValue":"Điện tâm đồ trong giới hạn bình thường."}]}$j$::jsonb,'PUBLISHED','Khởi tạo mẫu ECG',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW())
 ON CONFLICT (template_id, version_no) DO NOTHING;
 
+INSERT INTO clinical_form_template_version
+(version_id,created_at,updated_at,deleted,template_id,version_no,schema_json,status,change_reason,effective_from,created_by,published_by,published_at)
+VALUES
+('cf200007-0000-0000-0000-000000000007',NOW(),NOW(),false,'cf000007-0000-0000-0000-000000000007',2,$j$
+{"layout":"LAB_TABLE","systemManaged":true,"sourceName":"Public laboratory test catalogs","sourceVersion":"REFERENCE_CATALOG_V1","fields":[
+{"key":"glucoseContext","code":"Loại mẫu","label":"Bối cảnh đo đường huyết","type":"SELECT","group":"Đường huyết","displayOrder":1,"requiredOnSign":true,"options":[{"value":"FASTING","label":"Lúc đói"},{"value":"RANDOM","label":"Bất kỳ"},{"value":"POSTPRANDIAL_2H","label":"Sau ăn 2 giờ"}]},
+{"key":"fastingHours","code":"Giờ nhịn ăn","label":"Số giờ nhịn ăn","type":"NUMBER","unit":"giờ","group":"Đường huyết","displayOrder":2,"min":0,"max":24,"precision":1,"visibleWhen":{"field":"glucoseContext","equals":"FASTING"},"requiredWhen":{"field":"glucoseContext","equals":"FASTING"}},
+{"key":"lastMealAt","code":"Bữa ăn gần nhất","label":"Thời điểm bữa ăn gần nhất","type":"TEXT","group":"Đường huyết","displayOrder":3,"visibleWhen":{"field":"glucoseContext","equals":"POSTPRANDIAL_2H"},"requiredWhen":{"field":"glucoseContext","equals":"POSTPRANDIAL_2H"}},
+{"key":"glucoseQualifier","code":"Dấu","label":"Dấu định lượng","type":"SELECT","group":"Đường huyết","displayOrder":4,"requiredOnSign":true,"options":[{"value":"LESS_THAN","label":"<"},{"value":"EQUAL","label":"="},{"value":"GREATER_THAN","label":">"}]},
+{"key":"glucose","code":"GLU","loincCode":"2345-7","label":"Glucose máu","type":"NUMBER","unit":"mmol/L","group":"Đường huyết","displayOrder":5,"requiredOnSign":true,"qualifierKey":"glucoseQualifier","min":0,"max":60,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","when":{"field":"glucoseContext","equals":"FASTING"},"low":3.9,"high":5.5},{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","when":{"field":"glucoseContext","equals":"RANDOM"},"high":7.8},{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","when":{"field":"glucoseContext","equals":"POSTPRANDIAL_2H"},"high":7.8}],"criticalRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":2.5,"high":25}]},
+{"key":"sampleConditionNote","code":"Ghi chú","label":"Ghi chú tình trạng mẫu","type":"TEXTAREA","group":"Đường huyết","displayOrder":6}
+]}$j$::jsonb,'PUBLISHED','Bổ sung bối cảnh đo, qualifier và khoảng tham chiếu',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW()),
+
+('cf200008-0000-0000-0000-000000000008',NOW(),NOW(),false,'cf000008-0000-0000-0000-000000000008',2,$j$
+{"layout":"LAB_TABLE","systemManaged":true,"sourceName":"Public clinical chemistry laboratory catalogs","sourceVersion":"REFERENCE_CATALOG_V1","fields":[
+{"key":"hba1c","code":"HbA1c","loincCode":"4548-4","label":"Hemoglobin A1c","type":"NUMBER","unit":"%","group":"Chuyển hóa đường","displayOrder":1,"requiredOnSign":true,"min":2,"max":20,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":5.6}]},
+{"key":"totalCholesterol","code":"TC","loincCode":"2093-3","label":"Cholesterol toàn phần","type":"NUMBER","unit":"mmol/L","group":"Lipid máu","displayOrder":2,"requiredOnSign":true,"min":0,"max":30,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":5.2}]},
+{"key":"triglyceride","code":"TG","loincCode":"2571-8","label":"Triglyceride","type":"NUMBER","unit":"mmol/L","group":"Lipid máu","displayOrder":3,"requiredOnSign":true,"min":0,"max":30,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":1.7}]},
+{"key":"hdlC","code":"HDL-C","loincCode":"2085-9","label":"HDL Cholesterol","type":"NUMBER","unit":"mmol/L","group":"Lipid máu","displayOrder":4,"requiredOnSign":true,"min":0,"max":10,"precision":2,"referenceRanges":[{"sex":"MALE","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":1.0},{"sex":"FEMALE","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":1.3}]},
+{"key":"ldlC","code":"LDL-C","loincCode":"13457-7","label":"LDL Cholesterol","type":"NUMBER","unit":"mmol/L","group":"Lipid máu","displayOrder":5,"requiredOnSign":true,"min":0,"max":20,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":3.4}]},
+{"key":"nonHdlC","code":"Non-HDL-C","label":"Non-HDL Cholesterol","type":"NUMBER","unit":"mmol/L","group":"Lipid máu","displayOrder":6,"calculatorKey":"NON_HDL_C_V1","precision":2,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":4.1}]},
+{"key":"acidUric","code":"UA","loincCode":"3084-1","label":"Acid uric","type":"NUMBER","unit":"µmol/L","group":"Chuyển hóa khác","displayOrder":7,"requiredOnSign":true,"min":0,"max":1500,"precision":0,"referenceRanges":[{"sex":"MALE","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":210,"high":420},{"sex":"FEMALE","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":150,"high":350}]},
+{"key":"totalProtein","code":"TP","loincCode":"2885-2","label":"Protein toàn phần","type":"NUMBER","unit":"g/L","group":"Chuyển hóa khác","displayOrder":8,"requiredOnSign":true,"min":10,"max":150,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":64,"high":83}]}
+]}$j$::jsonb,'PUBLISHED','Mở rộng sinh hóa máu cơ bản và Non-HDL-C',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW()),
+
+('cf200009-0000-0000-0000-000000000009',NOW(),NOW(),false,'cf000009-0000-0000-0000-000000000009',2,$j$
+{"layout":"LAB_TABLE","systemManaged":true,"sourceName":"Public liver profile laboratory catalogs","sourceVersion":"REFERENCE_CATALOG_V1","fields":[
+{"key":"ast","code":"AST","loincCode":"1920-8","label":"Aspartate aminotransferase","type":"NUMBER","unit":"U/L","group":"Enzyme gan mật","displayOrder":1,"requiredOnSign":true,"min":0,"max":5000,"precision":0,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":40}]},
+{"key":"alt","code":"ALT","loincCode":"1742-6","label":"Alanine aminotransferase","type":"NUMBER","unit":"U/L","group":"Enzyme gan mật","displayOrder":2,"requiredOnSign":true,"min":0,"max":5000,"precision":0,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":41}]},
+{"key":"alp","code":"ALP","loincCode":"6768-6","label":"Alkaline phosphatase","type":"NUMBER","unit":"U/L","group":"Enzyme gan mật","displayOrder":3,"requiredOnSign":true,"min":0,"max":3000,"precision":0,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":40,"high":130}]},
+{"key":"ggt","code":"GGT","loincCode":"2324-2","label":"Gamma-glutamyl transferase","type":"NUMBER","unit":"U/L","group":"Enzyme gan mật","displayOrder":4,"requiredOnSign":true,"min":0,"max":3000,"precision":0,"referenceRanges":[{"sex":"MALE","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":60},{"sex":"FEMALE","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":40}]},
+{"key":"bilirubinTotal","code":"TBIL","loincCode":"1975-2","label":"Bilirubin toàn phần","type":"NUMBER","unit":"µmol/L","group":"Bilirubin","displayOrder":5,"requiredOnSign":true,"min":0,"max":1000,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":21}]},
+{"key":"bilirubinDirect","code":"DBIL","loincCode":"1968-7","label":"Bilirubin trực tiếp","type":"NUMBER","unit":"µmol/L","group":"Bilirubin","displayOrder":6,"requiredOnSign":true,"min":0,"max":1000,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":5}]},
+{"key":"bilirubinIndirect","code":"IBIL","label":"Bilirubin gián tiếp","type":"NUMBER","unit":"µmol/L","group":"Bilirubin","displayOrder":7,"calculatorKey":"INDIRECT_BILIRUBIN_V1","precision":1,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":16}]},
+{"key":"albumin","code":"ALB","loincCode":"1751-7","label":"Albumin","type":"NUMBER","unit":"g/L","group":"Protein","displayOrder":8,"requiredOnSign":true,"min":5,"max":80,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":35,"high":52}]}
+],"rules":[{"type":"LESS_THAN_OR_EQUAL","left":"bilirubinDirect","right":"bilirubinTotal","severity":"ERROR","message":"Bilirubin trực tiếp không được lớn hơn Bilirubin toàn phần."}]}
+$j$::jsonb,'PUBLISHED','Mở rộng bộ chức năng gan và Bilirubin gián tiếp',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW()),
+
+('cf20000a-0000-0000-0000-00000000000a',NOW(),NOW(),false,'cf00000a-0000-0000-0000-00000000000a',2,$j$
+{"layout":"LAB_TABLE","systemManaged":true,"sourceName":"NIDDK CKD-EPI 2021 and public renal profile catalogs","sourceVersion":"REFERENCE_CATALOG_V1","fields":[
+{"key":"urea","code":"UREA","loincCode":"3094-0","label":"Urea","type":"NUMBER","unit":"mmol/L","group":"Chức năng lọc","displayOrder":1,"requiredOnSign":true,"min":0,"max":100,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":2.5,"high":7.5}]},
+{"key":"bun","code":"BUN","label":"Blood Urea Nitrogen (tự tính)","type":"NUMBER","unit":"mg/dL","group":"Chức năng lọc","displayOrder":2,"calculatorKey":"BUN_FROM_UREA_V1","precision":2,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":7,"high":21}]},
+{"key":"creatinine","code":"CREA","loincCode":"2160-0","label":"Creatinine","type":"NUMBER","unit":"µmol/L","group":"Chức năng lọc","displayOrder":3,"requiredOnSign":true,"min":1,"max":3000,"precision":0,"referenceRanges":[{"sex":"MALE","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":62,"high":106},{"sex":"FEMALE","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":44,"high":80}]},
+{"key":"egfr","code":"eGFR","loincCode":"98979-8","label":"Mức lọc cầu thận ước tính","type":"NUMBER","unit":"mL/min/1.73m²","group":"Chức năng lọc","displayOrder":4,"calculatorKey":"EGFR_CKD_EPI_2021_V1","precision":2,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":60}]},
+{"key":"sodium","code":"Na+","loincCode":"2951-2","label":"Sodium","type":"NUMBER","unit":"mmol/L","group":"Điện giải","displayOrder":5,"requiredOnSign":true,"min":80,"max":200,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":135,"high":145}],"criticalRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":120,"high":160}]},
+{"key":"potassium","code":"K+","loincCode":"2823-3","label":"Potassium","type":"NUMBER","unit":"mmol/L","group":"Điện giải","displayOrder":6,"requiredOnSign":true,"min":1,"max":12,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":3.5,"high":5.1}],"criticalRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":2.5,"high":6.5}]},
+{"key":"chloride","code":"Cl-","loincCode":"2075-0","label":"Chloride","type":"NUMBER","unit":"mmol/L","group":"Điện giải","displayOrder":7,"requiredOnSign":true,"min":60,"max":160,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":98,"high":107}]},
+{"key":"bicarbonate","code":"HCO3-/TCO2","loincCode":"2028-9","label":"Bicarbonate / Total CO₂","type":"NUMBER","unit":"mmol/L","group":"Điện giải","displayOrder":8,"requiredOnSign":true,"min":5,"max":60,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":22,"high":29}]},
+{"key":"calcium","code":"Ca","loincCode":"17861-6","label":"Calcium toàn phần","type":"NUMBER","unit":"mmol/L","group":"Khoáng chất","displayOrder":9,"requiredOnSign":true,"min":0.5,"max":5,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":2.15,"high":2.55}]},
+{"key":"phosphate","code":"PO4","loincCode":"2777-1","label":"Phosphate","type":"NUMBER","unit":"mmol/L","group":"Khoáng chất","displayOrder":10,"requiredOnSign":true,"min":0.1,"max":6,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","low":0.81,"high":1.45}]}
+]}$j$::jsonb,'PUBLISHED','Mở rộng chức năng thận, điện giải, BUN và eGFR',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW())
+ON CONFLICT (template_id, version_no) DO NOTHING;
+
+-- ===================================================================
+-- System-managed laboratory forms. These schemas are version snapshots;
+-- staff enter results manually, while units/ranges/calculations are owned
+-- by the backend and cannot be edited from the Clinic Manager UI.
+-- ===================================================================
+INSERT INTO clinical_form_template_version
+(version_id,created_at,updated_at,deleted,template_id,version_no,schema_json,status,change_reason,effective_from,created_by,published_by,published_at)
+VALUES ('cf200006-0000-0000-0000-000000000006',NOW(),NOW(),false,'cf000006-0000-0000-0000-000000000006',2,$j$
+{
+  "layout":"LAB_TABLE","systemManaged":true,"sourceName":"LOINC CBC panel; public haematology laboratory handbooks","sourceVersion":"REFERENCE_CATALOG_V1",
+  "fields":[
+    {"key":"rbc","code":"RBC","loincCode":"789-8","label":"Số lượng hồng cầu","type":"NUMBER","unit":"10^12/L","group":"Hồng cầu","displayOrder":1,"requiredOnSign":true,"min":0,"max":10,"precision":2,"referenceRanges":[{"sex":"MALE","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":4.5,"high":5.5},{"sex":"FEMALE","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":3.8,"high":4.8},{"sex":"ANY","minAge":2,"maxAge":12,"ageUnit":"YEARS","low":4.0,"high":5.2}]},
+    {"key":"hgb","code":"HGB","loincCode":"718-7","label":"Huyết sắc tố","type":"NUMBER","unit":"g/L","group":"Hồng cầu","displayOrder":2,"requiredOnSign":true,"min":20,"max":250,"precision":0,"referenceRanges":[{"sex":"MALE","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":130,"high":170},{"sex":"FEMALE","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":120,"high":150},{"sex":"ANY","minAge":2,"maxAge":6,"ageUnit":"YEARS","low":110,"high":140},{"sex":"ANY","minAge":7,"maxAge":12,"ageUnit":"YEARS","low":115,"high":155}],"criticalRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":70,"high":200}]},
+    {"key":"hct","code":"HCT","loincCode":"4544-3","label":"Hematocrit","type":"NUMBER","unit":"%","group":"Hồng cầu","displayOrder":3,"requiredOnSign":true,"min":5,"max":80,"precision":1,"referenceRanges":[{"sex":"MALE","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":40,"high":50},{"sex":"FEMALE","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":36,"high":46},{"sex":"ANY","minAge":2,"maxAge":6,"ageUnit":"YEARS","low":34,"high":40},{"sex":"ANY","minAge":7,"maxAge":12,"ageUnit":"YEARS","low":35,"high":45}]},
+    {"key":"mcv","code":"MCV","loincCode":"787-2","label":"Thể tích trung bình hồng cầu","type":"NUMBER","unit":"fL","group":"Hồng cầu","displayOrder":4,"requiredOnSign":true,"min":30,"max":150,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":83,"high":101},{"sex":"ANY","minAge":2,"maxAge":6,"ageUnit":"YEARS","low":75,"high":87},{"sex":"ANY","minAge":7,"maxAge":12,"ageUnit":"YEARS","low":77,"high":95}]},
+    {"key":"mch","code":"MCH","loincCode":"785-6","label":"Lượng HGB trung bình hồng cầu","type":"NUMBER","unit":"pg","group":"Hồng cầu","displayOrder":5,"requiredOnSign":true,"min":10,"max":60,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":27,"high":32},{"sex":"ANY","minAge":2,"maxAge":6,"ageUnit":"YEARS","low":24,"high":30},{"sex":"ANY","minAge":7,"maxAge":12,"ageUnit":"YEARS","low":25,"high":33}]},
+    {"key":"mchc","code":"MCHC","loincCode":"786-4","label":"Nồng độ HGB trung bình hồng cầu","type":"NUMBER","unit":"g/L","group":"Hồng cầu","displayOrder":6,"requiredOnSign":true,"min":200,"max":450,"precision":0,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":315,"high":345},{"sex":"ANY","minAge":2,"maxAge":12,"ageUnit":"YEARS","low":310,"high":370}]},
+    {"key":"rdwCv","code":"RDW-CV","loincCode":"788-0","label":"Độ phân bố hồng cầu CV","type":"NUMBER","unit":"%","group":"Hồng cầu","displayOrder":7,"requiredOnSign":true,"min":5,"max":40,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":11.5,"high":14.5}]},
+    {"key":"rdwSd","code":"RDW-SD","label":"Độ phân bố hồng cầu SD","type":"NUMBER","unit":"fL","group":"Hồng cầu","displayOrder":8,"requiredOnSign":true,"min":20,"max":100,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":37,"high":54}]},
+    {"key":"wbc","code":"WBC","loincCode":"6690-2","label":"Số lượng bạch cầu","type":"NUMBER","unit":"10^9/L","group":"Bạch cầu","displayOrder":9,"requiredOnSign":true,"min":0,"max":200,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":4,"high":10},{"sex":"ANY","minAge":2,"maxAge":6,"ageUnit":"YEARS","low":5,"high":15},{"sex":"ANY","minAge":7,"maxAge":12,"ageUnit":"YEARS","low":5,"high":13}],"criticalRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":2,"high":30}]},
+    {"key":"neutPercent","code":"NEUT%","label":"Bạch cầu trung tính","type":"NUMBER","unit":"%","group":"Bạch cầu","displayOrder":10,"requiredOnSign":true,"min":0,"max":100,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":40,"high":80}]},
+    {"key":"neutAbsolute","code":"NEUT#","label":"Bạch cầu trung tính tuyệt đối","type":"NUMBER","unit":"10^9/L","group":"Bạch cầu","displayOrder":11,"requiredOnSign":true,"min":0,"max":100,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":2,"high":7}]},
+    {"key":"lymphPercent","code":"LYMPH%","label":"Bạch cầu lympho","type":"NUMBER","unit":"%","group":"Bạch cầu","displayOrder":12,"requiredOnSign":true,"min":0,"max":100,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":20,"high":40}]},
+    {"key":"lymphAbsolute","code":"LYMPH#","label":"Bạch cầu lympho tuyệt đối","type":"NUMBER","unit":"10^9/L","group":"Bạch cầu","displayOrder":13,"requiredOnSign":true,"min":0,"max":100,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":1,"high":3}]},
+    {"key":"monoPercent","code":"MONO%","label":"Bạch cầu mono","type":"NUMBER","unit":"%","group":"Bạch cầu","displayOrder":14,"requiredOnSign":true,"min":0,"max":100,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":2,"high":10}]},
+    {"key":"monoAbsolute","code":"MONO#","label":"Bạch cầu mono tuyệt đối","type":"NUMBER","unit":"10^9/L","group":"Bạch cầu","displayOrder":15,"requiredOnSign":true,"min":0,"max":100,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":0.2,"high":1}]},
+    {"key":"eosPercent","code":"EOS%","label":"Bạch cầu ái toan","type":"NUMBER","unit":"%","group":"Bạch cầu","displayOrder":16,"requiredOnSign":true,"min":0,"max":100,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":1,"high":6}]},
+    {"key":"eosAbsolute","code":"EOS#","label":"Bạch cầu ái toan tuyệt đối","type":"NUMBER","unit":"10^9/L","group":"Bạch cầu","displayOrder":17,"requiredOnSign":true,"min":0,"max":100,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":0.02,"high":0.5}]},
+    {"key":"basoPercent","code":"BASO%","label":"Bạch cầu ái kiềm","type":"NUMBER","unit":"%","group":"Bạch cầu","displayOrder":18,"requiredOnSign":true,"min":0,"max":100,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":0,"high":2}]},
+    {"key":"basoAbsolute","code":"BASO#","label":"Bạch cầu ái kiềm tuyệt đối","type":"NUMBER","unit":"10^9/L","group":"Bạch cầu","displayOrder":19,"requiredOnSign":true,"min":0,"max":100,"precision":2,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":0.02,"high":0.1}]},
+    {"key":"plt","code":"PLT","loincCode":"777-3","label":"Số lượng tiểu cầu","type":"NUMBER","unit":"10^9/L","group":"Tiểu cầu","displayOrder":20,"requiredOnSign":true,"min":0,"max":2000,"precision":0,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":150,"high":410},{"sex":"ANY","minAge":2,"maxAge":6,"ageUnit":"YEARS","low":200,"high":490},{"sex":"ANY","minAge":7,"maxAge":12,"ageUnit":"YEARS","low":170,"high":450}],"criticalRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":50,"high":1000}]},
+    {"key":"mpv","code":"MPV","loincCode":"32623-1","label":"Thể tích trung bình tiểu cầu","type":"NUMBER","unit":"fL","group":"Tiểu cầu","displayOrder":21,"requiredOnSign":true,"min":2,"max":30,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":13,"maxAge":200,"ageUnit":"YEARS","low":9,"high":13}]},
+    {"key":"pdw","code":"PDW","label":"Độ phân bố tiểu cầu","type":"NUMBER","unit":"fL","group":"Tiểu cầu","displayOrder":22,"requiredOnSign":true,"min":1,"max":40,"precision":1},
+    {"key":"pct","code":"PCT","label":"Plateletcrit","type":"NUMBER","unit":"%","group":"Tiểu cầu","displayOrder":23,"requiredOnSign":true,"min":0,"max":2,"precision":3},
+    {"key":"pLcr","code":"P-LCR","label":"Tỷ lệ tiểu cầu kích thước lớn","type":"NUMBER","unit":"%","group":"Tiểu cầu","displayOrder":24,"requiredOnSign":true,"min":0,"max":100,"precision":1},
+    {"key":"igPercent","code":"IG%","label":"Bạch cầu hạt non","type":"NUMBER","unit":"%","group":"Mở rộng / hình thái","displayOrder":25,"min":0,"max":100,"precision":1},
+    {"key":"igAbsolute","code":"IG#","label":"Bạch cầu hạt non tuyệt đối","type":"NUMBER","unit":"10^9/L","group":"Mở rộng / hình thái","displayOrder":26,"min":0,"max":100,"precision":2},
+    {"key":"nrbcPercent","code":"NRBC%","label":"Hồng cầu có nhân","type":"NUMBER","unit":"%","group":"Mở rộng / hình thái","displayOrder":27,"min":0,"max":100,"precision":1},
+    {"key":"nrbcAbsolute","code":"NRBC#","label":"Hồng cầu có nhân tuyệt đối","type":"NUMBER","unit":"10^9/L","group":"Mở rộng / hình thái","displayOrder":28,"min":0,"max":100,"precision":2},
+    {"key":"reticPercent","code":"RET%","label":"Hồng cầu lưới","type":"NUMBER","unit":"%","group":"Mở rộng / hình thái","displayOrder":29,"min":0,"max":30,"precision":1},
+    {"key":"reticAbsolute","code":"RET#","label":"Hồng cầu lưới tuyệt đối","type":"NUMBER","unit":"10^9/L","group":"Mở rộng / hình thái","displayOrder":30,"min":0,"max":1000,"precision":2},
+    {"key":"cellMorphology","code":"MORPH","label":"Nhận xét hình thái tế bào","type":"TEXTAREA","group":"Mở rộng / hình thái","displayOrder":31}
+  ],
+  "rules":[
+    {"type":"SUM_BETWEEN","keys":["neutPercent","lymphPercent","monoPercent","eosPercent","basoPercent"],"min":98,"max":102,"severity":"WARNING","message":"Tổng tỷ lệ năm loại bạch cầu phải xấp xỉ 100%."},
+    {"type":"ABSOLUTE_FROM_PERCENT","total":"wbc","pairs":[{"percent":"neutPercent","absolute":"neutAbsolute"},{"percent":"lymphPercent","absolute":"lymphAbsolute"},{"percent":"monoPercent","absolute":"monoAbsolute"},{"percent":"eosPercent","absolute":"eosAbsolute"},{"percent":"basoPercent","absolute":"basoAbsolute"}],"tolerancePercent":15,"severity":"WARNING","message":"Số lượng bạch cầu tuyệt đối chưa phù hợp với WBC và tỷ lệ phần trăm."}
+  ]
+}
+$j$::jsonb,'PUBLISHED','Mở rộng CBC và khoảng tham chiếu có kiểm soát',CURRENT_DATE,
+'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW())
+ON CONFLICT (template_id, version_no) DO NOTHING;
+
+INSERT INTO clinical_form_template_version
+(version_id,created_at,updated_at,deleted,template_id,version_no,schema_json,status,change_reason,effective_from,created_by,published_by,published_at)
+VALUES
+('cf20000b-0000-0000-0000-00000000000b',NOW(),NOW(),false,'cf00000b-0000-0000-0000-00000000000b',2,$j$
+{"layout":"LAB_TABLE","systemManaged":true,"sourceName":"Siemens Multistix 10 SG IFU and public urinalysis catalogs","sourceVersion":"REFERENCE_CATALOG_V1","fields":[
+{"key":"color","code":"COLOR","label":"Màu sắc","type":"SELECT","group":"Vật lý","displayOrder":1,"requiredOnSign":true,"options":["STRAW","YELLOW","AMBER","RED","BROWN","OTHER"]},
+{"key":"clarity","code":"CLARITY","label":"Độ trong","type":"SELECT","group":"Vật lý","displayOrder":2,"requiredOnSign":true,"options":["CLEAR","SLIGHTLY_CLOUDY","CLOUDY","TURBID"]},
+{"key":"specificGravity","code":"SG","loincCode":"2965-2","label":"Tỷ trọng","type":"NUMBER","group":"Vật lý","displayOrder":3,"requiredOnSign":true,"min":1,"max":1.06,"precision":3,"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","low":1.005,"high":1.03}]},
+{"key":"ph","code":"pH","loincCode":"2756-5","label":"pH nước tiểu","type":"NUMBER","group":"Hóa học","displayOrder":4,"requiredOnSign":true,"min":4,"max":9,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","low":5,"high":8}]},
+{"key":"leukocyteEsterase","code":"LEU","loincCode":"5799-2","label":"Leukocyte Esterase","type":"SELECT","group":"Hóa học","displayOrder":5,"requiredOnSign":true,"options":["NEGATIVE","TRACE","1+","2+","3+","4+"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE"]}]},
+{"key":"nitrite","code":"NIT","loincCode":"5802-4","label":"Nitrite","type":"SELECT","group":"Hóa học","displayOrder":6,"requiredOnSign":true,"options":["NEGATIVE","POSITIVE"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE"]}]},
+{"key":"protein","code":"PRO","loincCode":"5804-0","label":"Protein","type":"SELECT","group":"Hóa học","displayOrder":7,"requiredOnSign":true,"options":["NEGATIVE","TRACE","1+","2+","3+","4+"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE","TRACE"]}]},
+{"key":"urineGlucose","code":"GLU","loincCode":"5792-7","label":"Glucose","type":"SELECT","group":"Hóa học","displayOrder":8,"requiredOnSign":true,"options":["NEGATIVE","TRACE","1+","2+","3+","4+"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE"]}]},
+{"key":"ketone","code":"KET","loincCode":"5797-6","label":"Ketone","type":"SELECT","group":"Hóa học","displayOrder":9,"requiredOnSign":true,"options":["NEGATIVE","TRACE","1+","2+","3+","4+"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE"]}]},
+{"key":"urobilinogen","code":"URO","loincCode":"5818-0","label":"Urobilinogen","type":"SELECT","group":"Hóa học","displayOrder":10,"requiredOnSign":true,"options":["NEGATIVE","TRACE","1+","2+","3+","4+"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE","TRACE"]}]},
+{"key":"urineBilirubin","code":"BIL","loincCode":"5770-3","label":"Bilirubin","type":"SELECT","group":"Hóa học","displayOrder":11,"requiredOnSign":true,"options":["NEGATIVE","TRACE","1+","2+","3+","4+"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE"]}]},
+{"key":"blood","code":"BLD","loincCode":"5794-3","label":"Blood / Hemoglobin","type":"SELECT","group":"Hóa học","displayOrder":12,"requiredOnSign":true,"options":["NEGATIVE","TRACE","1+","2+","3+","4+"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE"]}]},
+{"key":"microscopyPerformed","code":"Soi cặn","label":"Có thực hiện soi vi thể","type":"BOOLEAN","group":"Vi thể","displayOrder":13},
+{"key":"urineRbc","code":"RBC/HPF","loincCode":"13945-1","label":"Hồng cầu vi thể","type":"NUMBER","unit":"/HPF","group":"Vi thể","displayOrder":14,"min":0,"max":1000,"precision":0,"visibleWhen":{"field":"microscopyPerformed","equals":true},"requiredWhen":{"field":"microscopyPerformed","equals":true},"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","low":0,"high":2}]},
+{"key":"urineWbc","code":"WBC/HPF","loincCode":"5821-4","label":"Bạch cầu vi thể","type":"NUMBER","unit":"/HPF","group":"Vi thể","displayOrder":15,"min":0,"max":1000,"precision":0,"visibleWhen":{"field":"microscopyPerformed","equals":true},"requiredWhen":{"field":"microscopyPerformed","equals":true},"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","low":0,"high":5}]},
+{"key":"epithelialCells","code":"EPI","label":"Tế bào biểu mô","type":"SELECT","group":"Vi thể","displayOrder":16,"options":["NONE","FEW","MODERATE","MANY"],"visibleWhen":{"field":"microscopyPerformed","equals":true},"requiredWhen":{"field":"microscopyPerformed","equals":true}},
+{"key":"casts","code":"CAST","label":"Trụ niệu","type":"SELECT","group":"Vi thể","displayOrder":17,"options":["NONE","FEW","MODERATE","MANY"],"visibleWhen":{"field":"microscopyPerformed","equals":true},"requiredWhen":{"field":"microscopyPerformed","equals":true}},
+{"key":"crystals","code":"CRYSTAL","label":"Tinh thể","type":"SELECT","group":"Vi thể","displayOrder":18,"options":["NONE","FEW","MODERATE","MANY"],"visibleWhen":{"field":"microscopyPerformed","equals":true},"requiredWhen":{"field":"microscopyPerformed","equals":true}},
+{"key":"bacteria","code":"BACT","label":"Vi khuẩn","type":"SELECT","group":"Vi thể","displayOrder":19,"options":["NONE","FEW","MODERATE","MANY"],"visibleWhen":{"field":"microscopyPerformed","equals":true},"requiredWhen":{"field":"microscopyPerformed","equals":true}},
+{"key":"yeast","code":"YEAST","label":"Nấm men","type":"SELECT","group":"Vi thể","displayOrder":20,"options":["NONE","FEW","MODERATE","MANY"],"visibleWhen":{"field":"microscopyPerformed","equals":true},"requiredWhen":{"field":"microscopyPerformed","equals":true}},
+{"key":"mucus","code":"MUCUS","label":"Chất nhầy","type":"SELECT","group":"Vi thể","displayOrder":21,"options":["NONE","FEW","MODERATE","MANY"],"visibleWhen":{"field":"microscopyPerformed","equals":true}},
+{"key":"parasites","code":"PARASITE","label":"Ký sinh trùng","type":"SELECT","group":"Vi thể","displayOrder":22,"options":["NONE","PRESENT"],"visibleWhen":{"field":"microscopyPerformed","equals":true},"requiredWhen":{"field":"microscopyPerformed","equals":true}},
+{"key":"microscopyComment","code":"Nhận xét","label":"Nhận xét soi vi thể","type":"TEXTAREA","group":"Vi thể","displayOrder":23,"visibleWhen":{"field":"microscopyPerformed","equals":true}}
+]}$j$::jsonb,'PUBLISHED','Mở rộng vật lý, hóa học và soi vi thể nước tiểu',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW()),
+
+('cf20000c-0000-0000-0000-00000000000c',NOW(),NOW(),false,'cf00000c-0000-0000-0000-00000000000c',2,$j$
+{"layout":"LAB_TABLE","systemManaged":true,"sourceName":"Public quantitative CRP laboratory catalogs","sourceVersion":"REFERENCE_CATALOG_V1","fields":[
+{"key":"crpAssayType","code":"Loại CRP","label":"Loại xét nghiệm","type":"SELECT","group":"CRP định lượng","displayOrder":1,"requiredOnSign":true,"options":[{"value":"STANDARD_CRP","label":"CRP thường (định lượng)"}]},
+{"key":"crpQualifier","code":"Dấu","label":"Dấu định lượng","type":"SELECT","group":"CRP định lượng","displayOrder":2,"requiredOnSign":true,"options":[{"value":"LESS_THAN","label":"<"},{"value":"EQUAL","label":"="},{"value":"GREATER_THAN","label":">"}]},
+{"key":"crp","code":"CRP","loincCode":"1988-5","label":"C-Reactive Protein","type":"NUMBER","unit":"mg/L","group":"CRP định lượng","displayOrder":3,"requiredOnSign":true,"qualifierKey":"crpQualifier","min":0,"max":1000,"precision":1,"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","high":5}],"criticalRanges":[{"sex":"ANY","minAge":18,"maxAge":200,"ageUnit":"YEARS","high":100}]},
+{"key":"detectionLimit","code":"LoD","label":"Giới hạn phát hiện của phương pháp","type":"NUMBER","unit":"mg/L","group":"Thông tin phương pháp","displayOrder":4,"min":0,"max":100,"precision":2},
+{"key":"methodNote","code":"Phương pháp","label":"Ghi chú phương pháp","type":"TEXTAREA","group":"Thông tin phương pháp","displayOrder":5}
+]}$j$::jsonb,'PUBLISHED','Bổ sung CRP định lượng, qualifier và giới hạn phát hiện',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW())
+ON CONFLICT (template_id, version_no) DO NOTHING;
+
+INSERT INTO clinical_form_template_version
+(version_id,created_at,updated_at,deleted,template_id,version_no,schema_json,status,change_reason,effective_from,created_by,published_by,published_at)
+VALUES ('cf20000d-0000-0000-0000-00000000000d',NOW(),NOW(),false,'cf00000d-0000-0000-0000-00000000000d',2,$j$
+{"layout":"LAB_TABLE","systemManaged":true,"sourceName":"Manufacturer rapid-test instructions for use; result interpretation is kit-specific","sourceVersion":"REFERENCE_CATALOG_V1","fields":[{"key":"hbsAgPerformed","code":"HBsAg - thực hiện","label":"Thực hiện HBsAg","type":"BOOLEAN","group":"HBsAg","displayOrder":1},{"key":"hbsAgResult","code":"HBsAg","label":"Kết quả HBsAg","type":"SELECT","group":"HBsAg","displayOrder":2,"visibleWhen":{"field":"hbsAgPerformed","equals":true},"requiredWhen":{"field":"hbsAgPerformed","equals":true},"options":["NEGATIVE","POSITIVE","INDETERMINATE","INVALID"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE"]}]},{"key":"hbsAgSampleCode","code":"Mã mẫu","label":"Mã mẫu HBsAg","type":"TEXT","group":"HBsAg","displayOrder":3,"visibleWhen":{"field":"hbsAgPerformed","equals":true},"requiredWhen":{"field":"hbsAgPerformed","equals":true}},{"key":"hbsAgSampleType","code":"Loại mẫu","label":"Loại mẫu HBsAg","type":"SELECT","group":"HBsAg","displayOrder":4,"visibleWhen":{"field":"hbsAgPerformed","equals":true},"requiredWhen":{"field":"hbsAgPerformed","equals":true},"options":["WHOLE_BLOOD","SERUM","PLASMA","NASOPHARYNGEAL_SWAB","OTHER"]},{"key":"hbsAgKitName","code":"Kit","label":"Tên kit HBsAg","type":"TEXT","group":"HBsAg","displayOrder":5,"visibleWhen":{"field":"hbsAgPerformed","equals":true},"requiredWhen":{"field":"hbsAgPerformed","equals":true}},{"key":"hbsAgLotNumber","code":"Số lô","label":"Số lô kit HBsAg","type":"TEXT","group":"HBsAg","displayOrder":6,"visibleWhen":{"field":"hbsAgPerformed","equals":true},"requiredWhen":{"field":"hbsAgPerformed","equals":true}},{"key":"hbsAgKitExpiry","code":"Hạn dùng","label":"Hạn sử dụng kit HBsAg","type":"DATE","group":"HBsAg","displayOrder":7,"visibleWhen":{"field":"hbsAgPerformed","equals":true},"requiredWhen":{"field":"hbsAgPerformed","equals":true}},{"key":"hbsAgControlValid","code":"Control","label":"Control hợp lệ HBsAg","type":"BOOLEAN","group":"HBsAg","displayOrder":8,"visibleWhen":{"field":"hbsAgPerformed","equals":true},"requiredWhen":{"field":"hbsAgPerformed","equals":true}},{"key":"hbsAgReadAt","code":"Thời gian đọc","label":"Thời gian đọc HBsAg","type":"TEXT","group":"HBsAg","displayOrder":9,"visibleWhen":{"field":"hbsAgPerformed","equals":true},"requiredWhen":{"field":"hbsAgPerformed","equals":true},"pattern":"^\\\\d{4}-\\\\d{2}-\\\\d{2}[ T]\\\\d{2}:\\\\d{2}(:\\\\d{2})?$","patternMessage":"Thời gian đọc phải theo định dạng YYYY-MM-DD HH:mm"},{"key":"antiHcvPerformed","code":"Anti-HCV - thực hiện","label":"Thực hiện Anti-HCV","type":"BOOLEAN","group":"Anti-HCV","displayOrder":10},{"key":"antiHcvResult","code":"Anti-HCV","label":"Kết quả Anti-HCV","type":"SELECT","group":"Anti-HCV","displayOrder":11,"visibleWhen":{"field":"antiHcvPerformed","equals":true},"requiredWhen":{"field":"antiHcvPerformed","equals":true},"options":["NEGATIVE","POSITIVE","INDETERMINATE","INVALID"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE"]}]},{"key":"antiHcvSampleCode","code":"Mã mẫu","label":"Mã mẫu Anti-HCV","type":"TEXT","group":"Anti-HCV","displayOrder":12,"visibleWhen":{"field":"antiHcvPerformed","equals":true},"requiredWhen":{"field":"antiHcvPerformed","equals":true}},{"key":"antiHcvSampleType","code":"Loại mẫu","label":"Loại mẫu Anti-HCV","type":"SELECT","group":"Anti-HCV","displayOrder":13,"visibleWhen":{"field":"antiHcvPerformed","equals":true},"requiredWhen":{"field":"antiHcvPerformed","equals":true},"options":["WHOLE_BLOOD","SERUM","PLASMA","NASOPHARYNGEAL_SWAB","OTHER"]},{"key":"antiHcvKitName","code":"Kit","label":"Tên kit Anti-HCV","type":"TEXT","group":"Anti-HCV","displayOrder":14,"visibleWhen":{"field":"antiHcvPerformed","equals":true},"requiredWhen":{"field":"antiHcvPerformed","equals":true}},{"key":"antiHcvLotNumber","code":"Số lô","label":"Số lô kit Anti-HCV","type":"TEXT","group":"Anti-HCV","displayOrder":15,"visibleWhen":{"field":"antiHcvPerformed","equals":true},"requiredWhen":{"field":"antiHcvPerformed","equals":true}},{"key":"antiHcvKitExpiry","code":"Hạn dùng","label":"Hạn sử dụng kit Anti-HCV","type":"DATE","group":"Anti-HCV","displayOrder":16,"visibleWhen":{"field":"antiHcvPerformed","equals":true},"requiredWhen":{"field":"antiHcvPerformed","equals":true}},{"key":"antiHcvControlValid","code":"Control","label":"Control hợp lệ Anti-HCV","type":"BOOLEAN","group":"Anti-HCV","displayOrder":17,"visibleWhen":{"field":"antiHcvPerformed","equals":true},"requiredWhen":{"field":"antiHcvPerformed","equals":true}},{"key":"antiHcvReadAt","code":"Thời gian đọc","label":"Thời gian đọc Anti-HCV","type":"TEXT","group":"Anti-HCV","displayOrder":18,"visibleWhen":{"field":"antiHcvPerformed","equals":true},"requiredWhen":{"field":"antiHcvPerformed","equals":true},"pattern":"^\\\\d{4}-\\\\d{2}-\\\\d{2}[ T]\\\\d{2}:\\\\d{2}(:\\\\d{2})?$","patternMessage":"Thời gian đọc phải theo định dạng YYYY-MM-DD HH:mm"},{"key":"hivPerformed","code":"HIV - thực hiện","label":"Thực hiện HIV Ag/Ab","type":"BOOLEAN","group":"HIV Ag/Ab","displayOrder":19},{"key":"hivResult","code":"HIV","label":"Kết quả HIV Ag/Ab","type":"SELECT","group":"HIV Ag/Ab","displayOrder":20,"visibleWhen":{"field":"hivPerformed","equals":true},"requiredWhen":{"field":"hivPerformed","equals":true},"options":["NEGATIVE","POSITIVE","INDETERMINATE","INVALID"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE"]}]},{"key":"hivSampleCode","code":"Mã mẫu","label":"Mã mẫu HIV Ag/Ab","type":"TEXT","group":"HIV Ag/Ab","displayOrder":21,"visibleWhen":{"field":"hivPerformed","equals":true},"requiredWhen":{"field":"hivPerformed","equals":true}},{"key":"hivSampleType","code":"Loại mẫu","label":"Loại mẫu HIV Ag/Ab","type":"SELECT","group":"HIV Ag/Ab","displayOrder":22,"visibleWhen":{"field":"hivPerformed","equals":true},"requiredWhen":{"field":"hivPerformed","equals":true},"options":["WHOLE_BLOOD","SERUM","PLASMA","NASOPHARYNGEAL_SWAB","OTHER"]},{"key":"hivKitName","code":"Kit","label":"Tên kit HIV Ag/Ab","type":"TEXT","group":"HIV Ag/Ab","displayOrder":23,"visibleWhen":{"field":"hivPerformed","equals":true},"requiredWhen":{"field":"hivPerformed","equals":true}},{"key":"hivLotNumber","code":"Số lô","label":"Số lô kit HIV Ag/Ab","type":"TEXT","group":"HIV Ag/Ab","displayOrder":24,"visibleWhen":{"field":"hivPerformed","equals":true},"requiredWhen":{"field":"hivPerformed","equals":true}},{"key":"hivKitExpiry","code":"Hạn dùng","label":"Hạn sử dụng kit HIV Ag/Ab","type":"DATE","group":"HIV Ag/Ab","displayOrder":25,"visibleWhen":{"field":"hivPerformed","equals":true},"requiredWhen":{"field":"hivPerformed","equals":true}},{"key":"hivControlValid","code":"Control","label":"Control hợp lệ HIV Ag/Ab","type":"BOOLEAN","group":"HIV Ag/Ab","displayOrder":26,"visibleWhen":{"field":"hivPerformed","equals":true},"requiredWhen":{"field":"hivPerformed","equals":true}},{"key":"hivReadAt","code":"Thời gian đọc","label":"Thời gian đọc HIV Ag/Ab","type":"TEXT","group":"HIV Ag/Ab","displayOrder":27,"visibleWhen":{"field":"hivPerformed","equals":true},"requiredWhen":{"field":"hivPerformed","equals":true},"pattern":"^\\\\d{4}-\\\\d{2}-\\\\d{2}[ T]\\\\d{2}:\\\\d{2}(:\\\\d{2})?$","patternMessage":"Thời gian đọc phải theo định dạng YYYY-MM-DD HH:mm"},{"key":"dengueNs1Performed","code":"Dengue NS1 - thực hiện","label":"Thực hiện Dengue NS1","type":"BOOLEAN","group":"Dengue NS1","displayOrder":28},{"key":"dengueNs1Result","code":"Dengue NS1","label":"Kết quả Dengue NS1","type":"SELECT","group":"Dengue NS1","displayOrder":29,"visibleWhen":{"field":"dengueNs1Performed","equals":true},"requiredWhen":{"field":"dengueNs1Performed","equals":true},"options":["NEGATIVE","POSITIVE","INDETERMINATE","INVALID"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE"]}]},{"key":"dengueNs1SampleCode","code":"Mã mẫu","label":"Mã mẫu Dengue NS1","type":"TEXT","group":"Dengue NS1","displayOrder":30,"visibleWhen":{"field":"dengueNs1Performed","equals":true},"requiredWhen":{"field":"dengueNs1Performed","equals":true}},{"key":"dengueNs1SampleType","code":"Loại mẫu","label":"Loại mẫu Dengue NS1","type":"SELECT","group":"Dengue NS1","displayOrder":31,"visibleWhen":{"field":"dengueNs1Performed","equals":true},"requiredWhen":{"field":"dengueNs1Performed","equals":true},"options":["WHOLE_BLOOD","SERUM","PLASMA","NASOPHARYNGEAL_SWAB","OTHER"]},{"key":"dengueNs1KitName","code":"Kit","label":"Tên kit Dengue NS1","type":"TEXT","group":"Dengue NS1","displayOrder":32,"visibleWhen":{"field":"dengueNs1Performed","equals":true},"requiredWhen":{"field":"dengueNs1Performed","equals":true}},{"key":"dengueNs1LotNumber","code":"Số lô","label":"Số lô kit Dengue NS1","type":"TEXT","group":"Dengue NS1","displayOrder":33,"visibleWhen":{"field":"dengueNs1Performed","equals":true},"requiredWhen":{"field":"dengueNs1Performed","equals":true}},{"key":"dengueNs1KitExpiry","code":"Hạn dùng","label":"Hạn sử dụng kit Dengue NS1","type":"DATE","group":"Dengue NS1","displayOrder":34,"visibleWhen":{"field":"dengueNs1Performed","equals":true},"requiredWhen":{"field":"dengueNs1Performed","equals":true}},{"key":"dengueNs1ControlValid","code":"Control","label":"Control hợp lệ Dengue NS1","type":"BOOLEAN","group":"Dengue NS1","displayOrder":35,"visibleWhen":{"field":"dengueNs1Performed","equals":true},"requiredWhen":{"field":"dengueNs1Performed","equals":true}},{"key":"dengueNs1ReadAt","code":"Thời gian đọc","label":"Thời gian đọc Dengue NS1","type":"TEXT","group":"Dengue NS1","displayOrder":36,"visibleWhen":{"field":"dengueNs1Performed","equals":true},"requiredWhen":{"field":"dengueNs1Performed","equals":true},"pattern":"^\\\\d{4}-\\\\d{2}-\\\\d{2}[ T]\\\\d{2}:\\\\d{2}(:\\\\d{2})?$","patternMessage":"Thời gian đọc phải theo định dạng YYYY-MM-DD HH:mm"},{"key":"influenzaAPerformed","code":"Influenza A - thực hiện","label":"Thực hiện Cúm A","type":"BOOLEAN","group":"Cúm A","displayOrder":37},{"key":"influenzaAResult","code":"Influenza A","label":"Kết quả Cúm A","type":"SELECT","group":"Cúm A","displayOrder":38,"visibleWhen":{"field":"influenzaAPerformed","equals":true},"requiredWhen":{"field":"influenzaAPerformed","equals":true},"options":["NEGATIVE","POSITIVE","INDETERMINATE","INVALID"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE"]}]},{"key":"influenzaASampleCode","code":"Mã mẫu","label":"Mã mẫu Cúm A","type":"TEXT","group":"Cúm A","displayOrder":39,"visibleWhen":{"field":"influenzaAPerformed","equals":true},"requiredWhen":{"field":"influenzaAPerformed","equals":true}},{"key":"influenzaASampleType","code":"Loại mẫu","label":"Loại mẫu Cúm A","type":"SELECT","group":"Cúm A","displayOrder":40,"visibleWhen":{"field":"influenzaAPerformed","equals":true},"requiredWhen":{"field":"influenzaAPerformed","equals":true},"options":["WHOLE_BLOOD","SERUM","PLASMA","NASOPHARYNGEAL_SWAB","OTHER"]},{"key":"influenzaAKitName","code":"Kit","label":"Tên kit Cúm A","type":"TEXT","group":"Cúm A","displayOrder":41,"visibleWhen":{"field":"influenzaAPerformed","equals":true},"requiredWhen":{"field":"influenzaAPerformed","equals":true}},{"key":"influenzaALotNumber","code":"Số lô","label":"Số lô kit Cúm A","type":"TEXT","group":"Cúm A","displayOrder":42,"visibleWhen":{"field":"influenzaAPerformed","equals":true},"requiredWhen":{"field":"influenzaAPerformed","equals":true}},{"key":"influenzaAKitExpiry","code":"Hạn dùng","label":"Hạn sử dụng kit Cúm A","type":"DATE","group":"Cúm A","displayOrder":43,"visibleWhen":{"field":"influenzaAPerformed","equals":true},"requiredWhen":{"field":"influenzaAPerformed","equals":true}},{"key":"influenzaAControlValid","code":"Control","label":"Control hợp lệ Cúm A","type":"BOOLEAN","group":"Cúm A","displayOrder":44,"visibleWhen":{"field":"influenzaAPerformed","equals":true},"requiredWhen":{"field":"influenzaAPerformed","equals":true}},{"key":"influenzaAReadAt","code":"Thời gian đọc","label":"Thời gian đọc Cúm A","type":"TEXT","group":"Cúm A","displayOrder":45,"visibleWhen":{"field":"influenzaAPerformed","equals":true},"requiredWhen":{"field":"influenzaAPerformed","equals":true},"pattern":"^\\\\d{4}-\\\\d{2}-\\\\d{2}[ T]\\\\d{2}:\\\\d{2}(:\\\\d{2})?$","patternMessage":"Thời gian đọc phải theo định dạng YYYY-MM-DD HH:mm"},{"key":"influenzaBPerformed","code":"Influenza B - thực hiện","label":"Thực hiện Cúm B","type":"BOOLEAN","group":"Cúm B","displayOrder":46},{"key":"influenzaBResult","code":"Influenza B","label":"Kết quả Cúm B","type":"SELECT","group":"Cúm B","displayOrder":47,"visibleWhen":{"field":"influenzaBPerformed","equals":true},"requiredWhen":{"field":"influenzaBPerformed","equals":true},"options":["NEGATIVE","POSITIVE","INDETERMINATE","INVALID"],"referenceRanges":[{"sex":"ANY","minAge":0,"maxAge":200,"ageUnit":"YEARS","normalValues":["NEGATIVE"]}]},{"key":"influenzaBSampleCode","code":"Mã mẫu","label":"Mã mẫu Cúm B","type":"TEXT","group":"Cúm B","displayOrder":48,"visibleWhen":{"field":"influenzaBPerformed","equals":true},"requiredWhen":{"field":"influenzaBPerformed","equals":true}},{"key":"influenzaBSampleType","code":"Loại mẫu","label":"Loại mẫu Cúm B","type":"SELECT","group":"Cúm B","displayOrder":49,"visibleWhen":{"field":"influenzaBPerformed","equals":true},"requiredWhen":{"field":"influenzaBPerformed","equals":true},"options":["WHOLE_BLOOD","SERUM","PLASMA","NASOPHARYNGEAL_SWAB","OTHER"]},{"key":"influenzaBKitName","code":"Kit","label":"Tên kit Cúm B","type":"TEXT","group":"Cúm B","displayOrder":50,"visibleWhen":{"field":"influenzaBPerformed","equals":true},"requiredWhen":{"field":"influenzaBPerformed","equals":true}},{"key":"influenzaBLotNumber","code":"Số lô","label":"Số lô kit Cúm B","type":"TEXT","group":"Cúm B","displayOrder":51,"visibleWhen":{"field":"influenzaBPerformed","equals":true},"requiredWhen":{"field":"influenzaBPerformed","equals":true}},{"key":"influenzaBKitExpiry","code":"Hạn dùng","label":"Hạn sử dụng kit Cúm B","type":"DATE","group":"Cúm B","displayOrder":52,"visibleWhen":{"field":"influenzaBPerformed","equals":true},"requiredWhen":{"field":"influenzaBPerformed","equals":true}},{"key":"influenzaBControlValid","code":"Control","label":"Control hợp lệ Cúm B","type":"BOOLEAN","group":"Cúm B","displayOrder":53,"visibleWhen":{"field":"influenzaBPerformed","equals":true},"requiredWhen":{"field":"influenzaBPerformed","equals":true}},{"key":"influenzaBReadAt","code":"Thời gian đọc","label":"Thời gian đọc Cúm B","type":"TEXT","group":"Cúm B","displayOrder":54,"visibleWhen":{"field":"influenzaBPerformed","equals":true},"requiredWhen":{"field":"influenzaBPerformed","equals":true},"pattern":"^\\\\d{4}-\\\\d{2}-\\\\d{2}[ T]\\\\d{2}:\\\\d{2}(:\\\\d{2})?$","patternMessage":"Thời gian đọc phải theo định dạng YYYY-MM-DD HH:mm"}],"rules":[{"type":"AT_LEAST_ONE_TRUE","keys":["hbsAgPerformed","antiHcvPerformed","hivPerformed","dengueNs1Performed","influenzaAPerformed","influenzaBPerformed"],"onSignOnly":true,"severity":"ERROR","message":"Phải chọn ít nhất một test nhanh đã thực hiện."},{"type":"BOOLEAN_MUST_BE_TRUE_WHEN","field":"hbsAgControlValid","when":{"field":"hbsAgPerformed","equals":true},"onSignOnly":true,"severity":"ERROR","message":"Control của HBsAg phải hợp lệ trước khi ký."},{"type":"VALUE_NOT_ALLOWED_WHEN","field":"hbsAgResult","value":"INVALID","when":{"field":"hbsAgPerformed","equals":true},"onSignOnly":true,"severity":"ERROR","message":"Kết quả HBsAg INVALID không thể ký."},{"type":"BOOLEAN_MUST_BE_TRUE_WHEN","field":"antiHcvControlValid","when":{"field":"antiHcvPerformed","equals":true},"onSignOnly":true,"severity":"ERROR","message":"Control của Anti-HCV phải hợp lệ trước khi ký."},{"type":"VALUE_NOT_ALLOWED_WHEN","field":"antiHcvResult","value":"INVALID","when":{"field":"antiHcvPerformed","equals":true},"onSignOnly":true,"severity":"ERROR","message":"Kết quả Anti-HCV INVALID không thể ký."},{"type":"BOOLEAN_MUST_BE_TRUE_WHEN","field":"hivControlValid","when":{"field":"hivPerformed","equals":true},"onSignOnly":true,"severity":"ERROR","message":"Control của HIV Ag/Ab phải hợp lệ trước khi ký."},{"type":"VALUE_NOT_ALLOWED_WHEN","field":"hivResult","value":"INVALID","when":{"field":"hivPerformed","equals":true},"onSignOnly":true,"severity":"ERROR","message":"Kết quả HIV Ag/Ab INVALID không thể ký."},{"type":"BOOLEAN_MUST_BE_TRUE_WHEN","field":"dengueNs1ControlValid","when":{"field":"dengueNs1Performed","equals":true},"onSignOnly":true,"severity":"ERROR","message":"Control của Dengue NS1 phải hợp lệ trước khi ký."},{"type":"VALUE_NOT_ALLOWED_WHEN","field":"dengueNs1Result","value":"INVALID","when":{"field":"dengueNs1Performed","equals":true},"onSignOnly":true,"severity":"ERROR","message":"Kết quả Dengue NS1 INVALID không thể ký."},{"type":"BOOLEAN_MUST_BE_TRUE_WHEN","field":"influenzaAControlValid","when":{"field":"influenzaAPerformed","equals":true},"onSignOnly":true,"severity":"ERROR","message":"Control của Cúm A phải hợp lệ trước khi ký."},{"type":"VALUE_NOT_ALLOWED_WHEN","field":"influenzaAResult","value":"INVALID","when":{"field":"influenzaAPerformed","equals":true},"onSignOnly":true,"severity":"ERROR","message":"Kết quả Cúm A INVALID không thể ký."},{"type":"BOOLEAN_MUST_BE_TRUE_WHEN","field":"influenzaBControlValid","when":{"field":"influenzaBPerformed","equals":true},"onSignOnly":true,"severity":"ERROR","message":"Control của Cúm B phải hợp lệ trước khi ký."},{"type":"VALUE_NOT_ALLOWED_WHEN","field":"influenzaBResult","value":"INVALID","when":{"field":"influenzaBPerformed","equals":true},"onSignOnly":true,"severity":"ERROR","message":"Kết quả Cúm B INVALID không thể ký."}]}
+$j$::jsonb,'PUBLISHED','Mở rộng sáu test nhanh, thông tin kit, control và thời gian đọc',CURRENT_DATE,
+'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW())
+ON CONFLICT (template_id, version_no) DO NOTHING;
+
 INSERT INTO medical_service_form_template
 (binding_id, created_at, updated_at, deleted, service_id, template_id)
 SELECT gen_random_uuid(), NOW(), NOW(), false, mapping.service_id, mapping.template_id
@@ -1231,6 +1454,11 @@ JOIN medical_service ms ON ms.service_id = q.service_id
 JOIN medical_service_form_template b ON b.service_id = ms.service_id AND b.deleted = false
 JOIN clinical_form_template_version tv
   ON tv.template_id = b.template_id AND tv.status = 'PUBLISHED' AND tv.deleted = false
+ AND tv.version_no = (SELECT MAX(latest.version_no)
+                      FROM clinical_form_template_version latest
+                      WHERE latest.template_id = b.template_id
+                        AND latest.status = 'PUBLISHED' AND latest.deleted = false
+                        AND latest.effective_from <= CURRENT_DATE)
 WHERE mr.queue_ticket_id = q.ticket_id
   AND mr.record_id <> '56000000-0000-0000-0000-000000000008'::uuid;
 
@@ -1240,11 +1468,19 @@ UPDATE test_result tr
 SET form_template_version_id = tv.version_id,
     result_data = CASE ms.service_code
         WHEN 'LAB-001' THEN
-            $j${"rbc":4.62,"hgb":136,"hct":41.2,"wbc":12.8,"plt":268,"_meta":{"flags":{"wbc":{"status":"HIGH","referenceRange":{"low":4.0,"high":10.0}}},"calculations":{}}}$j$::jsonb
+            $j${"rbc":4.62,"hgb":108,"hct":34.1,"mcv":78.2,"mch":25.1,"mchc":316,"rdwCv":15.8,"rdwSd":49.2,"wbc":12.8,"neutPercent":72,"neutAbsolute":9.22,"lymphPercent":20,"lymphAbsolute":2.56,"monoPercent":5,"monoAbsolute":0.64,"eosPercent":2,"eosAbsolute":0.26,"basoPercent":1,"basoAbsolute":0.13,"plt":268,"mpv":10.4,"pdw":12.3,"pct":0.278,"pLcr":28.1,"_meta":{"flags":{"hgb":{"status":"LOW","referenceRange":{"low":120,"high":150}},"wbc":{"status":"HIGH","referenceRange":{"low":4,"high":10}},"neutAbsolute":{"status":"HIGH","referenceRange":{"low":2,"high":7}},"plt":{"status":"NORMAL","referenceRange":{"low":150,"high":410}}},"calculations":{},"warnings":[]}}$j$::jsonb
+        WHEN 'LAB-002' THEN
+            $j${"glucoseContext":"RANDOM","glucoseQualifier":"EQUAL","glucose":28.4,"sampleConditionNote":"Mẫu huyết thanh không tan máu.","_meta":{"flags":{"glucose":{"status":"CRITICAL_HIGH","referenceRange":{"high":7.8},"criticalRange":{"low":2.5,"high":25}}},"calculations":{},"warnings":[]}}$j$::jsonb
         WHEN 'LAB-003' THEN
-            $j${"glucose":5.4,"hba1c":5.6,"cholesterol":4.7,"triglyceride":1.3,"hdlC":1.25,"ldlC":2.8,"acidUric":318,"_meta":{"flags":{"glucose":{"status":"NORMAL"}},"calculations":{}}}$j$::jsonb
+            $j${"hba1c":5.6,"totalCholesterol":5.8,"triglyceride":1.6,"hdlC":0.92,"ldlC":3.9,"nonHdlC":4.88,"acidUric":318,"totalProtein":71.2,"_meta":{"flags":{"hba1c":{"status":"NORMAL","referenceRange":{"high":5.6}},"totalCholesterol":{"status":"HIGH","referenceRange":{"high":5.2}},"hdlC":{"status":"LOW","referenceRange":{"low":1}},"ldlC":{"status":"HIGH","referenceRange":{"high":3.4}},"nonHdlC":{"status":"HIGH","referenceRange":{"high":4.1}}},"calculations":{"nonHdlC":{"calculatorKey":"NON_HDL_C_V1","status":"ESTIMATED","value":4.88}},"warnings":[]}}$j$::jsonb
+        WHEN 'LAB-004' THEN
+            $j${"ast":38,"alt":86,"alp":112,"ggt":74,"bilirubinTotal":24.5,"bilirubinDirect":6.2,"bilirubinIndirect":18.3,"albumin":42.6,"_meta":{"flags":{"ast":{"status":"NORMAL","referenceRange":{"high":40}},"alt":{"status":"HIGH","referenceRange":{"high":41}},"ggt":{"status":"HIGH","referenceRange":{"high":60}},"bilirubinTotal":{"status":"HIGH","referenceRange":{"high":21}},"albumin":{"status":"NORMAL","referenceRange":{"low":35,"high":52}}},"calculations":{"bilirubinIndirect":{"calculatorKey":"INDIRECT_BILIRUBIN_V1","status":"ESTIMATED","value":18.3}},"warnings":[]}}$j$::jsonb
         WHEN 'LAB-005' THEN
-            $j${"ure":5.1,"creatinine":82,"egfr":97.42,"_meta":{"flags":{"creatinine":{"status":"NORMAL"}},"calculations":{"egfr":{"calculatorKey":"EGFR_CKD_EPI_2021_V1","status":"ESTIMATED","value":97.42}}}}$j$::jsonb
+            $j${"urea":9.2,"bun":25.77,"creatinine":146,"egfr":48.62,"sodium":138,"potassium":6.8,"chloride":103,"bicarbonate":23,"calcium":2.28,"phosphate":1.18,"_meta":{"flags":{"urea":{"status":"HIGH","referenceRange":{"low":2.5,"high":7.5}},"creatinine":{"status":"HIGH","referenceRange":{"low":62,"high":106}},"egfr":{"status":"LOW","referenceRange":{"low":60}},"potassium":{"status":"CRITICAL_HIGH","referenceRange":{"low":3.5,"high":5.1},"criticalRange":{"low":2.5,"high":6.5}}},"calculations":{"bun":{"calculatorKey":"BUN_FROM_UREA_V1","status":"ESTIMATED","value":25.77},"egfr":{"calculatorKey":"EGFR_CKD_EPI_2021_V1","status":"ESTIMATED","value":48.62}},"warnings":[]}}$j$::jsonb
+        WHEN 'LAB-006' THEN
+            $j${"color":"YELLOW","clarity":"SLIGHTLY_CLOUDY","specificGravity":1.018,"ph":6.0,"leukocyteEsterase":"2+","nitrite":"POSITIVE","protein":"TRACE","urineGlucose":"NEGATIVE","ketone":"NEGATIVE","urobilinogen":"TRACE","urineBilirubin":"NEGATIVE","blood":"1+","microscopyPerformed":true,"urineRbc":4,"urineWbc":18,"epithelialCells":"FEW","casts":"NONE","crystals":"NONE","bacteria":"MANY","yeast":"NONE","mucus":"FEW","parasites":"NONE","microscopyComment":"Bạch cầu và vi khuẩn tăng.","_meta":{"flags":{"specificGravity":{"status":"NORMAL","referenceRange":{"low":1.005,"high":1.03}},"leukocyteEsterase":{"status":"ABNORMAL","referenceRange":{"normalValues":["NEGATIVE"]}},"nitrite":{"status":"ABNORMAL","referenceRange":{"normalValues":["NEGATIVE"]}},"urineWbc":{"status":"HIGH","referenceRange":{"low":0,"high":5}}},"calculations":{},"warnings":[]}}$j$::jsonb
+        WHEN 'LAB-007' THEN
+            $j${"crpAssayType":"STANDARD_CRP","crpQualifier":"EQUAL","crp":126.4,"detectionLimit":0.5,"methodNote":"Định lượng miễn dịch đo độ đục.","_meta":{"flags":{"crp":{"status":"CRITICAL_HIGH","referenceRange":{"high":5},"criticalRange":{"high":100}}},"calculations":{},"warnings":[]}}$j$::jsonb
         WHEN 'IMG-003' THEN
             $j${"liverDescription":"Gan kích thước bình thường, nhu mô đồng nhất.","gallbladderDescription":"Túi mật không sỏi, thành không dày.","kidneyDescription":"Hai thận kích thước bình thường, không ứ nước.","abnormalFinding":"","imagingConclusion":"Chưa ghi nhận bất thường trên siêu âm ổ bụng.","_meta":{"flags":{},"calculations":{}}}$j$::jsonb
         WHEN 'IMG-001' THEN
@@ -1252,17 +1488,26 @@ SET form_template_version_id = tv.version_id,
         WHEN 'IMG-006' THEN
             $j${"heartRate":76,"rhythmType":"SINUS","ecgDescription":"Nhịp xoang đều, trục tim bình thường.","ecgConclusion":"Điện tâm đồ trong giới hạn bình thường.","_meta":{"flags":{"heartRate":{"status":"NORMAL"}},"calculations":{}}}$j$::jsonb
         WHEN 'LAB-008' THEN
-            $j${"hbsAg":"NEGATIVE","antiHcv":"NEGATIVE","antiHiv":"NEGATIVE","dengueNs1":"NEGATIVE","influenzaAb":"NEGATIVE","_meta":{"flags":{"hbsAg":{"status":"NORMAL"},"antiHcv":{"status":"NORMAL"},"antiHiv":{"status":"NORMAL"},"dengueNs1":{"status":"NORMAL"},"influenzaAb":{"status":"NORMAL"}},"calculations":{}}}$j$::jsonb
+            CASE WHEN req.status = 'IN_PROGRESS' THEN
+              $j${"hbsAgPerformed":true,"hbsAgResult":"INVALID","hbsAgSampleCode":"SMP-RAPID-INVALID","hbsAgSampleType":"SERUM","hbsAgKitName":"Rapid HBsAg Demo","hbsAgLotNumber":"LOT-DEMO-01","hbsAgKitExpiry":"2027-12-31","hbsAgControlValid":false,"hbsAgReadAt":"2026-08-28 09:30","_meta":{"flags":{"hbsAgResult":{"status":"ABNORMAL","referenceRange":{"normalValues":["NEGATIVE"]}}},"calculations":{},"warnings":["Control không hợp lệ; không được ký kết quả."]}}$j$::jsonb
+            ELSE
+              $j${"hbsAgPerformed":true,"hbsAgResult":"NEGATIVE","hbsAgSampleCode":"SMP-RAPID-001","hbsAgSampleType":"SERUM","hbsAgKitName":"Rapid HBsAg Demo","hbsAgLotNumber":"LOT-260801","hbsAgKitExpiry":"2027-12-31","hbsAgControlValid":true,"hbsAgReadAt":"2026-08-28 09:30","antiHcvPerformed":true,"antiHcvResult":"NEGATIVE","antiHcvSampleCode":"SMP-RAPID-001","antiHcvSampleType":"SERUM","antiHcvKitName":"Rapid Anti-HCV Demo","antiHcvLotNumber":"LOT-260802","antiHcvKitExpiry":"2027-12-31","antiHcvControlValid":true,"antiHcvReadAt":"2026-08-28 09:35","hivPerformed":false,"dengueNs1Performed":false,"influenzaAPerformed":false,"influenzaBPerformed":false,"_meta":{"flags":{"hbsAgResult":{"status":"NORMAL","referenceRange":{"normalValues":["NEGATIVE"]}},"antiHcvResult":{"status":"NORMAL","referenceRange":{"normalValues":["NEGATIVE"]}}},"calculations":{},"warnings":[]}}$j$::jsonb END
         ELSE '{}'::jsonb
     END,
     conclusion = CASE ms.service_code
-        WHEN 'LAB-001' THEN 'Bạch cầu tăng nhẹ; các chỉ số còn lại trong giới hạn tham chiếu.'
-        WHEN 'LAB-003' THEN 'Các chỉ số sinh hóa trong giới hạn tham chiếu.'
-        WHEN 'LAB-005' THEN 'Chức năng thận trong giới hạn; eGFR là giá trị ước tính.'
+        WHEN 'LAB-001' THEN 'Thiếu máu nhẹ và tăng bạch cầu; cần đối chiếu lâm sàng.'
+        WHEN 'LAB-002' THEN 'Glucose tăng mức cảnh báo nghiêm trọng; cần báo bác sĩ phụ trách.'
+        WHEN 'LAB-003' THEN 'Rối loạn một số chỉ số lipid máu.'
+        WHEN 'LAB-004' THEN 'Men gan và Bilirubin tăng; cần đối chiếu lâm sàng.'
+        WHEN 'LAB-005' THEN 'eGFR giảm và Potassium ở mức cảnh báo nghiêm trọng; eGFR là giá trị ước tính.'
+        WHEN 'LAB-006' THEN 'Kết quả nước tiểu có bạch cầu, Nitrite và vi khuẩn.'
+        WHEN 'LAB-007' THEN 'CRP tăng mức cảnh báo nghiêm trọng.'
         WHEN 'IMG-003' THEN 'Chưa ghi nhận bất thường trên siêu âm ổ bụng.'
         WHEN 'IMG-001' THEN 'Chưa ghi nhận bất thường tim phổi cấp.'
         WHEN 'IMG-006' THEN 'Nhịp xoang, điện tâm đồ trong giới hạn bình thường.'
-        WHEN 'LAB-008' THEN 'Các test nhanh trong bộ chỉ định đều âm tính.'
+        WHEN 'LAB-008' THEN CASE WHEN req.status = 'IN_PROGRESS'
+            THEN 'Control không hợp lệ; đây là bản nháp và chưa được ký.'
+            ELSE 'Các test nhanh đã thực hiện đều âm tính.' END
         ELSE tr.conclusion
     END,
     performed_by = CASE WHEN ms.service_code = 'IMG-006'
@@ -1277,6 +1522,11 @@ JOIN medical_service ms ON ms.service_id = req.service_id
 JOIN medical_service_form_template b ON b.service_id = ms.service_id AND b.deleted = false
 JOIN clinical_form_template_version tv
   ON tv.template_id = b.template_id AND tv.status = 'PUBLISHED' AND tv.deleted = false
+ AND tv.version_no = (SELECT MAX(latest.version_no)
+                      FROM clinical_form_template_version latest
+                      WHERE latest.template_id = b.template_id
+                        AND latest.status = 'PUBLISHED' AND latest.deleted = false
+                        AND latest.effective_from <= CURRENT_DATE)
 WHERE tr.test_request_id = req.test_request_id;
 
 -- Revision 1 la ban da ky; khong seed attachment neu khong co tep vat ly.
@@ -1286,9 +1536,13 @@ INSERT INTO test_result_revision (
     entered_by, signed_by, signed_at
 )
 SELECT gen_random_uuid(), tr.created_at, tr.updated_at, false, tr.result_id, 1,
-       'SIGNED', tr.result_data, tr.conclusion, tr.form_template_version_id, NULL,
-       tr.performed_by, tr.verified_by, tr.verified_at
-FROM test_result tr;
+       CASE WHEN req.status = 'COMPLETED' THEN 'SIGNED' ELSE 'DRAFT' END,
+       tr.result_data, tr.conclusion, tr.form_template_version_id, NULL,
+       tr.performed_by,
+       CASE WHEN req.status = 'COMPLETED' THEN tr.verified_by ELSE NULL END,
+       CASE WHEN req.status = 'COMPLETED' THEN tr.verified_at ELSE NULL END
+FROM test_result tr
+JOIN test_request req ON req.test_request_id = tr.test_request_id;
 
 -- Thong bao cong khai do Clinic Manager quan ly.
 INSERT INTO public_announcement (

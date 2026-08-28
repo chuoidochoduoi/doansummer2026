@@ -24,7 +24,7 @@ public record StaffCreateRequest(
         @NotBlank @Pattern(regexp = "(?i)^(MALE|FEMALE)$", message = "Giới tính chỉ nhận MALE hoặc FEMALE") String gender,
         @Size(max = 255) String address,
         // StaffInfo
-        // NOTE: departmentId da duoc xoa - chi dung head_doctor_id o Department
+        // Phong chuyen mon duoc gan tai man Quan ly phong, khong gan luc tao tai khoan.
         // specializationId: bat buoc cho DOCTOR; Kham tong quat cung la mot chuyen khoa phuc vu
         UUID specializationId,
         @NotNull SystemRole systemRole,

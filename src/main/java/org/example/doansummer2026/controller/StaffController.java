@@ -95,7 +95,7 @@ public class StaffController {
 
     /** ADMIN vaf CLINIC_MANAGER xem danh sach nhan su don gian (cho Schedule). */
     @GetMapping("/list")
-    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<List<StaffOptionResponse>> list(
             @RequestParam(required = false) SystemRole systemRole) {
         return RestResponses.ok(staffService.listForSchedule(systemRole));

@@ -75,5 +75,11 @@ public interface StaffScheduleRepository extends JpaRepository<StaffSchedule, UU
     boolean existsByShift_ShiftIdAndWorkDateGreaterThanEqualAndStatus(
             UUID shiftId, LocalDate workDate, org.example.doansummer2026.enums.ScheduleStatus status);
 
+    boolean existsByStaff_StaffIdAndWorkDateGreaterThanEqualAndStatus(
+            UUID staffId, LocalDate workDate, org.example.doansummer2026.enums.ScheduleStatus status);
+
+    boolean existsByStaff_Department_DepartmentIdAndWorkDateGreaterThanEqualAndStatus(
+            UUID departmentId, LocalDate workDate, org.example.doansummer2026.enums.ScheduleStatus status);
+
     void deleteByStaffAndWorkDateAndShift(StaffInfo staff, LocalDate workDate, ShiftConfig shift);
 }
