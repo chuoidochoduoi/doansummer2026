@@ -10,8 +10,8 @@ import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
 import org.example.doansummer2026.dto.medicalRecord.ReceptionistRecordResponse;
 import org.example.doansummer2026.dto.medicalRecord.ReceptionistCustomerResponse;
 import org.example.doansummer2026.dto.medicalRecord.ReceptionistAllCustomerResponse;
-import org.example.doansummer2026.dto.medicalHistory.MedicalHistoryResponse;
-import org.example.doansummer2026.dto.medicalHistory.VisitHistorySummaryResponse;
+import org.example.doansummer2026.dto.medicalhistory.MedicalHistoryResponse;
+import org.example.doansummer2026.dto.medicalhistory.VisitHistorySummaryResponse;
 import org.example.doansummer2026.enums.BloodType;
 import org.example.doansummer2026.enums.Gender;
 import org.example.doansummer2026.dto.medicalRecord.PrescriptionItemCreateRequest;
@@ -949,7 +949,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
     /** Chi tiet customer theo visitId; chi dua noi dung chuyen mon da hoan thanh ra ngoai. */
     @Transactional(readOnly = true)
-    public org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse getPatientVisitDetail(
+    public org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse getPatientVisitDetail(
             UUID visitId, UUID profileId) {
         CustomerVisit visit = visitRepo.findById(visitId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lượt khám"));
@@ -979,7 +979,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         if (allRecords.isEmpty()) {
             throw new ResourceNotFoundException("Không tìm thấy hồ sơ gắn với lượt khám");
         }
-        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.publishedHistory(
+        return org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse.publishedHistory(
                 allRecords, requests, signedResultAttachments(requests),
                 sameDayParaclinicalResultService.findForVisit(visitId),
                 queueTicketRepo.findAllByVisit_VisitId(visitId));
@@ -1038,7 +1038,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
      * Chi tiet luot kham cua benh nhan (theo visitId).
      */
     @Transactional(readOnly = true)
-    public org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse getVisitDetail(UUID visitId, UUID profileId) {
+    public org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse getVisitDetail(UUID visitId, UUID profileId) {
         org.example.doansummer2026.model.MedicalRecord record = repo.findFirstByVisit_VisitIdOrderByCreatedAtDesc(visitId)
                 .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ không tồn tại: " + visitId));
 
@@ -1050,7 +1050,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
         UUID resolvedVisitId = record.getVisit().getVisitId();
         var requests = testRequestRepo.findAllByVisitIdWithDetails(resolvedVisitId);
-        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
+        return org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse.from(
                 repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(resolvedVisitId), requests,
                 signedResultAttachments(requests), sameDayParaclinicalResultService.findForVisit(resolvedVisitId));
     }
@@ -1059,7 +1059,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
      * Chi tiet luot kham cua benh nhan (theo recordId).
      */
     @Transactional(readOnly = true)
-    public org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse getVisitDetailByRecordId(UUID recordId, UUID profileId) {
+    public org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse getVisitDetailByRecordId(UUID recordId, UUID profileId) {
         org.example.doansummer2026.model.MedicalRecord record = repo.findById(recordId)
                 .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ không tồn tại: " + recordId));
 
@@ -1077,18 +1077,18 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(resolvedVisitId));
         orderedRecords.sort(java.util.Comparator.comparingInt(
                 candidate -> candidate.getRecordId().equals(recordId) ? 0 : 1));
-        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
+        return org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse.from(
                 orderedRecords, requests,
                 signedResultAttachments(requests), sameDayParaclinicalResultService.findForVisit(resolvedVisitId));
     }
 
     @Transactional(readOnly = true)
-    public org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse getVisitDetailForStaff(UUID recordId) {
+    public org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse getVisitDetailForStaff(UUID recordId) {
         MedicalRecord record = findById(recordId);
         if (record.getVisit() == null) throw new ResourceNotFoundException("Hồ sơ chưa gắn lượt khám");
         UUID visitId = record.getVisit().getVisitId();
         var requests = testRequestRepo.findAllByVisitIdWithDetails(visitId);
-        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
+        return org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse.from(
                 repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(visitId), requests,
                 signedResultAttachments(requests), sameDayParaclinicalResultService.findForVisit(visitId));
     }

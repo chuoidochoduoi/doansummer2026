@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.medicalHistory;
+package org.example.doansummer2026.dto.medicalhistory;
 
 import org.example.doansummer2026.model.Icd10Selection;
 

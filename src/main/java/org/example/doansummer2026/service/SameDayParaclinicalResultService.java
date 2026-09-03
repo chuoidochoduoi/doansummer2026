@@ -1,8 +1,8 @@
 package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
-import org.example.doansummer2026.dto.medicalHistory.SameDayParaclinicalResultResponse;
-import org.example.doansummer2026.dto.medicalHistory.TestResponse;
+import org.example.doansummer2026.dto.medicalhistory.SameDayParaclinicalResultResponse;
+import org.example.doansummer2026.dto.medicalhistory.TestResponse;
 import org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse;
 import org.example.doansummer2026.enums.TestRequestStatus;
 import org.example.doansummer2026.enums.TestResultRevisionStatus;

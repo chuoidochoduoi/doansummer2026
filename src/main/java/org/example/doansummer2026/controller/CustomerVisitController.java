@@ -54,7 +54,7 @@ public class CustomerVisitController {
 
     @GetMapping("/customers/{customerId}/same-day-paraclinical-results")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    public ResponseEntity<java.util.List<org.example.doansummer2026.dto.medicalHistory.SameDayParaclinicalResultResponse>>
+    public ResponseEntity<java.util.List<org.example.doansummer2026.dto.medicalhistory.SameDayParaclinicalResultResponse>>
     sameDayResultsForReception(@PathVariable UUID customerId) {
         return RestResponses.ok(sameDayResultService.findForCustomerToday(customerId));
     }

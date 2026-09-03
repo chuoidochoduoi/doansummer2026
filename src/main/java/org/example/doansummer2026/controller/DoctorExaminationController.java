@@ -46,7 +46,7 @@ public class DoctorExaminationController {
     /** Ket qua CLS da ky cua cac luot khac trong cung ngay, chi de tham chieu. */
     @GetMapping("/{id}/same-day-paraclinical-results")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
-    public ResponseEntity<java.util.List<org.example.doansummer2026.dto.medicalHistory.SameDayParaclinicalResultResponse>>
+    public ResponseEntity<java.util.List<org.example.doansummer2026.dto.medicalhistory.SameDayParaclinicalResultResponse>>
     sameDayResults(@PathVariable UUID id) {
         MedicalRecordResponse examination = service.loadExamination(id);
         return RestResponses.ok(sameDayResultService.findForRecord(examination.recordId()));
