@@ -2,8 +2,8 @@ package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
-import org.example.doansummer2026.dto.auditLog.AuditLogCreateRequest;
-import org.example.doansummer2026.dto.auditLog.AuditLogResponse;
+import org.example.doansummer2026.dto.auditlog.AuditLogCreateRequest;
+import org.example.doansummer2026.dto.auditlog.AuditLogResponse;
 import org.example.doansummer2026.enums.AuditAction;
 import org.example.doansummer2026.model.AuditLog;
 import org.example.doansummer2026.model.Account;

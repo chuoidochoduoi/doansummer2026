@@ -57,7 +57,7 @@ public class SystemCleanupService {
         }
         appointmentRepo.saveAll(pendingAppointments);
         pendingAppointments.forEach(appointment -> auditLogService.create(
-                new org.example.doansummer2026.dto.auditLog.AuditLogCreateRequest(
+                new org.example.doansummer2026.dto.auditlog.AuditLogCreateRequest(
                         org.example.doansummer2026.enums.AuditAction.STATUS_CHANGE,
                         "Appointment",
                         appointment.getAppointmentId().toString(),
@@ -84,7 +84,7 @@ public class SystemCleanupService {
         }
         queueTicketRepo.saveAll(overdueTickets);
         overdueTickets.forEach(ticket -> auditLogService.create(
-                new org.example.doansummer2026.dto.auditLog.AuditLogCreateRequest(
+                new org.example.doansummer2026.dto.auditlog.AuditLogCreateRequest(
                         org.example.doansummer2026.enums.AuditAction.STATUS_CHANGE,
                         "QueueTicket",
                         ticket.getTicketId().toString(),
@@ -123,7 +123,7 @@ public class SystemCleanupService {
                 .toList();
         customerVisitRepo.saveAll(visitsToClose);
         visitsToClose.forEach(visit -> auditLogService.create(
-                new org.example.doansummer2026.dto.auditLog.AuditLogCreateRequest(
+                new org.example.doansummer2026.dto.auditlog.AuditLogCreateRequest(
                         org.example.doansummer2026.enums.AuditAction.STATUS_CHANGE,
                         "CustomerVisit",
                         visit.getVisitId().toString(),

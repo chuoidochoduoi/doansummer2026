@@ -7,7 +7,7 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.example.doansummer2026.dto.auditLog.AuditLogCreateRequest;
+import org.example.doansummer2026.dto.auditlog.AuditLogCreateRequest;
 import org.example.doansummer2026.enums.AuditAction;
 import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.service.AuditLogService;

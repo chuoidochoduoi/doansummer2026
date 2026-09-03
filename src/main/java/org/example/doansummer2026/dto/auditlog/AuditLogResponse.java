@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.auditLog;
+package org.example.doansummer2026.dto.auditlog;
 
 import org.example.doansummer2026.enums.AuditAction;
 import org.example.doansummer2026.model.AuditLog;

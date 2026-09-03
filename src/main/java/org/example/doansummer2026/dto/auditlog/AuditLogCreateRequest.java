@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.auditLog;
+package org.example.doansummer2026.dto.auditlog;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

@@ -513,7 +513,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
         UUID actorAccountId = actor != null && actor.getProfile() != null && actor.getProfile().getAccount() != null
                 ? actor.getProfile().getAccount().getAccountId() : null;
         Runnable writeAudit = () -> auditLogService.create(
-                new org.example.doansummer2026.dto.auditLog.AuditLogCreateRequest(
+                new org.example.doansummer2026.dto.auditlog.AuditLogCreateRequest(
                         org.example.doansummer2026.enums.AuditAction.UPDATE,
                         "Profile", profileId.toString(), actorAccountId,
                         null, null, oldValueJson, newValueJson,

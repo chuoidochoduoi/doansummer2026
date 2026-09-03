@@ -1,8 +1,8 @@
 package org.example.doansummer2026.service.interfaces;
 
 import org.example.doansummer2026.common.PageResponse;
-import org.example.doansummer2026.dto.auditLog.AuditLogResponse;
-import org.example.doansummer2026.dto.auditLog.AuditLogCreateRequest;
+import org.example.doansummer2026.dto.auditlog.AuditLogResponse;
+import org.example.doansummer2026.dto.auditlog.AuditLogCreateRequest;
 import org.example.doansummer2026.enums.AuditAction;
 import org.springframework.data.domain.Pageable;
 
