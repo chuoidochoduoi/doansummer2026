@@ -46,7 +46,7 @@ public record MedicalRecordResponse(
         ,LocalDateTime doctorConfirmedAt
         ,UUID formTemplateVersionId
         ,JsonNode specialtyData
-        ,org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse clinicalForm
+        ,org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse clinicalForm
 ) {
     public static MedicalRecordResponse from(MedicalRecord r, boolean includeNested) {
         UUID visitId = r.getVisit() != null ? r.getVisit().getVisitId() : null;
@@ -80,12 +80,12 @@ public record MedicalRecordResponse(
                 r.getSpecialtyData(), includeNested ? resolvedClinicalForm(r) : null);
     }
 
-    private static org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse resolvedClinicalForm(
+    private static org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse resolvedClinicalForm(
             MedicalRecord record) {
         var version = record.getFormTemplateVersion();
         if (version == null || version.getTemplate() == null) return null;
         var template = version.getTemplate();
-        return new org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse(
+        return new org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse(
                 template.getTemplateId(), version.getVersionId(), version.getVersionNo(), template.getCode(),
                 template.getName(), template.getContext(), version.getSchemaJson(), record.getSpecialtyData());
     }

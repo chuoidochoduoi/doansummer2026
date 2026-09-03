@@ -206,7 +206,7 @@ public class TestRequestController {
 
     @GetMapping("/{id}/clinical-form")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
-    public ResponseEntity<org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse> getClinicalForm(
+    public ResponseEntity<org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse> getClinicalForm(
             @PathVariable UUID id) {
         return RestResponses.ok(service.getClinicalForm(id));
     }

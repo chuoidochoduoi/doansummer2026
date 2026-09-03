@@ -1,7 +1,7 @@
 package org.example.doansummer2026.dto.testRequest;
 
 import tools.jackson.databind.JsonNode;
-import org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse;
+import org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse;
 import org.example.doansummer2026.enums.QueueStatus;
 import org.example.doansummer2026.enums.TestRequestStatus;
 

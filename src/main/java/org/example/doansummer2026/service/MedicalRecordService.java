@@ -541,7 +541,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     }
 
     @Transactional(readOnly = true)
-    public org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse getClinicalForm(UUID recordId) {
+    public org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse getClinicalForm(UUID recordId) {
         MedicalRecord record = findById(recordId);
         if (record.getQueueTicket() == null || record.getQueueTicket().getService() == null)
             throw new ResourceNotFoundException("Hồ sơ không có biểu mẫu động");
@@ -551,7 +551,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     }
 
     @Transactional(readOnly = true)
-    public org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse getClinicalFormForPatient(
+    public org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse getClinicalFormForPatient(
             UUID recordId, UUID profileId) {
         MedicalRecord record = findById(recordId);
         UUID ownerId = record.getVisit() == null || record.getVisit().getCustomer() == null

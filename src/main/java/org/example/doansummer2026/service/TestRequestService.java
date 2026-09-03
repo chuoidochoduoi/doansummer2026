@@ -783,7 +783,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     }
 
     @Transactional(readOnly = true)
-    public org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse getClinicalForm(UUID testRequestId) {
+    public org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse getClinicalForm(UUID testRequestId) {
         TestRequest request = findById(testRequestId);
         ensureCurrentStaffCanView(request);
         if (request.getService() == null) throw new ResourceNotFoundException("Yêu cầu chưa gắn dịch vụ");

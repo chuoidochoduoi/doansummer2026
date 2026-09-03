@@ -2,7 +2,7 @@ package org.example.doansummer2026.service;
 
 import tools.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
-import org.example.doansummer2026.dto.clinicalForm.*;
+import org.example.doansummer2026.dto.clinicalform.*;
 import org.example.doansummer2026.enums.ClinicalFormContext;
 import org.example.doansummer2026.enums.ClinicalTemplateStatus;
 import org.example.doansummer2026.exception.BadRequestException;

@@ -67,7 +67,7 @@ public record VisitDetailResponse(
                                       String followUpNote, String prescription,
                                       List<PrescriptionItemResponse> prescriptionItems,
                                       org.example.doansummer2026.dto.vitalsigns.VitalSignsResponse vitalSigns,
-                                      org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse clinicalForm) {}
+                                      org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse clinicalForm) {}
 
     public record SkippedServiceResponse(UUID serviceId, String serviceName, String departmentName,
                                          String roomCode, String workDate, String reason) {}
@@ -228,12 +228,12 @@ public record VisitDetailResponse(
         );
     }
 
-    private static org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse clinicalFormFrom(
+    private static org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse clinicalFormFrom(
             MedicalRecord record) {
         var version = record.getFormTemplateVersion();
         if (version == null || version.getTemplate() == null) return null;
         var template = version.getTemplate();
-        return new org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse(
+        return new org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse(
                 template.getTemplateId(), version.getVersionId(), version.getVersionNo(), template.getCode(),
                 template.getName(), template.getContext(), version.getSchemaJson(), record.getSpecialtyData());
     }

@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.clinicalForm;
+package org.example.doansummer2026.dto.clinicalform;
 
 import tools.jackson.databind.JsonNode;
 import org.example.doansummer2026.enums.ClinicalFormContext;

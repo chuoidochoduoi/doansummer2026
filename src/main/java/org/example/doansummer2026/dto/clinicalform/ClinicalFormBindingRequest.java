@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.clinicalForm;
+package org.example.doansummer2026.dto.clinicalform;
 
 import jakarta.validation.constraints.NotNull;
 import java.util.List;

@@ -68,7 +68,7 @@ public class MedicalRecordController {
 
     @GetMapping("/api/v1/medical-records/{id}/clinical-form")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER','ROLE_ADMIN')")
-    public ResponseEntity<org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse> clinicalForm(
+    public ResponseEntity<org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse> clinicalForm(
             @PathVariable UUID id) {
         return RestResponses.ok(service.getClinicalForm(id));
     }
@@ -220,7 +220,7 @@ public class MedicalRecordController {
 
     @GetMapping("/api/patient/medical-history/{recordId}/clinical-form")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
-    public ResponseEntity<org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse> getPatientClinicalForm(
+    public ResponseEntity<org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse> getPatientClinicalForm(
             @PathVariable UUID recordId,
             @RequestParam(required = false) UUID patientProfileId) {
         return RestResponses.ok(service.getClinicalFormForPatient(recordId, patientProfileId(patientProfileId, false)));

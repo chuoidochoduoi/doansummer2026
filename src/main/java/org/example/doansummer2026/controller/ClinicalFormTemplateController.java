@@ -4,7 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.aop.Auditable;
 import org.example.doansummer2026.common.RestResponses;
-import org.example.doansummer2026.dto.clinicalForm.*;
+import org.example.doansummer2026.dto.clinicalform.*;
 import org.example.doansummer2026.enums.AuditAction;
 import org.example.doansummer2026.service.ClinicalFormTemplateService;
 import org.springframework.http.ResponseEntity;
