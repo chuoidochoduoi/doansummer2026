@@ -2,9 +2,9 @@ package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
-import org.example.doansummer2026.dto.serviceCategory.ServiceCategoryCreateRequest;
-import org.example.doansummer2026.dto.serviceCategory.ServiceCategoryResponse;
-import org.example.doansummer2026.dto.serviceCategory.ServiceCategoryUpdateRequest;
+import org.example.doansummer2026.dto.servicecategory.ServiceCategoryCreateRequest;
+import org.example.doansummer2026.dto.servicecategory.ServiceCategoryResponse;
+import org.example.doansummer2026.dto.servicecategory.ServiceCategoryUpdateRequest;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.ServiceCategory;

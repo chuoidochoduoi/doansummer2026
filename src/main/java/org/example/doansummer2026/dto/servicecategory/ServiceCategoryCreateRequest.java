@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.serviceCategory;
+package org.example.doansummer2026.dto.servicecategory;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;

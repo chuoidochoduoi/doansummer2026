@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.serviceCategory;
+package org.example.doansummer2026.dto.servicecategory;
 
 import org.example.doansummer2026.model.ServiceCategory;
 
