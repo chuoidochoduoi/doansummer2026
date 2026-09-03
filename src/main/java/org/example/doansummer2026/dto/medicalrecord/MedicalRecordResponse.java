@@ -1,10 +1,10 @@
-package org.example.doansummer2026.dto.medicalRecord;
+package org.example.doansummer2026.dto.medicalrecord;
 
 import org.example.doansummer2026.dto.icd.ICD10SelectionResponse;
 import org.example.doansummer2026.model.MedicalRecord;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
 import org.example.doansummer2026.dto.vitalsigns.VitalSignsResponse;
-import org.example.doansummer2026.dto.medicalRecord.PrescriptionItemResponse;
+import org.example.doansummer2026.dto.medicalrecord.PrescriptionItemResponse;
 import org.example.doansummer2026.dto.testrequest.TestRequestResponse;
 
 import java.time.LocalDateTime;

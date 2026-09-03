@@ -663,7 +663,7 @@ public class TestRequestService implements TestRequestServiceInterface {
             throw new BadRequestException("Phòng cận lâm sàng chưa có nhân sự trực để tiếp nhận yêu cầu");
         }
         var created = medicalRecordService.create(
-                new org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest(
+                new org.example.doansummer2026.dto.medicalrecord.MedicalRecordCreateRequest(
                         visitId,
                         responsibleStaff.getStaffId(),
                         "Dich vu can lam sang",

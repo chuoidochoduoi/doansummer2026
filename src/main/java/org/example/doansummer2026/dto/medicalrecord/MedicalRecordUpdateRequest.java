@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.medicalRecord;
+package org.example.doansummer2026.dto.medicalrecord;
 
 import jakarta.validation.constraints.Size;
 import org.example.doansummer2026.dto.icd.ICD10SelectionCreateRequest;

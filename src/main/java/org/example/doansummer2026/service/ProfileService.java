@@ -133,7 +133,7 @@ public class ProfileService implements ProfileServiceInterface {
         if (req.weight() != null) p.setWeight(req.weight());
         if (req.allergies() != null) {
             p.setAllergies(String.join("\n",
-                    org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.normalize(req.allergies())));
+                    org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse.normalize(req.allergies())));
         }
         if (req.phone() != null || req.email() != null) {
             String newPhone = req.phone() != null ? blankToNull(req.phone()) : p.getPhone();

@@ -432,7 +432,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
         if (req.guestGender() == null || req.guestGender() == Gender.OTHER) {
             throw new BadRequestException("Giới tính chỉ được chọn Nam hoặc Nữ");
         }
-        List<String> allergies = org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse
+        List<String> allergies = org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse
                 .normalize(req.guestAllergies());
         if (allergies.size() > 20 || allergies.stream().anyMatch(item -> item.length() > 100)) {
             throw new BadRequestException("Danh sách dị ứng không hợp lệ");

@@ -46,8 +46,8 @@ public record ProfileResponse(
                 p.getInsuranceId(),
                 p.getHeight(),
                 p.getWeight(),
-                org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(p).items(),
-                org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(p).status(),
+                org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse.from(p).items(),
+                org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse.from(p).status(),
                 null,
                 null
         );

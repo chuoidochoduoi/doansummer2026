@@ -34,7 +34,7 @@ public record ProfileCustomerResponse(
     public static ProfileCustomerResponse from(Profile profile, Account account,
                                               List<AppointmentSummary> appointments,
                                               List<TestResultSummary> testResults) {
-        var allergy = org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(profile);
+        var allergy = org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse.from(profile);
 
         String customerCode = profile.getPatientCode();
 

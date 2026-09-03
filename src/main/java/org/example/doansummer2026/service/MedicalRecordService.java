@@ -4,17 +4,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.dto.icd.ICD10SelectionCreateRequest;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
-import org.example.doansummer2026.dto.medicalRecord.ReceptionistRecordResponse;
-import org.example.doansummer2026.dto.medicalRecord.ReceptionistCustomerResponse;
-import org.example.doansummer2026.dto.medicalRecord.ReceptionistAllCustomerResponse;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordCreateRequest;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordResponse;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordUpdateRequest;
+import org.example.doansummer2026.dto.medicalrecord.ReceptionistRecordResponse;
+import org.example.doansummer2026.dto.medicalrecord.ReceptionistCustomerResponse;
+import org.example.doansummer2026.dto.medicalrecord.ReceptionistAllCustomerResponse;
 import org.example.doansummer2026.dto.medicalhistory.MedicalHistoryResponse;
 import org.example.doansummer2026.dto.medicalhistory.VisitHistorySummaryResponse;
 import org.example.doansummer2026.enums.BloodType;
 import org.example.doansummer2026.enums.Gender;
-import org.example.doansummer2026.dto.medicalRecord.PrescriptionItemCreateRequest;
+import org.example.doansummer2026.dto.medicalrecord.PrescriptionItemCreateRequest;
 import org.example.doansummer2026.enums.TestRequestStatus;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
@@ -562,12 +562,12 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     }
 
     @Transactional(readOnly = true)
-    public org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse getPatientAllergies(UUID recordId) {
-        return org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(patientProfile(findById(recordId)));
+    public org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse getPatientAllergies(UUID recordId) {
+        return org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse.from(patientProfile(findById(recordId)));
     }
 
-    public org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse updatePatientAllergies(
-            UUID recordId, org.example.doansummer2026.dto.medicalRecord.PatientAllergyRequest request) {
+    public org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse updatePatientAllergies(
+            UUID recordId, org.example.doansummer2026.dto.medicalrecord.PatientAllergyRequest request) {
         MedicalRecord record = findById(recordId);
         Profile profile = patientProfile(record);
         if (profile == null) {
@@ -576,7 +576,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         if (request.status() == org.example.doansummer2026.enums.AllergyStatus.UNVERIFIED) {
             throw new BadRequestException("Vui lòng xác nhận không ghi nhận dị ứng hoặc nhập ít nhất một dị ứng");
         }
-        var items = org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.normalize(request.items());
+        var items = org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse.normalize(request.items());
         if (request.status() == org.example.doansummer2026.enums.AllergyStatus.REPORTED && items.isEmpty()) {
             throw new BadRequestException("Vui lòng nhập ít nhất một dị ứng");
         }
@@ -585,7 +585,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         }
         profile.setAllergies(request.status() == org.example.doansummer2026.enums.AllergyStatus.NONE_REPORTED
                 ? "" : String.join("\n", items));
-        return org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(profileRepo.save(profile));
+        return org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse.from(profileRepo.save(profile));
     }
 
     public void validatePrescriptionAllergyStatus(MedicalRecord record,
@@ -1126,8 +1126,8 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return MedicalRecordResponse.from(repo.save(r), true);
     }
 
-    public org.example.doansummer2026.dto.medicalRecord.FeedbackResponse submitFeedback(
-            UUID id, UUID profileId, org.example.doansummer2026.dto.medicalRecord.FeedbackRequest req) {
+    public org.example.doansummer2026.dto.medicalrecord.FeedbackResponse submitFeedback(
+            UUID id, UUID profileId, org.example.doansummer2026.dto.medicalrecord.FeedbackRequest req) {
         MedicalRecord r = findById(id);
         if (r.getVisit() == null || r.getVisit().getCustomer() == null
                 || !r.getVisit().getCustomer().getProfileId().equals(profileId)) {
@@ -1139,14 +1139,14 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         r.setRatingComment(req.comment()); r.setContactRequested(false);
         r.setRatedAt(LocalDateTime.now()); r.setFeedbackStatus("NEW");
         r.getFeedbackTargets().clear();
-        return org.example.doansummer2026.dto.medicalRecord.FeedbackResponse.from(repo.save(r));
+        return org.example.doansummer2026.dto.medicalrecord.FeedbackResponse.from(repo.save(r));
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse> listFeedbacks(UUID doctorId, Pageable pageable) {
+    public PageResponse<org.example.doansummer2026.dto.medicalrecord.FeedbackResponse> listFeedbacks(UUID doctorId, Pageable pageable) {
         var page = doctorId == null ? repo.findByRatingScoreIsNotNull(pageable)
                 : repo.findFeedbacksForStaff(doctorId, pageable);
-        return PageResponse.from(page, org.example.doansummer2026.dto.medicalRecord.FeedbackResponse::from);
+        return PageResponse.from(page, org.example.doansummer2026.dto.medicalrecord.FeedbackResponse::from);
     }
 
     @Transactional(readOnly = true)
@@ -1154,33 +1154,33 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return repo.countUnansweredFeedbacks();
     }
 
-    public org.example.doansummer2026.dto.medicalRecord.FeedbackResponse respondFeedback(
+    public org.example.doansummer2026.dto.medicalrecord.FeedbackResponse respondFeedback(
             UUID id, UUID staffId, String response) {
         MedicalRecord r = findById(id);
         if (response != null) { r.setManagerResponse(response); r.setRespondedAt(LocalDateTime.now());
             if (staffId != null) r.setRespondedBy(staffRepo.findById(staffId).orElse(null)); }
         r.setFeedbackStatus(response != null ? "RESPONDED" : "IN_REVIEW");
-        return org.example.doansummer2026.dto.medicalRecord.FeedbackResponse.from(repo.save(r));
+        return org.example.doansummer2026.dto.medicalrecord.FeedbackResponse.from(repo.save(r));
     }
 
-    public org.example.doansummer2026.dto.medicalRecord.FeedbackResponse explainFeedback(UUID id, UUID doctorId, String explanation) {
+    public org.example.doansummer2026.dto.medicalrecord.FeedbackResponse explainFeedback(UUID id, UUID doctorId, String explanation) {
         MedicalRecord r = findById(id);
         boolean related = r.getDoctor() != null && r.getDoctor().getStaffId().equals(doctorId)
                 || r.getFeedbackTargets().stream().anyMatch(t -> t.getStaff() != null && t.getStaff().getStaffId().equals(doctorId));
         if (!related) throw new ResourceNotFoundException("Đánh giá không thuộc bác sĩ này");
         r.setDoctorExplanation(explanation); r.setFeedbackStatus("WAITING_INTERNAL");
-        return org.example.doansummer2026.dto.medicalRecord.FeedbackResponse.from(repo.save(r));
+        return org.example.doansummer2026.dto.medicalrecord.FeedbackResponse.from(repo.save(r));
     }
 
     /** Lấy danh sách yêu cầu tái khám (follow-up) chưa đặt lịch cho lễ tân */
-    public PageResponse<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> getPendingFollowUps(String search, Pageable pageable) {
+    public PageResponse<org.example.doansummer2026.dto.medicalrecord.FollowUpResponse> getPendingFollowUps(String search, Pageable pageable) {
         String normalizedSearch = search == null ? "" : search.trim().toLowerCase(java.util.Locale.ROOT);
         Page<MedicalRecord> page = repo.findPendingFollowUps(normalizedSearch, pageable);
-        return PageResponse.from(page, org.example.doansummer2026.dto.medicalRecord.FollowUpResponse::from);
+        return PageResponse.from(page, org.example.doansummer2026.dto.medicalrecord.FollowUpResponse::from);
     }
 
     /** Tạo lịch hẹn từ yêu cầu tái khám và cập nhật vào hồ sơ bệnh án */
-    public org.example.doansummer2026.dto.medicalRecord.FollowUpResponse scheduleFollowUp(UUID recordId, org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {
+    public org.example.doansummer2026.dto.medicalrecord.FollowUpResponse scheduleFollowUp(UUID recordId, org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {
         MedicalRecord record = findById(recordId);
         if (record.getFollowUpAppointment() != null) {
             throw new ConflictException("Yêu cầu tái khám này đã được đặt lịch hẹn");
@@ -1261,6 +1261,6 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         record.setFollowUpAppointment(appointment);
         record.setFollowUpDate(req.scheduledAt().toLocalDate());
         
-        return org.example.doansummer2026.dto.medicalRecord.FollowUpResponse.from(repo.saveAndFlush(record));
+        return org.example.doansummer2026.dto.medicalrecord.FollowUpResponse.from(repo.saveAndFlush(record));
     }
 }

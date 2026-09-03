@@ -4,7 +4,7 @@ import org.example.doansummer2026.enums.QueueStatus;
 import org.example.doansummer2026.enums.Gender;
 import org.example.doansummer2026.enums.BloodType;
 import org.example.doansummer2026.model.QueueTicket;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordResponse;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -26,7 +26,7 @@ public record QueueTicketResponse(
         Gender patientGender,    // Gioi tinh
         LocalDate patientDob,    // Ngay sinh
         BloodType patientBloodType, // Nhom mau
-        org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse patientAllergies,
+        org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse patientAllergies,
         String lastVisit,      // Ngay check-in gan nhat
         String history,        // Lich su kham (so luong visit)
         // Thong tin khoa dich vu
@@ -99,8 +99,8 @@ public record QueueTicketResponse(
         Gender patientGender = null;
         LocalDate patientDob = null;
         BloodType patientBloodType = null;
-        org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse patientAllergies =
-                org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(null);
+        org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse patientAllergies =
+                org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse.from(null);
         String lastVisit = null;
         String history = null;
         if (q.getVisit() != null && q.getVisit().getCustomer() != null) {
@@ -112,7 +112,7 @@ public record QueueTicketResponse(
             patientGender = customer.getGender();
             patientDob = customer.getDateOfBirth();
             patientBloodType = customer.getBloodType();
-            patientAllergies = org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(customer);
+            patientAllergies = org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse.from(customer);
             lastVisit = q.getVisit().getCheckInTime() != null ?
                     q.getVisit().getCheckInTime().toLocalDate().toString() : null;
             // TODO: dem so luong visit - can query them

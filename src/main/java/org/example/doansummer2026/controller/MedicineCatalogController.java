@@ -1,7 +1,7 @@
 package org.example.doansummer2026.controller;
 
 import lombok.RequiredArgsConstructor;
-import org.example.doansummer2026.dto.medicalRecord.MedicineCatalogResponse;
+import org.example.doansummer2026.dto.medicalrecord.MedicineCatalogResponse;
 import org.example.doansummer2026.repository.MedicineCatalogRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.prepost.PreAuthorize;

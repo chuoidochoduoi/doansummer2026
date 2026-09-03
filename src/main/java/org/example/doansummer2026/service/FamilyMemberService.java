@@ -144,7 +144,7 @@ public class FamilyMemberService {
     }
 
     private String joinAllergies(List<String> values) {
-        List<String> normalized = org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.normalize(values);
+        List<String> normalized = org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse.normalize(values);
         return normalized.isEmpty() ? null : String.join("\n", normalized);
     }
 
@@ -154,7 +154,7 @@ public class FamilyMemberService {
         if (status == AllergyStatus.UNVERIFIED) return null;
         if (status == AllergyStatus.NONE_REPORTED) return "";
 
-        List<String> normalized = org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse
+        List<String> normalized = org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse
                 .normalize(request.allergies());
         if (normalized.isEmpty()) {
             throw new BadRequestException("Vui lòng thêm ít nhất một dị ứng đã ghi nhận");

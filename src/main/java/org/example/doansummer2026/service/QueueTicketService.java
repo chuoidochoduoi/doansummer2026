@@ -8,9 +8,9 @@ import org.example.doansummer2026.dto.queueticket.ExaminationTransitionResponse;
 import org.example.doansummer2026.dto.queueticket.QueueTicketResponse;
 import org.example.doansummer2026.dto.queueticket.SameRoomExaminationChainResponse;
 import org.example.doansummer2026.dto.queueticket.QueueTicketUpdateRequest;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
-import org.example.doansummer2026.dto.medicalRecord.TestRequestInExaminationRequest;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordResponse;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordUpdateRequest;
+import org.example.doansummer2026.dto.medicalrecord.TestRequestInExaminationRequest;
 import org.example.doansummer2026.dto.icd.ICD10SelectionCreateRequest;
 import org.example.doansummer2026.dto.testrequest.TestRequestCreateRequest;
 import org.example.doansummer2026.exception.BadRequestException;
@@ -332,14 +332,14 @@ public class QueueTicketService implements QueueTicketServiceInterface {
             }
             
             java.util.List<UUID> requestedServiceIds = req.testRequests().stream()
-                    .map(org.example.doansummer2026.dto.medicalRecord.TestRequestInExaminationRequest::serviceId)
+                    .map(org.example.doansummer2026.dto.medicalrecord.TestRequestInExaminationRequest::serviceId)
                     .toList();
             if (new java.util.HashSet<>(requestedServiceIds).size() != requestedServiceIds.size()) {
                 throw new ConflictException("Dịch vụ này đang bị chọn trùng trong chỉ định.");
             }
-            java.util.Map<UUID, org.example.doansummer2026.dto.medicalRecord.TestRequestInExaminationRequest>
+            java.util.Map<UUID, org.example.doansummer2026.dto.medicalrecord.TestRequestInExaminationRequest>
                     requestByServiceId = req.testRequests().stream().collect(java.util.stream.Collectors.toMap(
-                    org.example.doansummer2026.dto.medicalRecord.TestRequestInExaminationRequest::serviceId,
+                    org.example.doansummer2026.dto.medicalrecord.TestRequestInExaminationRequest::serviceId,
                     java.util.function.Function.identity(),
                     (first, ignored) -> first,
                     java.util.LinkedHashMap::new));

@@ -1,6 +1,6 @@
 package org.example.doansummer2026.dto.queueticket;
 
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordResponse;
 
 /** Ket qua hoan thanh mot benh an va chuyen tiep trong cung phong neu co. */
 public record ExaminationTransitionResponse(

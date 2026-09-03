@@ -8,12 +8,12 @@ import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.dto.medicalhistory.MedicalHistoryResponse;
 import org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse;
 import org.example.doansummer2026.dto.medicalhistory.VisitHistorySummaryResponse;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
-import org.example.doansummer2026.dto.medicalRecord.ReceptionistAllCustomerResponse;
-import org.example.doansummer2026.dto.medicalRecord.ReceptionistCustomerResponse;
-import org.example.doansummer2026.dto.medicalRecord.ReceptionistRecordResponse;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordCreateRequest;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordResponse;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordUpdateRequest;
+import org.example.doansummer2026.dto.medicalrecord.ReceptionistAllCustomerResponse;
+import org.example.doansummer2026.dto.medicalrecord.ReceptionistCustomerResponse;
+import org.example.doansummer2026.dto.medicalrecord.ReceptionistRecordResponse;
 import org.example.doansummer2026.enums.BloodType;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
 import org.example.doansummer2026.service.AuthService;
@@ -75,7 +75,7 @@ public class MedicalRecordController {
 
     @GetMapping("/api/v1/medical-records/{id}/patient-allergies")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER','ROLE_ADMIN')")
-    public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse> patientAllergies(
+    public ResponseEntity<org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse> patientAllergies(
             @PathVariable UUID id) {
         return RestResponses.ok(service.getPatientAllergies(id));
     }
@@ -90,9 +90,9 @@ public class MedicalRecordController {
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE')")
     @Auditable(action = AuditAction.UPDATE, entityName = "PatientAllergy", idParamName = "id",
             description = "Xác minh và cập nhật dị ứng trong quá trình khám")
-    public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse> updatePatientAllergies(
+    public ResponseEntity<org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse> updatePatientAllergies(
             @PathVariable UUID id,
-            @Valid @RequestBody org.example.doansummer2026.dto.medicalRecord.PatientAllergyRequest request) {
+            @Valid @RequestBody org.example.doansummer2026.dto.medicalrecord.PatientAllergyRequest request) {
         return RestResponses.ok(service.updatePatientAllergies(id, request));
     }
 
@@ -143,7 +143,7 @@ public class MedicalRecordController {
     @PostMapping("/api/v1/medical-records/{id}/follow-up-appointment")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
     @Auditable(action = AuditAction.CREATE, entityName = "Appointment", idParamName = "id", description = "Tạo lịch tái khám")
-    public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> createFollowUpAppointment(
+    public ResponseEntity<org.example.doansummer2026.dto.medicalrecord.FollowUpResponse> createFollowUpAppointment(
             @PathVariable UUID id,
             @Valid @RequestBody org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {
         return RestResponses.ok(service.scheduleFollowUp(id, req));
@@ -245,10 +245,10 @@ public class MedicalRecordController {
     @PostMapping("/api/patient/medical-history/{recordId}/feedback")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
     @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "recordId", description = "Gửi phản hồi lượt khám")
-    public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse> submitFeedback(
+    public ResponseEntity<org.example.doansummer2026.dto.medicalrecord.FeedbackResponse> submitFeedback(
             @PathVariable UUID recordId,
             @RequestParam(required = false) UUID patientProfileId,
-            @Valid @RequestBody org.example.doansummer2026.dto.medicalRecord.FeedbackRequest req) {
+            @Valid @RequestBody org.example.doansummer2026.dto.medicalrecord.FeedbackRequest req) {
         return RestResponses.ok(service.submitFeedback(recordId, patientProfileId(patientProfileId, true), req));
     }
 
@@ -261,7 +261,7 @@ public class MedicalRecordController {
 
     @GetMapping("/api/v1/feedbacks")
     @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER','ROLE_RECEPTIONIST')")
-    public ResponseEntity<org.example.doansummer2026.common.PageResponse<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse>> feedbacks(
+    public ResponseEntity<org.example.doansummer2026.common.PageResponse<org.example.doansummer2026.dto.medicalrecord.FeedbackResponse>> feedbacks(
             Pageable pageable) {
         return RestResponses.ok(service.listFeedbacks(null, pageable));
     }
@@ -275,7 +275,7 @@ public class MedicalRecordController {
     @PutMapping("/api/v1/feedbacks/{id}/respond")
     @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER','ROLE_RECEPTIONIST')")
     @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "id", description = "Phản hồi đánh giá của bệnh nhân")
-    public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse> respond(
+    public ResponseEntity<org.example.doansummer2026.dto.medicalrecord.FeedbackResponse> respond(
             @PathVariable UUID id, @RequestBody java.util.Map<String,String> body) {
         return RestResponses.ok(service.respondFeedback(id, authService.currentStaffId(), body.get("response")));
     }
@@ -363,7 +363,7 @@ public class MedicalRecordController {
 
     @GetMapping("/api/receptionist/follow-ups")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    public ResponseEntity<PageResponse<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse>> getPendingFollowUps(
+    public ResponseEntity<PageResponse<org.example.doansummer2026.dto.medicalrecord.FollowUpResponse>> getPendingFollowUps(
             @RequestParam(required = false) String search,
             Pageable pageable) {
         return RestResponses.ok(service.getPendingFollowUps(search, pageable));
@@ -372,7 +372,7 @@ public class MedicalRecordController {
     @PostMapping("/api/receptionist/follow-ups/{recordId}/schedule")
     @Auditable(action = AuditAction.CREATE, entityName = "Appointment", idParamName = "recordId", description = "Lễ tân xếp lịch tái khám")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FollowUpResponse> scheduleFollowUp(
+    public ResponseEntity<org.example.doansummer2026.dto.medicalrecord.FollowUpResponse> scheduleFollowUp(
             @PathVariable UUID recordId,
             @Valid @RequestBody org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {
         return RestResponses.ok(service.scheduleFollowUp(recordId, req));

@@ -22,7 +22,7 @@ public record VisitDetailResponse(
         String patientGender,
         String patientPhone,
         String patientAddress,
-        org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse patientAllergies,
+        org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse patientAllergies,
         String recordId,
         String appointmentDate,
         String checkInTime,
@@ -173,7 +173,7 @@ public record VisitDetailResponse(
                 first.getVisit() != null && first.getVisit().getCustomer() != null && first.getVisit().getCustomer().getGender() != null ? first.getVisit().getCustomer().getGender().name() : null,
                 first.getVisit() != null && first.getVisit().getCustomer() != null ? first.getVisit().getCustomer().getPhone() : null,
                 first.getVisit() != null && first.getVisit().getCustomer() != null ? first.getVisit().getCustomer().getAddress() : null,
-                org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(
+                org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse.from(
                         first.getVisit() == null ? null : first.getVisit().getCustomer()),
                 first.getRecordCode(),
                 appointmentDate,

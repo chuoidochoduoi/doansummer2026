@@ -32,7 +32,7 @@ public record FamilyMemberResponse(
     public static FamilyMemberResponse from(FamilyMember relation) {
         var member = relation.getMemberProfile();
         var owner = relation.getOwnerProfile();
-        var allergy = org.example.doansummer2026.dto.medicalRecord.PatientAllergyResponse.from(member);
+        var allergy = org.example.doansummer2026.dto.medicalrecord.PatientAllergyResponse.from(member);
         Integer age = member.getDateOfBirth() == null ? null
                 : Period.between(member.getDateOfBirth(), LocalDate.now()).getYears();
         return new FamilyMemberResponse(

@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.medicalRecord;
+package org.example.doansummer2026.dto.medicalrecord;
 
 import org.example.doansummer2026.enums.BloodType;
 import org.example.doansummer2026.enums.Gender;

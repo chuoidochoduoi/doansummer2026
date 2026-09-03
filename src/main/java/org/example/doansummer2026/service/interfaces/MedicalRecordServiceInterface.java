@@ -1,9 +1,9 @@
 package org.example.doansummer2026.service.interfaces;
 
 import org.example.doansummer2026.common.PageResponse;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordResponse;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordCreateRequest;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordUpdateRequest;
 import org.example.doansummer2026.model.MedicalRecord;
 import org.springframework.data.domain.Pageable;
 
