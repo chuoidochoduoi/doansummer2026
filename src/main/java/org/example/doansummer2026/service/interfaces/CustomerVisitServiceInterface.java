@@ -1,9 +1,9 @@
 package org.example.doansummer2026.service.interfaces;
 
 import org.example.doansummer2026.common.PageResponse;
-import org.example.doansummer2026.dto.customerVisit.CustomerVisitResponse;
-import org.example.doansummer2026.dto.customerVisit.CustomerVisitCreateRequest;
-import org.example.doansummer2026.dto.customerVisit.CustomerVisitUpdateRequest;
+import org.example.doansummer2026.dto.customervisit.CustomerVisitResponse;
+import org.example.doansummer2026.dto.customervisit.CustomerVisitCreateRequest;
+import org.example.doansummer2026.dto.customervisit.CustomerVisitUpdateRequest;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.springframework.data.domain.Pageable;
 

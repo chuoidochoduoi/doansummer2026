@@ -4,9 +4,9 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.common.RestResponses;
-import org.example.doansummer2026.dto.customerVisit.CustomerVisitCreateRequest;
-import org.example.doansummer2026.dto.customerVisit.CustomerVisitResponse;
-import org.example.doansummer2026.dto.customerVisit.CustomerVisitUpdateRequest;
+import org.example.doansummer2026.dto.customervisit.CustomerVisitCreateRequest;
+import org.example.doansummer2026.dto.customervisit.CustomerVisitResponse;
+import org.example.doansummer2026.dto.customervisit.CustomerVisitUpdateRequest;
 import org.example.doansummer2026.enums.VisitStatus;
 import org.example.doansummer2026.service.AuthService;
 import org.example.doansummer2026.service.CustomerVisitService;
@@ -61,7 +61,7 @@ public class CustomerVisitController {
 
     @GetMapping("/customers/{customerId}/same-day-examination-services")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    public ResponseEntity<java.util.List<org.example.doansummer2026.dto.customerVisit.SameDayExaminationServiceResponse>>
+    public ResponseEntity<java.util.List<org.example.doansummer2026.dto.customervisit.SameDayExaminationServiceResponse>>
     sameDayExaminationServices(@PathVariable UUID customerId) {
         return RestResponses.ok(service.getSameDayExaminationServices(customerId));
     }

@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.customerVisit;
+package org.example.doansummer2026.dto.customervisit;
 
 import org.example.doansummer2026.enums.QueueStatus;
 import org.example.doansummer2026.enums.VisitStatus;

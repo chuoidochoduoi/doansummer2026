@@ -1,6 +1,6 @@
 package org.example.doansummer2026.dto.appointment;
 
-import org.example.doansummer2026.dto.customerVisit.CustomerVisitResponse;
+import org.example.doansummer2026.dto.customervisit.CustomerVisitResponse;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.model.Appointment;
 

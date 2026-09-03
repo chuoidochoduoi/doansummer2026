@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.customerVisit;
+package org.example.doansummer2026.dto.customervisit;
 
 import java.time.LocalDate;
 import java.util.List;

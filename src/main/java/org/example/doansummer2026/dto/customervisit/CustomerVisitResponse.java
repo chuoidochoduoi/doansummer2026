@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.customerVisit;
+package org.example.doansummer2026.dto.customervisit;
 
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.Invoice;

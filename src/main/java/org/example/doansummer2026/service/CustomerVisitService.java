@@ -2,9 +2,9 @@ package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
-import org.example.doansummer2026.dto.customerVisit.CustomerVisitCreateRequest;
-import org.example.doansummer2026.dto.customerVisit.CustomerVisitResponse;
-import org.example.doansummer2026.dto.customerVisit.CustomerVisitUpdateRequest;
+import org.example.doansummer2026.dto.customervisit.CustomerVisitCreateRequest;
+import org.example.doansummer2026.dto.customervisit.CustomerVisitResponse;
+import org.example.doansummer2026.dto.customervisit.CustomerVisitUpdateRequest;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.model.Appointment;
@@ -258,13 +258,13 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
     }
 
     @Transactional(readOnly = true)
-    public List<org.example.doansummer2026.dto.customerVisit.SameDayExaminationServiceResponse>
+    public List<org.example.doansummer2026.dto.customervisit.SameDayExaminationServiceResponse>
     getSameDayExaminationServices(UUID customerId) {
         if (!profileRepo.existsById(customerId)) {
             throw new ResourceNotFoundException("Khách hàng không tồn tại: " + customerId);
         }
         Set<UUID> includedServiceIds = new java.util.HashSet<>();
-        List<org.example.doansummer2026.dto.customerVisit.SameDayExaminationServiceResponse> result =
+        List<org.example.doansummer2026.dto.customervisit.SameDayExaminationServiceResponse> result =
                 new ArrayList<>(sameDayExaminationItems(customerId).stream()
                 .filter(item -> item.getService() != null
                         && includedServiceIds.add(item.getService().getServiceId()))
@@ -281,7 +281,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
                     String state = queue != null ? queueStatusLabel(queue.getStatus())
                             : (invoice.getStatus() == org.example.doansummer2026.enums.InvoiceStatus.PENDING
                             ? "Chờ thanh toán" : "Đã thanh toán");
-                    return new org.example.doansummer2026.dto.customerVisit.SameDayExaminationServiceResponse(
+                    return new org.example.doansummer2026.dto.customervisit.SameDayExaminationServiceResponse(
                             service.getServiceId(), service.getServiceCode(), service.getName(),
                             visit.getVisitId(), visitCode, visit.getStatus(),
                             queue != null ? queue.getStatus() : null,
@@ -298,7 +298,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
                     MedicalService service = ticket.getService();
                     String visitCode = "VIS-" + visit.getVisitId().toString()
                             .replace("-", "").substring(0, 8).toUpperCase();
-                    return new org.example.doansummer2026.dto.customerVisit.SameDayExaminationServiceResponse(
+                    return new org.example.doansummer2026.dto.customervisit.SameDayExaminationServiceResponse(
                             service.getServiceId(), service.getServiceCode(), service.getName(),
                             visit.getVisitId(), visitCode, visit.getStatus(), ticket.getStatus(),
                             visit.getCheckInTime(), true,
