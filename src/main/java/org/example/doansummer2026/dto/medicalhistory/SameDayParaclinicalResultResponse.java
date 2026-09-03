@@ -1,6 +1,6 @@
 package org.example.doansummer2026.dto.medicalhistory;
 
-import org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse;
+import org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse;
 import org.example.doansummer2026.enums.DepartmentType;
 import tools.jackson.databind.JsonNode;
 

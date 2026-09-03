@@ -1093,9 +1093,9 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 signedResultAttachments(requests), sameDayParaclinicalResultService.findForVisit(visitId));
     }
 
-    private java.util.Map<UUID, java.util.List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>>
+    private java.util.Map<UUID, java.util.List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>>
     signedResultAttachments(java.util.List<org.example.doansummer2026.model.TestRequest> requests) {
-        java.util.Map<UUID, java.util.List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> result
+        java.util.Map<UUID, java.util.List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>> result
                 = new java.util.HashMap<>();
         for (var request : requests) {
             var testResult = request.getTestResult();
@@ -1105,7 +1105,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             if (signed.isEmpty()) continue;
             result.put(testResult.getResultId(), testResultAttachmentRepo
                     .findByRevision_RevisionIdOrderByDisplayOrder(signed.get().getRevisionId()).stream()
-                    .map(org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse::from).toList());
+                    .map(org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse::from).toList());
         }
         return result;
     }

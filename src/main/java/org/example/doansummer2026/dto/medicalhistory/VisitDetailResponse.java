@@ -73,25 +73,25 @@ public record VisitDetailResponse(
                                          String roomCode, String workDate, String reason) {}
 
     public static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests,
-            java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments) {
+            java.util.Map<UUID, List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>> attachments) {
         return from(records, testRequests, attachments, List.of(), List.of(), false);
     }
 
     public static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests,
-            java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments,
+            java.util.Map<UUID, List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>> attachments,
             List<SameDayParaclinicalResultResponse> sameDayReferencedResults) {
         return from(records, testRequests, attachments, sameDayReferencedResults, List.of(), false);
     }
 
     public static VisitDetailResponse publishedHistory(List<MedicalRecord> records, List<TestRequest> testRequests,
-            java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments,
+            java.util.Map<UUID, List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>> attachments,
             List<SameDayParaclinicalResultResponse> sameDayReferencedResults,
             List<QueueTicket> visitQueues) {
         return from(records, testRequests, attachments, sameDayReferencedResults, visitQueues, true);
     }
 
     private static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests,
-            java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments,
+            java.util.Map<UUID, List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>> attachments,
             List<SameDayParaclinicalResultResponse> sameDayReferencedResults,
             List<QueueTicket> visitQueues, boolean publishedOnly) {
         if (records == null || records.isEmpty()) return null;
@@ -239,7 +239,7 @@ public record VisitDetailResponse(
     }
 
     private static TestResponse testFrom(TestRequest request,
-            java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments) {
+            java.util.Map<UUID, List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>> attachments) {
         TestResult result = request.getTestResult();
         String serviceCode = request.getService() != null ? request.getService().getServiceCode() : null;
         var panel = org.example.doansummer2026.service.LaboratoryAnalyteCatalog.panel(serviceCode)

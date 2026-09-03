@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.testResult;
+package org.example.doansummer2026.dto.testresult;
 
 import tools.jackson.databind.JsonNode;
 import jakarta.validation.constraints.NotNull;

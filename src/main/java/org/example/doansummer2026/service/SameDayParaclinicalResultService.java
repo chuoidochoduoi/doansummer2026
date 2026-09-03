@@ -3,7 +3,7 @@ package org.example.doansummer2026.service;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.dto.medicalhistory.SameDayParaclinicalResultResponse;
 import org.example.doansummer2026.dto.medicalhistory.TestResponse;
-import org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse;
+import org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse;
 import org.example.doansummer2026.enums.TestRequestStatus;
 import org.example.doansummer2026.enums.TestResultRevisionStatus;
 import org.example.doansummer2026.exception.ResourceNotFoundException;

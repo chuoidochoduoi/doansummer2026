@@ -17,7 +17,7 @@ public record TestResponse(
         List<TestResultResponse> results,
         String conclusion,
         String pdfUrl,
-        List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse> attachments,
+        List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse> attachments,
         String performedBy,
         UUID performedById,
         String performedAt,
