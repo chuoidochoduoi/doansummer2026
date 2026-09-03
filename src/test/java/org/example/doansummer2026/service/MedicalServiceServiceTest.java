@@ -1,7 +1,7 @@
 package org.example.doansummer2026.service;
 
-import org.example.doansummer2026.dto.medicalService.MedicalServiceCreateRequest;
-import org.example.doansummer2026.dto.medicalService.MedicalServiceUpdateRequest;
+import org.example.doansummer2026.dto.medicalservice.MedicalServiceCreateRequest;
+import org.example.doansummer2026.dto.medicalservice.MedicalServiceUpdateRequest;
 import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.enums.Gender;
 import org.example.doansummer2026.enums.ServiceStatus;

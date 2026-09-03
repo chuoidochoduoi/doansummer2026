@@ -1,9 +1,9 @@
 //package org.example.doansummer2026.service;
 //
-//import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
-//import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
-//import org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest;
-//import org.example.doansummer2026.dto.queueTicket.QueueTicketUpdateRequest;
+//import org.example.doansummer2026.dto.medicalrecord.MedicalRecordResponse;
+//import org.example.doansummer2026.dto.medicalrecord.MedicalRecordUpdateRequest;
+//import org.example.doansummer2026.dto.queueticket.QueueTicketCreateRequest;
+//import org.example.doansummer2026.dto.queueticket.QueueTicketUpdateRequest;
 //import org.example.doansummer2026.enums.*;
 //import org.example.doansummer2026.exception.BadRequestException;
 //import org.example.doansummer2026.exception.ConflictException;
@@ -39,8 +39,8 @@
 //import static org.mockito.Mockito.*;
 //
 //import org.example.doansummer2026.model.Profile;
-//import org.example.doansummer2026.dto.medicalRecord.PrescriptionItemCreateRequest;
-//import org.example.doansummer2026.dto.medicalRecord.TestRequestInExaminationRequest;
+//import org.example.doansummer2026.dto.medicalrecord.PrescriptionItemCreateRequest;
+//import org.example.doansummer2026.dto.medicalrecord.TestRequestInExaminationRequest;
 //import org.example.doansummer2026.dto.icd.ICD10SelectionCreateRequest;
 //import org.example.doansummer2026.model.Invoice;
 //import org.example.doansummer2026.model.Icd10Code;

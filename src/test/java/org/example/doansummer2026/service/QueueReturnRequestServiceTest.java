@@ -1,6 +1,6 @@
 package org.example.doansummer2026.service;
 
-import org.example.doansummer2026.dto.queueTicket.QueueTicketResponse;
+import org.example.doansummer2026.dto.queueticket.QueueTicketResponse;
 import org.example.doansummer2026.enums.NotificationStatus;
 import org.example.doansummer2026.enums.QueueStatus;
 import org.example.doansummer2026.enums.SystemRole;

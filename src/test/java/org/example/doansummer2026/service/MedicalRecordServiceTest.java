@@ -2,10 +2,10 @@ package org.example.doansummer2026.service;
 
 import org.example.doansummer2026.dto.appointment.AppointmentCreateRequest;
 import org.example.doansummer2026.dto.icd.ICD10SelectionCreateRequest;
-import org.example.doansummer2026.dto.medicalRecord.FeedbackRequest;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest;
-import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
-import org.example.doansummer2026.dto.medicalRecord.PrescriptionItemCreateRequest;
+import org.example.doansummer2026.dto.medicalrecord.FeedbackRequest;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordCreateRequest;
+import org.example.doansummer2026.dto.medicalrecord.MedicalRecordUpdateRequest;
+import org.example.doansummer2026.dto.medicalrecord.PrescriptionItemCreateRequest;
 import org.example.doansummer2026.enums.*;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;

@@ -1,11 +1,11 @@
 //package org.example.doansummer2026.service;
 //
-//import org.example.doansummer2026.dto.testRequest.TestRequestBatchCreateRequest;
-//import org.example.doansummer2026.dto.testRequest.TestRequestCancelRequest;
-//import org.example.doansummer2026.dto.testRequest.TestRequestCreateRequest;
-//import org.example.doansummer2026.dto.testRequest.TestRequestUpdateRequest;
-//import org.example.doansummer2026.dto.testResult.TestResultCreateRequest;
-//import org.example.doansummer2026.dto.testResult.TestResultUpdateRequest;
+//import org.example.doansummer2026.dto.testrequest.TestRequestBatchCreateRequest;
+//import org.example.doansummer2026.dto.testrequest.TestRequestCancelRequest;
+//import org.example.doansummer2026.dto.testrequest.TestRequestCreateRequest;
+//import org.example.doansummer2026.dto.testrequest.TestRequestUpdateRequest;
+//import org.example.doansummer2026.dto.testresult.TestResultCreateRequest;
+//import org.example.doansummer2026.dto.testresult.TestResultUpdateRequest;
 //import org.example.doansummer2026.enums.MedicalRecordStatus;
 //import org.example.doansummer2026.enums.QueueStatus;
 //import org.example.doansummer2026.enums.SystemRole;
@@ -41,7 +41,7 @@
 //import static org.mockito.ArgumentMatchers.eq;
 //
 //import org.example.doansummer2026.model.Profile;
-//import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
+//import org.example.doansummer2026.dto.medicalrecord.MedicalRecordResponse;
 //import org.springframework.data.domain.PageImpl;
 //import org.springframework.data.domain.PageRequest;
 //

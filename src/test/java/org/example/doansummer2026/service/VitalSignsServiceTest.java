@@ -1,7 +1,7 @@
 //package org.example.doansummer2026.service;
 //
-//import org.example.doansummer2026.dto.vitalSigns.VitalSignsCreateRequest;
-//import org.example.doansummer2026.dto.vitalSigns.VitalSignsUpdateRequest;
+//import org.example.doansummer2026.dto.vitalsigns.VitalSignsCreateRequest;
+//import org.example.doansummer2026.dto.vitalsigns.VitalSignsUpdateRequest;
 //import org.example.doansummer2026.exception.ConflictException;
 //import org.example.doansummer2026.exception.ResourceNotFoundException;
 //import org.example.doansummer2026.model.MedicalRecord;

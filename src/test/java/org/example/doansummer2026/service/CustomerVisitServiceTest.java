@@ -1,7 +1,7 @@
 package org.example.doansummer2026.service;
 
-import org.example.doansummer2026.dto.customerVisit.CustomerVisitCreateRequest;
-import org.example.doansummer2026.dto.customerVisit.CustomerVisitUpdateRequest;
+import org.example.doansummer2026.dto.customervisit.CustomerVisitCreateRequest;
+import org.example.doansummer2026.dto.customervisit.CustomerVisitUpdateRequest;
 import org.example.doansummer2026.dto.invoice.InvoiceResponse;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.enums.DepartmentType;

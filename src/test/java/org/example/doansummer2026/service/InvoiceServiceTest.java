@@ -2054,8 +2054,8 @@ class InvoiceServiceTest {
         Profile doctorProfile = Profile.builder().profileId(UUID.randomUUID()).account(activeAccount).build();
         StaffInfo doctor = StaffInfo.builder().staffId(UUID.randomUUID()).profile(doctorProfile)
                 .systemRole(SystemRole.DOCTOR).department(room).build();
-        var firstResponse = mock(org.example.doansummer2026.dto.queueTicket.QueueTicketResponse.class);
-        var secondResponse = mock(org.example.doansummer2026.dto.queueTicket.QueueTicketResponse.class);
+        var firstResponse = mock(org.example.doansummer2026.dto.queueticket.QueueTicketResponse.class);
+        var secondResponse = mock(org.example.doansummer2026.dto.queueticket.QueueTicketResponse.class);
         when(secondResponse.ticketId()).thenReturn(secondTicketId);
         QueueTicket secondTicket = QueueTicket.builder().ticketId(secondTicketId).status(QueueStatus.WAITING).build();
 
@@ -2074,8 +2074,8 @@ class InvoiceServiceTest {
 
         invoiceService.pay(invoiceId, null);
 
-        ArgumentCaptor<org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest> captor =
-                ArgumentCaptor.forClass(org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest.class);
+        ArgumentCaptor<org.example.doansummer2026.dto.queueticket.QueueTicketCreateRequest> captor =
+                ArgumentCaptor.forClass(org.example.doansummer2026.dto.queueticket.QueueTicketCreateRequest.class);
         verify(queueTicketService, times(2)).create(captor.capture());
         assertEquals(highServiceId, captor.getAllValues().get(0).serviceId());
         assertEquals(lowServiceId, captor.getAllValues().get(1).serviceId());
@@ -2237,7 +2237,7 @@ class InvoiceServiceTest {
 
         var response =
                 mock(
-                        org.example.doansummer2026.dto.queueTicket
+                        org.example.doansummer2026.dto.queueticket
                                 .QueueTicketResponse.class
                 );
 

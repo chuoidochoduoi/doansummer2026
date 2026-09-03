@@ -1,7 +1,7 @@
 package org.example.doansummer2026.service;
 
-import org.example.doansummer2026.dto.serviceCategory.ServiceCategoryCreateRequest;
-import org.example.doansummer2026.dto.serviceCategory.ServiceCategoryUpdateRequest;
+import org.example.doansummer2026.dto.servicecategory.ServiceCategoryCreateRequest;
+import org.example.doansummer2026.dto.servicecategory.ServiceCategoryUpdateRequest;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
