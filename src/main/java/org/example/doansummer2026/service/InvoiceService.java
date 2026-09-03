@@ -597,7 +597,7 @@ public class InvoiceService implements InvoiceServiceInterface {
                                 visitId, service.getServiceId())
                         .isPresent();
                 // CLINICAL_EXAM: tao QueueTicket cho bac si kham
-                var ticket = queueTicketService.create(new org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest(
+                var ticket = queueTicketService.create(new org.example.doansummer2026.dto.queueticket.QueueTicketCreateRequest(
                         visitId,
                         performingRoom.getDepartmentId(),
                         service.getServiceId(),

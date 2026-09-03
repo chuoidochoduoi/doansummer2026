@@ -1,9 +1,9 @@
 package org.example.doansummer2026.service.interfaces;
 
 import org.example.doansummer2026.common.PageResponse;
-import org.example.doansummer2026.dto.queueTicket.QueueTicketResponse;
-import org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest;
-import org.example.doansummer2026.dto.queueTicket.QueueTicketUpdateRequest;
+import org.example.doansummer2026.dto.queueticket.QueueTicketResponse;
+import org.example.doansummer2026.dto.queueticket.QueueTicketCreateRequest;
+import org.example.doansummer2026.dto.queueticket.QueueTicketUpdateRequest;
 import org.example.doansummer2026.model.QueueTicket;
 import org.springframework.data.domain.Pageable;
 

@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.queueTicket;
+package org.example.doansummer2026.dto.queueticket;
 
 import org.example.doansummer2026.enums.QueueStatus;
 import org.example.doansummer2026.enums.Gender;
