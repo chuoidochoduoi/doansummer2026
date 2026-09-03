@@ -1,5 +1,6 @@
 package org.example.doansummer2026.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -8,12 +9,15 @@ import org.springframework.stereotype.Service;
  * Bật bằng cách: app.sms.provider=mock
  */
 @Service
+@Slf4j
 @ConditionalOnProperty(name = "app.sms.provider", havingValue = "mock")
 public class MockSmsService implements SmsService {
     @Override
     public void sendOtp(String phone, String code) {
-        // Log ra console để test
-        System.out.println("[MOCK SMS] Gửi OTP " + code + " đến " + phone);
+        String suffix = phone == null || phone.length() < 3
+                ? "***"
+                : "***" + phone.substring(phone.length() - 3);
+        log.info("Đã giả lập gửi OTP tới số điện thoại {}", suffix);
     }
 }
 

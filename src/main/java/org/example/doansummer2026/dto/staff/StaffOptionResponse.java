@@ -11,6 +11,7 @@ public record StaffOptionResponse(
         UUID staffId,
         String staffCode,
         String fullName,
+        String avatarUrl,
         SystemRoleBrief systemRole,
         String specializationName,
         UUID assignedDepartmentId,
@@ -34,10 +35,12 @@ public record StaffOptionResponse(
                                            List<UUID> capabilityIds) {
         String specName = s.getSpecialization() != null ? s.getSpecialization().getName() : null;
         String fullName = s.getProfile() != null ? s.getProfile().getFullName() : null;
+        String avatarUrl = s.getProfile() != null ? s.getProfile().getAvatarUrl() : null;
         return new StaffOptionResponse(
                 s.getStaffId(),
                 s.getStaffCode(),
                 fullName,
+                avatarUrl,
                 SystemRoleBrief.valueOf(s.getSystemRole().normalized().name()),
                 specName,
                 assignedDepartmentId,

@@ -127,6 +127,7 @@ public class ProfileService implements ProfileServiceInterface {
         if (req.gender() != null) p.setGender(parseGender(req.gender()));
         if (req.bloodType() != null) p.setBloodType(req.bloodType());
         if (req.address() != null) p.setAddress(blankToNull(req.address()));
+        if (req.avatarUrl() != null) p.setAvatarUrl(blankToNull(req.avatarUrl()));
         if (req.insuranceId() != null) p.setInsuranceId(blankToNull(req.insuranceId()));
         if (req.height() != null) p.setHeight(req.height());
         if (req.weight() != null) p.setWeight(req.weight());
@@ -170,7 +171,7 @@ public class ProfileService implements ProfileServiceInterface {
 
         ProfileUpdateRequest safeRequest = new ProfileUpdateRequest(
                 req.fullName(), req.dateOfBirth(), req.gender(),
-                null, null, req.address(), req.bloodType(), null,
+                null, null, req.address(), req.avatarUrl(), req.bloodType(), null,
                 req.height(), req.weight(), req.allergies());
         return update(id, safeRequest);
     }

@@ -8,9 +8,11 @@
 --   clinicmanager / 88888888  (BCrypt)
 --   doctor1 / doctor_lab / doctor8 / doctor_xray / 88888888
 --   customer: username la so dien thoai trong Profile / 88888888
+--   chuoidochoduoi7e@gmail.com / 88888888 (tai khoan Customer moi, chua co nghiep vu)
 -- ===================================================================
 
 TRUNCATE TABLE
+    membership_card_ledger, membership_card, membership_policy, family_member,
     test_result_attachment, test_result_revision,
     medical_service_form_template, clinical_form_template_version, clinical_form_template,
     clinic_schedule_exception, shift_version,
@@ -24,6 +26,17 @@ TRUNCATE TABLE
     service_category, service_capability, medicine_catalog, icd_10_codes,
     insurance, department, specialization, shift_config, profile, account
 RESTART IDENTITY CASCADE;
+
+-- ===================================================================
+-- Chinh sach the tra truoc CareS (khong tao the cho tai khoan moi)
+-- ===================================================================
+INSERT INTO membership_policy (
+    policy_id, created_at, updated_at, deleted,
+    minimum_top_up, discount_percent, validity_months, active
+) VALUES (
+    '7c000001-0000-0000-0000-000000000001', NOW(), NOW(), false,
+    1000000, 15, 12, true
+);
 
 -- ===================================================================
 -- Specialization (danh muc chuyen khoa - toi thieu de bo sung vao department)
@@ -229,8 +242,7 @@ INSERT INTO staff_info (staff_id, created_at, updated_at, deleted, profile_id, s
                                                                                                                                                                                                                      ('90000012-5555-5555-5555-555555555555', NOW(), NOW(), false, '20000013-3333-3333-3333-333333333333', 'STF-REC-001', 'RECEPTIONIST', '001095123456', NULL, NULL, NULL, NULL, NULL, NULL),
                                                                                                                                                                                                                      ('90000013-6666-6666-6666-666666666666', NOW(), NOW(), false, '20000014-4444-4444-4444-444444444444', 'STF-CAS-001', 'CASHIER', '001092123456', NULL, NULL, NULL, NULL, NULL, NULL);
 
--- Bo sung 14 nhan su; cung nhom can lam sang va hai nhan su ca toi tao thanh
--- bo tai khoan nhan vien phu day cac vai tro va phong nghiep vu.
+-- Bo sung nhan su nen cho cac phong kham, CLS va vai tro van hanh.
 -- Tat ca tai khoan trinh dien dung mat khau: 88888888.
 INSERT INTO account (account_id, created_at, is_active, password_hash, role, username)
 SELECT format('31000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
@@ -252,8 +264,7 @@ FROM generate_series(1, 14) AS g(i);
 INSERT INTO account (account_id, created_at, is_active, password_hash, role, username) VALUES
 ('33000000-0000-0000-0000-000000000002', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_lab'),
 ('33000000-0000-0000-0000-000000000003', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_biochem'),
-('33000000-0000-0000-0000-000000000004', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_xray'),
-('33000000-0000-0000-0000-000000000005', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_pediatric2');
+('33000000-0000-0000-0000-000000000004', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_xray');
 
 INSERT INTO profile (
     profile_id, account_id, created_at, updated_at, deleted,
@@ -261,8 +272,7 @@ INSERT INTO profile (
 ) VALUES
 ('23000000-0000-0000-0000-000000000002', '33000000-0000-0000-0000-000000000002', NOW(), NOW(), false, 'Bác sĩ Nguyễn Hải Yến', '1986-07-22', 'FEMALE', '0968000002', 'doctor.lab@cares.vn', 'Hà Nội', NULL),
 ('23000000-0000-0000-0000-000000000003', '33000000-0000-0000-0000-000000000003', NOW(), NOW(), false, 'Bác sĩ Trần Minh Sinh', '1985-09-12', 'MALE', '0968000003', 'doctor.biochem@cares.vn', 'Hà Nội', NULL),
-('23000000-0000-0000-0000-000000000004', '33000000-0000-0000-0000-000000000004', NOW(), NOW(), false, 'Bác sĩ Lê Thu Phương', '1987-01-18', 'FEMALE', '0968000004', 'doctor.xray@cares.vn', 'Hà Nội', NULL),
-('23000000-0000-0000-0000-000000000005', '33000000-0000-0000-0000-000000000005', NOW(), NOW(), false, 'Bác sĩ Đỗ Khánh Linh', '1989-04-26', 'FEMALE', '0968000005', 'khanhlinh.do@cares.vn', 'Hà Đông, Hà Nội', NULL);
+('23000000-0000-0000-0000-000000000004', '33000000-0000-0000-0000-000000000004', NOW(), NOW(), false, 'Bác sĩ Lê Thu Phương', '1987-01-18', 'FEMALE', '0968000004', 'doctor.xray@cares.vn', 'Hà Nội', NULL);
 
 INSERT INTO staff_info (
     staff_id, created_at, updated_at, deleted, profile_id, staff_code,
@@ -271,21 +281,17 @@ INSERT INTO staff_info (
 ) VALUES
 ('93000000-0000-0000-0000-000000000002', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000002', 'STF-DOC-LAB', 'DOCTOR', '001086000002', NULL, 'Bác sĩ chuyên khoa xét nghiệm', 'Đại học Y Hà Nội', 'CCHN-LAB-001', NULL, '44444444-4444-4444-4444-444444444444'),
 ('93000000-0000-0000-0000-000000000003', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000003', 'STF-DOC-BIO', 'DOCTOR', '001085000003', NULL, 'Bác sĩ chuyên khoa xét nghiệm', 'Đại học Y Hà Nội', 'CCHN-BIO-001', NULL, 'cccccccc-cccc-cccc-cccc-cccccccccccc'),
-('93000000-0000-0000-0000-000000000004', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000004', 'STF-DOC-XRAY', 'DOCTOR', '001087000004', NULL, 'Bác sĩ chẩn đoán hình ảnh', 'Đại học Y Hà Nội', 'CCHN-XRAY-001', NULL, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'),
-('93000000-0000-0000-0000-000000000005', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000005', 'STF-DOC-PED-002', 'DOCTOR', '001089000005', NULL, 'Bác sĩ chuyên khoa Nhi', 'Đại học Y Hà Nội', 'CCHN-NHI-002', '00000002-2222-2222-2222-222222222222', '66666666-6666-6666-6666-666666666666');
+('93000000-0000-0000-0000-000000000004', NOW(), NOW(), false, '23000000-0000-0000-0000-000000000004', 'STF-DOC-XRAY', 'DOCTOR', '001087000004', NULL, 'Bác sĩ chẩn đoán hình ảnh', 'Đại học Y Hà Nội', 'CCHN-XRAY-001', NULL, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 
--- Nhan su chuyen trach ca toi. Le tan 3, thu ngan 3 va dieu duong 3
+-- Ky thuat vien xet nghiem ca toi. Le tan 3, thu ngan 3 va dieu duong 3
 -- da co trong nhom tai khoan sinh tu dong ben duoi.
 INSERT INTO account (account_id, created_at, is_active, password_hash, role, username) VALUES
-('34000000-0000-0000-0000-000000000001', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'doctor_internal_evening'),
 ('34000000-0000-0000-0000-000000000002', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'lab_evening');
 
 INSERT INTO profile (
     profile_id, account_id, created_at, updated_at, deleted,
     full_name, date_of_birth, gender, phone, email, address, blood_type
 ) VALUES
-('24000000-0000-0000-0000-000000000001', '34000000-0000-0000-0000-000000000001', NOW(), NOW(), false,
- 'Bác sĩ Nguyễn Tuấn Kiệt', DATE '1984-11-06', 'MALE', '0826153947', 'tuankiet.nguyen@cares.vn', 'Cầu Giấy, Hà Nội', NULL),
 ('24000000-0000-0000-0000-000000000002', '34000000-0000-0000-0000-000000000002', NOW(), NOW(), false,
  'Kỹ thuật viên Phạm Ngọc Diệp', DATE '1993-03-18', 'FEMALE', '0827364159', 'ngocdiep.pham@cares.vn', 'Nam Từ Liêm, Hà Nội', NULL);
 
@@ -294,9 +300,6 @@ INSERT INTO staff_info (
     system_role, national_id, bank_account, highest_degree, university,
     license_number, specialization_id, department_id
 ) VALUES
-('94000000-0000-0000-0000-000000000001', NOW(), NOW(), false, '24000000-0000-0000-0000-000000000001',
- 'STF-DOC-INT-EVE', 'DOCTOR', '001084613927', NULL, 'Bác sĩ chuyên khoa I', 'Đại học Y Hà Nội',
- 'CCHN-NOI-2021-0618', '00000001-1111-1111-1111-111111111111', '77777777-7777-7777-7777-777777777777'),
 ('94000000-0000-0000-0000-000000000002', NOW(), NOW(), false, '24000000-0000-0000-0000-000000000002',
  'STF-LAB-EVE', 'NURSE', '001093527184', NULL, 'Cử nhân kỹ thuật xét nghiệm y học', 'Đại học Y Hà Nội',
  NULL, NULL, '44444444-4444-4444-4444-444444444444');
@@ -377,6 +380,33 @@ SELECT format('91000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
        END
 FROM generate_series(1, 14) AS g(i);
 
+-- Ky thuat vien bo sung cho cac phong can lam sang; mat khau trinh dien
+-- chung la 88888888.
+INSERT INTO account (account_id, created_at, is_active, password_hash, role, username) VALUES
+('35000000-0000-0000-0000-000000000007', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'technician_biochem_evening'),
+('35000000-0000-0000-0000-000000000008', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'technician_ultrasound_evening'),
+('35000000-0000-0000-0000-000000000009', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'technician_xray_pm'),
+('35000000-0000-0000-0000-000000000010', NOW(), true, '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m', 'STAFF', 'technician_xray_evening');
+
+INSERT INTO profile (
+    profile_id, account_id, created_at, updated_at, deleted,
+    full_name, date_of_birth, gender, phone, email, address, blood_type
+) VALUES
+('25000000-0000-0000-0000-000000000007','35000000-0000-0000-0000-000000000007',NOW(),NOW(),false,'Kỹ thuật viên Bùi Đức Anh',DATE '1991-01-15','MALE','0837000007','duc.anh@cares.vn','Hà Nội',NULL),
+('25000000-0000-0000-0000-000000000008','35000000-0000-0000-0000-000000000008',NOW(),NOW(),false,'Kỹ thuật viên Nguyễn Thảo Vy',DATE '1992-04-08','FEMALE','0837000008','thao.vy@cares.vn','Hà Nội',NULL),
+('25000000-0000-0000-0000-000000000009','35000000-0000-0000-0000-000000000009',NOW(),NOW(),false,'Kỹ thuật viên Trần Hoàng Long',DATE '1990-09-23','MALE','0837000009','hoang.long@cares.vn','Hà Nội',NULL),
+('25000000-0000-0000-0000-000000000010','35000000-0000-0000-0000-000000000010',NOW(),NOW(),false,'Kỹ thuật viên Phạm Mai Chi',DATE '1993-12-02','FEMALE','0837000010','mai.chi@cares.vn','Hà Nội',NULL);
+
+INSERT INTO staff_info (
+    staff_id, created_at, updated_at, deleted, profile_id, staff_code,
+    system_role, national_id, bank_account, highest_degree, university,
+    license_number, specialization_id, department_id
+) VALUES
+('95000000-0000-0000-0000-000000000007',NOW(),NOW(),false,'25000000-0000-0000-0000-000000000007','STF-TEC-BIO-EVE','NURSE','001091700007',NULL,'Cử nhân kỹ thuật xét nghiệm','Đại học Y Hà Nội',NULL,NULL,'cccccccc-cccc-cccc-cccc-cccccccccccc'),
+('95000000-0000-0000-0000-000000000008',NOW(),NOW(),false,'25000000-0000-0000-0000-000000000008','STF-TEC-US-EVE','NURSE','001092700008',NULL,'Cử nhân kỹ thuật hình ảnh','Đại học Y Hà Nội',NULL,NULL,'55555555-5555-5555-5555-555555555555'),
+('95000000-0000-0000-0000-000000000009',NOW(),NOW(),false,'25000000-0000-0000-0000-000000000009','STF-TEC-XR-PM','NURSE','001090700009',NULL,'Cử nhân kỹ thuật hình ảnh','Đại học Y Hà Nội',NULL,NULL,'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'),
+('95000000-0000-0000-0000-000000000010',NOW(),NOW(),false,'25000000-0000-0000-0000-000000000010','STF-TEC-XR-EVE','NURSE','001093700010',NULL,'Cử nhân kỹ thuật hình ảnh','Đại học Y Hà Nội',NULL,NULL,'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+
 -- Bac si phu trach cho cac phong kham.
 UPDATE department SET head_doctor_id = '90000010-3333-3333-3333-333333333333' WHERE department_id = '33333333-3333-3333-3333-333333333333';
 UPDATE department SET head_doctor_id = '91000000-0000-0000-0000-000000000001' WHERE department_id = '77777777-7777-7777-7777-777777777777';
@@ -427,6 +457,24 @@ INSERT INTO staff_capability (
 ('a2000000-0000-0000-0000-000000000008', NOW(), NOW(), false, '94000000-0000-0000-0000-000000000002', 'ca000001-0000-0000-0000-000000000001', 'NL-HH-2025-008', DATE '2025-02-10', DATE '2031-02-09', 'Sở Y tế Hà Nội', 'ACTIVE'),
 ('a2000000-0000-0000-0000-000000000009', NOW(), NOW(), false, '94000000-0000-0000-0000-000000000002', 'ca000008-0000-0000-0000-000000000008', 'NL-TN-2025-009', DATE '2025-02-10', DATE '2031-02-09', 'Sở Y tế Hà Nội', 'ACTIVE');
 
+-- Bo sung nang luc con thieu de tung phong CLS co nguoi phu trach hop le
+-- trong ca sang, chieu va toi.
+INSERT INTO staff_capability (
+    staff_capability_id, created_at, updated_at, deleted, staff_id,
+    capability_id, certificate_number, issued_date, expiry_date,
+    issuing_organization, status
+) VALUES
+('a3000000-0000-0000-0000-000000000001',NOW(),NOW(),false,'93000000-0000-0000-0000-000000000002','ca000007-0000-0000-0000-000000000007',NULL,NULL,NULL,NULL,'ACTIVE'),
+('a3000000-0000-0000-0000-000000000002',NOW(),NOW(),false,'94000000-0000-0000-0000-000000000002','ca000007-0000-0000-0000-000000000007',NULL,NULL,NULL,NULL,'ACTIVE'),
+('a3000000-0000-0000-0000-000000000003',NOW(),NOW(),false,'93000000-0000-0000-0000-000000000003','ca000005-0000-0000-0000-000000000005',NULL,NULL,NULL,NULL,'ACTIVE'),
+('a3000000-0000-0000-0000-000000000004',NOW(),NOW(),false,'91000000-0000-0000-0000-000000000007','ca000006-0000-0000-0000-000000000006',NULL,NULL,NULL,NULL,'ACTIVE'),
+('a3000000-0000-0000-0000-000000000005',NOW(),NOW(),false,'95000000-0000-0000-0000-000000000007','ca000002-0000-0000-0000-000000000002',NULL,NULL,NULL,NULL,'ACTIVE'),
+('a3000000-0000-0000-0000-000000000006',NOW(),NOW(),false,'95000000-0000-0000-0000-000000000007','ca000005-0000-0000-0000-000000000005',NULL,NULL,NULL,NULL,'ACTIVE'),
+('a3000000-0000-0000-0000-000000000007',NOW(),NOW(),false,'95000000-0000-0000-0000-000000000008','ca000003-0000-0000-0000-000000000003',NULL,NULL,NULL,NULL,'ACTIVE'),
+('a3000000-0000-0000-0000-000000000008',NOW(),NOW(),false,'95000000-0000-0000-0000-000000000008','ca000006-0000-0000-0000-000000000006',NULL,NULL,NULL,NULL,'ACTIVE'),
+('a3000000-0000-0000-0000-000000000009',NOW(),NOW(),false,'95000000-0000-0000-0000-000000000009','ca000004-0000-0000-0000-000000000004',NULL,NULL,NULL,NULL,'ACTIVE'),
+('a3000000-0000-0000-0000-000000000010',NOW(),NOW(),false,'95000000-0000-0000-0000-000000000010','ca000004-0000-0000-0000-000000000004',NULL,NULL,NULL,NULL,'ACTIVE');
+
 UPDATE staff_capability
 SET certificate_number = COALESCE(certificate_number, 'NL-' || upper(substr(replace(staff_capability_id::text, '-', ''), 1, 12))),
     issued_date = COALESCE(issued_date, DATE '2024-01-15'),
@@ -455,16 +503,13 @@ INSERT INTO shift_version (
 ('71000003-3333-3333-3333-333333333333', '70000003-3333-3333-3333-333333333333', '16:00', '23:59:59', DATE '2026-01-01', NULL,
  'Khởi tạo giờ làm việc ca tối', '30000013-3333-3333-3333-333333333333', NOW(), NOW(), false);
 
--- Ngoai le chi nam trong tuan ke tiep, khong trung voi lich hen mau.
+-- Ngoai le gio dac biet van giu ca hoat dong; bo du lieu nghi ca/nghi ngay
+-- de 14 ngay trinh dien bao phu du ba ca va ca Chu nhat.
 INSERT INTO clinic_schedule_exception (
     exception_id, work_date, shift_id, exception_type,
     special_start_time, special_end_time, reason, created_by,
     created_at, updated_at, deleted
 ) VALUES
-('72000001-1111-1111-1111-111111111111', date_trunc('week', CURRENT_DATE)::date + 13, NULL, 'CLOSED_DAY',
- NULL, NULL, 'Phòng khám nghỉ Chủ nhật', '30000013-3333-3333-3333-333333333333', NOW(), NOW(), false),
-('72000002-2222-2222-2222-222222222222', date_trunc('week', CURRENT_DATE)::date + 12, '70000002-2222-2222-2222-222222222222', 'SHIFT_OFF',
- NULL, NULL, 'Tạm nghỉ ca chiều để bảo trì hệ thống điện', '30000013-3333-3333-3333-333333333333', NOW(), NOW(), false),
 ('72000003-3333-3333-3333-333333333333', date_trunc('week', CURRENT_DATE)::date + 11, '70000001-1111-1111-1111-111111111111', 'SPECIAL_HOURS',
  '01:00', '07:00', 'Điều chỉnh giờ ca sáng trong ngày đào tạo nội bộ', '30000013-3333-3333-3333-333333333333', NOW(), NOW(), false);
 
@@ -483,9 +528,22 @@ SELECT format('32000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
 FROM generate_series(1, 12) AS g(i);
 
 -- ===================================================================
+-- Tai khoan Customer sach de kiem thu luong cua nguoi dung moi.
+-- Chi co Account + Profile; khong co lich hen, luot kham, hoa don,
+-- thanh vien gia dinh hoac the tra truoc CareS.
+-- Mat khau: 88888888.
+-- ===================================================================
+INSERT INTO account (account_id, created_at, is_active, password_hash, role, username) VALUES
+('32f00000-0000-0000-0000-000000000001', NOW(), true,
+ '$2a$10$j4R7VNxV3mXaMXcrv6PJmu2PsXLq/y1TOJXb2oI0yAF/86Qyy4T9m',
+ 'CUSTOMER', 'chuoidochoduoi7e@gmail.com');
+
+-- ===================================================================
 -- Lich mau va lich thuc te cua nhan su
--- Moi nhan vien chi co mot ca trong mot ngay. Lich duoc sinh cho tuan hien tai
--- va tuan ke tiep; Chu nhat khong co lich.
+-- De de test, moi phong kham va phong can lam sang dung mot tai khoan bac si
+-- dai dien cho ca sang, ca chieu va ca toi. Dieu duong/ky thuat vien la nhan
+-- su bo sung, khong duoc dung de thay the dieu kien bat buoc co bac si cua phong.
+-- Lich duoc sinh cho tuan hien tai va tuan ke tiep, bao gom ca Chu nhat.
 -- ===================================================================
 WITH roster(staff_id, pattern) AS (
     VALUES
@@ -498,43 +556,44 @@ WITH roster(staff_id, pattern) AS (
     ('91000000-0000-0000-0000-000000000014'::uuid, 'EVENING'), -- Cashier 3
     ('90000011-4444-4444-4444-444444444444'::uuid, 'AM'), -- Nurse 1
     ('91000000-0000-0000-0000-000000000008'::uuid, 'PM'), -- Nurse 2
-    ('91000000-0000-0000-0000-000000000009'::uuid, 'EVENING'), -- Nurse 3
-    ('91000000-0000-0000-0000-000000000001'::uuid, 'AM'), -- Internal medicine 1
-    ('91000000-0000-0000-0000-000000000005'::uuid, 'PM'), -- Internal medicine 2
-    ('94000000-0000-0000-0000-000000000001'::uuid, 'EVENING'), -- Internal medicine evening
-    ('90000010-3333-3333-3333-333333333333'::uuid, 'AM'), -- Surgery 1
-    ('91000000-0000-0000-0000-000000000004'::uuid, 'PM'), -- Surgery 2
-    ('91000000-0000-0000-0000-000000000002'::uuid, 'AM'), -- Pediatrics 1
-    ('93000000-0000-0000-0000-000000000005'::uuid, 'PM'), -- Pediatrics 2
-    ('91000000-0000-0000-0000-000000000006'::uuid, 'OBG'),
-    ('91000000-0000-0000-0000-000000000003'::uuid, 'DERM'),
+    ('91000000-0000-0000-0000-000000000009'::uuid, 'PM'), -- Nurse 3 / biochemistry
+    ('91000000-0000-0000-0000-000000000001'::uuid, 'AM'), -- Internal room 1
+    ('91000000-0000-0000-0000-000000000005'::uuid, 'AM'), -- Internal room 2
+    ('90000010-3333-3333-3333-333333333333'::uuid, 'AM'), -- Surgery room 1
+    ('91000000-0000-0000-0000-000000000004'::uuid, 'AM'), -- Procedure room
+    ('91000000-0000-0000-0000-000000000002'::uuid, 'AM'), -- Pediatrics
+    ('91000000-0000-0000-0000-000000000006'::uuid, 'AM'), -- Obstetrics
+    ('91000000-0000-0000-0000-000000000003'::uuid, 'AM'), -- Dermatology
     ('93000000-0000-0000-0000-000000000002'::uuid, 'AM'), -- Hematology / rapid test
     ('94000000-0000-0000-0000-000000000002'::uuid, 'EVENING'), -- Hematology / rapid test evening
-    ('93000000-0000-0000-0000-000000000003'::uuid, 'PM'), -- Biochemistry / urinalysis
+    ('93000000-0000-0000-0000-000000000003'::uuid, 'AM'), -- Biochemistry / urinalysis
+    ('95000000-0000-0000-0000-000000000007'::uuid, 'EVENING'), -- Biochemistry / urinalysis
     ('91000000-0000-0000-0000-000000000007'::uuid, 'AM'), -- Ultrasound 1
     ('91000000-0000-0000-0000-000000000010'::uuid, 'PM'), -- Ultrasound / ECG
-    ('93000000-0000-0000-0000-000000000004'::uuid, 'XRAY')
+    ('95000000-0000-0000-0000-000000000008'::uuid, 'EVENING'), -- Ultrasound / ECG
+    ('93000000-0000-0000-0000-000000000004'::uuid, 'AM'), -- X-ray 1
+    ('95000000-0000-0000-0000-000000000009'::uuid, 'PM'), -- X-ray 2
+    ('95000000-0000-0000-0000-000000000010'::uuid, 'EVENING') -- X-ray 3
 ), weekdays(day_no, day_name) AS (
     VALUES (1, 'MONDAY'), (2, 'TUESDAY'), (3, 'WEDNESDAY'),
-           (4, 'THURSDAY'), (5, 'FRIDAY'), (6, 'SATURDAY')
+           (4, 'THURSDAY'), (5, 'FRIDAY'), (6, 'SATURDAY'), (7, 'SUNDAY')
 )
 INSERT INTO staff_schedule_template (
     template_id, created_at, updated_at, deleted,
     staff_id, day_of_week, shift_id, is_active
 )
-SELECT gen_random_uuid(), NOW(), NOW(), false, r.staff_id, w.day_name,
+SELECT DISTINCT ON (r.staff_id, w.day_name)
+       gen_random_uuid(), NOW(), NOW(), false, r.staff_id, w.day_name,
        CASE
            WHEN r.pattern = 'AM' THEN '70000001-1111-1111-1111-111111111111'::uuid
            WHEN r.pattern = 'PM' THEN '70000002-2222-2222-2222-222222222222'::uuid
            WHEN r.pattern = 'EVENING' THEN '70000003-3333-3333-3333-333333333333'::uuid
-           WHEN r.pattern IN ('OBG', 'XRAY') AND w.day_no IN (1, 3, 5)
-               THEN '70000001-1111-1111-1111-111111111111'::uuid
-           WHEN r.pattern = 'DERM' AND w.day_no IN (2, 4, 6)
-               THEN '70000001-1111-1111-1111-111111111111'::uuid
            ELSE '70000002-2222-2222-2222-222222222222'::uuid
        END,
        true
-FROM roster r CROSS JOIN weekdays w;
+FROM roster r CROSS JOIN weekdays w
+ORDER BY r.staff_id, w.day_name,
+         CASE r.pattern WHEN 'AM' THEN 1 WHEN 'PM' THEN 2 WHEN 'EVENING' THEN 3 ELSE 4 END;
 
 WITH calendar AS (
     SELECT d::date AS work_date,
@@ -567,12 +626,76 @@ LEFT JOIN clinic_schedule_exception special
    AND special.shift_id = t.shift_id
    AND special.exception_type = 'SPECIAL_HOURS'
    AND special.deleted = false
-WHERE c.day_name <> 'SUNDAY'
-  AND NOT EXISTS (
+WHERE NOT EXISTS (
       SELECT 1 FROM clinic_schedule_exception e
       WHERE e.work_date = c.work_date AND e.deleted = false
         AND (e.exception_type = 'CLOSED_DAY'
              OR (e.exception_type = 'SHIFT_OFF' AND e.shift_id = t.shift_id))
+  );
+
+-- Cac bac si dai dien cua TAT CA phong kham va CLS duoc xep them ca chieu va
+-- ca toi de de kiem thu toan bo luong. Hai ca bo sung la lich thuc te (khong
+-- phai template), vi template chi cho phep mot ca cho moi nhan vien trong mot
+-- ngay trong tuan.
+WITH representative_doctors(staff_id) AS (
+    VALUES
+    ('91000000-0000-0000-0000-000000000001'::uuid), -- Internal room 1
+    ('91000000-0000-0000-0000-000000000005'::uuid), -- Internal room 2
+    ('90000010-3333-3333-3333-333333333333'::uuid), -- Surgery room 1
+    ('91000000-0000-0000-0000-000000000004'::uuid), -- Procedure room
+    ('91000000-0000-0000-0000-000000000002'::uuid), -- Pediatrics
+    ('91000000-0000-0000-0000-000000000006'::uuid), -- Obstetrics
+    ('91000000-0000-0000-0000-000000000003'::uuid), -- Dermatology
+    ('93000000-0000-0000-0000-000000000002'::uuid), -- Hematology / microbiology / rapid test
+    ('93000000-0000-0000-0000-000000000003'::uuid), -- Biochemistry / urinalysis
+    ('91000000-0000-0000-0000-000000000007'::uuid), -- Ultrasound / ECG
+    ('93000000-0000-0000-0000-000000000004'::uuid)  -- X-ray
+), extra_shifts(shift_id) AS (
+    VALUES
+    ('70000002-2222-2222-2222-222222222222'::uuid),
+    ('70000003-3333-3333-3333-333333333333'::uuid)
+), calendar AS (
+    SELECT d::date AS work_date
+    FROM generate_series(
+        date_trunc('week', CURRENT_DATE)::date,
+        date_trunc('week', CURRENT_DATE)::date + 13,
+        INTERVAL '1 day'
+    ) d
+)
+INSERT INTO staff_schedule (
+    schedule_id, created_at, updated_at, deleted, is_custom, note,
+    status, work_date, shift_id, shift_version_id,
+    actual_start_time, actual_end_time, staff_id, template_id
+)
+SELECT gen_random_uuid(), NOW(), NOW(), false, true,
+       'Lich thuc te bo sung de kiem thu du ba ca', 'SCHEDULED', c.work_date,
+       s.shift_id, v.shift_version_id,
+       COALESCE(special.special_start_time, v.start_time),
+       COALESCE(special.special_end_time, v.end_time),
+       d.staff_id, NULL
+FROM representative_doctors d
+CROSS JOIN extra_shifts s
+CROSS JOIN calendar c
+JOIN shift_version v ON v.shift_id = s.shift_id
+    AND v.effective_from <= c.work_date
+    AND (v.effective_to IS NULL OR v.effective_to >= c.work_date)
+LEFT JOIN clinic_schedule_exception special
+    ON special.work_date = c.work_date
+   AND special.shift_id = s.shift_id
+   AND special.exception_type = 'SPECIAL_HOURS'
+   AND special.deleted = false
+WHERE NOT EXISTS (
+      SELECT 1 FROM clinic_schedule_exception e
+      WHERE e.work_date = c.work_date AND e.deleted = false
+        AND (e.exception_type = 'CLOSED_DAY'
+             OR (e.exception_type = 'SHIFT_OFF' AND e.shift_id = s.shift_id))
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM staff_schedule existing
+      WHERE existing.staff_id = d.staff_id
+        AND existing.work_date = c.work_date
+        AND existing.shift_id = s.shift_id
+        AND existing.deleted = false
   );
 
 -- Bao ve du lieu lich: mot nhan vien chi co mot ban ghi hoat dong cho cung ngay va ca.
@@ -596,6 +719,239 @@ WHERE schedule.schedule_id = ranked.schedule_id
 CREATE UNIQUE INDEX IF NOT EXISTS uk_staff_schedule_active_slot
     ON staff_schedule (staff_id, work_date, shift_id)
     WHERE deleted = false AND shift_id IS NOT NULL;
+
+-- Kiem tra du lieu trinh dien: moi dich vu ACTIVE phai co it nhat mot nhan su
+-- dung phong, dung chuyen khoa/nang luc trong tung ca cua 14 ngay mau.
+DO $coverage_check$
+DECLARE
+    missing_coverage text;
+BEGIN
+    WITH calendar AS (
+        SELECT d::date AS work_date
+        FROM generate_series(
+            date_trunc('week', CURRENT_DATE)::date,
+            date_trunc('week', CURRENT_DATE)::date + 13,
+            INTERVAL '1 day'
+        ) d
+    ), missing AS (
+        SELECT ms.name AS service_name, c.work_date, sc.name AS shift_name
+        FROM medical_service ms
+        CROSS JOIN calendar c
+        CROSS JOIN shift_config sc
+        WHERE ms.deleted = false
+          AND ms.status = 'ACTIVE'
+          AND sc.deleted = false
+          AND sc.is_active = true
+          AND NOT EXISTS (
+              SELECT 1
+              FROM staff_schedule ss
+              JOIN staff_info si ON si.staff_id = ss.staff_id AND si.deleted = false
+              JOIN profile p ON p.profile_id = si.profile_id AND p.deleted = false
+              JOIN account a ON a.account_id = p.account_id AND a.is_active = true
+              WHERE ss.deleted = false
+                AND ss.status = 'SCHEDULED'
+                AND ss.work_date = c.work_date
+                AND ss.shift_id = sc.shift_id
+                AND (
+                    (
+                        ms.department_type = 'EXAMINATION'
+                        AND si.system_role = 'DOCTOR'
+                        AND si.specialization_id = ms.required_specialization_id
+                        AND EXISTS (
+                            SELECT 1 FROM department d
+                            WHERE d.department_id = si.department_id
+                              AND d.deleted = false AND d.status = 'AVAILABLE'
+                              AND d.department_type = 'EXAMINATION'
+                              AND d.specialization_id = ms.required_specialization_id
+                        )
+                    )
+                    OR
+                    (
+                        ms.department_type = 'PARACLINICAL'
+                        AND EXISTS (
+                            SELECT 1
+                            FROM staff_capability cap
+                            JOIN department_capability dc
+                              ON dc.department_id = si.department_id
+                             AND dc.capability_id = cap.capability_id
+                            JOIN department d ON d.department_id = dc.department_id
+                            WHERE cap.staff_id = si.staff_id
+                              AND cap.deleted = false
+                              AND cap.status = 'ACTIVE'
+                              AND (cap.expiry_date IS NULL OR cap.expiry_date >= c.work_date)
+                              AND cap.capability_id = ms.required_capability_id
+                              AND d.deleted = false AND d.status = 'AVAILABLE'
+                        )
+                    )
+                )
+          )
+    )
+    SELECT string_agg(service_name || ' - ' || to_char(work_date, 'DD/MM/YYYY') || ' - ' || shift_name, '; ')
+    INTO missing_coverage
+    FROM missing;
+
+    IF missing_coverage IS NOT NULL THEN
+        RAISE EXCEPTION 'Dữ liệu lịch chưa phủ đủ dịch vụ: %', missing_coverage;
+    END IF;
+END
+$coverage_check$;
+
+-- Kiem tra theo tung phong de man Admin/Clinic Manager khong con hien ca trong.
+-- Moi phong kham va phong CLS deu bat buoc co bac si. Bac si phong CLS phai co
+-- it nhat mot nang luc ACTIVE thuoc danh muc ky thuat cua phong; dieu duong va
+-- ky thuat vien khong duoc tinh thay cho bac si trong phep kiem tra nay.
+DO $room_coverage_check$
+DECLARE
+    missing_rooms text;
+    multiple_room_doctors text;
+    missing_operations text;
+    duplicate_daily_shifts text;
+BEGIN
+    WITH calendar AS (
+        SELECT d::date AS work_date
+        FROM generate_series(
+            date_trunc('week', CURRENT_DATE)::date,
+            date_trunc('week', CURRENT_DATE)::date + 13,
+            INTERVAL '1 day'
+        ) d
+    ), missing AS (
+        SELECT d.room_code, d.name AS room_name, c.work_date, sc.name AS shift_name
+        FROM department d
+        CROSS JOIN calendar c
+        CROSS JOIN shift_config sc
+        WHERE d.deleted = false
+          AND d.status = 'AVAILABLE'
+          AND d.department_type IN ('EXAMINATION', 'PARACLINICAL')
+          AND sc.deleted = false
+          AND sc.is_active = true
+          AND NOT EXISTS (
+              SELECT 1
+              FROM staff_schedule ss
+              JOIN staff_info si ON si.staff_id = ss.staff_id AND si.deleted = false
+              JOIN profile p ON p.profile_id = si.profile_id AND p.deleted = false
+              JOIN account a ON a.account_id = p.account_id AND a.is_active = true
+              WHERE ss.deleted = false
+                AND ss.status = 'SCHEDULED'
+                AND ss.work_date = c.work_date
+                AND ss.shift_id = sc.shift_id
+                AND si.department_id = d.department_id
+                AND si.system_role = 'DOCTOR'
+                AND (
+                    d.department_type = 'EXAMINATION'
+                    OR
+                    (d.department_type = 'PARACLINICAL' AND EXISTS (
+                        SELECT 1
+                        FROM staff_capability cap
+                        JOIN department_capability dc
+                          ON dc.department_id = d.department_id
+                         AND dc.capability_id = cap.capability_id
+                        WHERE cap.staff_id = si.staff_id
+                          AND cap.deleted = false
+                          AND cap.status = 'ACTIVE'
+                          AND (cap.expiry_date IS NULL OR cap.expiry_date >= c.work_date)
+                    ))
+                )
+          )
+    )
+    SELECT string_agg(room_code || ' ' || room_name || ' - '
+                      || to_char(work_date, 'DD/MM/YYYY') || ' - ' || shift_name, '; ')
+    INTO missing_rooms
+    FROM missing;
+
+    IF missing_rooms IS NOT NULL THEN
+        RAISE EXCEPTION 'Dữ liệu lịch chưa phủ đủ từng phòng: %', missing_rooms;
+    END IF;
+
+    SELECT string_agg(room_code || ' ' || room_name || ' (' || doctor_count || ' bác sĩ)', '; ')
+    INTO multiple_room_doctors
+    FROM (
+        SELECT department.room_code,
+               department.name AS room_name,
+               COUNT(DISTINCT schedule.staff_id) AS doctor_count
+        FROM department
+        JOIN staff_info doctor
+          ON doctor.department_id = department.department_id
+         AND doctor.system_role = 'DOCTOR'
+         AND doctor.deleted = false
+        JOIN staff_schedule schedule
+          ON schedule.staff_id = doctor.staff_id
+         AND schedule.deleted = false
+         AND schedule.status = 'SCHEDULED'
+         AND schedule.work_date BETWEEN date_trunc('week', CURRENT_DATE)::date
+                                    AND date_trunc('week', CURRENT_DATE)::date + 13
+        WHERE department.deleted = false
+          AND department.status = 'AVAILABLE'
+          AND department.department_type IN ('EXAMINATION', 'PARACLINICAL')
+        GROUP BY department.department_id, department.room_code, department.name
+        HAVING COUNT(DISTINCT schedule.staff_id) <> 1
+    ) room_doctor_counts;
+
+    IF multiple_room_doctors IS NOT NULL THEN
+        RAISE EXCEPTION 'Dữ liệu demo phải dùng đúng một bác sĩ cho mỗi phòng khám/CLS: %', multiple_room_doctors;
+    END IF;
+
+    WITH calendar AS (
+        SELECT d::date AS work_date
+        FROM generate_series(
+            date_trunc('week', CURRENT_DATE)::date,
+            date_trunc('week', CURRENT_DATE)::date + 13,
+            INTERVAL '1 day'
+        ) d
+    ), required_roles(system_role, role_name) AS (
+        VALUES ('RECEPTIONIST', 'Lễ tân'), ('CASHIER', 'Thu ngân')
+    ), missing AS (
+        SELECT required_roles.role_name, calendar.work_date, shift_config.name AS shift_name
+        FROM calendar
+        CROSS JOIN shift_config
+        CROSS JOIN required_roles
+        WHERE shift_config.deleted = false
+          AND shift_config.is_active = true
+          AND NOT EXISTS (
+              SELECT 1
+              FROM staff_schedule schedule
+              JOIN staff_info staff
+                ON staff.staff_id = schedule.staff_id
+               AND staff.deleted = false
+              JOIN profile staff_profile
+                ON staff_profile.profile_id = staff.profile_id
+               AND staff_profile.deleted = false
+              JOIN account staff_account
+                ON staff_account.account_id = staff_profile.account_id
+               AND staff_account.is_active = true
+              WHERE schedule.deleted = false
+                AND schedule.status = 'SCHEDULED'
+                AND schedule.work_date = calendar.work_date
+                AND schedule.shift_id = shift_config.shift_id
+                AND staff.system_role::text = required_roles.system_role
+          )
+    )
+    SELECT string_agg(role_name || ' - ' || to_char(work_date, 'DD/MM/YYYY') || ' - ' || shift_name, '; ')
+    INTO missing_operations
+    FROM missing;
+
+    IF missing_operations IS NOT NULL THEN
+        RAISE EXCEPTION 'Dữ liệu lịch vận hành chưa phủ đủ 7 ngày: %', missing_operations;
+    END IF;
+
+    SELECT string_agg(staff_code || ' - ' || to_char(work_date, 'DD/MM/YYYY'), '; ')
+    INTO duplicate_daily_shifts
+    FROM (
+        SELECT si.staff_code, ss.work_date
+        FROM staff_schedule ss
+        JOIN staff_info si ON si.staff_id = ss.staff_id
+        WHERE ss.deleted = false AND ss.status = 'SCHEDULED'
+          AND si.system_role <> 'DOCTOR'
+          AND ss.work_date BETWEEN date_trunc('week', CURRENT_DATE)::date
+                               AND date_trunc('week', CURRENT_DATE)::date + 13
+        GROUP BY ss.staff_id, si.staff_code, ss.work_date
+        HAVING COUNT(DISTINCT ss.shift_id) > 1
+    ) duplicate_staff_days;
+
+    IF duplicate_daily_shifts IS NOT NULL THEN
+        RAISE EXCEPTION 'Nhân sự vận hành/CLS bị xếp nhiều ca trong cùng ngày: %', duplicate_daily_shifts;
+    END IF;
+END
+$room_coverage_check$;
 
 INSERT INTO profile (
     profile_id, account_id, created_at, updated_at, deleted, patient_code,
@@ -655,6 +1011,19 @@ SELECT format('22000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
        CASE WHEN i IN (9,10,20) THEN 120 + i ELSE 155 + (i % 20) END,
        CASE WHEN i IN (9,10,20) THEN 22 + i ELSE 48 + (i % 30) END
 FROM generate_series(1, 12) AS g(i);
+
+INSERT INTO profile (
+    profile_id, account_id, created_at, updated_at, deleted, patient_code,
+    full_name, date_of_birth, gender, phone, email, address, blood_type,
+    insurance_id, allergies, height, weight
+) VALUES (
+    '22f00000-0000-0000-0000-000000000001',
+    '32f00000-0000-0000-0000-000000000001',
+    NOW(), NOW(), false, 'BN-NEW-00001',
+    'Người dùng mới', DATE '2000-01-01', 'MALE', NULL,
+    'chuoidochoduoi7e@gmail.com', NULL, NULL,
+    NULL, NULL, NULL, NULL
+);
 
 -- ===================================================================
 -- Bao hiem va quy tac ap dung (so luong nho dung voi thuc te cau hinh)
@@ -756,7 +1125,10 @@ INSERT INTO customer_visit (
 )
 SELECT format('52000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
        NOW() - ((i + 2) || ' hours')::interval, NOW(), false,
-       CASE WHEN i <= 4 THEN date_trunc('week', CURRENT_DATE)::date + TIME '08:00' + (i - 1) * INTERVAL '25 minutes'
+       CASE WHEN i <= 8 THEN GREATEST(
+                    date_trunc('day', NOW()),
+                    NOW() - (i * INTERVAL '3 minutes')
+                )
             ELSE date_trunc('week', CURRENT_DATE)::date - ((i - 4) / 4) + TIME '08:00' + ((i - 5) % 4) * INTERVAL '40 minutes' END,
        CASE WHEN i BETWEEN 9 AND 12 THEN
             date_trunc('week', CURRENT_DATE)::date - ((i - 4) / 4) + TIME '10:30' + ((i - 9) % 4) * INTERVAL '40 minutes'
@@ -1164,51 +1536,6 @@ SELECT format('5b000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
              ELSE 'Bác sĩ hoàn tất hồ sơ khám và hướng dẫn điều trị' END,
        NOW() - ((12 - i) || ' minutes')::interval, false
 FROM generate_series(1, 12) AS g(i);
--- Yêu cầu liên hệ để lễ tân kiểm tra danh sách và các trạng thái xử lý.
-INSERT INTO contact_request (
-    contact_request_id, request_code, full_name, phone, email, subject, message,
-    status, assigned_staff_id, internal_note, accepted_at, completed_at,
-    created_at, updated_at, deleted
-)
-SELECT format('5c000000-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
-       'LH-' || to_char(CURRENT_DATE, 'YY') || '-' || lpad(i::text, 5, '0'),
-       (ARRAY[
-           'Nguyễn Thị Minh Châu','Trần Văn Thành','Lê Ngọc Diệp','Phạm Quang Vinh','Hoàng Thị Thanh',
-           'Vũ Đức Hiếu','Đặng Thu Hằng','Bùi Minh Triết','Đỗ Thị Kim Oanh','Ngô Quốc Việt',
-           'Dương Hải Yến','Mai Anh Dũng','Phan Thùy Linh','Trịnh Công Nam','Lương Bảo Trâm'
-       ])[i],
-       (ARRAY[
-           '0912347856','0923458761','0934561278','0945672183','0961783254',
-           '0972814365','0983145276','0904256387','0865367491','0856478312',
-           '0847589123','0838691234','0829712345','0811823456','0792934567'
-       ])[i],
-       (ARRAY[
-           'minhchau.nguyen@gmail.com','vanthanh.tran@gmail.com','ngocdiep.le@gmail.com','quangvinh.pham@gmail.com','thanh.hoang@gmail.com',
-           'duchieu.vu@gmail.com','thuhang.dang@gmail.com','minhtriet.bui@gmail.com','kimoanh.do@gmail.com','quocviet.ngo@gmail.com',
-           'haiyen.duong@gmail.com','anhdung.mai@gmail.com','thuylinh.phan@gmail.com','congnam.trinh@gmail.com','baotram.luong@gmail.com'
-       ])[i],
-       (ARRAY['Tư vấn dịch vụ khám','Hỏi về lịch làm việc','Hỗ trợ đặt lịch','Tư vấn xét nghiệm'])[((i - 1) % 4) + 1],
-       (ARRAY[
-           'Tôi muốn được tư vấn dịch vụ phù hợp với triệu chứng hiện tại trước khi đặt lịch.',
-           'Xin cho biết lịch làm việc của bác sĩ Nội khoa trong tuần này.',
-           'Tôi cần hỗ trợ đổi ngày khám vì không thể đến theo lịch đã đăng ký.',
-           'Tôi muốn hỏi có cần nhịn ăn trước khi thực hiện xét nghiệm hay không.'
-       ])[((i - 1) % 4) + 1],
-       CASE WHEN i <= 2 THEN 'NEW'
-            WHEN i <= 4 THEN 'PROCESSING'
-            WHEN i = 5 THEN 'COMPLETED'
-            ELSE 'CANCELLED' END,
-       CASE WHEN i <= 2 THEN NULL ELSE '90000012-5555-5555-5555-555555555555'::uuid END,
-       CASE WHEN i <= 4 THEN NULL
-            WHEN i = 5 THEN 'Đã liên hệ và tư vấn đầy đủ cho khách.'
-            ELSE 'Không liên lạc được với khách sau nhiều lần thử.' END,
-       CASE WHEN i <= 2 THEN NULL ELSE NOW() - ((7 - i) || ' days')::interval + INTERVAL '1 hour' END,
-       CASE WHEN i <= 4 THEN NULL ELSE NOW() - ((7 - i) || ' days')::interval + INTERVAL '2 hours' END,
-       NOW() - ((7 - i) || ' days')::interval,
-       NOW() - ((7 - i) || ' days')::interval + INTERVAL '2 hours',
-       false
-FROM generate_series(1, 6) AS g(i);
-
 -- ===================================================================
 -- Published dynamic clinical forms. Eight laboratory forms receive a
 -- controlled system version below; other forms remain manager-owned.
@@ -1217,11 +1544,6 @@ FROM generate_series(1, 6) AS g(i);
 INSERT INTO clinical_form_template
 (template_id, created_at, updated_at, deleted, code, name, context, description, active)
 VALUES
-('cf000001-0000-0000-0000-000000000001',NOW(),NOW(),false,'EXAM_INTERNAL','Phiếu khám Nội khoa','EXAMINATION','Dữ liệu mềm dùng chung cho các dịch vụ Nội khoa',true),
-('cf000002-0000-0000-0000-000000000002',NOW(),NOW(),false,'EXAM_SURGERY','Phiếu khám Ngoại khoa','EXAMINATION','Đánh giá chấn thương và vết thương',true),
-('cf000003-0000-0000-0000-000000000003',NOW(),NOW(),false,'EXAM_PEDIATRIC','Phiếu khám Nhi khoa','EXAMINATION','Tiền sử sinh, tiêm chủng và phát triển',true),
-('cf000004-0000-0000-0000-000000000004',NOW(),NOW(),false,'EXAM_OBGYN','Phiếu khám Sản phụ khoa','EXAMINATION','Thông tin sản khoa và thai kỳ',true),
-('cf000005-0000-0000-0000-000000000005',NOW(),NOW(),false,'EXAM_DERMATOLOGY','Phiếu khám Da liễu','EXAMINATION','Đặc điểm tổn thương da',true),
 ('cf000006-0000-0000-0000-000000000006',NOW(),NOW(),false,'LAB_CBC','Kết quả Công thức máu','LAB_RESULT','RBC, HGB, HCT, WBC và PLT',true),
 ('cf000007-0000-0000-0000-000000000007',NOW(),NOW(),false,'LAB_GLUCOSE','Kết quả Đường huyết','LAB_RESULT','Glucose máu',true),
 ('cf000008-0000-0000-0000-000000000008',NOW(),NOW(),false,'LAB_BIOCHEM','Kết quả Sinh hóa máu','LAB_RESULT','Các chỉ số sinh hóa máu cơ bản',true),
@@ -1241,11 +1563,6 @@ INSERT INTO clinical_form_template_version
 (version_id, created_at, updated_at, deleted, template_id, version_no, schema_json, status,
  change_reason, effective_from, created_by, published_by, published_at)
 VALUES
-('cf100001-0000-0000-0000-000000000001',NOW(),NOW(),false,'cf000001-0000-0000-0000-000000000001',1,$j${"fields":[{"key":"medicalHistory","label":"Tiền sử bệnh","type":"TEXTAREA","group":"Tiền sử","displayOrder":1},{"key":"currentMedication","label":"Thuốc đang sử dụng","type":"TEXTAREA","group":"Tiền sử","displayOrder":2},{"key":"smoking","label":"Hút thuốc","type":"BOOLEAN","group":"Thói quen","displayOrder":3},{"key":"alcoholUse","label":"Sử dụng rượu bia","type":"SELECT","group":"Thói quen","displayOrder":4,"options":["NONE","OCCASIONAL","FREQUENT"]},{"key":"systemReview","label":"Ghi nhận theo hệ cơ quan","type":"TEXTAREA","group":"Khám chuyên khoa","displayOrder":5}]}$j$::jsonb,'PUBLISHED','Khởi tạo dữ liệu mẫu',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW()),
-('cf100002-0000-0000-0000-000000000002',NOW(),NOW(),false,'cf000002-0000-0000-0000-000000000002',1,$j${"fields":[{"key":"injuryMechanism","label":"Cơ chế chấn thương","type":"TEXTAREA","group":"Chấn thương","displayOrder":1},{"key":"woundLocation","label":"Vị trí vết thương","type":"TEXT","group":"Vết thương","displayOrder":2},{"key":"woundSizeMm","label":"Kích thước vết thương","type":"NUMBER","unit":"mm","group":"Vết thương","displayOrder":3,"min":0},{"key":"infectionSigns","label":"Dấu nhiễm trùng","type":"BOOLEAN","group":"Vết thương","displayOrder":4}]}$j$::jsonb,'PUBLISHED','Khởi tạo dữ liệu mẫu',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW()),
-('cf100003-0000-0000-0000-000000000003',NOW(),NOW(),false,'cf000003-0000-0000-0000-000000000003',1,$j${"fields":[{"key":"birthHistory","label":"Tiền sử sinh","type":"TEXTAREA","group":"Tiền sử","displayOrder":1},{"key":"vaccinationHistory","label":"Tiền sử tiêm chủng","type":"TEXTAREA","group":"Tiền sử","displayOrder":2},{"key":"nutritionStatus","label":"Tình trạng dinh dưỡng","type":"SELECT","group":"Phát triển","displayOrder":3,"options":["NORMAL","UNDERWEIGHT","OVERWEIGHT","NOT_EVALUATED"]},{"key":"developmentAssessment","label":"Đánh giá phát triển","type":"TEXTAREA","group":"Phát triển","displayOrder":4}]}$j$::jsonb,'PUBLISHED','Khởi tạo dữ liệu mẫu',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW()),
-('cf100004-0000-0000-0000-000000000004',NOW(),NOW(),false,'cf000004-0000-0000-0000-000000000004',1,$j${"fields":[{"key":"lastMenstrualPeriod","label":"Ngày kinh cuối","type":"DATE","group":"Sản khoa","displayOrder":1},{"key":"obstetricHistory","label":"Tiền sử sản khoa","type":"TEXTAREA","group":"Sản khoa","displayOrder":2},{"key":"pregnancyStatus","label":"Tình trạng thai","type":"SELECT","group":"Thai kỳ","displayOrder":3,"options":["NOT_PREGNANT","SUSPECTED","CONFIRMED","POSTPARTUM"]},{"key":"clinicalGestationalAgeWeeks","label":"Tuổi thai lâm sàng","type":"NUMBER","unit":"tuần","group":"Thai kỳ","displayOrder":4,"min":0,"max":45}]}$j$::jsonb,'PUBLISHED','Khởi tạo dữ liệu mẫu',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW()),
-('cf100005-0000-0000-0000-000000000005',NOW(),NOW(),false,'cf000005-0000-0000-0000-000000000005',1,$j${"fields":[{"key":"lesionLocation","label":"Vị trí tổn thương","type":"TEXT","group":"Tổn thương","displayOrder":1},{"key":"lesionSizeMm","label":"Kích thước","type":"NUMBER","unit":"mm","group":"Tổn thương","displayOrder":2,"min":0},{"key":"morphology","label":"Hình thái tổn thương","type":"TEXTAREA","group":"Tổn thương","displayOrder":3},{"key":"onset","label":"Thời điểm xuất hiện","type":"DATE","group":"Diễn tiến","displayOrder":4},{"key":"itching","label":"Ngứa","type":"BOOLEAN","group":"Triệu chứng","displayOrder":5},{"key":"pain","label":"Đau","type":"BOOLEAN","group":"Triệu chứng","displayOrder":6}]}$j$::jsonb,'PUBLISHED','Khởi tạo dữ liệu mẫu',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW()),
 ('cf100006-0000-0000-0000-000000000006',NOW(),NOW(),false,'cf000006-0000-0000-0000-000000000006',1,$j${"fields":[{"key":"rbc","label":"RBC","type":"NUMBER","unit":"10^12/L","group":"Công thức máu","displayOrder":1,"required":true},{"key":"hgb","label":"HGB","type":"NUMBER","unit":"g/L","group":"Công thức máu","displayOrder":2,"required":true},{"key":"hct","label":"HCT","type":"NUMBER","unit":"%","group":"Công thức máu","displayOrder":3,"required":true},{"key":"wbc","label":"WBC","type":"NUMBER","unit":"10^9/L","group":"Công thức máu","displayOrder":4,"required":true},{"key":"plt","label":"PLT","type":"NUMBER","unit":"10^9/L","group":"Công thức máu","displayOrder":5,"required":true}]}$j$::jsonb,'PUBLISHED','Khoảng tham chiếu do quản lý phòng xét nghiệm cấu hình',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW()),
 ('cf100007-0000-0000-0000-000000000007',NOW(),NOW(),false,'cf000007-0000-0000-0000-000000000007',1,$j${"fields":[{"key":"glucose","label":"Glucose","type":"NUMBER","unit":"mmol/L","group":"Đường huyết","displayOrder":1,"required":true}]}$j$::jsonb,'PUBLISHED','Khởi tạo dữ liệu mẫu chưa có ngưỡng vận hành',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW()),
 ('cf100008-0000-0000-0000-000000000008',NOW(),NOW(),false,'cf000008-0000-0000-0000-000000000008',1,$j${"fields":[{"key":"glucose","label":"Glucose","type":"NUMBER","unit":"mmol/L","group":"Sinh hóa","displayOrder":1},{"key":"hba1c","label":"HbA1c","type":"NUMBER","unit":"%","group":"Sinh hóa","displayOrder":2},{"key":"cholesterol","label":"Cholesterol","type":"NUMBER","unit":"mmol/L","group":"Mỡ máu","displayOrder":3},{"key":"triglyceride","label":"Triglyceride","type":"NUMBER","unit":"mmol/L","group":"Mỡ máu","displayOrder":4},{"key":"hdlC","label":"HDL-C","type":"NUMBER","unit":"mmol/L","group":"Mỡ máu","displayOrder":5},{"key":"ldlC","label":"LDL-C","type":"NUMBER","unit":"mmol/L","group":"Mỡ máu","displayOrder":6},{"key":"acidUric","label":"Acid Uric","type":"NUMBER","unit":"umol/L","group":"Sinh hóa","displayOrder":7}]}$j$::jsonb,'PUBLISHED','Khởi tạo dữ liệu mẫu chưa có ngưỡng vận hành',CURRENT_DATE,'90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW()),
@@ -1414,53 +1731,122 @@ $j$::jsonb,'PUBLISHED','Mở rộng sáu test nhanh, thông tin kit, control và
 '90000009-2222-2222-2222-222222222222','90000009-2222-2222-2222-222222222222',NOW())
 ON CONFLICT (template_id, version_no) DO NOTHING;
 
+-- ===================================================================
+-- Billable laboratory analytes. They reuse the published panel schema;
+-- the backend exposes and validates only the field mapped by serviceCode.
+-- Prices are demonstration values and can be edited by Clinic Manager.
+-- Individual analytes are intentionally hidden from online booking while
+-- remaining selectable by doctor and receptionist workflows.
+-- ===================================================================
+INSERT INTO medical_service (
+    service_id, service_code, created_at, updated_at, deleted, description,
+    status, is_point_of_care, name, price, department_type, duration_minutes,
+    workflow_priority, requires_doctor_order, requires_return_to_doctor,
+    requires_specimen, result_wait_minutes, allow_customer_booking,
+    minimum_age, maximum_age, allowed_gender, department_id,
+    required_specialization_id, required_capability_id
+)
+SELECT gen_random_uuid(), item.service_code, NOW(), NOW(), false,
+       'Chỉ số lẻ thuộc gói ' || parent.name || '. Giá mẫu cần được rà soát trước vận hành.',
+       'ACTIVE', parent.is_point_of_care, item.name, item.price, parent.department_type,
+       parent.duration_minutes, parent.workflow_priority, true, true, true,
+       parent.result_wait_minutes, false, parent.minimum_age, parent.maximum_age,
+       parent.allowed_gender, parent.department_id, parent.required_specialization_id,
+       parent.required_capability_id
+FROM (VALUES
+ ('AN-CBC-RBC','Số lượng hồng cầu (RBC)',5000,'LAB-001'),('AN-CBC-HGB','Huyết sắc tố (HGB)',5000,'LAB-001'),
+ ('AN-CBC-HCT','Hematocrit (HCT)',5000,'LAB-001'),('AN-CBC-MCV','MCV',5000,'LAB-001'),
+ ('AN-CBC-MCH','MCH',5000,'LAB-001'),('AN-CBC-MCHC','MCHC',5000,'LAB-001'),
+ ('AN-CBC-RDWCV','RDW-CV',5000,'LAB-001'),('AN-CBC-RDWSD','RDW-SD',5000,'LAB-001'),
+ ('AN-CBC-WBC','Số lượng bạch cầu (WBC)',10000,'LAB-001'),('AN-CBC-NEUTP','Bạch cầu trung tính (%)',5000,'LAB-001'),
+ ('AN-CBC-NEUTA','Bạch cầu trung tính tuyệt đối',5000,'LAB-001'),('AN-CBC-LYMP','Bạch cầu lympho (%)',5000,'LAB-001'),
+ ('AN-CBC-LYMA','Bạch cầu lympho tuyệt đối',5000,'LAB-001'),('AN-CBC-MONOP','Bạch cầu mono (%)',5000,'LAB-001'),
+ ('AN-CBC-MONOA','Bạch cầu mono tuyệt đối',5000,'LAB-001'),('AN-CBC-EOSP','Bạch cầu ái toan (%)',5000,'LAB-001'),
+ ('AN-CBC-EOSA','Bạch cầu ái toan tuyệt đối',5000,'LAB-001'),('AN-CBC-BASOP','Bạch cầu ái kiềm (%)',5000,'LAB-001'),
+ ('AN-CBC-BASOA','Bạch cầu ái kiềm tuyệt đối',5000,'LAB-001'),('AN-CBC-PLT','Số lượng tiểu cầu (PLT)',10000,'LAB-001'),
+ ('AN-CBC-MPV','MPV',5000,'LAB-001'),('AN-CBC-PDW','PDW',5000,'LAB-001'),
+ ('AN-CBC-PCT','Plateletcrit (PCT)',5000,'LAB-001'),('AN-CBC-PLCR','P-LCR',5000,'LAB-001'),
+ ('AN-BIO-HBA1C','Hemoglobin A1c',30000,'LAB-003'),('AN-BIO-TC','Cholesterol toàn phần',30000,'LAB-003'),
+ ('AN-BIO-TG','Triglyceride',30000,'LAB-003'),('AN-BIO-HDL','HDL Cholesterol',30000,'LAB-003'),
+ ('AN-BIO-LDL','LDL Cholesterol',30000,'LAB-003'),('AN-BIO-UA','Acid uric',30000,'LAB-003'),
+ ('AN-BIO-TP','Protein toàn phần',30000,'LAB-003'),
+ ('AN-LIV-AST','AST',25000,'LAB-004'),('AN-LIV-ALT','ALT',25000,'LAB-004'),
+ ('AN-LIV-ALP','Alkaline phosphatase',25000,'LAB-004'),('AN-LIV-GGT','GGT',25000,'LAB-004'),
+ ('AN-LIV-TBIL','Bilirubin toàn phần',25000,'LAB-004'),('AN-LIV-DBIL','Bilirubin trực tiếp',25000,'LAB-004'),
+ ('AN-LIV-ALB','Albumin',25000,'LAB-004'),
+ ('AN-REN-UREA','Urea',20000,'LAB-005'),('AN-REN-CREA','Creatinine',20000,'LAB-005'),
+ ('AN-REN-NA','Sodium',20000,'LAB-005'),('AN-REN-K','Potassium',20000,'LAB-005'),
+ ('AN-REN-CL','Chloride',20000,'LAB-005'),('AN-REN-HCO3','Bicarbonate / Total CO2',20000,'LAB-005'),
+ ('AN-REN-CA','Calcium toàn phần',20000,'LAB-005'),('AN-REN-PO4','Phosphate',20000,'LAB-005'),
+ ('AN-URI-SG','Tỷ trọng nước tiểu',10000,'LAB-006'),('AN-URI-PH','pH nước tiểu',10000,'LAB-006'),
+ ('AN-URI-LEU','Leukocyte Esterase',10000,'LAB-006'),('AN-URI-NIT','Nitrite',10000,'LAB-006'),
+ ('AN-URI-PRO','Protein nước tiểu',10000,'LAB-006'),('AN-URI-GLU','Glucose nước tiểu',10000,'LAB-006'),
+ ('AN-URI-KET','Ketone',10000,'LAB-006'),('AN-URI-URO','Urobilinogen',10000,'LAB-006'),
+ ('AN-URI-BIL','Bilirubin nước tiểu',10000,'LAB-006'),('AN-URI-BLD','Máu/Hemoglobin nước tiểu',10000,'LAB-006')
+) AS item(service_code, name, price, panel_code)
+JOIN medical_service parent ON parent.service_code = item.panel_code AND parent.deleted = false
+ON CONFLICT (service_code) DO NOTHING;
+
 INSERT INTO medical_service_form_template
 (binding_id, created_at, updated_at, deleted, service_id, template_id)
 SELECT gen_random_uuid(), NOW(), NOW(), false, mapping.service_id, mapping.template_id
 FROM (VALUES
- ('40000002-0000-0000-0000-000000000002'::uuid,'cf000001-0000-0000-0000-000000000001'::uuid),('40000006-0000-0000-0000-000000000006','cf000001-0000-0000-0000-000000000001'),('40000021-0000-0000-0000-000000000021','cf000001-0000-0000-0000-000000000001'),('40000022-0000-0000-0000-000000000022','cf000001-0000-0000-0000-000000000001'),('40000023-0000-0000-0000-000000000023','cf000001-0000-0000-0000-000000000001'),
- ('40000001-0000-0000-0000-000000000001','cf000002-0000-0000-0000-000000000002'),('40000005-0000-0000-0000-000000000005','cf000002-0000-0000-0000-000000000002'),('40000024-0000-0000-0000-000000000024','cf000002-0000-0000-0000-000000000002'),('40000025-0000-0000-0000-000000000025','cf000002-0000-0000-0000-000000000002'),
- ('40000003-0000-0000-0000-000000000003','cf000003-0000-0000-0000-000000000003'),('40000026-0000-0000-0000-000000000026','cf000003-0000-0000-0000-000000000003'),('40000027-0000-0000-0000-000000000027','cf000003-0000-0000-0000-000000000003'),('40000028-0000-0000-0000-000000000028','cf000003-0000-0000-0000-000000000003'),
- ('40000007-0000-0000-0000-000000000007','cf000004-0000-0000-0000-000000000004'),('40000029-0000-0000-0000-000000000029','cf000004-0000-0000-0000-000000000004'),('40000030-0000-0000-0000-000000000030','cf000004-0000-0000-0000-000000000004'),('40000031-0000-0000-0000-000000000031','cf000004-0000-0000-0000-000000000004'),
- ('40000004-0000-0000-0000-000000000004','cf000005-0000-0000-0000-000000000005'),('40000032-0000-0000-0000-000000000032','cf000005-0000-0000-0000-000000000005'),('40000033-0000-0000-0000-000000000033','cf000005-0000-0000-0000-000000000005'),('40000034-0000-0000-0000-000000000034','cf000005-0000-0000-0000-000000000005'),
- ('40000008-0000-0000-0000-000000000008','cf000006-0000-0000-0000-000000000006'),('40000009-0000-0000-0000-000000000009','cf000007-0000-0000-0000-000000000007'),('40000010-0000-0000-0000-000000000010','cf000008-0000-0000-0000-000000000008'),('40000011-0000-0000-0000-000000000011','cf000009-0000-0000-0000-000000000009'),('40000012-0000-0000-0000-000000000012','cf00000a-0000-0000-0000-00000000000a'),('40000013-0000-0000-0000-000000000013','cf00000b-0000-0000-0000-00000000000b'),('40000014-0000-0000-0000-000000000014','cf00000c-0000-0000-0000-00000000000c'),('40000020-0000-0000-0000-000000000020','cf00000d-0000-0000-0000-00000000000d'),
+ ('40000008-0000-0000-0000-000000000008'::uuid,'cf000006-0000-0000-0000-000000000006'::uuid),('40000009-0000-0000-0000-000000000009','cf000007-0000-0000-0000-000000000007'),('40000010-0000-0000-0000-000000000010','cf000008-0000-0000-0000-000000000008'),('40000011-0000-0000-0000-000000000011','cf000009-0000-0000-0000-000000000009'),('40000012-0000-0000-0000-000000000012','cf00000a-0000-0000-0000-00000000000a'),('40000013-0000-0000-0000-000000000013','cf00000b-0000-0000-0000-00000000000b'),('40000014-0000-0000-0000-000000000014','cf00000c-0000-0000-0000-00000000000c'),('40000020-0000-0000-0000-000000000020','cf00000d-0000-0000-0000-00000000000d'),
  ('40000017-0000-0000-0000-000000000017','cf00000e-0000-0000-0000-00000000000e'),('40000018-0000-0000-0000-000000000018','cf00000e-0000-0000-0000-00000000000e'),('40000015-0000-0000-0000-000000000015','cf00000f-0000-0000-0000-00000000000f'),('40000016-0000-0000-0000-000000000016','cf000010-0000-0000-0000-000000000010'),('40000035-0000-0000-0000-000000000035','cf000011-0000-0000-0000-000000000011'),('40000019-0000-0000-0000-000000000019','cf000012-0000-0000-0000-000000000012')
 ) AS mapping(service_id, template_id)
 ON CONFLICT (service_id) DO NOTHING;
 
--- ===================================================================
--- Gan dung phien ban form va du lieu chuyen khoa cho tung ho so.
--- Ho so so 8 duoc giu form_template_version_id = NULL de review kha nang
--- hien thi ho so cu chi co du lieu cung.
--- ===================================================================
-UPDATE medical_record mr
-SET form_template_version_id = tv.version_id,
-    specialty_data = CASE
-        WHEN ms.required_specialization_id = '00000001-1111-1111-1111-111111111111'::uuid THEN
-            $j${"medicalHistory":"Tăng huyết áp được theo dõi định kỳ","currentMedication":"Amlodipine 5mg mỗi ngày","smoking":false,"alcoholUse":"OCCASIONAL","systemReview":"Chưa ghi nhận khó thở hoặc phù ngoại biên."}$j$::jsonb
-        WHEN ms.required_specialization_id = '00000002-2222-2222-2222-222222222222'::uuid THEN
-            $j${"birthHistory":"Sinh đủ tháng, cân nặng lúc sinh 3,1 kg","vaccinationHistory":"Đã tiêm chủng theo chương trình mở rộng","nutritionStatus":"NORMAL","developmentAssessment":"Phát triển thể chất và vận động phù hợp tuổi."}$j$::jsonb
-        WHEN ms.required_specialization_id = '00000003-3333-3333-3333-333333333333'::uuid THEN
-            $j${"injuryMechanism":"Va chạm khi sinh hoạt","woundLocation":"Cẳng tay phải","woundSizeMm":18,"infectionSigns":false}$j$::jsonb
-        WHEN ms.required_specialization_id = '00000004-4444-4444-4444-444444444444'::uuid THEN
-            $j${"lesionLocation":"Hai cẳng tay","lesionSizeMm":12,"morphology":"Sẩn đỏ ranh giới rõ, không rỉ dịch","onset":"2026-08-20","itching":true,"pain":false}$j$::jsonb
-        WHEN ms.required_specialization_id = '00000008-8888-8888-8888-888888888888'::uuid THEN
-            $j${"lastMenstrualPeriod":"2026-07-10","obstetricHistory":"Chưa ghi nhận tiền sử sản khoa bất thường","pregnancyStatus":"CONFIRMED","clinicalGestationalAgeWeeks":6}$j$::jsonb
-        ELSE '{}'::jsonb
-    END,
-    updated_at = NOW()
-FROM queue_ticket q
-JOIN medical_service ms ON ms.service_id = q.service_id
-JOIN medical_service_form_template b ON b.service_id = ms.service_id AND b.deleted = false
-JOIN clinical_form_template_version tv
-  ON tv.template_id = b.template_id AND tv.status = 'PUBLISHED' AND tv.deleted = false
- AND tv.version_no = (SELECT MAX(latest.version_no)
-                      FROM clinical_form_template_version latest
-                      WHERE latest.template_id = b.template_id
-                        AND latest.status = 'PUBLISHED' AND latest.deleted = false
-                        AND latest.effective_from <= CURRENT_DATE)
-WHERE mr.queue_ticket_id = q.ticket_id
-  AND mr.record_id <> '56000000-0000-0000-0000-000000000008'::uuid;
+-- Parent bindings now exist; bind every billable analyte to its panel's
+-- published schema.
+INSERT INTO medical_service_form_template
+(binding_id, created_at, updated_at, deleted, service_id, template_id)
+SELECT gen_random_uuid(), NOW(), NOW(), false, child.service_id, parent_binding.template_id
+FROM medical_service child
+JOIN (VALUES
+ ('AN-CBC-%','LAB-001'),('AN-BIO-%','LAB-003'),('AN-LIV-%','LAB-004'),
+ ('AN-REN-%','LAB-005'),('AN-URI-%','LAB-006')
+) AS mapping(code_pattern, panel_code) ON child.service_code LIKE mapping.code_pattern
+JOIN medical_service parent ON parent.service_code = mapping.panel_code AND parent.deleted = false
+JOIN medical_service_form_template parent_binding
+  ON parent_binding.service_id = parent.service_id AND parent_binding.deleted = false
+WHERE child.deleted = false
+ON CONFLICT (service_id) DO NOTHING;
+
+-- Moi dich vu can lam sang dang hoat dong phai co dung mot mau va mot phien
+-- ban PUBLISHED dang co hieu luc. Neu them dich vu CLS ma quen cau hinh form,
+-- data.sql se dung ngay thay vi de man tra ket qua rong.
+DO $clinical_form_check$
+DECLARE
+    invalid_services text;
+BEGIN
+    SELECT string_agg(ms.name, ', ' ORDER BY ms.name)
+    INTO invalid_services
+    FROM medical_service ms
+    WHERE ms.deleted = false
+      AND ms.status = 'ACTIVE'
+      AND ms.department_type = 'PARACLINICAL'
+      AND (
+          (SELECT COUNT(*) FROM medical_service_form_template binding
+           WHERE binding.service_id = ms.service_id AND binding.deleted = false) <> 1
+          OR NOT EXISTS (
+              SELECT 1
+              FROM medical_service_form_template binding
+              JOIN clinical_form_template template ON template.template_id = binding.template_id
+              JOIN clinical_form_template_version version ON version.template_id = template.template_id
+              WHERE binding.service_id = ms.service_id
+                AND binding.deleted = false
+                AND template.deleted = false AND template.active = true
+                AND version.deleted = false
+                AND version.status = 'PUBLISHED'
+                AND version.effective_from <= CURRENT_DATE
+          )
+      );
+
+    IF invalid_services IS NOT NULL THEN
+        RAISE EXCEPTION 'Dịch vụ cận lâm sàng thiếu biểu mẫu kết quả đang áp dụng: %', invalid_services;
+    END IF;
+END
+$clinical_form_check$;
 
 -- Du lieu co cau truc cho ket qua can lam sang. _meta la snapshot canh bao/
 -- phep tinh da tao tai thoi diem ky, giup man xem lich su hien thi dung.

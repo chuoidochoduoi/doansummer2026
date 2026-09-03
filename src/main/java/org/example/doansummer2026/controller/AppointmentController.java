@@ -15,6 +15,8 @@ import org.example.doansummer2026.dto.appointment.AppointmentUpdateRequest;
 import org.example.doansummer2026.dto.appointment.GuestHistoryResponse;
 import org.example.doansummer2026.dto.appointment.CustomerAppointmentResponse;
 import org.example.doansummer2026.dto.appointment.CustomerAppointmentDetailResponse;
+import org.example.doansummer2026.dto.appointment.CustomerAppointmentCreateRequest;
+import org.example.doansummer2026.dto.appointment.GroupAppointmentCreateRequest;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.service.AppointmentService;
 import org.example.doansummer2026.service.AuthService;
@@ -147,13 +149,33 @@ public class AppointmentController {
     @GetMapping("/my")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<PageResponse<CustomerAppointmentResponse>> getMyAppointments(
+            @RequestParam(required = false) UUID patientProfileId,
+            @RequestParam(defaultValue = "false") boolean includeFamily,
             @RequestParam(required = false) String code,
             @RequestParam(required = false) String specialty,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) LocalDateTime from,
             @RequestParam(required = false) LocalDateTime to,
             Pageable pageable) {
-        return RestResponses.ok(service.getMyAppointments(authService.currentAccount().getAccountId(), code, specialty, status, from, to, pageable));
+        return RestResponses.ok(service.getMyAppointments(authService.currentAccount().getAccountId(),
+                patientProfileId, includeFamily, code, specialty, status, from, to, pageable));
+    }
+
+    @PostMapping("/my")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Auditable(action = AuditAction.CREATE, entityName = "Appointment")
+    public ResponseEntity<AppointmentResponse> createMy(
+            @Valid @RequestBody CustomerAppointmentCreateRequest req) {
+        AppointmentResponse created = service.createMy(authService.currentAccount().getAccountId(), req);
+        return RestResponses.created("/api/v1/appointments/my/{id}", created.appointmentId(), created);
+    }
+
+    @PostMapping("/my/group")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Auditable(action = AuditAction.CREATE, entityName = "Appointment")
+    public ResponseEntity<List<AppointmentResponse>> createMyGroup(
+            @Valid @RequestBody GroupAppointmentCreateRequest req) {
+        return RestResponses.ok(service.createMyGroup(authService.currentAccount().getAccountId(), req));
     }
 
     @GetMapping("/my/{id}")

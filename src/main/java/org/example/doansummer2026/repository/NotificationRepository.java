@@ -10,6 +10,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
 
 import java.util.UUID;
+import java.util.List;
 
 @Repository
 public interface NotificationRepository extends JpaRepository<Notification, UUID>, JpaSpecificationExecutor<Notification> {
@@ -29,6 +30,12 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     }
 
     long countByRecipient_ProfileIdAndStatus(UUID recipientId, NotificationStatus status);
+
+    List<Notification> findAllByRelatedEntityAndRelatedEntityIdAndStatusOrderByCreatedAtAsc(
+            String relatedEntity, UUID relatedEntityId, NotificationStatus status);
+
+    List<Notification> findAllByRelatedEntityAndStatusOrderByCreatedAtAsc(
+            String relatedEntity, NotificationStatus status);
 }
 
 

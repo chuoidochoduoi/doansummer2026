@@ -4,9 +4,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.enums.QueueStatus;
+import org.example.doansummer2026.enums.VisitStatus;
 import org.example.doansummer2026.model.Appointment;
+import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.QueueTicket;
 import org.example.doansummer2026.repository.AppointmentRepository;
+import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -16,6 +19,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -24,7 +28,9 @@ public class SystemCleanupService {
 
     private final AppointmentRepository appointmentRepo;
     private final QueueTicketRepository queueTicketRepo;
+    private final CustomerVisitRepository customerVisitRepo;
     private final AuditLogService auditLogService;
+    private final QueueReturnRequestService queueReturnRequestService;
 
     /**
      * Chạy vào lúc 00:05 sáng mỗi ngày (Asia/Ho_Chi_Minh).
@@ -64,12 +70,12 @@ public class SystemCleanupService {
                 )));
         log.info("Cancelled {} overdue appointments.", pendingAppointments.size());
 
-        // 2. Hàng chờ (QueueTicket) – ticket workDate < hôm nay còn active → SKIPPED (vắng mặt)
+        // 2. Chi danh dau vang cac buoc chua phat sinh xu ly chuyen mon.
+        // IN_PROGRESS, WAITING_FOR_TEST va TEST_DONE phai duoc giu de nhan vien xu ly ton dong.
         List<QueueStatus> activeStatuses = List.of(
                 QueueStatus.WAITING,
                 QueueStatus.CALLED,
-                QueueStatus.BLOCKED,
-                QueueStatus.WAITING_FOR_TEST
+                QueueStatus.BLOCKED
         );
         List<QueueTicket> overdueTickets = queueTicketRepo.findOverdueActiveTickets(today, activeStatuses);
 
@@ -87,9 +93,53 @@ public class SystemCleanupService {
                         "SystemCleanupService",
                         null,
                         null,
-                        "Hệ thống đánh vắng mặt phiếu hàng chờ quá ngày chưa hoàn thành"
+                        "Hệ thống đánh vắng mặt phiếu hàng chờ quá ngày chưa bắt đầu chuyên môn"
                 )));
         log.info("Skipped {} overdue queue tickets.", overdueTickets.size());
+
+        // 3. Dong VIS cua nhung khach da bo cac buoc con lai trong ngay cu.
+        // Luot da phat sinh chuyen mon van de mo de nhan vien hoan tat dung quy trinh.
+        LocalDateTime closedAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+        // Bao gom ca phieu da duoc danh vang tu truoc nua dem; neu chi quet
+        // WAITING/CALLED/BLOCKED thi cac VIS nay se bi treo vo thoi han.
+        List<QueueTicket> oldSkippedTickets = queueTicketRepo.findOverdueActiveTickets(
+                today, List.of(QueueStatus.SKIPPED));
+        List<CustomerVisit> visitsToClose = oldSkippedTickets.stream()
+                .map(QueueTicket::getVisit).filter(Objects::nonNull)
+                .filter(visit -> visit.getStatus() != VisitStatus.CANCELLED
+                        && visit.getStatus() != VisitStatus.COMPLETED)
+                .distinct()
+                .filter(visit -> queueTicketRepo.findAllByVisit_VisitId(visit.getVisitId()).stream()
+                        .noneMatch(ticket -> ticket.getStatus() == QueueStatus.IN_PROGRESS
+                                || ticket.getStatus() == QueueStatus.WAITING_FOR_TEST
+                                || ticket.getStatus() == QueueStatus.TEST_DONE))
+                .peek(visit -> {
+                    boolean completedAnyService = queueTicketRepo
+                            .findAllByVisit_VisitId(visit.getVisitId()).stream()
+                            .anyMatch(ticket -> ticket.getStatus() == QueueStatus.DONE);
+                    visit.setStatus(completedAnyService ? VisitStatus.COMPLETED : VisitStatus.CANCELLED);
+                    visit.setCheckOutTime(closedAt);
+                })
+                .toList();
+        customerVisitRepo.saveAll(visitsToClose);
+        visitsToClose.forEach(visit -> auditLogService.create(
+                new org.example.doansummer2026.dto.auditLog.AuditLogCreateRequest(
+                        org.example.doansummer2026.enums.AuditAction.STATUS_CHANGE,
+                        "CustomerVisit",
+                        visit.getVisitId().toString(),
+                        null,
+                        "system",
+                        "SystemCleanupService",
+                        null,
+                        null,
+                        visit.getStatus() == VisitStatus.COMPLETED
+                                ? "Hệ thống đóng lượt khám đã hoàn thành một phần; dịch vụ còn lại bị bỏ lượt"
+                                : "Hệ thống hủy lượt khám quá ngày chưa thực hiện dịch vụ"
+                )));
+        log.info("Closed {} overdue visits without active clinical work.", visitsToClose.size());
+
+        int expiredReturnRequests = queueReturnRequestService.expireBefore(today);
+        log.info("Expired {} queue return requests.", expiredReturnRequests);
 
         log.info("End-of-Day Cleanup Job finished successfully.");
     }

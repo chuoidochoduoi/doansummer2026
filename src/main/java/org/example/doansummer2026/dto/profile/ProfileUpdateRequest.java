@@ -18,6 +18,7 @@ public record ProfileUpdateRequest(
         @Pattern(regexp = "^$|^(\\+84|0)\\d{9,10}$", message = "Số điện thoại Việt Nam không hợp lệ") String phone,
         @Email(message = "Email không hợp lệ") @Size(max = 255) String email,
         @Size(max = 255) String address,
+        @Size(max = 2000000, message = "Dữ liệu ảnh đại diện quá lớn") String avatarUrl,
         BloodType bloodType,
         @Size(max = 50) String insuranceId,
         @jakarta.validation.constraints.Min(30) @jakarta.validation.constraints.Max(250) Integer height,

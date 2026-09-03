@@ -19,8 +19,10 @@ import org.example.doansummer2026.model.QueueTicket;
 import org.example.doansummer2026.model.TestRequest;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.InvoiceRepository;
+import org.example.doansummer2026.repository.MedicalRecordRepository;
 import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.example.doansummer2026.repository.TestRequestRepository;
+import org.example.doansummer2026.repository.NotificationRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -55,7 +57,16 @@ class PatientJourneyServiceTest {
     private InvoiceRepository invoiceRepo;
 
     @Mock
+    private MedicalRecordRepository recordRepo;
+
+    @Mock
+    private NotificationRepository notificationRepo;
+
+    @Mock
     private SimpMessagingTemplate messagingTemplate;
+
+    @Mock
+    private QueuePriorityService queuePriorityService;
 
     @InjectMocks
     private PatientJourneyService patientJourneyService;
@@ -1810,13 +1821,23 @@ class PatientJourneyServiceTest {
                         );
 
         assertEquals(
-                "Kham Noi",
+                "-",
                 result.nextStep()
         );
 
         assertEquals(
-                "UNASSIGNED",
+                "BLOCKED",
                 result.currentStatus()
+        );
+
+        assertEquals(
+                "Kham Noi",
+                result.currentStep()
+        );
+
+        assertEquals(
+                "QUEUE:" + blocked.getTicketId(),
+                result.currentStepId()
         );
     }
 
@@ -1955,7 +1976,7 @@ class PatientJourneyServiceTest {
         );
 
         assertEquals(
-                "Dang cho ket qua can lam sang",
+                "Đang chờ kết quả cận lâm sàng",
                 result.currentStep()
         );
     }
@@ -2037,7 +2058,7 @@ class PatientJourneyServiceTest {
         );
 
         assertEquals(
-                "Dang cho ket qua can lam sang",
+                "Đang chờ kết quả cận lâm sàng",
                 result.currentStep()
         );
     }
@@ -2053,7 +2074,7 @@ class PatientJourneyServiceTest {
                 visit(visitId);
 
         QueueTicket queue =
-                queue(
+                paraclinicalQueue(
                         QueueStatus.WAITING,
                         LocalDateTime.now()
                 );
@@ -2165,7 +2186,7 @@ class PatientJourneyServiceTest {
                 visit(visitId);
 
         QueueTicket queue =
-                queue(
+                paraclinicalQueue(
                         QueueStatus.WAITING,
                         LocalDateTime.now()
                 );
@@ -2282,12 +2303,12 @@ class PatientJourneyServiceTest {
         );
 
         assertEquals(
-                "Thanh toan dich vu",
+                "Thanh toán dịch vụ ban đầu",
                 result.currentStep()
         );
 
         assertEquals(
-                "Quay thu ngan (-)",
+                "Quầy thu ngân (-)",
                 result.currentRoom()
         );
 
@@ -2363,7 +2384,7 @@ class PatientJourneyServiceTest {
         );
 
         assertEquals(
-                "Dang cho ket qua can lam sang",
+                "Đang chờ kết quả cận lâm sàng",
                 result.currentStep()
         );
 
@@ -3176,6 +3197,40 @@ class PatientJourneyServiceTest {
                         .get(0)
                         .visitId()
         );
+    }
+
+    @Test
+    void list_ShouldSeparateTodayAndUnfinishedOverdueJourneys() {
+        CustomerVisit today = visit(UUID.randomUUID());
+        CustomerVisit overdue = visit(UUID.randomUUID());
+        CustomerVisit completedHistory = visit(UUID.randomUUID());
+        java.time.LocalDate clinicDate = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+        today.setCheckInTime(clinicDate.atTime(12, 0));
+        overdue.setCheckInTime(clinicDate.minusDays(3).atTime(12, 0));
+        completedHistory.setCheckInTime(clinicDate.minusDays(4).atTime(12, 0));
+
+        QueueTicket active = queue(QueueStatus.IN_PROGRESS, overdue.getCheckInTime());
+        QueueTicket done = queue(QueueStatus.DONE, completedHistory.getCheckInTime());
+        when(visitRepo.findAll()).thenReturn(List.of(today, overdue, completedHistory));
+        when(queueRepo.findAllByVisit_VisitId(today.getVisitId())).thenReturn(List.of());
+        when(queueRepo.findAllByVisit_VisitId(overdue.getVisitId())).thenReturn(List.of(active));
+        when(queueRepo.findAllByVisit_VisitId(completedHistory.getVisitId())).thenReturn(List.of(done));
+
+        var todayPage = patientJourneyService.list(null, null, "TODAY", PageRequest.of(0, 10));
+        var overduePage = patientJourneyService.list(null, null, "OVERDUE", PageRequest.of(0, 10));
+        var allPage = patientJourneyService.list(null, null, "ALL", PageRequest.of(0, 10));
+
+        assertEquals(List.of(today.getVisitId()), pageContent(todayPage).stream()
+                .map(PatientJourneyResponse::visitId).toList());
+        assertEquals(List.of(overdue.getVisitId()), pageContent(overduePage).stream()
+                .map(PatientJourneyResponse::visitId).toList());
+        assertEquals(3, pageContent(allPage).size());
+    }
+
+    @Test
+    void list_ShouldRejectUnknownScope() {
+        assertThrows(org.example.doansummer2026.exception.BadRequestException.class,
+                () -> patientJourneyService.list(null, null, "YESTERDAY", PageRequest.of(0, 10)));
     }
 
 

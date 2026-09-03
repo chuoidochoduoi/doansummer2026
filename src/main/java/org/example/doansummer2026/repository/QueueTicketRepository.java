@@ -141,7 +141,8 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
             @Param("status") QueueStatus status,
             Pageable pageable);
 
-    /** Lay danh sach cho phong theo dung so thu tu FIFO, bat ke benh nhan dang tam thoi ban. */
+    /** Lay tap ung vien FIFO; QueuePriorityService se tinh thu tu phuc vu va vi tri dong. */
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = "visit")
     @Query("SELECT q FROM QueueTicket q WHERE q.department.departmentId = :departmentId " +
            "AND q.workDate = :workDate " +
            "AND q.status IN :statuses " +
@@ -169,8 +170,8 @@ public interface QueueTicketRepository extends JpaRepository<QueueTicket, UUID>,
     }
 
     /**
-     * Lấy tất cả ticket còn active (chưa kết thúc) của các ngày trước hôm nay.
-     * Dùng cho job dọn cuối ngày để đánh vắng mặt.
+     * Lay ticket ngay cu theo tap trang thai truyen vao.
+     * Dung cho job chot ngay, ke ca ticket da SKIPPED.
      */
     @Query("SELECT q FROM QueueTicket q WHERE q.workDate < :today AND q.status IN :statuses")
     List<QueueTicket> findOverdueActiveTickets(@Param("today") LocalDate today,

@@ -18,6 +18,7 @@ public record ProfileResponse(
         String phone,
         String email,
         String address,
+        String avatarUrl,
         BloodType bloodType,
         String insuranceId,
         Integer height,
@@ -28,6 +29,7 @@ public record ProfileResponse(
         UUID staffId
 ) {
     public static ProfileResponse from(Profile p) {
+        if (p == null) return null;
         boolean hasStaff = p.getAccount() != null;
         return new ProfileResponse(
                 p.getProfileId(),
@@ -39,6 +41,7 @@ public record ProfileResponse(
                 p.getPhone(),
                 p.getEmail(),
                 p.getAddress(),
+                p.getAvatarUrl(),
                 p.getBloodType(),
                 p.getInsuranceId(),
                 p.getHeight(),

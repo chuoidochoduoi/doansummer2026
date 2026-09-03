@@ -37,6 +37,7 @@ import org.example.doansummer2026.repository.AccountRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.repository.TransactionRepository;
+import org.example.doansummer2026.repository.MembershipCardLedgerRepository;
 import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.example.doansummer2026.repository.TestRequestRepository;
 import org.example.doansummer2026.repository.DepartmentRepository;
@@ -69,6 +70,7 @@ public class InvoiceService implements InvoiceServiceInterface {
     private final InvoiceRepository repo;
     private final InvoiceItemRepository itemRepo;
     private final TransactionRepository transactionRepo;
+    private final MembershipCardLedgerRepository membershipCardLedgerRepo;
     private final ProfileRepository profileRepo;
     private final CustomerVisitRepository visitRepo;
     private final MedicalRecordRepository recordRepo;
@@ -86,6 +88,8 @@ public class InvoiceService implements InvoiceServiceInterface {
     private final InsuranceRuleRepository insuranceRuleRepository;
     private final BhxhIntegrationService bhxhIntegrationService;
     private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
+    private final MedicalServiceSelectionPolicyService serviceSelectionPolicyService;
+    private final PatientJourneyService patientJourneyService;
 
     @Transactional(readOnly = true)
     public PageResponse<InvoiceResponse> search(UUID customerId, InvoiceStatus status,
@@ -163,14 +167,15 @@ public class InvoiceService implements InvoiceServiceInterface {
             visit = visitRepo.findByIdForUpdate(req.visitId())
                     .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + req.visitId()));
         }
-        validateSingleExaminationService(req.items(), req.visitId(), null);
+        List<InvoiceItemCreateRequest> normalizedItems = normalizeItemRequests(req.items());
+        validateServiceRegistrations(normalizedItems, req.visitId(), null);
         MedicalRecord record = null;
         if (req.medicalRecordId() != null) {
             record = recordRepo.findById(req.medicalRecordId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Hồ sơ bệnh án không tồn tại: " + req.medicalRecordId()));
         }
-        if (req.items() != null && !req.items().isEmpty() && visit == null) {
+        if (normalizedItems != null && !normalizedItems.isEmpty() && visit == null) {
             throw new BadRequestException("Hóa đơn dịch vụ phải được gắn với một lượt khám");
         }
         if (visit != null) {
@@ -207,9 +212,9 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .items(new ArrayList<>())
                 .build();
         Invoice saved = repo.save(invoice);
-        if (req.items() != null) {
+        if (normalizedItems != null) {
             List<InvoiceItem> persistedItems = new ArrayList<>();
-            for (InvoiceItemCreateRequest itemReq : req.items()) {
+            for (InvoiceItemCreateRequest itemReq : normalizedItems) {
                 /*
                  * Invoice.items la phia mappedBy. Khong chi dua vao cascade cua
                  * collection nay: o mot so luong tao luot kham (dac biet guest),
@@ -267,11 +272,12 @@ public class InvoiceService implements InvoiceServiceInterface {
         if (req.tax() != null) i.setTax(req.tax());
         if (req.note() != null) i.setNote(req.note());
         if (req.items() != null && !req.items().isEmpty()) {
-            validateSingleExaminationService(req.items(),
+            List<InvoiceItemCreateRequest> normalizedItems = normalizeItemRequests(req.items());
+            validateServiceRegistrations(normalizedItems,
                     i.getVisit() != null ? i.getVisit().getVisitId() : null, i.getInvoiceId());
             itemRepo.deleteAll(i.getItems());
             i.getItems().clear();
-            for (InvoiceItemCreateRequest itemReq : req.items()) {
+            for (InvoiceItemCreateRequest itemReq : normalizedItems) {
                 i.getItems().add(buildItem(i, itemReq));
             }
         }
@@ -305,7 +311,10 @@ public class InvoiceService implements InvoiceServiceInterface {
         BigDecimal totalBhyt = BigDecimal.ZERO;
         for (InvoiceItem item : invoice.getItems()) {
             DepartmentType type = item.getService() != null ? item.getService().getDepartmentType() : null;
-            BigDecimal rate = rules.stream()
+            boolean individualAnalyte = item.getService() != null
+                    && item.getService().getServiceCode() != null
+                    && item.getService().getServiceCode().toUpperCase(java.util.Locale.ROOT).startsWith("AN-");
+            BigDecimal rate = individualAnalyte ? BigDecimal.ZERO : rules.stream()
                     .filter(rule -> type != null && rule.getDepartmentType() == type)
                     .map(rule -> rule.getDiscountPercent() != null ? rule.getDiscountPercent() : BigDecimal.ZERO)
                     .findFirst()
@@ -467,7 +476,9 @@ public class InvoiceService implements InvoiceServiceInterface {
         }
         var payment = transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
                 id, TransactionStatus.SUCCESS).orElse(null);
-        return ReceiptPrintResponse.from(invoice, payment);
+        var membershipLedger = payment == null ? null
+                : membershipCardLedgerRepo.findByPaymentTransaction_TransactionId(payment.getTransactionId()).orElse(null);
+        return ReceiptPrintResponse.from(invoice, payment, membershipLedger);
     }
 
     /** Recalculate paidAmount + status tuyen tu cac transaction SUCCESS. */
@@ -627,6 +638,13 @@ public class InvoiceService implements InvoiceServiceInterface {
         if (dispatchedItemCount == 0) {
             throw new BadRequestException("Không có dịch vụ nào được điều phối sau thanh toán");
         }
+        // Tao xong toan bo phiếu cua hoa don moi mo buoc ke tiep. Neu mo trong
+        // luc dang tao tung dong, mot phong CLS co the bi mo som trong khi phong
+        // khac cua cung dot van chua duoc gan vao chuoi dieu phoi.
+        // activateNext() tu kiem tra buoc dang hoat dong, nen hoa don kham ban
+        // dau van giu nguoi benh o phong kham; hoa don chi dinh CLS se mo dung
+        // phong CLS dau tien khi bac si da chuyen ho so sang WAITING_FOR_TEST.
+        patientJourneyService.activateNext(visitId);
     }
 
     // --- helpers ---
@@ -707,8 +725,8 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .build();
     }
 
-    private void validateSingleExaminationService(List<InvoiceItemCreateRequest> items,
-                                                    UUID visitId, UUID excludedInvoiceId) {
+    private void validateServiceRegistrations(List<InvoiceItemCreateRequest> items,
+                                              UUID visitId, UUID excludedInvoiceId) {
         if (items == null || items.isEmpty()) return;
         java.util.List<UUID> requestedServiceIds = items.stream()
                 .map(InvoiceItemCreateRequest::serviceId)
@@ -724,12 +742,13 @@ public class InvoiceService implements InvoiceServiceInterface {
                         && service.getDepartmentType().normalized() == DepartmentType.EXAMINATION)
                 .map(MedicalService::getServiceId)
                 .collect(java.util.stream.Collectors.toSet());
-        java.util.Set<UUID> allExaminations = new java.util.HashSet<>(requestedExaminations);
-        boolean appointmentVisit = false;
         if (visitId != null) {
             CustomerVisit targetVisit = visitRepo.findById(visitId)
                     .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
-            appointmentVisit = targetVisit.getAppointment() != null;
+            if (serviceSelectionPolicyService != null) {
+                serviceSelectionPolicyService.validateAgainstExisting(requestedServiceIds,
+                        itemRepo.findDistinctActiveServiceIdsByVisit(visitId, excludedInvoiceId));
+            }
             if (targetVisit.getCustomer() != null && !requestedExaminations.isEmpty()) {
                 profileRepo.findByIdForUpdate(targetVisit.getCustomer().getProfileId())
                         .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
@@ -756,7 +775,6 @@ public class InvoiceService implements InvoiceServiceInterface {
             if (existing.stream().anyMatch(requestedExaminations::contains)) {
                 throw new BadRequestException("Dịch vụ khám bệnh này đã có trong lượt khám hiện tại");
             }
-            allExaminations.addAll(existing);
             java.util.Set<UUID> queuedExaminations = queueTicketRepo.findAllByVisit_VisitId(visitId).stream()
                     .filter(ticket -> ticket.getService() != null
                             && ticket.getService().getDepartmentType() != null
@@ -766,15 +784,9 @@ public class InvoiceService implements InvoiceServiceInterface {
             if (queuedExaminations.stream().anyMatch(requestedExaminations::contains)) {
                 throw new BadRequestException("Dịch vụ khám bệnh này đã có trong lượt khám hiện tại");
             }
-            allExaminations.addAll(queuedExaminations);
         }
-        // Lich hen online co the gom nhieu dich vu kham trong mot lan check-in.
-        // Phieu kham do le tan tao truc tiep van chi dai dien cho mot dich vu kham.
-        if (!appointmentVisit && allExaminations.size() > 1) {
-            throw new BadRequestException(
-                    "Phiếu khám tạo trực tiếp chỉ được có tối đa 1 dịch vụ khám bệnh"
-            );
-        }
+        // Mot luot co the co nhieu dich vu kham. Moi dich vu se duoc dieu phoi
+        // bang QueueTicket rieng va tao MedicalRecord rieng khi bac si bat dau.
     }
 
     private void recalculateTotals(Invoice i) {
@@ -787,6 +799,16 @@ public class InvoiceService implements InvoiceServiceInterface {
             throw new BadRequestException("Tổng tiền không hợp lệ; vui lòng kiểm tra giảm giá và thuế");
         }
         i.setTotalAmount(total);
+    }
+
+    private List<InvoiceItemCreateRequest> normalizeItemRequests(List<InvoiceItemCreateRequest> items) {
+        if (items == null || items.isEmpty()) return items;
+        if (serviceSelectionPolicyService == null) return items;
+        java.util.Set<UUID> retainedIds = serviceSelectionPolicyService.normalizeOrThrow(
+                        items.stream().map(InvoiceItemCreateRequest::serviceId).toList())
+                .stream().map(MedicalService::getServiceId)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+        return items.stream().filter(item -> retainedIds.contains(item.serviceId())).toList();
     }
 
     private boolean hasSuccessfulTransaction(UUID invoiceId) {
@@ -876,6 +898,10 @@ public class InvoiceService implements InvoiceServiceInterface {
         if (invoice.getStatus() != InvoiceStatus.PAID) {
             throw new ConflictException("Chỉ có thể xem phiếu thu của hóa đơn đã thanh toán");
         }
-        return ReceiptDetailResponse.from(invoice);
+        var payment = transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                invoiceId, TransactionStatus.SUCCESS).orElse(null);
+        var membershipLedger = payment == null ? null
+                : membershipCardLedgerRepo.findByPaymentTransaction_TransactionId(payment.getTransactionId()).orElse(null);
+        return ReceiptDetailResponse.from(invoice, payment, membershipLedger);
     }
 }

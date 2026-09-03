@@ -83,6 +83,10 @@ public class Profile extends BaseEntity {
     @Size(max = 255)
     private String address;
 
+    /** URL hoặc dữ liệu ảnh đại diện của hồ sơ. */
+    @Column(name = "avatar_url", columnDefinition = "TEXT")
+    private String avatarUrl;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "blood_type", length = 15)
     private BloodType bloodType;
@@ -118,5 +122,4 @@ public class Profile extends BaseEntity {
                 .substring(0, 8).toUpperCase();
     }
 }
-
 

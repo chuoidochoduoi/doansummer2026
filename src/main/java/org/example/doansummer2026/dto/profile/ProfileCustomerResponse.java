@@ -13,6 +13,7 @@ import java.util.UUID;
  * Response cho API profile cua customer.
  */
 public record ProfileCustomerResponse(
+        UUID profileId,
         UUID accountId,
         String customerCode,
         String fullName,
@@ -38,6 +39,7 @@ public record ProfileCustomerResponse(
         String customerCode = profile.getPatientCode();
 
         return new ProfileCustomerResponse(
+                profile.getProfileId(),
                 account.getAccountId(),
                 customerCode,
                 profile.getFullName(),

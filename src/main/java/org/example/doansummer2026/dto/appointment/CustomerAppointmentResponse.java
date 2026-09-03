@@ -15,9 +15,18 @@ public record CustomerAppointmentResponse(
         String specialty,
         String queueNumber,
         String status,
-        String serviceSummary
+        String serviceSummary,
+        UUID patientProfileId,
+        String patientCode,
+        String patientName,
+        boolean isSelf,
+        String relationship
 ) {
     public static CustomerAppointmentResponse from(Appointment a) {
+        return from(a, a.getCustomer() == null ? null : a.getCustomer().getProfileId(), null);
+    }
+
+    public static CustomerAppointmentResponse from(Appointment a, UUID ownerProfileId, String relationship) {
         String code = "APPT-" + a.getAppointmentId().toString().substring(0, 8).toUpperCase();
         
         DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -73,7 +82,12 @@ public record CustomerAppointmentResponse(
                 specialty,
                 queueNum,
                 statusStr,
-                serviceSummary
+                serviceSummary,
+                a.getCustomer() == null ? null : a.getCustomer().getProfileId(),
+                a.getCustomer() == null ? null : a.getCustomer().getPatientCode(),
+                a.getCustomer() == null ? a.getGuestFullName() : a.getCustomer().getFullName(),
+                a.getCustomer() != null && a.getCustomer().getProfileId().equals(ownerProfileId),
+                relationship
         );
     }
 }

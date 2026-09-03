@@ -11,6 +11,8 @@ import org.example.doansummer2026.dto.appointment.AppointmentGuestCreateRequest;
 import org.example.doansummer2026.dto.appointment.AppointmentUpdateRequest;
 import org.example.doansummer2026.dto.appointment.CustomerAppointmentResponse;
 import org.example.doansummer2026.dto.appointment.CustomerAppointmentDetailResponse;
+import org.example.doansummer2026.dto.appointment.CustomerAppointmentCreateRequest;
+import org.example.doansummer2026.dto.appointment.GroupAppointmentCreateRequest;
 import org.example.doansummer2026.enums.AppointmentStatus;
 import org.example.doansummer2026.model.Appointment;
 
@@ -18,6 +20,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.List;
 
 /** Service interface for Appointment management. */
 public interface AppointmentServiceInterface {
@@ -33,8 +36,18 @@ public interface AppointmentServiceInterface {
     GuestCheckInResponse guestCheckIn(GuestCheckInRequest req);
     void delete(UUID id);
     Appointment findById(UUID id);
+    AppointmentResponse createMy(UUID accountId, CustomerAppointmentCreateRequest req);
+    List<AppointmentResponse> createMyGroup(UUID accountId, GroupAppointmentCreateRequest req);
 
-    PageResponse<CustomerAppointmentResponse> getMyAppointments(UUID customerId, String code, String specialty, String status, LocalDateTime from, LocalDateTime to, Pageable pageable);
+    PageResponse<CustomerAppointmentResponse> getMyAppointments(UUID accountId, UUID patientProfileId,
+                                                                 boolean includeFamily, String code,
+                                                                 String specialty, String status,
+                                                                 LocalDateTime from, LocalDateTime to,
+                                                                 Pageable pageable);
+    PageResponse<CustomerAppointmentResponse> getMyAppointments(UUID accountId, String code,
+                                                                 String specialty, String status,
+                                                                 LocalDateTime from, LocalDateTime to,
+                                                                 Pageable pageable);
     CustomerAppointmentDetailResponse getMyAppointmentDetail(UUID customerId, UUID appointmentId);
     CustomerAppointmentDetailResponse updateMyAppointment(UUID customerId, UUID appointmentId, AppointmentUpdateRequest req);
     void cancelMyAppointment(UUID customerId, UUID appointmentId);

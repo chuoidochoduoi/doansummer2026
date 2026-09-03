@@ -20,6 +20,7 @@ public class ServiceAvailabilityService {
     private final MedicalServiceRepository medicalServiceRepository;
     private final ShiftConfigRepository shiftRepository;
     private final ShiftScheduleResolver shiftResolver;
+    private final DepartmentRepository departmentRepository;
 
     public record Evaluation(boolean available, ShiftUnavailableReason reason, List<StaffInfo> eligibleStaff) {}
 
@@ -39,26 +40,66 @@ public class ServiceAvailabilityService {
         if (department != null && department.getStatus() != DepartmentStatus.AVAILABLE) {
             return new Evaluation(false, ShiftUnavailableReason.DEPARTMENT_UNAVAILABLE, List.of());
         }
-        if (service.getRequiredCapability() != null) {
-            if (department == null || department.getCapabilities().stream().noneMatch(c ->
-                    c.getCapabilityId().equals(service.getRequiredCapability().getCapabilityId())
-                            && Boolean.TRUE.equals(c.getActive()))) {
+        List<Department> eligibleDepartments = resolveEligibleDepartments(service);
+        if (service.getRequiredCapability() != null && eligibleDepartments.isEmpty()) {
                 return new Evaluation(false, ShiftUnavailableReason.CAPABILITY_UNAVAILABLE, List.of());
-            }
         }
+        if (service.getDepartmentType() == DepartmentType.EXAMINATION
+                && service.getRequiredSpecialization() != null && eligibleDepartments.isEmpty()) {
+            return new Evaluation(false, ShiftUnavailableReason.DEPARTMENT_UNAVAILABLE, List.of());
+        }
+
+        Set<UUID> eligibleDepartmentIds = eligibleDepartments.stream()
+                .map(Department::getDepartmentId).collect(java.util.stream.Collectors.toSet());
 
         List<StaffInfo> eligible = scheduleRepository
                 .findAllByWorkDateAndShift_ShiftIdAndStatus(date, shift.getShiftId(), ScheduleStatus.SCHEDULED)
                 .stream().map(StaffSchedule::getStaff)
                 .filter(staff -> excludedStaffId == null || !excludedStaffId.equals(staff.getStaffId()))
                 .filter(this::isActiveStaff)
-                .filter(staff -> department == null || (staff.getDepartment() != null
-                        && staff.getDepartment().getDepartmentId().equals(department.getDepartmentId())))
+                .filter(staff -> eligibleDepartmentIds.isEmpty() || (staff.getDepartment() != null
+                        && eligibleDepartmentIds.contains(staff.getDepartment().getDepartmentId())))
                 .filter(staff -> eligibleForService(staff, service, date))
                 .distinct().toList();
         return eligible.isEmpty()
                 ? new Evaluation(false, ShiftUnavailableReason.NO_QUALIFIED_STAFF, List.of())
                 : new Evaluation(true, null, eligible);
+    }
+
+    /**
+     * Dịch vụ được định tuyến theo chuyên khoa/năng lực nên không bắt buộc phải
+     * lưu cứng một department_id. Cách phân giải này đồng nhất kiểm tra lịch đặt
+     * với cách TestRequestService chọn phòng thực hiện sau thanh toán.
+     */
+    private List<Department> resolveEligibleDepartments(MedicalService service) {
+        if (service.getDepartment() != null) {
+            Department configured = service.getDepartment();
+            if (service.getRequiredCapability() != null && configured.getCapabilities().stream().noneMatch(capability ->
+                    capability.getCapabilityId().equals(service.getRequiredCapability().getCapabilityId())
+                            && Boolean.TRUE.equals(capability.getActive()))) {
+                return List.of();
+            }
+            if (service.getRequiredSpecialization() != null && (configured.getSpecialization() == null
+                    || !configured.getSpecialization().getSpecializationId()
+                    .equals(service.getRequiredSpecialization().getSpecializationId()))) {
+                return List.of();
+            }
+            return List.of(configured);
+        }
+        if (service.getRequiredCapability() != null) {
+            return departmentRepository.findEligibleByCapability(
+                    service.getRequiredCapability().getCapabilityId()).stream()
+                    .filter(department -> department.getStatus() == DepartmentStatus.AVAILABLE)
+                    .toList();
+        }
+        if (service.getDepartmentType() == DepartmentType.EXAMINATION
+                && service.getRequiredSpecialization() != null) {
+            return departmentRepository.findEligibleExaminationRoomsBySpecialization(
+                    service.getRequiredSpecialization().getSpecializationId()).stream()
+                    .filter(department -> department.getStatus() == DepartmentStatus.AVAILABLE)
+                    .toList();
+        }
+        return List.of();
     }
 
     public ServiceCoverageResponse coverage(LocalDate date, UUID shiftId) {

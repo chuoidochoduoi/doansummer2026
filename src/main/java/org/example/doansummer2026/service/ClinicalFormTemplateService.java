@@ -3,6 +3,7 @@ package org.example.doansummer2026.service;
 import tools.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.dto.clinicalForm.*;
+import org.example.doansummer2026.enums.ClinicalFormContext;
 import org.example.doansummer2026.enums.ClinicalTemplateStatus;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
@@ -20,6 +21,10 @@ import java.util.*;
 @RequiredArgsConstructor
 public class ClinicalFormTemplateService {
     private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final Set<ClinicalFormContext> RESULT_CONTEXTS = EnumSet.of(
+            ClinicalFormContext.LAB_RESULT,
+            ClinicalFormContext.IMAGING_RESULT,
+            ClinicalFormContext.ECG_RESULT);
     private static final Set<String> SYSTEM_LAB_TEMPLATES = Set.of(
             "LAB_CBC", "LAB_GLUCOSE", "LAB_BIOCHEM", "LAB_LIVER",
             "LAB_KIDNEY", "LAB_URINALYSIS", "LAB_CRP", "LAB_RAPID_INFECTIOUS");
@@ -33,12 +38,15 @@ public class ClinicalFormTemplateService {
 
     @Transactional(readOnly = true)
     public List<ClinicalFormTemplateResponse> list() {
-        return templateRepo.findAll().stream().map(t -> response(t,
+        return templateRepo.findAll().stream()
+                .filter(t -> RESULT_CONTEXTS.contains(t.getContext()))
+                .map(t -> response(t,
                 versionRepo.findFirstByTemplate_TemplateIdOrderByVersionNoDesc(t.getTemplateId()).orElse(null))).toList();
     }
 
     @Transactional
     public ClinicalFormTemplateResponse create(ClinicalFormTemplateRequest req) {
+        ensureResultContext(req.context());
         engine.validateSchema(req.schemaJson());
         String code = req.code().trim().toUpperCase(Locale.ROOT);
         if (templateRepo.existsByCodeIgnoreCase(code)) throw new ConflictException("Mã template đã tồn tại: " + code);
@@ -54,6 +62,7 @@ public class ClinicalFormTemplateService {
     public ClinicalFormTemplateResponse saveDraft(UUID templateId, ClinicalFormDraftRequest req) {
         engine.validateSchema(req.schemaJson());
         ClinicalFormTemplate template = findTemplate(templateId);
+        ensureResultTemplate(template);
         ensureNotSystemLabTemplate(template);
         ClinicalFormTemplateVersion latest = versionRepo.findFirstByTemplate_TemplateIdOrderByVersionNoDesc(templateId).orElse(null);
         ClinicalFormTemplateVersion draft;
@@ -74,6 +83,7 @@ public class ClinicalFormTemplateService {
     @Transactional
     public ClinicalFormTemplateResponse publish(UUID templateId) {
         ClinicalFormTemplate template = findTemplate(templateId);
+        ensureResultTemplate(template);
         ensureNotSystemLabTemplate(template);
         ClinicalFormTemplateVersion draft = versionRepo.findFirstByTemplate_TemplateIdAndStatusOrderByVersionNoDesc(
                 templateId, ClinicalTemplateStatus.DRAFT).orElseThrow(() -> new ConflictException("Không có bản nháp để phát hành"));
@@ -98,6 +108,7 @@ public class ClinicalFormTemplateService {
     @Transactional
     public ClinicalFormTemplateResponse retire(UUID templateId) {
         ClinicalFormTemplate template = findTemplate(templateId);
+        ensureResultTemplate(template);
         ensureNotSystemLabTemplate(template);
         ClinicalFormTemplateVersion published = versionRepo.findFirstByTemplate_TemplateIdAndStatusOrderByVersionNoDesc(
                 templateId, ClinicalTemplateStatus.PUBLISHED).orElseThrow(() -> new ConflictException("Template chưa được phát hành"));
@@ -110,14 +121,15 @@ public class ClinicalFormTemplateService {
     @Transactional
     public ClinicalFormTemplateResponse bindServices(UUID templateId, ClinicalFormBindingRequest req) {
         ClinicalFormTemplate template = findTemplate(templateId);
+        ensureResultTemplate(template);
         ensureNotSystemLabTemplate(template);
         Set<UUID> uniqueIds = new LinkedHashSet<>(req.serviceIds());
         List<MedicalService> services = serviceRepo.findAllById(uniqueIds);
         if (services.size() != uniqueIds.size()) throw new ResourceNotFoundException("Có dịch vụ không tồn tại");
         for (MedicalService service : services) {
-            boolean examination = service.getDepartmentType() == org.example.doansummer2026.enums.DepartmentType.EXAMINATION;
-            if (examination != (template.getContext() == org.example.doansummer2026.enums.ClinicalFormContext.EXAMINATION))
-                throw new BadRequestException("Loại biểu mẫu không phù hợp với dịch vụ: " + service.getName());
+            if (service.getDepartmentType() == null || !service.getDepartmentType().isParaclinical())
+                throw new BadRequestException("Chỉ dịch vụ cận lâm sàng mới được liên kết biểu mẫu kết quả: "
+                        + service.getName());
         }
         bindingRepo.deleteByTemplate_TemplateId(templateId);
         bindingRepo.flush();
@@ -132,26 +144,42 @@ public class ClinicalFormTemplateService {
 
     @Transactional(readOnly = true)
     public ClinicalFormTemplateVersion resolveVersion(UUID serviceId, UUID requestedVersionId) {
+        MedicalService service = serviceRepo.findById(serviceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
+        if (service.getDepartmentType() == null || !service.getDepartmentType().isParaclinical())
+            throw new BadRequestException("Dịch vụ khám bệnh không sử dụng biểu mẫu động");
         if (requestedVersionId != null) {
             ClinicalFormTemplateVersion version = versionRepo.findById(requestedVersionId)
                     .orElseThrow(() -> new ResourceNotFoundException("Phiên bản form không tồn tại"));
             MedicalServiceFormTemplate binding = bindingRepo.findByService_ServiceId(serviceId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ chưa được cấu hình biểu mẫu chuyên khoa"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ chưa được cấu hình biểu mẫu kết quả"));
+            ensureResultTemplate(binding.getTemplate());
             if (!binding.getTemplate().getTemplateId().equals(version.getTemplate().getTemplateId()))
                 throw new BadRequestException("Phiên bản form không thuộc dịch vụ này");
             return version;
         }
         MedicalServiceFormTemplate binding = bindingRepo.findByService_ServiceId(serviceId)
-                .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ chưa được cấu hình biểu mẫu chuyên khoa"));
+                .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ chưa được cấu hình biểu mẫu kết quả"));
+        ensureResultTemplate(binding.getTemplate());
         return versionRepo.findFirstByTemplate_TemplateIdAndStatusAndEffectiveFromLessThanEqualOrderByVersionNoDesc(
                 binding.getTemplate().getTemplateId(), ClinicalTemplateStatus.PUBLISHED, LocalDate.now(CLINIC_ZONE))
                 .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ chưa có phiên bản form đang áp dụng"));
     }
 
     public ResolvedClinicalFormResponse resolvedResponse(ClinicalFormTemplateVersion version, JsonNode values) {
+        return resolvedResponse(version, values, null);
+    }
+
+    public ResolvedClinicalFormResponse resolvedResponse(ClinicalFormTemplateVersion version, JsonNode values,
+                                                         String serviceCode) {
         ClinicalFormTemplate t = version.getTemplate();
         return new ResolvedClinicalFormResponse(t.getTemplateId(), version.getVersionId(), version.getVersionNo(),
-                t.getCode(), t.getName(), t.getContext(), version.getSchemaJson(), values);
+                t.getCode(), t.getName(), t.getContext(),
+                LaboratoryAnalyteCatalog.schemaForService(serviceCode, version.getSchemaJson()), values);
+    }
+
+    public JsonNode schemaForService(String serviceCode, ClinicalFormTemplateVersion version) {
+        return LaboratoryAnalyteCatalog.schemaForService(serviceCode, version.getSchemaJson());
     }
 
     @org.springframework.scheduling.annotation.Scheduled(cron = "0 10 0 * * *", zone = "Asia/Ho_Chi_Minh")
@@ -182,6 +210,16 @@ public class ClinicalFormTemplateService {
     private void ensureNotSystemLabTemplate(ClinicalFormTemplate template) {
         if (template != null && SYSTEM_LAB_TEMPLATES.contains(template.getCode()))
             throw new ConflictException("Biểu mẫu xét nghiệm hệ thống chỉ được cập nhật bằng phiên bản ứng dụng đã kiểm soát");
+    }
+
+    private void ensureResultContext(ClinicalFormContext context) {
+        if (!RESULT_CONTEXTS.contains(context))
+            throw new BadRequestException("Biểu mẫu khám chuyên khoa đã ngừng sử dụng; chỉ được cấu hình biểu mẫu kết quả cận lâm sàng");
+    }
+
+    private void ensureResultTemplate(ClinicalFormTemplate template) {
+        if (template == null || !RESULT_CONTEXTS.contains(template.getContext()))
+            throw new BadRequestException("Biểu mẫu khám chuyên khoa đã ngừng sử dụng");
     }
 
     private StaffInfo currentStaff() {

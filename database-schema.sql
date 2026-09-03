@@ -76,43 +76,6 @@ CREATE TABLE public.appointment_services (
 
 
 --
--- Name: attendance_adjustment; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.attendance_adjustment (
-    adjustment_id uuid NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
-    deleted boolean NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL,
-    reason character varying(1000) NOT NULL,
-    requested_check_in timestamp(6) without time zone,
-    requested_check_out timestamp(6) without time zone,
-    review_note character varying(1000),
-    reviewed_at timestamp(6) without time zone,
-    status character varying(20) NOT NULL,
-    attendance_id uuid NOT NULL,
-    reviewed_by uuid,
-    CONSTRAINT attendance_adjustment_status_check CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'APPROVED'::character varying, 'REJECTED'::character varying])::text[])))
-);
-
-
---
--- Name: attendance_qr_token; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.attendance_qr_token (
-    token_id uuid NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
-    deleted boolean NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL,
-    active boolean NOT NULL,
-    expires_at timestamp(6) without time zone NOT NULL,
-    token_hash character varying(64) NOT NULL,
-    created_by uuid NOT NULL
-);
-
-
---
 -- Name: audit_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -635,27 +598,6 @@ CREATE TABLE public.specialization (
 
 
 --
--- Name: staff_attendance; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.staff_attendance (
-    attendance_id uuid NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
-    deleted boolean NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL,
-    check_in_at timestamp(6) without time zone,
-    check_in_ip character varying(64),
-    check_out_at timestamp(6) without time zone,
-    check_out_ip character varying(64),
-    device_info character varying(500),
-    status character varying(30) NOT NULL,
-    schedule_id uuid NOT NULL,
-    staff_id uuid NOT NULL,
-    CONSTRAINT staff_attendance_status_check CHECK (((status)::text = ANY ((ARRAY['ON_TIME'::character varying, 'LATE'::character varying, 'WORKING'::character varying, 'COMPLETED'::character varying, 'LEFT_EARLY'::character varying, 'ABSENT'::character varying, 'MISSING_CHECKOUT'::character varying, 'ADJUSTMENT_PENDING'::character varying])::text[])))
-);
-
-
---
 -- Name: staff_capability; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -827,22 +769,6 @@ ALTER TABLE ONLY public.appointment
 
 ALTER TABLE ONLY public.appointment_services
     ADD CONSTRAINT appointment_services_pkey PRIMARY KEY (appointment_id, service_id);
-
-
---
--- Name: attendance_adjustment attendance_adjustment_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.attendance_adjustment
-    ADD CONSTRAINT attendance_adjustment_pkey PRIMARY KEY (adjustment_id);
-
-
---
--- Name: attendance_qr_token attendance_qr_token_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.attendance_qr_token
-    ADD CONSTRAINT attendance_qr_token_pkey PRIMARY KEY (token_id);
 
 
 --
@@ -1049,14 +975,6 @@ ALTER TABLE ONLY public.specialization
 
 
 --
--- Name: staff_attendance staff_attendance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.staff_attendance
-    ADD CONSTRAINT staff_attendance_pkey PRIMARY KEY (attendance_id);
-
-
---
 -- Name: staff_capability staff_capability_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1145,14 +1063,6 @@ ALTER TABLE ONLY public.service_capability
 
 
 --
--- Name: attendance_qr_token uk6dt5o9qgesj6siqgaq73gum3r; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.attendance_qr_token
-    ADD CONSTRAINT uk6dt5o9qgesj6siqgaq73gum3r UNIQUE (token_hash);
-
-
---
 -- Name: profile uk7qvxqcla2uuov4rederes3mbu; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1174,14 +1084,6 @@ ALTER TABLE ONLY public.profile
 
 ALTER TABLE ONLY public.profile
     ADD CONSTRAINT uk9d5dpsf2ufa6rjbi3y0elkdcd UNIQUE (email);
-
-
---
--- Name: staff_attendance uk_attendance_schedule; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.staff_attendance
-    ADD CONSTRAINT uk_attendance_schedule UNIQUE (schedule_id);
 
 
 --
@@ -1539,14 +1441,6 @@ ALTER TABLE ONLY public.test_result
 
 
 --
--- Name: attendance_adjustment fk746xm0v5gykh2umdbew2ibcyk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.attendance_adjustment
-    ADD CONSTRAINT fk746xm0v5gykh2umdbew2ibcyk FOREIGN KEY (attendance_id) REFERENCES public.staff_attendance(attendance_id);
-
-
---
 -- Name: payment_transaction fk7okdbd50ppclniwq0iimt98px; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1664,14 +1558,6 @@ ALTER TABLE ONLY public.medical_service
 
 ALTER TABLE ONLY public.staff_schedule
     ADD CONSTRAINT fkd87u3pwst06bor2nb808x8w0l FOREIGN KEY (shift_id) REFERENCES public.shift_config(shift_id);
-
-
---
--- Name: attendance_adjustment fkdk4d70iuu63umaaudpbgy4sdy; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.attendance_adjustment
-    ADD CONSTRAINT fkdk4d70iuu63umaaudpbgy4sdy FOREIGN KEY (reviewed_by) REFERENCES public.staff_info(staff_id);
 
 
 --
@@ -1843,14 +1729,6 @@ ALTER TABLE ONLY public.staff_capability
 
 
 --
--- Name: attendance_qr_token fknudwb480a0rprn9b4jpp7i31j; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.attendance_qr_token
-    ADD CONSTRAINT fknudwb480a0rprn9b4jpp7i31j FOREIGN KEY (created_by) REFERENCES public.staff_info(staff_id);
-
-
---
 -- Name: vital_signs fkoo271kblgxr02vcah5f4y1y4d; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1907,27 +1785,11 @@ ALTER TABLE ONLY public.queue_ticket
 
 
 --
--- Name: staff_attendance fkq9vywcl1oatrmwprrrtf5n5vt; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.staff_attendance
-    ADD CONSTRAINT fkq9vywcl1oatrmwprrrtf5n5vt FOREIGN KEY (staff_id) REFERENCES public.staff_info(staff_id);
-
-
---
 -- Name: medical_service fks4e4uk27e8p9tccun9uh7x6n0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.medical_service
     ADD CONSTRAINT fks4e4uk27e8p9tccun9uh7x6n0 FOREIGN KEY (required_specialization_id) REFERENCES public.specialization(specialization_id);
-
-
---
--- Name: staff_attendance fks8anvc6qbch3g8vhuwrvu9qj4; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.staff_attendance
-    ADD CONSTRAINT fks8anvc6qbch3g8vhuwrvu9qj4 FOREIGN KEY (schedule_id) REFERENCES public.staff_schedule(schedule_id);
 
 
 --

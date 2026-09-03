@@ -16,11 +16,20 @@ public record CustomerAppointmentDetailResponse(
         String queueNumber,
         String reason,
         String symptoms,
-        List<ServiceCostInfo> services
+        List<ServiceCostInfo> services,
+        UUID patientProfileId,
+        String patientCode,
+        String patientName,
+        boolean isSelf,
+        String relationship
 ) {
     public record ServiceCostInfo(UUID id, String name, java.math.BigDecimal cost) {}
 
     public static CustomerAppointmentDetailResponse from(Appointment a) {
+        return from(a, a.getCustomer() == null ? null : a.getCustomer().getProfileId(), null);
+    }
+
+    public static CustomerAppointmentDetailResponse from(Appointment a, UUID ownerProfileId, String relationship) {
         String code = "APPT-" + a.getAppointmentId().toString().substring(0, 8).toUpperCase();
         
         DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -63,9 +72,14 @@ public record CustomerAppointmentDetailResponse(
                 date,
                 timeSlotStr,
                 queueNum,
+                a.getCancelReason(),
                 null,
-                null,
-                serviceCosts
+                serviceCosts,
+                a.getCustomer() == null ? null : a.getCustomer().getProfileId(),
+                a.getCustomer() == null ? null : a.getCustomer().getPatientCode(),
+                a.getCustomer() == null ? a.getGuestFullName() : a.getCustomer().getFullName(),
+                a.getCustomer() != null && a.getCustomer().getProfileId().equals(ownerProfileId),
+                relationship
         );
     }
 }

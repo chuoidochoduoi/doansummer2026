@@ -5,11 +5,14 @@ import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest;
+import org.example.doansummer2026.dto.queueTicket.ExaminationTransitionResponse;
 import org.example.doansummer2026.dto.queueTicket.QueueTicketResponse;
+import org.example.doansummer2026.dto.queueTicket.SameRoomExaminationChainResponse;
 import org.example.doansummer2026.dto.queueTicket.QueueTicketUpdateRequest;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
 import org.example.doansummer2026.enums.QueueStatus;
+import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.service.QueueTicketService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -92,6 +95,22 @@ public class QueueTicketController {
         return RestResponses.ok(service.completeAndReturnRecord(id, req));
     }
 
+    @PostMapping("/api/v1/queue-tickets/{id}/complete-transition")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
+    @Auditable(action = AuditAction.RECORD_COMPLETED, entityName = "QueueTicket", idParamName = "id",
+            description = "Hoàn thành bệnh án và tiếp tục dịch vụ kế tiếp trong cùng phòng")
+    public ResponseEntity<ExaminationTransitionResponse> completeTransition(
+            @PathVariable UUID id,
+            @RequestBody(required = false) MedicalRecordUpdateRequest req) {
+        return RestResponses.ok(service.completeAndTransition(id, req));
+    }
+
+    @GetMapping("/api/v1/queue-tickets/{id}/same-room-chain")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<SameRoomExaminationChainResponse> sameRoomChain(@PathVariable UUID id) {
+        return RestResponses.ok(service.sameRoomChain(id));
+    }
+
     @PostMapping("/api/v1/queue-tickets/{id}/finish-service")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket", idParamName = "id", description = "Hoàn thành thao tác tại phòng cận lâm sàng")
@@ -127,7 +146,7 @@ public class QueueTicketController {
      * - Phòng trống là trạng thái bình thường, trả về 204 thay vì 404.
      */
     @GetMapping("/api/v1/queue-tickets/in-progress/{departmentId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<QueueTicketResponse> getInprogress(@PathVariable UUID departmentId) {
         QueueTicketResponse result = service.getInprogressByDepartment(departmentId);
         if (result == null) {
@@ -154,7 +173,7 @@ public class QueueTicketController {
      * Co the filter theo ngay va status (neu status null lay ca 4 status tren).
      */
     @GetMapping("/api/v1/queue-tickets/waiting/{departmentId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<QueueTicketResponse>> getWaiting(
             @PathVariable UUID departmentId,
             @RequestParam(required = false) LocalDate workDate,
@@ -215,7 +234,9 @@ public class QueueTicketController {
         if (status != null && !"all".equals(status)) {
             try {
                 queueStatus = QueueStatus.valueOf(status);
-            } catch (IllegalArgumentException ignored) {}
+            } catch (IllegalArgumentException ignored) {
+                throw new BadRequestException("Trạng thái hàng chờ không hợp lệ: " + status);
+            }
         }
         // For now, ignore search/sort - can be enhanced later
         return RestResponses.ok(service.search(departmentId, null, queueStatus, pageable));

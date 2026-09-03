@@ -29,9 +29,16 @@ public record AppointmentResponse(
         List<ServiceInfo> services,
         String shiftName,
         String shiftTime,
-        UUID shiftVersionId
+        UUID shiftVersionId,
+        String contactManagerName,
+        String contactManagerPhone,
+        String contactManagerEmail
 ) {
     public static AppointmentResponse from(Appointment a) {
+        return from(a, a.getCustomer());
+    }
+
+    public static AppointmentResponse from(Appointment a, org.example.doansummer2026.model.Profile contactProfile) {
         // Copy thong tin tu profile sang guest fields khi co customer
         String guestFullName = a.getGuestFullName();
         String guestPhone = a.getGuestPhone();
@@ -66,7 +73,10 @@ public record AppointmentResponse(
                 a.getIsGuest(), guestFullName, guestPhone, guestEmail, guestAddress,
                 guestAge, a.getCustomer() != null ? a.getCustomer().getDateOfBirth() : null,
                 guestGender, serviceInfos, a.getShiftName(), a.getShiftTime(),
-                a.getShiftVersion() == null ? null : a.getShiftVersion().getShiftVersionId()
+                a.getShiftVersion() == null ? null : a.getShiftVersion().getShiftVersionId(),
+                contactProfile == null ? guestFullName : contactProfile.getFullName(),
+                contactProfile == null ? guestPhone : contactProfile.getPhone(),
+                contactProfile == null ? guestEmail : contactProfile.getEmail()
         );
     }
 }

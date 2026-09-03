@@ -5,6 +5,10 @@ import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.dto.journey.PatientJourneyResponse;
 import org.example.doansummer2026.service.PatientJourneyService;
+import org.example.doansummer2026.service.QueueReturnRequestService;
+import org.example.doansummer2026.dto.journey.GuestQueueReturnRequest;
+import org.example.doansummer2026.dto.journey.QueueReturnRequestResponse;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -17,12 +21,15 @@ import org.example.doansummer2026.enums.AuditAction;
 public class PatientJourneyController {
     private final PatientJourneyService service;
     private final org.example.doansummer2026.service.AuthService authService;
+    private final org.example.doansummer2026.service.FamilyAccessService familyAccessService;
+    private final QueueReturnRequestService queueReturnRequestService;
     @GetMapping("/api/v1/patient-journeys")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER','ROLE_ADMIN','ROLE_DOCTOR','ROLE_NURSE')")
     public ResponseEntity<PageResponse<PatientJourneyResponse>> list(@RequestParam(required=false) String search,
                                                                        @RequestParam(required=false) String status,
+                                                                       @RequestParam(required=false) String scope,
                                                                        Pageable pageable) {
-        return RestResponses.ok(service.list(search, status, pageable));
+        return RestResponses.ok(service.list(search, status, scope, pageable));
     }
     @GetMapping("/api/v1/patient-journeys/{visitId}")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER','ROLE_ADMIN','ROLE_DOCTOR','ROLE_NURSE')")
@@ -36,13 +43,57 @@ public class PatientJourneyController {
     }
     @GetMapping("/api/patient/my-journeys")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
-    public ResponseEntity<List<PatientJourneyResponse>> mine() {
-        return RestResponses.ok(service.listForCustomer(authService.currentProfileId()));
+    public ResponseEntity<List<PatientJourneyResponse>> mine(
+            @RequestParam(required = false) UUID patientProfileId,
+            @RequestParam(defaultValue = "false") boolean includeFamily) {
+        UUID accountId = authService.currentAccount().getAccountId();
+        if (patientProfileId != null) {
+            UUID profileId = familyAccessService.resolveReadableProfile(accountId, patientProfileId).getProfileId();
+            return RestResponses.ok(service.listForCustomer(profileId));
+        }
+        if (includeFamily) {
+            List<PatientJourneyResponse> all = familyAccessService.readableProfiles(accountId, true).stream()
+                    .flatMap(profile -> service.listForCustomer(profile.getProfileId()).stream())
+                    .toList();
+            return RestResponses.ok(all);
+        }
+        return RestResponses.ok(service.listForCustomer(familyAccessService.ownerProfile(accountId).getProfileId()));
+    }
+
+    @GetMapping("/api/patient/my-journeys/{visitId}/queue")
+    @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
+    public ResponseEntity<org.example.doansummer2026.dto.journey.PatientQueueResponse> myQueue(@PathVariable UUID visitId) {
+        UUID accountId = authService.currentAccount().getAccountId();
+        var readableIds = familyAccessService.readableProfiles(accountId, true).stream()
+                .map(org.example.doansummer2026.model.Profile::getProfileId).toList();
+        return RestResponses.ok(service.queueForCustomer(visitId, readableIds));
+    }
+
+    @PostMapping("/api/patient/my-journeys/{visitId}/return-request")
+    @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
+    public ResponseEntity<QueueReturnRequestResponse> requestReturn(@PathVariable UUID visitId) {
+        return RestResponses.ok(queueReturnRequestService.requestForCustomer(
+                authService.currentAccount().getAccountId(), visitId));
     }
 
     @GetMapping("/api/public/patient-journeys/lookup")
     public ResponseEntity<PatientJourneyResponse> lookupGuest(@RequestParam String visitCode,
                                                                @RequestParam String phone) {
-        return RestResponses.ok(service.lookupGuest(visitCode, phone));
+        return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+                .body(service.lookupGuest(visitCode, phone));
+    }
+
+    @GetMapping("/api/public/patient-journeys/lookup/queue")
+    public ResponseEntity<org.example.doansummer2026.dto.journey.PatientQueueResponse> lookupGuestQueue(
+            @RequestParam String visitCode, @RequestParam String phone) {
+        return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+                .body(service.lookupGuestQueue(visitCode, phone));
+    }
+
+    @PostMapping("/api/public/patient-journeys/return-request")
+    public ResponseEntity<QueueReturnRequestResponse> requestGuestReturn(
+            @Valid @RequestBody GuestQueueReturnRequest request) {
+        return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+                .body(queueReturnRequestService.requestForGuest(request.visitCode(), request.phone()));
     }
 }

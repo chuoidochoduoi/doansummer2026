@@ -1,7 +1,6 @@
 package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
-import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.config.SmsProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpEntity;

@@ -58,10 +58,48 @@ public class TestRequestController {
         return RestResponses.ok(service.search(recordId, departmentId, status, search, workDate, pageable));
     }
 
-    @GetMapping("/{id}")
+    /** Group billable analytes into one laboratory workbench per parent panel. */
+    @GetMapping("/panels")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    public ResponseEntity<PageResponse<org.example.doansummer2026.dto.testRequest.LabPanelSummaryResponse>> panels(
+            @RequestParam(required = false) UUID recordId,
+            @RequestParam(required = false) UUID departmentId,
+            @RequestParam(required = false) TestRequestStatus status,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate workDate,
+            Pageable pageable) {
+        return RestResponses.ok(service.searchPanels(recordId, departmentId, status, search, workDate, pageable));
+    }
+
+    // Keep the UUID detail endpoint from swallowing literal sub-resources
+    // such as /panels when Spring resolves request mappings.
+    @GetMapping("/{id:[0-9a-fA-F-]+}")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
     public ResponseEntity<TestRequestResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
+    }
+
+    @GetMapping("/{id}/panel-workbench")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    public ResponseEntity<org.example.doansummer2026.dto.testRequest.LabPanelWorkbenchResponse> panelWorkbench(
+            @PathVariable UUID id) {
+        return RestResponses.ok(service.getPanelWorkbench(id));
+    }
+
+    @PutMapping("/{id}/panel-workbench/result")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
+    public ResponseEntity<org.example.doansummer2026.dto.testRequest.LabPanelWorkbenchResponse> savePanelResult(
+            @PathVariable UUID id,
+            @Valid @RequestBody org.example.doansummer2026.dto.testRequest.LabPanelResultRequest req) {
+        return RestResponses.ok(service.savePanelResult(id, req, false));
+    }
+
+    @PostMapping("/{id}/panel-workbench/complete")
+    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
+    public ResponseEntity<org.example.doansummer2026.dto.testRequest.LabPanelWorkbenchResponse> completePanelResult(
+            @PathVariable UUID id,
+            @Valid @RequestBody org.example.doansummer2026.dto.testRequest.LabPanelResultRequest req) {
+        return RestResponses.ok(service.savePanelResult(id, req, true));
     }
 
     @GetMapping("/{id}/action-permissions")

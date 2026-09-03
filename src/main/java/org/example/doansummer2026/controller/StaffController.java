@@ -50,6 +50,12 @@ public class StaffController {
     private final ShiftConfigRepository shiftConfigRepo;
     private final AuthService authService;
 
+    /** Danh sách bác sĩ đang hoạt động dùng cho các trang công khai. */
+    @GetMapping("/public/doctors")
+    public ResponseEntity<List<StaffOptionResponse>> getPublicDoctors() {
+        return RestResponses.ok(staffService.getPublicActiveDoctors());
+    }
+
     @GetMapping("/clinic-manager")
     @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
     public ResponseEntity<PageResponse<ClinicManagerStaffResponse>> searchForClinicManager(

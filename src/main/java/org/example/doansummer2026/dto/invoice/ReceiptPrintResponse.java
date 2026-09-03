@@ -1,8 +1,8 @@
 package org.example.doansummer2026.dto.invoice;
 
 import org.example.doansummer2026.enums.PaymentMethod;
-import org.example.doansummer2026.enums.TransactionStatus;
 import org.example.doansummer2026.model.Invoice;
+import org.example.doansummer2026.model.MembershipCardLedger;
 import org.example.doansummer2026.model.Transaction;
 
 import java.math.BigDecimal;
@@ -25,6 +25,11 @@ public record ReceiptPrintResponse(
         String gender,
         String bhytCode,
         String paymentMethod,
+        String paymentTransactionCode,
+        String membershipCardCodeMasked,
+        BigDecimal membershipBenefitPercent,
+        BigDecimal membershipBenefitAmount,
+        BigDecimal patientPayableBeforeMembership,
         String cashierName,
         BigDecimal subtotal,
         BigDecimal bhytAmount,
@@ -36,6 +41,10 @@ public record ReceiptPrintResponse(
         List<InvoiceItemResponse> items
 ) {
     public static ReceiptPrintResponse from(Invoice invoice, Transaction payment) {
+        return from(invoice, payment, null);
+    }
+
+    public static ReceiptPrintResponse from(Invoice invoice, Transaction payment, MembershipCardLedger membershipLedger) {
         var patient = invoice.getCustomer();
         String gender = patient == null || patient.getGender() == null ? null : switch (patient.getGender()) {
             case MALE -> "Nam";
@@ -51,6 +60,15 @@ public record ReceiptPrintResponse(
         BigDecimal bhytAmount = invoice.getItems().stream()
                 .map(item -> item.getBhytFund() != null ? item.getBhytFund() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal membershipBenefit = membershipLedger != null && membershipLedger.getBenefitDiscount() != null
+                ? membershipLedger.getBenefitDiscount() : BigDecimal.ZERO;
+        BigDecimal benefitBasis = membershipLedger == null ? BigDecimal.ZERO
+                : membershipLedger.getAmount().add(membershipBenefit);
+        BigDecimal membershipPercent = membershipBenefit.signum() > 0 && benefitBasis.signum() > 0
+                ? membershipBenefit.multiply(new BigDecimal("100"))
+                    .divide(benefitBasis, 2, java.math.RoundingMode.HALF_UP)
+                : null;
+        String maskedCardCode = membershipLedger == null ? null : maskCardCode(membershipLedger.getCard().getCardCode());
 
         return new ReceiptPrintResponse(
                 invoice.getInvoiceId(),
@@ -66,11 +84,23 @@ public record ReceiptPrintResponse(
                 gender,
                 patient != null ? patient.getInsuranceId() : null,
                 paymentMethodLabel(method),
+                payment != null ? payment.getTransactionCode() : null,
+                maskedCardCode,
+                membershipPercent,
+                membershipBenefit,
+                totalAmount.add(membershipBenefit),
                 cashierName,
                 invoice.getSubtotal(), bhytAmount, invoice.getTax(), totalAmount, paidAmount,
                 totalAmount.subtract(paidAmount), invoice.getNote(),
                 invoice.getItems().stream().map(InvoiceItemResponse::from).toList()
         );
+    }
+
+    private static String maskCardCode(String code) {
+        if (code == null || code.isBlank()) return null;
+        String normalized = code.trim().toUpperCase(java.util.Locale.ROOT);
+        String suffix = normalized.length() <= 4 ? normalized : normalized.substring(normalized.length() - 4);
+        return "CS-••••-" + suffix;
     }
 
     private static String paymentMethodLabel(PaymentMethod method) {
@@ -83,6 +113,7 @@ public record ReceiptPrintResponse(
             case VNPAY -> "VNPay";
             case ZALOPAY -> "ZaloPay";
             case INSURANCE -> "Bao hiem";
+            case MEMBERSHIP_CARD -> "The tra truoc CareS";
             case OTHER -> "Khac";
         };
     }

@@ -220,10 +220,14 @@ class MedicalRecordServiceTest {
         when(req.chiefComplaint()).thenReturn("Dau bung");
         when(req.diagnosis()).thenReturn("Viem da day");
         when(medicalRecordRepository.findById(id)).thenReturn(Optional.of(r));
-        when(medicalRecordRepository.save(r)).thenReturn(r);
+        when(medicalRecordRepository.saveAndFlush(r)).thenAnswer(invocation -> {
+            r.setVersion(r.getVersion() + 1);
+            return r;
+        });
         asAdminForUpdate();
         var result = medicalRecordService.update(id, req);
         assertNotNull(result);
+        assertEquals(1L, result.version());
         assertEquals("Dau bung", r.getChiefComplaint());
         assertEquals("Viem da day", r.getDiagnosis());
     }
@@ -237,7 +241,7 @@ class MedicalRecordServiceTest {
         when(req.bloodPressure()).thenReturn("130/90");
         when(req.heartRate()).thenReturn(90);
         when(medicalRecordRepository.findById(id)).thenReturn(Optional.of(r));
-        when(medicalRecordRepository.save(r)).thenReturn(r);
+        when(medicalRecordRepository.saveAndFlush(r)).thenReturn(r);
         asAdminForUpdate();
         medicalRecordService.update(id, req);
         assertNotNull(r.getVitalSigns());
@@ -255,7 +259,7 @@ class MedicalRecordServiceTest {
         when(req.version()).thenReturn(r.getVersion());
         when(req.icdSelections()).thenReturn(List.of(icd));
         when(medicalRecordRepository.findById(id)).thenReturn(Optional.of(r));
-        when(medicalRecordRepository.save(r)).thenReturn(r);
+        when(medicalRecordRepository.saveAndFlush(r)).thenReturn(r);
         asAdminForUpdate();
         medicalRecordService.update(id, req);
         assertEquals(1, r.getIcdSelections().size());
@@ -276,7 +280,7 @@ class MedicalRecordServiceTest {
         when(req.icdSelections()).thenReturn(List.of(icd));
         when(icd10CodeRepository.findById("J02.9")).thenReturn(Optional.of(code));
         when(medicalRecordRepository.findById(id)).thenReturn(Optional.of(r));
-        when(medicalRecordRepository.save(r)).thenReturn(r);
+        when(medicalRecordRepository.saveAndFlush(r)).thenReturn(r);
         asAdminForUpdate();
         medicalRecordService.update(id, req);
         assertEquals("Viem hong cap", r.getIcdSelections().iterator().next().getCodeName());
@@ -293,7 +297,7 @@ class MedicalRecordServiceTest {
         when(req.version()).thenReturn(r.getVersion());
         when(req.diagnosis()).thenReturn("Viem phe quan");
         when(medicalRecordRepository.findById(id)).thenReturn(Optional.of(r));
-        when(medicalRecordRepository.save(r)).thenReturn(r);
+        when(medicalRecordRepository.saveAndFlush(r)).thenReturn(r);
         asDoctor(doctor);
         var result = medicalRecordService.saveDraft(id, req);
         assertNotNull(result);
@@ -343,7 +347,7 @@ class MedicalRecordServiceTest {
         when(req.version()).thenReturn(r.getVersion());
         when(req.chiefComplaint()).thenReturn("Met moi");
         when(medicalRecordRepository.findById(id)).thenReturn(Optional.of(r));
-        when(medicalRecordRepository.save(r)).thenReturn(r);
+        when(medicalRecordRepository.saveAndFlush(r)).thenReturn(r);
         asNurse(nurse, nurseId);
         var result = medicalRecordService.saveDraft(id, req);
         assertNotNull(result);
@@ -468,6 +472,74 @@ class MedicalRecordServiceTest {
                 () -> medicalRecordService.validateVitalSignsForCompletion(r));
 
         assertTrue(error.getMessage().contains("ít nhất 10 mmHg"));
+    }
+
+    @Test
+    void inheritFirstVisitVitalSigns_ShouldCloneEarliestCompletedExaminationVitals() {
+        UUID visitId = UUID.randomUUID();
+        CustomerVisit visit = CustomerVisit.builder().visitId(visitId).build();
+        StaffInfo recorder = StaffInfo.builder().staffId(UUID.randomUUID()).build();
+        Department examinationRoom = Department.builder()
+                .departmentId(UUID.randomUUID())
+                .departmentType(DepartmentType.EXAMINATION)
+                .build();
+
+        MedicalRecord source = record(UUID.randomUUID());
+        source.setVisit(visit);
+        source.setStatus(MedicalRecordStatus.COMPLETED);
+        source.setQueueTicket(QueueTicket.builder().department(examinationRoom).build());
+        VitalSigns sourceVitals = validVitalSigns(source);
+        LocalDateTime measuredAt = LocalDateTime.of(2026, 9, 3, 8, 15);
+        sourceVitals.setRecordedAt(measuredAt);
+        sourceVitals.setRecordedBy(recorder);
+        source.setVitalSigns(sourceVitals);
+
+        MedicalRecord laterCompleted = record(UUID.randomUUID());
+        laterCompleted.setVisit(visit);
+        laterCompleted.setStatus(MedicalRecordStatus.COMPLETED);
+        laterCompleted.setQueueTicket(QueueTicket.builder().department(examinationRoom).build());
+        VitalSigns laterVitals = validVitalSigns(laterCompleted);
+        laterVitals.setWeight(new BigDecimal("72.5"));
+        laterCompleted.setVitalSigns(laterVitals);
+
+        MedicalRecord target = record(UUID.randomUUID());
+        target.setVisit(visit);
+        target.setQueueTicket(QueueTicket.builder().department(examinationRoom).build());
+        when(medicalRecordRepository.findAllByVisit_VisitIdOrderByCreatedAtAsc(visitId))
+                .thenReturn(List.of(source, laterCompleted, target));
+        when(medicalRecordRepository.save(target)).thenReturn(target);
+
+        MedicalRecord result = medicalRecordService.inheritFirstVisitVitalSigns(target);
+
+        assertSame(target, result);
+        assertNotNull(target.getVitalSigns());
+        assertNotSame(sourceVitals, target.getVitalSigns());
+        assertSame(target, target.getVitalSigns().getMedicalRecord());
+        assertEquals(sourceVitals.getBloodPressure(), target.getVitalSigns().getBloodPressure());
+        assertEquals(sourceVitals.getHeartRate(), target.getVitalSigns().getHeartRate());
+        assertEquals(sourceVitals.getTemperature(), target.getVitalSigns().getTemperature());
+        assertEquals(sourceVitals.getHeight(), target.getVitalSigns().getHeight());
+        assertEquals(sourceVitals.getWeight(), target.getVitalSigns().getWeight());
+        assertEquals(measuredAt, target.getVitalSigns().getRecordedAt());
+        assertSame(recorder, target.getVitalSigns().getRecordedBy());
+        verify(medicalRecordRepository).save(target);
+    }
+
+    @Test
+    void inheritFirstVisitVitalSigns_ShouldNeverOverwriteExistingVitals() {
+        CustomerVisit visit = CustomerVisit.builder().visitId(UUID.randomUUID()).build();
+        MedicalRecord target = record(UUID.randomUUID());
+        target.setVisit(visit);
+        VitalSigns existing = validVitalSigns(target);
+        existing.setWeight(new BigDecimal("72.5"));
+        target.setVitalSigns(existing);
+
+        MedicalRecord result = medicalRecordService.inheritFirstVisitVitalSigns(target);
+
+        assertSame(target, result);
+        assertSame(existing, target.getVitalSigns());
+        assertEquals(new BigDecimal("72.5"), target.getVitalSigns().getWeight());
+        verifyNoInteractions(medicalRecordRepository);
     }
 
     @Test

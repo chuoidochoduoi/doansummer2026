@@ -82,6 +82,44 @@ class AppointmentServiceTest {
     // HELPERS
     // =========================================================
 
+    @Test
+    void checkIn_WithoutOptionalContact_CreatesSeparateGuestProfile() {
+        UUID appointmentId = UUID.randomUUID();
+        UUID staffId = UUID.randomUUID();
+        UUID profileId = UUID.randomUUID();
+        Appointment guest = appointmentForToday(appointmentId, AppointmentStatus.PENDING, null);
+        guest.setIsGuest(true);
+        guest.setGuestFullName("Nguyễn Văn An");
+        guest.setServices(Set.of(service(UUID.randomUUID(), "Xét nghiệm")));
+        when(repo.findByIdForUpdate(appointmentId)).thenReturn(Optional.of(guest));
+        when(staffRepo.findById(staffId)).thenReturn(Optional.of(mock(StaffInfo.class)));
+        when(profileRepo.save(any(Profile.class))).thenAnswer(invocation -> {
+            Profile created = invocation.getArgument(0);
+            assertEquals("Nguyễn Văn An", created.getFullName());
+            assertNull(created.getPhone());
+            assertNull(created.getEmail());
+            assertNull(created.getAddress());
+            assertEquals(Gender.MALE, created.getGender());
+            created.setProfileId(profileId);
+            return created;
+        });
+        // Stop at the row lock; this test concerns profile selection, not billing.
+        when(profileRepo.findByIdForUpdate(profileId)).thenReturn(Optional.empty());
+        AppointmentCheckInRequest request = new AppointmentCheckInRequest(
+                appointmentId, null, staffId, "Nguyễn Văn An", "", "", "",
+                clinicToday().minusYears(20), 20, Gender.MALE);
+
+        ResourceNotFoundException error = assertThrows(ResourceNotFoundException.class,
+                () -> appointmentService.checkIn(request));
+
+        assertEquals("Không tìm thấy hồ sơ bệnh nhân", error.getMessage());
+        verify(profileRepo).save(any(Profile.class));
+        verify(profileRepo, never()).findFirstByPhone(any());
+        verify(profileRepo, never()).findFirstByPhoneIn(any());
+        verify(profileRepo, never()).findFirstByEmailIgnoreCase(any());
+        verifyNoInteractions(invoiceService);
+    }
+
     private LocalDate clinicToday() {
         return LocalDate.now(CLINIC_ZONE);
     }

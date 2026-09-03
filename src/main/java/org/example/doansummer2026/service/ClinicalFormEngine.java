@@ -21,6 +21,8 @@ public class ClinicalFormEngine {
             "EGFR_CKD_EPI_2021_V1", "GA_CRL_ROBINSON_FLEMING_V1",
             "GA_HADLOCK_BPD_FL_V1", "EFW_HADLOCK_HC_AC_FL_V1",
             "NON_HDL_C_V1", "INDIRECT_BILIRUBIN_V1", "BUN_FROM_UREA_V1");
+    private static final Set<String> OMISSION_REASONS = Set.of(
+            "INSUFFICIENT_SAMPLE", "UNACCEPTABLE_SAMPLE", "EQUIPMENT_ERROR", "OTHER");
 
     private ObjectNode objectNode() { return JsonNodeFactory.instance.objectNode(); }
 
@@ -73,12 +75,16 @@ public class ClinicalFormEngine {
         if (!input.isObject()) throw new BadRequestException("Dữ liệu form phải là JSON object");
         ObjectNode output = ((ObjectNode) input).deepCopy();
         output.remove("_meta");
+        JsonNode rawOmissions = output.remove("_omissions");
 
         Map<String, JsonNode> definitions = new LinkedHashMap<>();
         for (JsonNode field : fields(schema)) definitions.put(field.get("key").asText(), field);
         output.propertyNames().forEach(key -> {
             if (!definitions.containsKey(key)) throw new BadRequestException("Trường không thuộc template: " + key);
         });
+
+        ObjectNode omissions = normalizeOmissions(rawOmissions, definitions);
+        omissions.propertyNames().forEach(output::remove);
 
         // Giá trị tự tính luôn do backend tạo lại.
         definitions.forEach((key, field) -> {
@@ -98,7 +104,8 @@ public class ClinicalFormEngine {
             boolean required = field.path("required").asBoolean(false)
                     || field.path("requiredOnSign").asBoolean(false)
                     || conditionalRequired;
-            if (requireComplete && required && isEmpty(value) && !field.hasNonNull("calculatorKey"))
+            if (requireComplete && required && isEmpty(value) && !omissions.has(key)
+                    && !field.hasNonNull("calculatorKey"))
                 throw new BadRequestException("Vui lòng nhập " + field.path("label").asText(key));
             if (!isEmpty(value)) validateValue(field, value);
         }
@@ -131,8 +138,39 @@ public class ClinicalFormEngine {
         meta.set("flags", flags);
         meta.set("calculations", calculations);
         meta.set("warnings", warnings);
+        meta.put("completionStatus", omissions.isEmpty() ? "COMPLETE" : "PARTIAL");
+        meta.put("omittedCount", omissions.size());
+        if (!omissions.isEmpty()) output.set("_omissions", omissions);
         output.set("_meta", meta);
         return output;
+    }
+
+    private ObjectNode normalizeOmissions(JsonNode raw,
+                                           Map<String, JsonNode> definitions) {
+        ObjectNode normalized = objectNode();
+        if (raw == null || raw.isNull()) return normalized;
+        if (!raw.isObject()) throw new BadRequestException("Danh sách chỉ số không thực hiện phải là JSON object");
+        raw.properties().forEach(entry -> {
+            String key = entry.getKey();
+            JsonNode field = definitions.get(key);
+            if (field == null) throw new BadRequestException("Chỉ số không thực hiện không thuộc template: " + key);
+            if (field.hasNonNull("calculatorKey"))
+                throw new BadRequestException("Không thể đánh dấu không thực hiện cho chỉ số tự tính: " + key);
+            JsonNode detail = entry.getValue();
+            if (detail == null || !detail.isObject())
+                throw new BadRequestException("Vui lòng chọn lý do không thực hiện cho " + field.path("label").asText(key));
+            String reasonCode = detail.path("reasonCode").asText("").trim().toUpperCase(Locale.ROOT);
+            if (!OMISSION_REASONS.contains(reasonCode))
+                throw new BadRequestException("Lý do không thực hiện không hợp lệ cho " + field.path("label").asText(key));
+            String reasonDetail = detail.path("reasonDetail").asText("").trim();
+            if ("OTHER".equals(reasonCode) && reasonDetail.isBlank())
+                throw new BadRequestException("Vui lòng nhập lý do khác cho " + field.path("label").asText(key));
+            ObjectNode item = objectNode();
+            item.put("reasonCode", reasonCode);
+            if (!reasonDetail.isBlank()) item.put("reasonDetail", reasonDetail);
+            normalized.set(key, item);
+        });
+        return normalized;
     }
 
     private void validateValue(JsonNode field, JsonNode value) {

@@ -8,6 +8,7 @@ import org.example.doansummer2026.enums.Gender;
 
 import java.math.BigDecimal;
 import java.util.UUID;
+import java.util.List;
 
 /**
  * Response cho API quan ly dich vu y te.
@@ -37,7 +38,8 @@ public record MedicalServiceResponse(
         UUID requiredSpecializationId,
         String requiredSpecializationName,
         UUID requiredCapabilityId,
-        String requiredCapabilityName
+        String requiredCapabilityName,
+        List<MedicalServiceRelationResponse> relations
 ) {
     public static MedicalServiceResponse from(MedicalService s) {
 
@@ -82,7 +84,15 @@ public record MedicalServiceResponse(
                 specId,
                 specName,
                 capabilityId,
-                capabilityName
+                capabilityName,
+                org.example.doansummer2026.service.MedicalServiceSelectionPolicyService
+                        .relationsFor(s.getServiceCode()).stream()
+                        .map(rule -> {
+                            boolean source = rule.sourceCode().equalsIgnoreCase(s.getServiceCode());
+                            return new MedicalServiceRelationResponse(rule.type(),
+                                    source ? rule.targetCode() : rule.sourceCode(),
+                                    source ? rule.targetName() : rule.sourceName(), rule.message());
+                        }).toList()
         );
     }
 }

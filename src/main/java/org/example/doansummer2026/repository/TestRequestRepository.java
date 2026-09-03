@@ -12,7 +12,6 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -47,6 +46,12 @@ public interface TestRequestRepository extends JpaRepository<TestRequest, UUID> 
             UUID visitId, UUID serviceId, TestRequestStatus status);
     Optional<TestRequest> findTopByMedicalRecord_Visit_VisitIdAndService_ServiceIdAndStatusNotOrderByCreatedAtAsc(
             UUID visitId, UUID serviceId, TestRequestStatus status);
+
+    @Query("SELECT DISTINCT t.service.serviceId FROM TestRequest t " +
+           "WHERE t.medicalRecord.visit.visitId = :visitId AND t.status <> :cancelledStatus")
+    List<UUID> findDistinctActiveServiceIdsByVisit(
+            @Param("visitId") UUID visitId,
+            @Param("cancelledStatus") TestRequestStatus cancelledStatus);
 
     @Query(value = """
             SELECT DISTINCT t FROM TestRequest t

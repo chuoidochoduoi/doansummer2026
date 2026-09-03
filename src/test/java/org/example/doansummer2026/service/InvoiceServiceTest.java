@@ -1987,6 +1987,102 @@ class InvoiceServiceTest {
     // =========================================================
 
     @Test
+    void create_ShouldAllowMultipleExaminationServicesForDirectVisit() {
+        UUID customerId = UUID.randomUUID();
+        UUID visitId = UUID.randomUUID();
+        UUID firstServiceId = UUID.randomUUID();
+        UUID secondServiceId = UUID.randomUUID();
+        Profile customer = customer(customerId);
+        CustomerVisit visit = visit(visitId, customer);
+        visit.setCheckInTime(java.time.LocalDateTime.now());
+        Department room = Department.builder().departmentId(UUID.randomUUID())
+                .departmentType(DepartmentType.EXAMINATION).status(DepartmentStatus.AVAILABLE).build();
+        MedicalService first = examinationService(firstServiceId, "Khám Nội", new BigDecimal("200000"), room);
+        MedicalService second = examinationService(secondServiceId, "Khám Da liễu", new BigDecimal("230000"), room);
+        InvoiceItemCreateRequest firstItem = new InvoiceItemCreateRequest(firstServiceId, first.getName(),
+                first.getServiceCode(), first.getPrice(), 1, BigDecimal.ZERO, BigDecimal.ZERO, first.getPrice(), null);
+        InvoiceItemCreateRequest secondItem = new InvoiceItemCreateRequest(secondServiceId, second.getName(),
+                second.getServiceCode(), second.getPrice(), 1, BigDecimal.ZERO, BigDecimal.ZERO, second.getPrice(), null);
+
+        when(profileRepo.findById(customerId)).thenReturn(Optional.of(customer));
+        when(profileRepo.findByIdForUpdate(customerId)).thenReturn(Optional.of(customer));
+        when(visitRepo.findByIdForUpdate(visitId)).thenReturn(Optional.of(visit));
+        when(visitRepo.findById(visitId)).thenReturn(Optional.of(visit));
+        when(serviceRepo.findById(firstServiceId)).thenReturn(Optional.of(first));
+        when(serviceRepo.findById(secondServiceId)).thenReturn(Optional.of(second));
+        when(itemRepo.findSameDayExaminationRegistrations(eq(customerId), any(), any(), isNull()))
+                .thenReturn(List.of());
+        when(itemRepo.findDistinctExaminationServiceIdsByVisit(visitId, null)).thenReturn(List.of());
+        when(queueTicketRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of());
+        when(repo.save(any(Invoice.class))).thenAnswer(invocation -> {
+            Invoice saved = invocation.getArgument(0);
+            if (saved.getInvoiceId() == null) saved.setInvoiceId(UUID.randomUUID());
+            return saved;
+        });
+        when(itemRepo.save(any(InvoiceItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = invoiceService.create(new InvoiceCreateRequest(customerId, visitId, null,
+                null, BigDecimal.ZERO, BigDecimal.ZERO, null, null, List.of(firstItem, secondItem)));
+
+        assertNotNull(response);
+        verify(itemRepo, times(2)).save(any(InvoiceItem.class));
+    }
+
+    @Test
+    void pay_ShouldOrderMultipleExaminationsByPriorityAndBlockFollowingStep() {
+        UUID invoiceId = UUID.randomUUID();
+        UUID visitId = UUID.randomUUID();
+        UUID lowServiceId = UUID.randomUUID();
+        UUID highServiceId = UUID.randomUUID();
+        UUID roomId = UUID.randomUUID();
+        UUID secondTicketId = UUID.randomUUID();
+        Profile customer = customer(UUID.randomUUID());
+        CustomerVisit visit = visit(visitId, customer);
+        Department room = Department.builder().departmentId(roomId)
+                .departmentType(DepartmentType.EXAMINATION).status(DepartmentStatus.AVAILABLE).build();
+        MedicalService low = examinationService(lowServiceId, "Khám ưu tiên thấp", BigDecimal.ONE, room);
+        MedicalService high = examinationService(highServiceId, "Khám ưu tiên cao", BigDecimal.ONE, room);
+        low.setWorkflowPriority(1);
+        high.setWorkflowPriority(10);
+        InvoiceItem lowItem = invoiceItem(low);
+        InvoiceItem highItem = invoiceItem(high);
+        Invoice invoice = Invoice.builder().invoiceId(invoiceId).invoiceCode("INV-MULTI-EXAM")
+                .status(InvoiceStatus.PENDING).totalAmount(new BigDecimal("2"))
+                .paidAmount(BigDecimal.ZERO).customer(customer).visit(visit)
+                .items(new ArrayList<>(List.of(lowItem, highItem))).build();
+        Account activeAccount = Account.builder().accountId(UUID.randomUUID()).isActive(true).build();
+        Profile doctorProfile = Profile.builder().profileId(UUID.randomUUID()).account(activeAccount).build();
+        StaffInfo doctor = StaffInfo.builder().staffId(UUID.randomUUID()).profile(doctorProfile)
+                .systemRole(SystemRole.DOCTOR).department(room).build();
+        var firstResponse = mock(org.example.doansummer2026.dto.queueTicket.QueueTicketResponse.class);
+        var secondResponse = mock(org.example.doansummer2026.dto.queueTicket.QueueTicketResponse.class);
+        when(secondResponse.ticketId()).thenReturn(secondTicketId);
+        QueueTicket secondTicket = QueueTicket.builder().ticketId(secondTicketId).status(QueueStatus.WAITING).build();
+
+        when(repo.findByIdForUpdate(invoiceId)).thenReturn(Optional.of(invoice));
+        when(repo.save(invoice)).thenReturn(invoice);
+        when(repo.getWithDetailsByInvoiceId(invoiceId)).thenReturn(Optional.of(invoice));
+        when(transactionRepo.findByInvoice_InvoiceId(invoiceId)).thenReturn(List.of());
+        when(visitRepo.findByIdForUpdate(visitId)).thenReturn(Optional.of(visit));
+        when(itemRepo.findAllWithServiceByInvoiceId(invoiceId)).thenReturn(List.of(lowItem, highItem));
+        when(queueTicketRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of());
+        when(queueTicketRepo.findTopByVisit_VisitIdAndService_ServiceIdOrderByCreatedAtDesc(eq(visitId), any()))
+                .thenReturn(Optional.empty());
+        when(staffRepo.findByDepartment_DepartmentId(roomId)).thenReturn(List.of(doctor));
+        when(queueTicketService.create(any())).thenReturn(firstResponse, secondResponse);
+        when(queueTicketRepo.findById(secondTicketId)).thenReturn(Optional.of(secondTicket));
+
+        invoiceService.pay(invoiceId, null);
+
+        ArgumentCaptor<org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest> captor =
+                ArgumentCaptor.forClass(org.example.doansummer2026.dto.queueTicket.QueueTicketCreateRequest.class);
+        verify(queueTicketService, times(2)).create(captor.capture());
+        assertEquals(highServiceId, captor.getAllValues().get(0).serviceId());
+        assertEquals(lowServiceId, captor.getAllValues().get(1).serviceId());
+        assertEquals(QueueStatus.BLOCKED, secondTicket.getStatus());
+    }
+
+    @Test
     void pay_ShouldBlockNewExaminationQueue_WhenWorkflowAlreadyActive() {
 
         UUID invoiceId =

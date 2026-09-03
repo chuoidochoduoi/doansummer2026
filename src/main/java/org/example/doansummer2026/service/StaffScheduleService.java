@@ -1,6 +1,7 @@
 package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.dto.schedule.ScheduleAssignRequest;
 import org.example.doansummer2026.dto.schedule.ScheduleCreateRequest;
@@ -16,7 +17,6 @@ import org.example.doansummer2026.model.StaffScheduleTemplate;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.repository.StaffScheduleRepository;
 import org.example.doansummer2026.repository.StaffScheduleTemplateRepository;
-import org.example.doansummer2026.repository.StaffAttendanceRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.enums.AppointmentStatus;
@@ -42,6 +42,7 @@ import java.util.*;
 @Service
 @Transactional
 @RequiredArgsConstructor
+@Slf4j
 public class StaffScheduleService implements StaffScheduleServiceInterface {
 
     private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
@@ -51,7 +52,6 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
     private final ShiftConfigRepository shiftConfigRepo;
     private final StaffService staffService;
     private final NotificationService notificationService;
-    private final StaffAttendanceRepository attendanceRepository;
     private final StaffInfoRepository staffInfoRepository;
     private final ShiftScheduleResolver shiftScheduleResolver;
     private final ServiceAvailabilityService serviceAvailabilityService;
@@ -101,7 +101,9 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                         "StaffSchedule",
                         saved.getScheduleId()
                 ));
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                log.warn("Không thể gửi thông báo khi tạo lịch trực {}", saved.getScheduleId(), e);
+            }
         }
         
         return ScheduleResponse.from(saved);
@@ -151,7 +153,9 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                         "StaffSchedule",
                         updated.getScheduleId()
                 ));
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                log.warn("Không thể gửi thông báo khi cập nhật lịch trực {}", updated.getScheduleId(), e);
+            }
         }
         
         return ScheduleResponse.from(updated);
@@ -163,9 +167,6 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                 || s.getWorkDate() == null
                 || !s.getWorkDate().isAfter(LocalDate.now(CLINIC_ZONE))) {
             throw new ConflictException("Chỉ có thể xóa lịch trực chưa diễn ra trong tương lai");
-        }
-        if (attendanceRepository.findBySchedule_ScheduleId(id).isPresent()) {
-            throw new ConflictException("Không thể xóa lịch trực đã phát sinh dữ liệu điểm danh");
         }
         ensureCoverageCanBeRemoved(s);
         
@@ -180,7 +181,9 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                         "StaffSchedule",
                         s.getScheduleId()
                 ));
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                log.warn("Không thể gửi thông báo khi hủy lịch trực {}", s.getScheduleId(), e);
+            }
         }
         
         scheduleRepo.deleteById(id);
@@ -320,11 +323,6 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
 
         if ("remove".equalsIgnoreCase(req.action())) {
             exactSchedules.forEach(this::ensureScheduleHasNotStarted);
-            boolean hasAttendance = exactSchedules.stream().anyMatch(schedule -> attendanceRepository
-                    .findBySchedule_ScheduleId(schedule.getScheduleId()).isPresent());
-            if (hasAttendance) {
-                throw new ConflictException("Không thể gỡ ca đã phát sinh dữ liệu điểm danh");
-            }
             exactSchedules.forEach(this::ensureCoverageCanBeRemoved);
             // Xoa tat ca ban trung cu neu du lieu cu da tung bi lap.
             scheduleRepo.deleteByStaffAndWorkDateAndShift(staff, date, shift);
@@ -405,13 +403,6 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
         }
 
         List<StaffSchedule> targetSchedules = scheduleRepo.findAllByWorkDateBetween(targetStart, targetEnd);
-        boolean hasAttendance = targetSchedules.stream()
-                .anyMatch(schedule -> attendanceRepository
-                        .findBySchedule_ScheduleId(schedule.getScheduleId()).isPresent());
-        if (hasAttendance) {
-            throw new ConflictException(
-                    "Không thể ghi đè tuần đã phát sinh dữ liệu điểm danh");
-        }
         targetSchedules.forEach(this::ensureCoverageCanBeRemoved);
 
         // Sao chep la thao tac thay the: xoa lich tuan dich truoc khi tao lai.

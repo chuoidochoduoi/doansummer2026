@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Collection;
 import java.util.UUID;
 
 public interface AppointmentRepositoryCustom {
@@ -14,6 +15,9 @@ public interface AppointmentRepositoryCustom {
     
     Page<Appointment> searchForCustomer(UUID customerId, String code, String specialty, String status, LocalDateTime from, LocalDateTime to, Pageable pageable);
 
+    Page<Appointment> searchForCustomers(Collection<UUID> customerIds, String code, String specialty,
+                                         String status, LocalDateTime from, LocalDateTime to, Pageable pageable);
+
     List<Appointment> findByCustomerId(UUID customerId);
 
     /**
@@ -21,6 +25,5 @@ public interface AppointmentRepositoryCustom {
      */
     List<Appointment> findGuestAppointmentsByPhone(String phone);
 }
-
 
 

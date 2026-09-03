@@ -67,6 +67,14 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req, response, null);
     }
 
+    @ExceptionHandler(ServiceUnavailableException.class)
+    public ResponseEntity<byte[]> handleServiceUnavailable(ServiceUnavailableException ex,
+                                                             HttpServletRequest req,
+                                                             HttpServletResponse response) {
+        log.warn("External service unavailable: {}", ex.getMessage());
+        return build(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), req, response, null);
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<byte[]> handleDataIntegrity(DataIntegrityViolationException ex,
                                                        HttpServletRequest req,

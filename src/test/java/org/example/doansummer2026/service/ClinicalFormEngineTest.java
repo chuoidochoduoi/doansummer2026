@@ -69,4 +69,38 @@ class ClinicalFormEngineTest {
         assertTrue(result.path("efw").asDouble() > 0);
         assertEquals(19, result.path("clinicalGaWeeks").asInt());
     }
+
+    @Test
+    void acceptsRequiredFieldMarkedAsNotPerformedAndMarksPartialCompletion() throws Exception {
+        var schema = mapper.readTree("""
+        {"layout":"LAB_TABLE","fields":[
+          {"key":"glucose","label":"Đường huyết","type":"NUMBER","requiredOnSign":true},
+          {"key":"creatinine","label":"Creatinine","type":"NUMBER","requiredOnSign":true}
+        ]}
+        """);
+        var input = mapper.readTree("""
+        {"creatinine":88.4,"_omissions":{"glucose":{"reasonCode":"INSUFFICIENT_SAMPLE"}}}
+        """);
+
+        var result = engine.validateAndEnrich(schema, input,
+                LocalDate.of(1990, 1, 1), Gender.MALE, LocalDate.of(2026, 9, 2), true);
+
+        assertFalse(result.has("glucose"));
+        assertEquals("INSUFFICIENT_SAMPLE", result.path("_omissions").path("glucose").path("reasonCode").asText());
+        assertEquals("PARTIAL", result.path("_meta").path("completionStatus").asText());
+        assertEquals(1, result.path("_meta").path("omittedCount").asInt());
+    }
+
+    @Test
+    void rejectsOmissionWithoutAValidReason() throws Exception {
+        var schema = mapper.readTree("""
+        {"fields":[{"key":"glucose","label":"Đường huyết","type":"NUMBER","requiredOnSign":true}]}
+        """);
+        var input = mapper.readTree("""
+        {"_omissions":{"glucose":{"reasonCode":""}}}
+        """);
+
+        assertThrows(BadRequestException.class, () -> engine.validateAndEnrich(
+                schema, input, null, Gender.FEMALE, LocalDate.of(2026, 9, 2), true));
+    }
 }

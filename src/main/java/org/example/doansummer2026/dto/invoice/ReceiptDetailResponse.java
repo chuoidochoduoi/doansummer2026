@@ -1,10 +1,10 @@
 package org.example.doansummer2026.dto.invoice;
 
 import org.example.doansummer2026.model.Invoice;
-import org.example.doansummer2026.model.InvoiceItem;
+import org.example.doansummer2026.model.Transaction;
+import org.example.doansummer2026.model.MembershipCardLedger;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,9 +25,18 @@ public record ReceiptDetailResponse(
         BigDecimal bhytCoverage,
         BigDecimal patientPayment,
         String inWords,
-        List<ReceiptItemResponse> items
+        List<ReceiptItemResponse> items,
+        ReceiptPrintResponse printData
 ) {
     public static ReceiptDetailResponse from(Invoice invoice) {
+        return from(invoice, null);
+    }
+
+    public static ReceiptDetailResponse from(Invoice invoice, Transaction payment) {
+        return from(invoice, payment, null);
+    }
+
+    public static ReceiptDetailResponse from(Invoice invoice, Transaction payment, MembershipCardLedger membershipLedger) {
         String patientName = invoice.getCustomer() != null ? invoice.getCustomer().getFullName() : null;
         String patientId = invoice.getCustomer() != null ? String.valueOf(invoice.getCustomer().getProfileId()) : null;
         String dob = invoice.getCustomer() != null && invoice.getCustomer().getDateOfBirth() != null
@@ -52,7 +61,8 @@ public record ReceiptDetailResponse(
                 .map(item -> item.getBhytFund() != null ? item.getBhytFund() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal patientPayment = invoice.getTotalAmount().subtract(bhytCoverage);
+        // totalAmount already includes insurance/other discounts. Do not deduct BHYT twice.
+        BigDecimal patientPayment = invoice.getTotalAmount();
 
         String inWords = convertToWords(patientPayment);
 
@@ -74,7 +84,8 @@ public record ReceiptDetailResponse(
                 bhytCoverage,
                 patientPayment,
                 inWords,
-                itemResponses
+                itemResponses,
+                ReceiptPrintResponse.from(invoice, payment, membershipLedger)
         );
     }
 

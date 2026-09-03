@@ -1,6 +1,7 @@
 package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.dto.icd.ICD10SelectionCreateRequest;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordCreateRequest;
@@ -58,6 +59,7 @@ import java.util.UUID;
 @Service
 @Transactional
 @RequiredArgsConstructor
+@Slf4j
 public class MedicalRecordService implements MedicalRecordServiceInterface {
 
     private final MedicalRecordRepository repo;
@@ -76,7 +78,6 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     private final NotificationService notificationService;
     private final AuthService authService;
     private final ClinicalFormTemplateService clinicalFormTemplateService;
-    private final ClinicalFormEngine clinicalFormEngine;
     private final org.example.doansummer2026.repository.TestResultRevisionRepository testResultRevisionRepo;
     private final org.example.doansummer2026.repository.TestResultAttachmentRepository testResultAttachmentRepo;
     private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
@@ -376,12 +377,13 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                     .temperature(req.temperature())
                     .weight(req.weight())
                     .height(req.height())
+                    .recordedAt(LocalDateTime.now())
                     .recordedBy(recordedBy)
                     .build();
             r.setVitalSigns(v);
         }
 
-        return MedicalRecordResponse.from(repo.save(r), true);
+        return MedicalRecordResponse.from(repo.saveAndFlush(r), true);
     }
 
     private boolean hasVitalSigns(MedicalRecordCreateRequest req) {
@@ -397,7 +399,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         validateVersion(r, req);
         ensureDoctorCanEdit(r);
         updateMedicalRecordFields(r, req);
-        return MedicalRecordResponse.from(repo.save(r), true);
+        return MedicalRecordResponse.from(repo.saveAndFlush(r), true);
     }
 
     /**
@@ -427,7 +429,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             if (actor != null) { r.setNursingUpdatedBy(actor); r.setNursingUpdatedAt(LocalDateTime.now()); }
         } else updateMedicalRecordFields(r, req);
         r.setStatus(MedicalRecordStatus.DRAFT);
-        return MedicalRecordResponse.from(repo.save(r), true);
+        return MedicalRecordResponse.from(repo.saveAndFlush(r), true);
     }
 
     private void updateNursingDraftFields(MedicalRecord r, MedicalRecordUpdateRequest req) {
@@ -476,8 +478,6 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         if (req.prescriptionNote() != null) r.setPrescriptionNote(req.prescriptionNote());
         if (req.conclusion() != null) r.setConclusion(req.conclusion());
         if (req.patientInstruction() != null) r.setPatientInstruction(req.patientInstruction());
-        applySpecialtyData(r, req);
-
         // Cap nhat thuoc trong don
         if (req.prescriptionItems() != null) {
             r.getPrescriptionItems().clear();
@@ -526,6 +526,8 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                     .temperature(req.temperature())
                     .weight(req.weight())
                     .height(req.height())
+                    .recordedAt(LocalDateTime.now())
+                    .recordedBy(r.getDoctor())
                     .build();
             r.setVitalSigns(v);
         } else if (r.getVitalSigns() != null && hasVitalSignsUpdate(req)) {
@@ -538,24 +540,11 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         }
     }
 
-    private void applySpecialtyData(MedicalRecord record, MedicalRecordUpdateRequest req) {
-        if (req.specialtyData() == null && req.formTemplateVersionId() == null) return;
-        if (record.getQueueTicket() == null || record.getQueueTicket().getService() == null)
-            throw new BadRequestException("Hồ sơ chưa gắn dịch vụ để xác định biểu mẫu chuyên khoa");
-        var version = clinicalFormTemplateService.resolveVersion(
-                record.getQueueTicket().getService().getServiceId(), req.formTemplateVersionId());
-        Profile patient = record.getVisit() == null ? null : record.getVisit().getCustomer();
-        var normalized = clinicalFormEngine.validateAndEnrich(version.getSchemaJson(), req.specialtyData(),
-                patient == null ? null : patient.getDateOfBirth(), patient == null ? null : patient.getGender(), LocalDate.now());
-        record.setFormTemplateVersion(version);
-        record.setSpecialtyData(normalized);
-    }
-
     @Transactional(readOnly = true)
     public org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse getClinicalForm(UUID recordId) {
         MedicalRecord record = findById(recordId);
         if (record.getQueueTicket() == null || record.getQueueTicket().getService() == null)
-            throw new ResourceNotFoundException("Hồ sơ chưa gắn dịch vụ để xác định biểu mẫu chuyên khoa");
+            throw new ResourceNotFoundException("Hồ sơ không có biểu mẫu động");
         var version = record.getFormTemplateVersion() != null ? record.getFormTemplateVersion()
                 : clinicalFormTemplateService.resolveVersion(record.getQueueTicket().getService().getServiceId(), null);
         return clinicalFormTemplateService.resolvedResponse(version, record.getSpecialtyData());
@@ -668,6 +657,57 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
         if (!errors.isEmpty()) {
             throw new BadRequestException("Chỉ số sinh hiệu không hợp lệ: " + String.join("; ", errors));
+        }
+    }
+
+    /**
+     * Tao mot ban sao dau hieu sinh ton cho lan kham tiep theo trong cung VIS.
+     * Moi benh an van so huu mot ban ghi rieng; du lieu nguon khong bi thay doi
+     * neu bac si do lai va cap nhat benh an hien tai.
+     */
+    public MedicalRecord inheritFirstVisitVitalSigns(MedicalRecord target) {
+        if (target == null || target.getVitalSigns() != null || target.getVisit() == null
+                || target.getVisit().getVisitId() == null) {
+            return target;
+        }
+
+        MedicalRecord source = repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(
+                        target.getVisit().getVisitId()).stream()
+                .filter(record -> record != null
+                        && (target.getRecordId() == null
+                        || !target.getRecordId().equals(record.getRecordId())))
+                .filter(record -> record.getStatus() == MedicalRecordStatus.COMPLETED)
+                .filter(record -> record.getQueueTicket() != null
+                        && record.getQueueTicket().getDepartment() != null
+                        && record.getQueueTicket().getDepartment().getDepartmentType() != null
+                        && record.getQueueTicket().getDepartment().getDepartmentType().normalized()
+                        == org.example.doansummer2026.enums.DepartmentType.EXAMINATION)
+                .filter(this::hasValidVitalSigns)
+                .findFirst()
+                .orElse(null);
+        if (source == null) return target;
+
+        VitalSigns sourceVitals = source.getVitalSigns();
+        VitalSigns inherited = VitalSigns.builder()
+                .medicalRecord(target)
+                .bloodPressure(sourceVitals.getBloodPressure())
+                .heartRate(sourceVitals.getHeartRate())
+                .temperature(sourceVitals.getTemperature())
+                .weight(sourceVitals.getWeight())
+                .height(sourceVitals.getHeight())
+                .recordedAt(sourceVitals.getRecordedAt())
+                .recordedBy(sourceVitals.getRecordedBy())
+                .build();
+        target.setVitalSigns(inherited);
+        return repo.save(target);
+    }
+
+    private boolean hasValidVitalSigns(MedicalRecord record) {
+        try {
+            validateVitalSignsForCompletion(record);
+            return true;
+        } catch (BadRequestException ignored) {
+            return false;
         }
     }
 
@@ -864,6 +904,36 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                                 org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED)
                         .isPresent())
                 .count();
+        java.util.List<String> signedTestNames = requests.stream()
+                .filter(request -> request.getStatus() == TestRequestStatus.COMPLETED)
+                .filter(request -> request.getTestResult() != null)
+                .filter(request -> testResultRevisionRepo
+                        .findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
+                                request.getTestResult().getResultId(),
+                                org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED)
+                        .isPresent())
+                .map(request -> request.getService() != null ? request.getService().getName() : null)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        java.util.List<String> completedServiceNames = java.util.stream.Stream
+                .concat(services.stream(), signedTestNames.stream()).distinct().toList();
+        java.util.List<org.example.doansummer2026.model.QueueTicket> visitQueues = queueTicketRepo
+                .findAllByVisit_VisitId(visit.getVisitId());
+        java.util.Set<UUID> completedRecordTicketIds = examinations.stream()
+                .map(MedicalRecord::getQueueTicket).filter(java.util.Objects::nonNull)
+                .map(org.example.doansummer2026.model.QueueTicket::getTicketId)
+                .collect(java.util.stream.Collectors.toSet());
+        visitQueues.stream().filter(ticket -> ticket.getStatus() == QueueStatus.DONE)
+                .filter(ticket -> !completedRecordTicketIds.contains(ticket.getTicketId()))
+                .forEach(ticket -> log.warn(
+                        "Queue ticket {} of visit {} is DONE but has no published medical record",
+                        ticket.getTicketId(), visit.getVisitId()));
+        java.util.List<String> skippedServiceNames = visitQueues.stream()
+                .filter(ticket -> ticket.getStatus() == QueueStatus.SKIPPED)
+                .map(ticket -> ticket.getService() != null ? ticket.getService().getName() : null)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        String completionStatus = !skippedServiceNames.isEmpty()
+                || visit.getStatus() == org.example.doansummer2026.enums.VisitStatus.CANCELLED
+                ? "PARTIAL" : "COMPLETE";
         LocalDateTime checkedIn = visit.getCheckInTime();
         return new VisitHistorySummaryResponse(
                 visit.getVisitId(), visit.getVisitId(),
@@ -872,7 +942,9 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 checkedIn != null ? checkedIn.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm")) : null,
                 visit.getStatus() != null ? visit.getStatus().name() : null,
                 services, examinations.size(), signedTestCount, doctors,
-                diagnoses.isBlank() ? null : diagnoses);
+                diagnoses.isBlank() ? null : diagnoses,
+                completionStatus, completedServiceNames, skippedServiceNames,
+                skippedServiceNames.size());
     }
 
     /** Chi tiet customer theo visitId; chi dua noi dung chuyen mon da hoan thanh ra ngoai. */
@@ -884,13 +956,8 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         if (visit.getCustomer() == null || !visit.getCustomer().getProfileId().equals(profileId)) {
             throw new ResourceNotFoundException("Không tìm thấy lượt khám");
         }
-        java.util.List<MedicalRecord> completedRecords = repo
-                .findAllByVisit_VisitIdOrderByCreatedAtAsc(visitId).stream()
-                .filter(record -> record.getStatus() == MedicalRecordStatus.COMPLETED)
-                .toList();
-        if (completedRecords.isEmpty()) {
-            throw new ResourceNotFoundException("Lượt khám chưa có bệnh án hoàn thành");
-        }
+        java.util.List<MedicalRecord> allRecords = repo
+                .findAllByVisit_VisitIdOrderByCreatedAtAsc(visitId);
         var requests = testRequestRepo.findAllByVisitIdWithDetails(visitId).stream()
                 .filter(request -> request.getStatus() == TestRequestStatus.COMPLETED)
                 .filter(request -> request.getTestResult() != null)
@@ -900,9 +967,22 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                                 org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED)
                         .isPresent())
                 .toList();
-        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.from(
-                completedRecords, requests, signedResultAttachments(requests),
-                sameDayParaclinicalResultService.findForVisit(visitId));
+        boolean hasCompletedExamination = allRecords.stream()
+                .anyMatch(record -> record.getStatus() == MedicalRecordStatus.COMPLETED
+                        && record.getQueueTicket() != null
+                        && record.getQueueTicket().getDepartment() != null
+                        && record.getQueueTicket().getDepartment().getDepartmentType()
+                        == org.example.doansummer2026.enums.DepartmentType.EXAMINATION);
+        if (!hasCompletedExamination && requests.isEmpty()) {
+            throw new ResourceNotFoundException("Lượt khám chưa có bệnh án hoặc kết quả đã hoàn thành");
+        }
+        if (allRecords.isEmpty()) {
+            throw new ResourceNotFoundException("Không tìm thấy hồ sơ gắn với lượt khám");
+        }
+        return org.example.doansummer2026.dto.medicalHistory.VisitDetailResponse.publishedHistory(
+                allRecords, requests, signedResultAttachments(requests),
+                sameDayParaclinicalResultService.findForVisit(visitId),
+                queueTicketRepo.findAllByVisit_VisitId(visitId));
     }
 
     /** Lich su de bac si tham khao trong luc dang kham; khong tra lai ho so hien tai. */
@@ -1177,9 +1257,10 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
         appointment = appointmentRepo.save(appointment);
         
-        // Cập nhật MedicalRecord với ID của lịch hẹn vừa tạo
+        // Lưu đầy đủ trạng thái yêu cầu để lần tải sau vẫn nhận biết lịch tái khám đã được đặt.
         record.setFollowUpAppointment(appointment);
+        record.setFollowUpDate(req.scheduledAt().toLocalDate());
         
-        return org.example.doansummer2026.dto.medicalRecord.FollowUpResponse.from(repo.save(record));
+        return org.example.doansummer2026.dto.medicalRecord.FollowUpResponse.from(repo.saveAndFlush(record));
     }
 }

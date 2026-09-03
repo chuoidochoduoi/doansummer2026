@@ -64,6 +64,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
     private final ServiceAvailabilityService serviceAvailabilityService;
     private final AuditLogService auditLogService;
     private final tools.jackson.databind.ObjectMapper objectMapper;
+    private final MedicalServiceSelectionPolicyService serviceSelectionPolicyService;
 
     @Transactional(readOnly = true)
     public PageResponse<CustomerVisitResponse> search(UUID customerId, VisitStatus status,
@@ -82,7 +83,11 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
         if (req.serviceIds() == null || req.serviceIds().isEmpty()) {
             throw new org.example.doansummer2026.exception.BadRequestException("Vui lòng chọn ít nhất một dịch vụ y tế");
         }
-        validateSingleExaminationService(req.serviceIds());
+        List<UUID> normalizedServiceIds = serviceSelectionPolicyService != null
+                ? serviceSelectionPolicyService.normalizeOrThrow(req.serviceIds()).stream()
+                .map(MedicalService::getServiceId).toList()
+                : req.serviceIds().stream().distinct().toList();
+        validateSelectedServices(normalizedServiceIds);
         if (req.insuranceId() != null) {
             throw new BadRequestException("Bảo hiểm y tế chỉ được xác nhận và áp dụng tại quầy thu ngân");
         }
@@ -122,7 +127,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
         if (customer.getGender() == null || customer.getGender() == Gender.OTHER) {
             throw new BadRequestException("Vui lòng cập nhật giới tính Nam hoặc Nữ trước khi tạo lượt khám");
         }
-        validateNoSameDayExaminationRegistration(customer.getProfileId(), req.serviceIds());
+        validateNoSameDayExaminationRegistration(customer.getProfileId(), normalizedServiceIds);
         Appointment appointment = null;
         if (req.appointmentId() != null) {
             appointment = appointmentRepo.findByIdForUpdate(req.appointmentId())
@@ -147,7 +152,7 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
 
         // Tao InvoiceItem cho moi service (gia mac dinh tu MedicalService) - optional
         List<org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest> items = new ArrayList<>();
-        List<UUID> serviceIds = req.serviceIds().stream().distinct().toList();
+        List<UUID> serviceIds = normalizedServiceIds;
         BigDecimal totalDiscount = BigDecimal.ZERO;
         
         if (serviceIds != null && !serviceIds.isEmpty()) {
@@ -242,24 +247,14 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
         return CustomerVisitResponse.from(visit, invoice);
     }
 
-    private void validateSingleExaminationService(List<UUID> serviceIds) {
+    private void validateSelectedServices(List<UUID> serviceIds) {
         if (serviceIds.size() != serviceIds.stream().distinct().count()) {
             throw new org.example.doansummer2026.exception.BadRequestException(
                     "Không được chọn trùng dịch vụ trong cùng một lượt khám"
             );
         }
-        long examinationCount = serviceIds.stream().distinct()
-                .map(serviceId -> serviceRepo.findById(serviceId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId)))
-                .filter(service -> service.getDepartmentType() != null
-                        && service.getDepartmentType().normalized()
-                        == org.example.doansummer2026.enums.DepartmentType.EXAMINATION)
-                .count();
-        if (examinationCount > 1) {
-            throw new org.example.doansummer2026.exception.BadRequestException(
-                    "Mỗi lượt khám chỉ được chọn tối đa 1 dịch vụ khám bệnh"
-            );
-        }
+        serviceIds.forEach(serviceId -> serviceRepo.findById(serviceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId)));
     }
 
     @Transactional(readOnly = true)
@@ -541,9 +536,12 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
         if (repo.findByAppointment_AppointmentId(appointment.getAppointmentId()).isPresent()) {
             throw new ConflictException("Lịch hẹn đã được check-in trước đó");
         }
-        if (appointment.getScheduledAt() == null
-                || !appointment.getScheduledAt().toLocalDate().equals(clinicToday())) {
-            throw new BadRequestException("Chỉ có thể check-in lịch hẹn đúng ngày khám");
+        if (appointment.getScheduledAt() == null) {
+            throw new BadRequestException("Lịch hẹn chưa có ngày khám hợp lệ");
+        }
+        if (appointment.getScheduledAt().toLocalDate().isBefore(clinicToday())) {
+            throw new BadRequestException("Không thể check-in lịch hẹn đã quá ngày. Lịch hẹn này vào ngày "
+                    + appointment.getScheduledAt().toLocalDate());
         }
         if (appointment.getCustomer() != null
                 && !appointment.getCustomer().getProfileId().equals(customer.getProfileId())) {

@@ -29,6 +29,9 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
 
     boolean existsByCustomer_ProfileIdAndStatusIn(UUID customerId, Collection<AppointmentStatus> statuses);
 
+    boolean existsByCustomer_ProfileIdAndStatusInAndScheduledAtGreaterThanEqual(
+            UUID customerId, Collection<AppointmentStatus> statuses, LocalDateTime from);
+
     @Query("SELECT CASE WHEN COUNT(a) > 0 THEN true ELSE false END FROM Appointment a " +
            "WHERE a.customer.profileId = :customerId AND a.status IN :statuses " +
            "AND a.scheduledAt >= :from AND a.scheduledAt < :to")

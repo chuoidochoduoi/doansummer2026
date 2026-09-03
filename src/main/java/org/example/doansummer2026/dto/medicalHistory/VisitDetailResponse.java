@@ -7,6 +7,7 @@ import org.example.doansummer2026.model.PrescriptionItem;
 import org.example.doansummer2026.model.TestRequest;
 import org.example.doansummer2026.model.TestResult;
 import org.example.doansummer2026.model.VitalSigns;
+import org.example.doansummer2026.model.QueueTicket;
 
 import java.util.List;
 import java.util.UUID;
@@ -43,7 +44,11 @@ public record VisitDetailResponse(
         String doctorName,
         List<String> labDoctors,
         List<ExaminationResponse> examinations,
-        List<SameDayParaclinicalResultResponse> sameDayReferencedResults
+        List<SameDayParaclinicalResultResponse> sameDayReferencedResults,
+        String completionStatus,
+        List<SkippedServiceResponse> skippedServices,
+        int completedExaminationCount,
+        int signedTestCount
 ) {
     public record PrescriptionItemResponse(String medicineName, Integer quantity, String unit,
                                            String note, Integer frequencyPerDay) {
@@ -54,22 +59,41 @@ public record VisitDetailResponse(
     }
 
     public record ExaminationResponse(UUID recordId, String recordCode, String serviceName, UUID doctorId,
-                                      String doctorName, String status, String startedAt, String completedAt,
+                                      String doctorName, String departmentName, String roomCode,
+                                      String status, String startedAt, String completedAt,
                                       String chiefComplaint, String symptoms, String clinicalFindings,
                                       String clinicalResult, String diagnosis, List<DiagnosisResponse> diagnoses,
                                       String conclusion, String treatmentPlan, String patientInstruction,
                                       String followUpNote, String prescription,
                                       List<PrescriptionItemResponse> prescriptionItems,
+                                      org.example.doansummer2026.dto.vitalSigns.VitalSignsResponse vitalSigns,
                                       org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse clinicalForm) {}
+
+    public record SkippedServiceResponse(UUID serviceId, String serviceName, String departmentName,
+                                         String roomCode, String workDate, String reason) {}
 
     public static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests,
             java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments) {
-        return from(records, testRequests, attachments, List.of());
+        return from(records, testRequests, attachments, List.of(), List.of(), false);
     }
 
     public static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests,
             java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments,
             List<SameDayParaclinicalResultResponse> sameDayReferencedResults) {
+        return from(records, testRequests, attachments, sameDayReferencedResults, List.of(), false);
+    }
+
+    public static VisitDetailResponse publishedHistory(List<MedicalRecord> records, List<TestRequest> testRequests,
+            java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments,
+            List<SameDayParaclinicalResultResponse> sameDayReferencedResults,
+            List<QueueTicket> visitQueues) {
+        return from(records, testRequests, attachments, sameDayReferencedResults, visitQueues, true);
+    }
+
+    private static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests,
+            java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments,
+            List<SameDayParaclinicalResultResponse> sameDayReferencedResults,
+            List<QueueTicket> visitQueues, boolean publishedOnly) {
         if (records == null || records.isEmpty()) return null;
 
         // Ho so tam cua CLS co the duoc tao truoc benh an kham. Khong duoc
@@ -80,16 +104,25 @@ public record VisitDetailResponse(
                         && r.getQueueTicket().getDepartment().getDepartmentType() == DepartmentType.EXAMINATION)
                 .findFirst()
                 .orElse(records.get(0));
+        MedicalRecord publishedRecord = records.stream()
+                .filter(r -> r.getStatus() == MedicalRecordStatus.COMPLETED)
+                .filter(r -> r.getQueueTicket() != null
+                        && r.getQueueTicket().getDepartment() != null
+                        && r.getQueueTicket().getDepartment().getDepartmentType() == DepartmentType.EXAMINATION)
+                .findFirst().orElse(null);
+        MedicalRecord clinicalSource = publishedOnly ? publishedRecord : first;
         MedicalRecord feedbackRecord = records.stream()
+                .filter(r -> !publishedOnly || r.getStatus() == MedicalRecordStatus.COMPLETED)
                 .filter(r -> r.getRatingScore() != null || r.getFeedbackStatus() != null)
                 .findFirst()
-                .orElse(records.get(records.size() - 1));
+                .orElse(publishedRecord != null ? publishedRecord : first);
 
         List<ExaminationResponse> examinations = records.stream()
                 // Standalone record chi la noi luu TestRequest; khong phai mot lan kham.
                 .filter(r -> r.getQueueTicket() != null
                         && r.getQueueTicket().getDepartment() != null
                         && r.getQueueTicket().getDepartment().getDepartmentType() == DepartmentType.EXAMINATION)
+                .filter(r -> !publishedOnly || r.getStatus() == MedicalRecordStatus.COMPLETED)
                 .map(VisitDetailResponse::examinationFrom)
                 .toList();
 
@@ -117,6 +150,17 @@ public record VisitDetailResponse(
         String checkInTime = first.getVisit() != null && first.getVisit().getCheckInTime() != null
                 ? first.getVisit().getCheckInTime().toString() : null;
         UUID visitId = first.getVisit() != null ? first.getVisit().getVisitId() : null;
+        List<SkippedServiceResponse> skippedServices = visitQueues == null ? List.of() : visitQueues.stream()
+                .filter(queue -> queue.getStatus() == org.example.doansummer2026.enums.QueueStatus.SKIPPED)
+                .map(queue -> new SkippedServiceResponse(
+                        queue.getService() != null ? queue.getService().getServiceId() : null,
+                        queue.getService() != null ? queue.getService().getName() : "Dịch vụ khám",
+                        queue.getDepartment() != null ? queue.getDepartment().getName() : null,
+                        queue.getDepartment() != null ? queue.getDepartment().getRoomCode() : null,
+                        queue.getWorkDate() != null ? queue.getWorkDate().toString() : null,
+                        "Đã bỏ lượt"))
+                .toList();
+        String completionStatus = skippedServices.isEmpty() ? "COMPLETE" : "PARTIAL";
 
         return new VisitDetailResponse(
                 first.getRecordId(),
@@ -134,12 +178,12 @@ public record VisitDetailResponse(
                 first.getRecordCode(),
                 appointmentDate,
                 checkInTime,
-                first.getChiefComplaint(),
-                clinicalResultFrom(first),
-                diagnosesFrom(first),
-                first.getConclusion(),
-                first.getPatientInstruction(),
-                prescriptionTextFrom(first),
+                clinicalSource != null ? clinicalSource.getChiefComplaint() : null,
+                clinicalSource != null ? clinicalResultFrom(clinicalSource) : null,
+                clinicalSource != null ? diagnosesFrom(clinicalSource) : List.of(),
+                clinicalSource != null ? clinicalSource.getConclusion() : null,
+                clinicalSource != null ? clinicalSource.getPatientInstruction() : null,
+                clinicalSource != null ? prescriptionTextFrom(clinicalSource) : null,
                 tests,
                 visitStatus,
                 feedbackRecord.getRatingScore(),
@@ -150,10 +194,11 @@ public record VisitDetailResponse(
                 feedbackRecord.getRespondedAt() != null ? feedbackRecord.getRespondedAt().toString() : null,
                 feedbackRecord.getRespondedBy() != null && feedbackRecord.getRespondedBy().getProfile() != null
                         ? feedbackRecord.getRespondedBy().getProfile().getFullName() : null,
-                doctorName(first),
+                clinicalSource != null ? doctorName(clinicalSource) : null,
                 labDoctors,
                 examinations,
-                sameDayReferencedResults == null ? List.of() : sameDayReferencedResults
+                sameDayReferencedResults == null ? List.of() : sameDayReferencedResults,
+                completionStatus, skippedServices, examinations.size(), tests.size()
         );
     }
 
@@ -164,13 +209,22 @@ public record VisitDetailResponse(
                 record.getRecordId(), record.getRecordCode(),
                 record.getQueueTicket().getService() != null ? record.getQueueTicket().getService().getName() : "Khám bệnh",
                 record.getDoctor() != null ? record.getDoctor().getStaffId() : null,
-                doctorName(record), record.getStatus() != null ? record.getStatus().name() : null,
+                doctorName(record),
+                record.getQueueTicket().getDepartment() != null
+                        ? record.getQueueTicket().getDepartment().getName() : null,
+                record.getQueueTicket().getDepartment() != null
+                        ? record.getQueueTicket().getDepartment().getRoomCode() : null,
+                record.getStatus() != null ? record.getStatus().name() : null,
                 record.getCreatedAt() != null ? record.getCreatedAt().toString() : null,
                 record.getCompletedAt() != null ? record.getCompletedAt().toString() : null,
                 record.getChiefComplaint(), record.getChiefComplaint(), record.getClinicalFindings(),
                 clinicalResultFrom(record), record.getDiagnosis(), diagnosesFrom(record), record.getConclusion(),
                 record.getConclusion(), record.getPatientInstruction(), record.getFollowUpNote(),
-                prescriptionTextFrom(record), prescriptionItems, clinicalFormFrom(record)
+                prescriptionTextFrom(record), prescriptionItems,
+                record.getVitalSigns() != null
+                        ? org.example.doansummer2026.dto.vitalSigns.VitalSignsResponse.from(record.getVitalSigns())
+                        : null,
+                clinicalFormFrom(record)
         );
     }
 
@@ -187,6 +241,10 @@ public record VisitDetailResponse(
     private static TestResponse testFrom(TestRequest request,
             java.util.Map<UUID, List<org.example.doansummer2026.dto.testResult.TestResultAttachmentResponse>> attachments) {
         TestResult result = request.getTestResult();
+        String serviceCode = request.getService() != null ? request.getService().getServiceCode() : null;
+        var panel = org.example.doansummer2026.service.LaboratoryAnalyteCatalog.panel(serviceCode)
+                .or(() -> org.example.doansummer2026.service.LaboratoryAnalyteCatalog.parentPanel(serviceCode))
+                .orElse(null);
         String performedBy = result != null && result.getPerformedBy() != null && result.getPerformedBy().getProfile() != null
                 ? result.getPerformedBy().getProfile().getFullName() : null;
         String collectedBy = result != null && result.getCollectedBy() != null && result.getCollectedBy().getProfile() != null
@@ -216,7 +274,12 @@ public record VisitDetailResponse(
                         ? orderingRecord.getRecordId() : null,
                 orderingRecord != null && orderingRecord.getQueueTicket() != null
                         ? orderingRecord.getRecordCode() : null,
-                orderingServiceName
+                orderingServiceName,
+                serviceCode,
+                panel != null ? panel.serviceCode() : null,
+                panel != null ? panel.name() : null,
+                panel != null ? panel.analytes().size() : null,
+                request.getQueueTicket() != null ? request.getQueueTicket().getTicketId() : null
         );
     }
 

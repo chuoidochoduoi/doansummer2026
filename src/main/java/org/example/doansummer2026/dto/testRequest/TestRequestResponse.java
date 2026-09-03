@@ -36,6 +36,8 @@ public record TestRequestResponse(
         ,Integer queueNumber
         ,org.example.doansummer2026.enums.QueueStatus queueStatus
         ,boolean linkedToExamination
+        ,String priorityCategory
+        ,String priorityLabel
 ) {
     public static TestRequestResponse from(TestRequest t) {
         UUID recordId = t.getMedicalRecord() != null ? t.getMedicalRecord().getRecordId() : null;
@@ -61,6 +63,9 @@ public record TestRequestResponse(
             }
         }
 
+        boolean returnedAfterAbsence = t.getQueueTicket() != null
+                && t.getQueueTicket().getStatus() == org.example.doansummer2026.enums.QueueStatus.WAITING
+                && t.getQueueTicket().getCalledAt() != null;
         return new TestRequestResponse(t.getTestRequestId(), recordId, serviceId, serviceName,
                 serviceType, requiresSpecimen, deptId, deptName, t.getDescription(), t.getStatus(), reqById, reqByName,
                 t.getCompletedAt(), t.getCancelReason(), t.getCreatedAt(), resultId, invoiceItemId,
@@ -68,6 +73,8 @@ public record TestRequestResponse(
                 t.getQueueTicket() != null ? t.getQueueTicket().getTicketId() : null,
                 t.getQueueTicket() != null ? t.getQueueTicket().getQueueNumber() : null,
                 t.getQueueTicket() != null ? t.getQueueTicket().getStatus() : null,
-                t.getMedicalRecord() != null && t.getMedicalRecord().getQueueTicket() != null);
+                t.getMedicalRecord() != null && t.getMedicalRecord().getQueueTicket() != null,
+                returnedAfterAbsence ? "RETURNED_AFTER_ABSENCE" : null,
+                returnedAfterAbsence ? "Đã quay lại" : null);
     }
 }

@@ -54,8 +54,10 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/v1/staff/public/**").permitAll()
                         .requestMatchers("/api/v1/appointments/guest").permitAll()
                         .requestMatchers("/api/v1/medical-services/available").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/medical-services/resolve-selection").permitAll()
                         .requestMatchers("/api/v1/shifts/active").permitAll()
                         .requestMatchers("/api/v1/shifts/available").permitAll()
                         .requestMatchers("/api/v1/chat/guest/**").permitAll()

@@ -37,6 +37,7 @@ public class TestResultFileController {
     private final org.example.doansummer2026.repository.TestResultAttachmentRepository attachmentRepository;
     private final AuthService authService;
     private final org.example.doansummer2026.repository.StaffInfoRepository staffInfoRepository;
+    private final org.example.doansummer2026.service.FamilyAccessService familyAccessService;
 
     @Value("${app.upload.root:uploads}")
     private String uploadRoot;
@@ -112,10 +113,13 @@ public class TestResultFileController {
         var visit = record != null ? record.getVisit() : null;
         var customer = visit != null ? visit.getCustomer() : null;
         if (account.getRole() == Role.CUSTOMER) {
-            UUID ownerAccountId = customer != null && customer.getAccount() != null
-                    ? customer.getAccount().getAccountId()
-                    : null;
-            if (!account.getAccountId().equals(ownerAccountId)) {
+            if (customer == null) {
+                throw new AccessDeniedException("Không có quyền xem phiếu kết quả này");
+            }
+            try {
+                familyAccessService.resolveReadableProfile(account.getAccountId(),
+                        customer == null ? null : customer.getProfileId());
+            } catch (RuntimeException ex) {
                 throw new AccessDeniedException("Không có quyền xem phiếu kết quả này");
             }
             return;

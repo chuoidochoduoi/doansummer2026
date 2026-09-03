@@ -37,11 +37,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+import java.util.Comparator;
 import java.util.UUID;
 
 import org.example.doansummer2026.repository.DepartmentRepository;
 import org.example.doansummer2026.model.Department;
-import java.util.stream.Collectors;
 import java.util.Map;
 import java.util.Locale;
 
@@ -117,7 +117,8 @@ public class StaffService implements StaffServiceInterface {
                 .gender(parseGender(req.gender()))
                 .phone(phone)
                 .email(email)
-                .address(req.address())
+                .address(blankToNull(req.address()))
+                .avatarUrl(blankToNull(req.avatarUrl()))
                 .build();
         profile = profileRepo.save(profile);
 
@@ -192,6 +193,7 @@ public class StaffService implements StaffServiceInterface {
         if (req.dateOfBirth() != null) profile.setDateOfBirth(req.dateOfBirth());
         if (req.gender() != null) profile.setGender(parseGender(req.gender()));
         if (req.address() != null) profile.setAddress(blankToNull(req.address()));
+        if (req.avatarUrl() != null) profile.setAvatarUrl(blankToNull(req.avatarUrl()));
 
         if (profile.getFullName() == null || profile.getFullName().isBlank()) {
             throw new BadRequestException("Họ tên không được để trống");
@@ -376,6 +378,24 @@ public class StaffService implements StaffServiceInterface {
         List<StaffInfo> nurses = staffRepo.findAllBySystemRoleIn(
                 List.of(SystemRole.NURSE));
         return nurses.stream().filter(this::isActiveStaff).map(this::toStaffOption).toList();
+    }
+
+    /** Danh sách đầy đủ bác sĩ đang hoạt động cho khu vực công khai. */
+    @Transactional(readOnly = true)
+    public List<StaffOptionResponse> getPublicActiveDoctors() {
+        return staffRepo.findAllBySystemRoleIn(doctorRoles()).stream()
+                .filter(this::isActiveStaff)
+                .sorted(Comparator
+                        .comparing((StaffInfo staff) -> staff.getSpecialization() == null
+                                        || staff.getSpecialization().getName() == null
+                                        ? "" : staff.getSpecialization().getName(),
+                                String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(staff -> staff.getProfile() == null
+                                        || staff.getProfile().getFullName() == null
+                                        ? "" : staff.getProfile().getFullName(),
+                                String.CASE_INSENSITIVE_ORDER))
+                .map(this::toStaffOption)
+                .toList();
     }
 
     private boolean isActiveStaff(StaffInfo staff) {

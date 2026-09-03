@@ -11,7 +11,7 @@
 TRUNCATE TABLE
     contact_request, public_announcement, department_capability, medical_service,
     medicine_catalog, icd_10_codes, department, specialization, service_capability,
-    staff_info, staff_capability, staff_attendance, staff_schedule,
+    staff_info, staff_capability, staff_schedule,
     profile, account, shift_config
 RESTART IDENTITY CASCADE;
 

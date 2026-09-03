@@ -7,6 +7,8 @@ import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.dto.medicalService.MedicalServiceCreateRequest;
 import org.example.doansummer2026.dto.medicalService.MedicalServiceResponse;
 import org.example.doansummer2026.dto.medicalService.MedicalServiceUpdateRequest;
+import org.example.doansummer2026.dto.medicalService.ServiceSelectionResolveRequest;
+import org.example.doansummer2026.dto.medicalService.ServiceSelectionResolutionResponse;
 import org.example.doansummer2026.enums.ServiceStatus;
 import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.service.MedicalServiceService;
@@ -35,6 +37,7 @@ import java.util.UUID;
 public class MedicalServiceController {
 
     private final MedicalServiceService service;
+    private final org.example.doansummer2026.service.MedicalServiceSelectionPolicyService selectionPolicyService;
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR', 'ROLE_RECEPTIONIST')")
@@ -57,6 +60,13 @@ public class MedicalServiceController {
             @RequestParam(required = false) DepartmentType departmentType,
             Pageable pageable) {
         return RestResponses.ok(service.listAvailable(keyword, departmentType, pageable));
+    }
+
+    /** Chuẩn hóa danh sách trước khi đặt lịch; endpoint chỉ đọc và không làm lộ dữ liệu bệnh nhân. */
+    @PostMapping("/resolve-selection")
+    public ResponseEntity<ServiceSelectionResolutionResponse> resolveSelection(
+            @Valid @RequestBody ServiceSelectionResolveRequest request) {
+        return RestResponses.ok(selectionPolicyService.resolveResponse(request.serviceIds()));
     }
 
     @GetMapping("/{id}")

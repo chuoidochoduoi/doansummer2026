@@ -81,6 +81,9 @@ public interface MedicalServiceRepository extends JpaRepository<MedicalService, 
     default Page<MedicalService> searchCustomerBookable(String keyword, DepartmentType departmentType,
                                                          Pageable pageable) {
         Specification<MedicalService> spec = (root, query, cb) -> cb.equal(root.get("status"), ServiceStatus.ACTIVE);
+        spec = spec.and((root, query, cb) -> cb.or(
+                cb.isNull(root.get("allowCustomerBooking")),
+                cb.isTrue(root.get("allowCustomerBooking"))));
         if (keyword != null && !keyword.isBlank()) {
             spec = spec.and((root, query, cb) -> cb.or(
                     cb.like(cb.lower(root.get("name")), "%" + keyword.toLowerCase() + "%"),

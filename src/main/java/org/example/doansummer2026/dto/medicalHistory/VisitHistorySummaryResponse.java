@@ -15,5 +15,9 @@ public record VisitHistorySummaryResponse(
         int examinationCount,
         int testCount,
         List<String> doctorNames,
-        String diagnosisSummary
+        String diagnosisSummary,
+        String completionStatus,
+        List<String> completedServiceNames,
+        List<String> skippedServiceNames,
+        int skippedServiceCount
 ) {}

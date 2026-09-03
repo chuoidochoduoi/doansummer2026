@@ -672,109 +672,20 @@ class CustomerVisitServiceTest {
 
 
     // =========================================================
-    // CREATE - MULTIPLE EXAMINATION SERVICES
+    // CREATE - DUPLICATE SERVICES
     // =========================================================
 
     @Test
-    void create_ShouldReject_WhenMoreThanThreeExaminationServices() {
+    void create_ShouldRejectDuplicateServices() {
+        UUID serviceId = UUID.randomUUID();
+        CustomerVisitCreateRequest req = mock(CustomerVisitCreateRequest.class);
+        when(req.serviceIds()).thenReturn(List.of(serviceId, serviceId));
 
-        UUID firstId =
-                UUID.randomUUID();
+        BadRequestException exception = assertThrows(BadRequestException.class,
+                () -> customerVisitService.create(req));
 
-        UUID secondId =
-                UUID.randomUUID();
-
-        UUID thirdId =
-                UUID.randomUUID();
-
-        UUID fourthId =
-                UUID.randomUUID();
-
-        MedicalService first =
-                medicalService(
-                        firstId,
-                        "Kham 1",
-                        "K01",
-                        new BigDecimal("100000"),
-                        DepartmentType.EXAMINATION
-                );
-
-        MedicalService second =
-                medicalService(
-                        secondId,
-                        "Kham 2",
-                        "K02",
-                        new BigDecimal("150000"),
-                        DepartmentType.EXAMINATION
-                );
-
-        MedicalService third =
-                medicalService(
-                        thirdId,
-                        "Kham 3",
-                        "K03",
-                        new BigDecimal("120000"),
-                        DepartmentType.EXAMINATION
-                );
-
-        MedicalService fourth =
-                medicalService(
-                        fourthId,
-                        "Kham 4",
-                        "K04",
-                        new BigDecimal("130000"),
-                        DepartmentType.EXAMINATION
-                );
-
-        CustomerVisitCreateRequest req =
-                mock(
-                        CustomerVisitCreateRequest.class
-                );
-
-        when(req.serviceIds())
-                .thenReturn(
-                        List.of(
-                                firstId,
-                                secondId,
-                                thirdId,
-                                fourthId
-                        )
-                );
-
-        when(
-                serviceRepo.findById(firstId)
-        ).thenReturn(
-                Optional.of(first)
-        );
-
-        when(
-                serviceRepo.findById(secondId)
-        ).thenReturn(
-                Optional.of(second)
-        );
-
-        when(
-                serviceRepo.findById(thirdId)
-        ).thenReturn(
-                Optional.of(third)
-        );
-
-        when(
-                serviceRepo.findById(fourthId)
-        ).thenReturn(
-                Optional.of(fourth)
-        );
-
-        assertThrows(
-                BadRequestException.class,
-                () ->
-                        customerVisitService
-                                .create(req)
-        );
-
-        verifyNoInteractions(
-                profileRepo
-        );
+        assertTrue(exception.getMessage().contains("trùng dịch vụ"));
+        verifyNoInteractions(profileRepo);
     }
 
 

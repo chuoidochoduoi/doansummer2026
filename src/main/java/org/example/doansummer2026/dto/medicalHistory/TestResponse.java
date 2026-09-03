@@ -28,7 +28,12 @@ public record TestResponse(
         String collectedBy,
         UUID orderingRecordId,
         String orderingRecordCode,
-        String orderingServiceName
+        String orderingServiceName,
+        String serviceCode,
+        String panelCode,
+        String panelName,
+        Integer panelTotalAnalytes,
+        UUID queueTicketId
 ) {
     public record TestResultResponse(
             String name,

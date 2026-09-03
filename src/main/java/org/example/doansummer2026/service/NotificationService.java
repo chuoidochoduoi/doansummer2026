@@ -1,6 +1,7 @@
 package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.dto.notification.NotificationCreateRequest;
 import org.example.doansummer2026.dto.notification.NotificationResponse;
@@ -32,6 +33,7 @@ import java.util.UUID;
 @Service
 @Transactional
 @RequiredArgsConstructor
+@Slf4j
 public class NotificationService implements NotificationServiceInterface {
 
     private final NotificationRepository repo;
@@ -144,7 +146,9 @@ public class NotificationService implements NotificationServiceInterface {
                             relatedEntity,
                             relatedEntityId
                     ));
-                } catch (Exception e) {}
+                } catch (Exception e) {
+                    log.warn("Không thể gửi thông báo {} tới nhân sự {}", relatedEntity, staff.getStaffId(), e);
+                }
             }
         }
     }

@@ -41,6 +41,12 @@ public record ClinicManagerScheduleResponse(
 
     public static ClinicManagerScheduleResponse from(List<StaffSchedule> schedules, LocalDate weekStart,
                                                      List<ShiftConfig> allShifts, String staffGroup) {
+        return from(schedules, weekStart, allShifts, staffGroup, true);
+    }
+
+    public static ClinicManagerScheduleResponse from(List<StaffSchedule> schedules, LocalDate weekStart,
+                                                     List<ShiftConfig> allShifts, String staffGroup,
+                                                     boolean requiresDoctorForProfessionalRoom) {
         Map<String, List<StaffScheduleItemResponse>> scheduleMap = new LinkedHashMap<>();
         Set<UUID> staffSet = new HashSet<>();
 
@@ -87,17 +93,20 @@ public record ClinicManagerScheduleResponse(
             List<String> missingRoles = new ArrayList<>();
             String status;
             if ("GENERAL".equalsIgnoreCase(staffGroup)) {
-                if (key.endsWith("_sun")) {
-                    status = "NOT_REQUIRED";
-                } else {
-                    if (!hasReceptionist) missingRoles.add("RECEPTIONIST");
-                    if (!hasCashier) missingRoles.add("CASHIER");
-                    status = missingRoles.isEmpty() ? "COVERED"
-                            : people.isEmpty() ? "UNASSIGNED" : "MISSING_OPERATIONAL_ROLE";
-                }
+                if (!hasReceptionist) missingRoles.add("RECEPTIONIST");
+                if (!hasCashier) missingRoles.add("CASHIER");
+                status = missingRoles.isEmpty() ? "COVERED"
+                        : people.isEmpty() ? "UNASSIGNED" : "MISSING_OPERATIONAL_ROLE";
             } else {
-                if (!hasDoctor) missingRoles.add("DOCTOR");
-                status = hasDoctor ? "COVERED" : people.isEmpty() ? "UNASSIGNED" : "MISSING_DOCTOR";
+                boolean hasProfessionalStaff = requiresDoctorForProfessionalRoom
+                        ? hasDoctor
+                        : people.stream().anyMatch(person -> "BS".equals(person.role()) || "YT".equals(person.role()));
+                if (!hasProfessionalStaff) {
+                    missingRoles.add(requiresDoctorForProfessionalRoom ? "DOCTOR" : "PROFESSIONAL_STAFF");
+                }
+                status = hasProfessionalStaff ? "COVERED"
+                        : people.isEmpty() ? "UNASSIGNED"
+                        : requiresDoctorForProfessionalRoom ? "MISSING_DOCTOR" : "MISSING_PROFESSIONAL_STAFF";
             }
             coverage.put(key, new CoverageInfo(hasDoctor, nurseCount, hasReceptionist, hasCashier,
                     List.copyOf(missingRoles), status));

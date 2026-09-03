@@ -8,6 +8,7 @@ public enum PaymentMethod {
     VNPAY,           // Cong thanh toan VNPay
     ZALOPAY,         // Vi ZaloPay
     INSURANCE,       // Bao hiem (chi mot phan)
+    MEMBERSHIP_CARD, // The tra truoc CareS
     OTHER;           // Khac
 
     public String getDisplayName() {
@@ -19,10 +20,10 @@ public enum PaymentMethod {
             case VNPAY -> "VNPay";
             case ZALOPAY -> "ZaloPay";
             case INSURANCE -> "Insurance";
+            case MEMBERSHIP_CARD -> "Thẻ trả trước CareS";
             default -> "Other";
         };
     }
 }
-
 
 

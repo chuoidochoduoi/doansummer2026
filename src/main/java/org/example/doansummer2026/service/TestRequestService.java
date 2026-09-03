@@ -1,6 +1,7 @@
 package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import tools.jackson.databind.JsonNode;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -52,6 +53,7 @@ import java.util.UUID;
 @Service
 @Transactional
 @RequiredArgsConstructor
+@Slf4j
 public class TestRequestService implements TestRequestServiceInterface {
 
     private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
@@ -79,6 +81,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     private final ClinicalFormEngine clinicalFormEngine;
     private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
     private final StaffDutyService staffDutyService;
+    private final MedicalServiceSelectionPolicyService serviceSelectionPolicyService;
 
     @Transactional(readOnly = true)
     public PageResponse<TestRequestResponse> search(UUID recordId, UUID departmentId,
@@ -91,6 +94,216 @@ public class TestRequestService implements TestRequestServiceInterface {
                 normalizedSearch, workDate, pageable);
         return PageResponse.from(page, TestRequestResponse::from);
     }
+
+    /**
+     * The persistence model keeps one TestRequest per billed analyte.  The lab
+     * worklist deliberately does not: it groups those requests by queue/record
+     * and their catalogued parent panel so one blood sample is handled once.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<LabPanelSummaryResponse> searchPanels(UUID recordId, UUID departmentId,
+                                                               TestRequestStatus status, String search,
+                                                               LocalDate workDate, Pageable pageable) {
+        departmentId = restrictSearchScope(recordId, departmentId);
+        String normalizedSearch = search == null ? "" : search.trim().toLowerCase();
+        List<TestRequest> requests = repo.search(recordId, departmentId, status, normalizedSearch,
+                        workDate, Pageable.unpaged())
+                .getContent();
+        java.util.Map<String, List<TestRequest>> groups = requests.stream()
+                .collect(java.util.stream.Collectors.groupingBy(this::panelGroupKey,
+                        java.util.LinkedHashMap::new, java.util.stream.Collectors.toList()));
+        List<LabPanelSummaryResponse> summaries = groups.values().stream()
+                .map(this::toPanelSummary)
+                .sorted(java.util.Comparator.comparing(LabPanelSummaryResponse::createdAt,
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .toList();
+        int size = pageable.isPaged() ? pageable.getPageSize() : summaries.size();
+        int page = pageable.isPaged() ? pageable.getPageNumber() : 0;
+        int from = Math.min(page * Math.max(1, size), summaries.size());
+        int to = Math.min(from + Math.max(1, size), summaries.size());
+        int totalPages = size <= 0 ? 1 : (int) Math.ceil((double) summaries.size() / size);
+        return new PageResponse<>(summaries.subList(from, to), page, size, summaries.size(), totalPages,
+                page == 0, page >= totalPages - 1);
+    }
+
+    @Transactional(readOnly = true)
+    public LabPanelWorkbenchResponse getPanelWorkbench(UUID representativeId) {
+        return toPanelWorkbench(resolvePanelContext(representativeId));
+    }
+
+    /** Save the shared screen back to the existing per-service records. */
+    public LabPanelWorkbenchResponse savePanelResult(UUID representativeId,
+                                                      LabPanelResultRequest request,
+                                                      boolean complete) {
+        PanelContext context = resolvePanelContext(representativeId);
+        java.util.LinkedHashSet<TestRequest> targets = new java.util.LinkedHashSet<>(context.purchasedByCode.values());
+        if (targets.isEmpty()) throw new BadRequestException("Phiếu xét nghiệm chưa có chỉ số đã thanh toán");
+
+        for (TestRequest target : targets) {
+            String code = target.getService() == null ? "" : target.getService().getServiceCode();
+            tools.jackson.databind.JsonNode data = resultDataForRequest(request.resultData(), context.panel, code);
+            TestResultCreateRequest item = new TestResultCreateRequest(target.getTestRequestId(), request.imageUrl(),
+                    request.conclusion(), request.sampleId(), request.sampleType(), request.sampleStatus(),
+                    request.formTemplateVersionId(), data, request.performedById());
+            if (complete) completeResult(target.getTestRequestId(), item);
+            else if (target.getTestResult() == null) createResult(target.getTestRequestId(), item);
+            else updateResult(target.getTestRequestId(), new TestResultUpdateRequest(
+                    request.imageUrl(), request.conclusion(), request.sampleId(), request.sampleType(),
+                    request.sampleStatus(), request.formTemplateVersionId(), data, false));
+        }
+        return getPanelWorkbench(representativeId);
+    }
+
+    private String panelGroupKey(TestRequest request) {
+        var panel = panelOf(request);
+        if (panel.isEmpty()) return "REQUEST:" + request.getTestRequestId();
+        String scope = request.getQueueTicket() != null ? "QUEUE:" + request.getQueueTicket().getTicketId()
+                : request.getMedicalRecord() != null ? "RECORD:" + request.getMedicalRecord().getRecordId()
+                : "REQUEST:" + request.getTestRequestId();
+        return scope + "|" + panel.get().serviceCode();
+    }
+
+    private java.util.Optional<LaboratoryAnalyteCatalog.Panel> panelOf(TestRequest request) {
+        String code = request.getService() == null ? null : request.getService().getServiceCode();
+        return LaboratoryAnalyteCatalog.panel(code).or(() -> LaboratoryAnalyteCatalog.parentPanel(code));
+    }
+
+    private LabPanelSummaryResponse toPanelSummary(List<TestRequest> requests) {
+        TestRequest representative = requests.stream()
+                .filter(item -> panelOf(item).map(panel -> panel.serviceCode().equalsIgnoreCase(
+                        item.getService().getServiceCode())).orElse(false))
+                .findFirst().orElse(requests.get(0));
+        var panel = panelOf(representative).orElse(null);
+        if (panel == null) {
+            TestRequestResponse raw = TestRequestResponse.from(representative);
+            return new LabPanelSummaryResponse(representative.getTestRequestId(), raw.queueTicketId(), raw.queueNumber(),
+                    raw.queueStatus(), raw.performingDepartmentId(), null, raw.serviceName(), raw.patientCode(),
+                    raw.patientName(), raw.createdAt(), raw.status(), 1, 1,
+                    raw.status() == TestRequestStatus.COMPLETED ? 1 : 0, false);
+        }
+        java.util.Set<String> selectedCodes = purchasedCodes(panel, requests);
+        int completed = completedAnalytes(panel, requests, selectedCodes);
+        TestRequestStatus aggregate = completed == selectedCodes.size() ? TestRequestStatus.COMPLETED
+                : requests.stream().anyMatch(item -> item.getStatus() == TestRequestStatus.IN_PROGRESS)
+                ? TestRequestStatus.IN_PROGRESS : TestRequestStatus.PENDING;
+        TestRequestResponse raw = TestRequestResponse.from(representative);
+        return new LabPanelSummaryResponse(representative.getTestRequestId(), raw.queueTicketId(), raw.queueNumber(),
+                raw.queueStatus(), raw.performingDepartmentId(), panel.serviceCode(), panel.name(), raw.patientCode(),
+                raw.patientName(), requests.stream().map(TestRequest::getCreatedAt).filter(java.util.Objects::nonNull)
+                .min(LocalDateTime::compareTo).orElse(raw.createdAt()), aggregate, selectedCodes.size(),
+                panel.analytes().size(), completed, true);
+    }
+
+    private PanelContext resolvePanelContext(UUID representativeId) {
+        TestRequest anchor = findById(representativeId);
+        ensureCurrentStaffCanView(anchor);
+        LaboratoryAnalyteCatalog.Panel panel = panelOf(anchor)
+                .orElseThrow(() -> new BadRequestException("Dịch vụ này không thuộc gói xét nghiệm"));
+        List<TestRequest> scope = anchor.getQueueTicket() != null
+                ? repo.findAllByQueueTicket_TicketId(anchor.getQueueTicket().getTicketId())
+                : anchor.getMedicalRecord() == null || anchor.getMedicalRecord().getVisit() == null
+                ? List.of(anchor)
+                : repo.findAllByVisitIdWithDetails(anchor.getMedicalRecord().getVisit().getVisitId()).stream()
+                .filter(item -> item.getMedicalRecord() != null && anchor.getMedicalRecord().getRecordId()
+                        .equals(item.getMedicalRecord().getRecordId())).toList();
+        List<TestRequest> requests = scope.stream().filter(item -> panelOf(item)
+                        .map(candidate -> candidate.serviceCode().equals(panel.serviceCode())).orElse(false))
+                .toList();
+        if (requests.stream().noneMatch(item -> representativeId.equals(item.getTestRequestId()))) {
+            throw new ResourceNotFoundException("Không tìm thấy phiếu xét nghiệm trong nhóm này");
+        }
+        java.util.Map<String, TestRequest> purchased = new java.util.LinkedHashMap<>();
+        for (TestRequest item : requests) {
+            String code = item.getService().getServiceCode();
+            if (panel.serviceCode().equalsIgnoreCase(code)) {
+                panel.analytes().forEach(analyte -> purchased.put(analyte.serviceCode(), item));
+            } else if (LaboratoryAnalyteCatalog.analyte(code).isPresent()) {
+                purchased.put(code, item);
+            }
+        }
+        return new PanelContext(anchor, panel, requests, purchased);
+    }
+
+    private LabPanelWorkbenchResponse toPanelWorkbench(PanelContext context) {
+        TestRequest anchor = context.anchor;
+        TestResult sampleResult = context.purchasedByCode.values().stream()
+                .map(TestRequest::getTestResult).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        tools.jackson.databind.node.ObjectNode values = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        context.purchasedByCode.values().stream().distinct().map(TestRequest::getTestResult)
+                .filter(java.util.Objects::nonNull).map(TestResult::getResultData)
+                .filter(java.util.Objects::nonNull).filter(tools.jackson.databind.JsonNode::isObject)
+                .forEach(data -> data.properties().forEach(entry -> {
+                    if ("_omissions".equals(entry.getKey()) && entry.getValue().isObject()) {
+                        tools.jackson.databind.node.ObjectNode omissions = values.has("_omissions")
+                                && values.get("_omissions").isObject()
+                                ? (tools.jackson.databind.node.ObjectNode) values.get("_omissions")
+                                : values.putObject("_omissions");
+                        entry.getValue().properties().forEach(omission -> omissions.set(omission.getKey(), omission.getValue()));
+                    } else values.set(entry.getKey(), entry.getValue());
+                }));
+        MedicalService panelService = serviceRepo.findByServiceCode(context.panel.serviceCode())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cấu hình gói xét nghiệm"));
+        var version = clinicalFormTemplateService.resolveVersion(panelService.getServiceId(), null);
+        var form = clinicalFormTemplateService.resolvedResponse(version, values, context.panel.serviceCode());
+        List<LabPanelWorkbenchResponse.AnalyteItem> analytes = context.panel.analytes().stream().map(analyte -> {
+            TestRequest request = context.purchasedByCode.get(analyte.serviceCode());
+            return new LabPanelWorkbenchResponse.AnalyteItem(analyte.serviceCode(), analyte.fieldKey(), analyte.name(),
+                    request != null, request == null ? null : request.getTestRequestId(),
+                    request == null ? null : request.getStatus());
+        }).toList();
+        int completed = completedAnalytes(context.panel, context.requests, context.purchasedByCode.keySet());
+        TestRequestResponse raw = TestRequestResponse.from(anchor);
+        return new LabPanelWorkbenchResponse(anchor.getTestRequestId(), raw.queueTicketId(), raw.queueNumber(),
+                raw.queueStatus(), raw.performingDepartmentId(), context.panel.serviceCode(), context.panel.name(), raw.patientCode(), raw.patientName(),
+                raw.createdAt(), sampleResult == null ? null : sampleResult.getSampleId(),
+                sampleResult == null || sampleResult.getSampleType() == null ? null : sampleResult.getSampleType().name(),
+                sampleResult == null || sampleResult.getSampleStatus() == null ? null : sampleResult.getSampleStatus().name(),
+                sampleResult == null ? null : sampleResult.getConclusion(), values, version.getVersionId(), form,
+                context.purchasedByCode.size(), context.panel.analytes().size(), completed, analytes);
+    }
+
+    private java.util.Set<String> purchasedCodes(LaboratoryAnalyteCatalog.Panel panel, List<TestRequest> requests) {
+        java.util.Set<String> codes = new java.util.LinkedHashSet<>();
+        requests.forEach(item -> {
+            String code = item.getService().getServiceCode();
+            if (panel.serviceCode().equalsIgnoreCase(code)) panel.analytes().forEach(analyte -> codes.add(analyte.serviceCode()));
+            else if (LaboratoryAnalyteCatalog.analyte(code).isPresent()) codes.add(code);
+        });
+        return codes;
+    }
+
+    private int completedAnalytes(LaboratoryAnalyteCatalog.Panel panel, List<TestRequest> requests,
+                                  java.util.Set<String> selectedCodes) {
+        return (int) selectedCodes.stream().filter(code -> requests.stream().anyMatch(item -> {
+            String itemCode = item.getService().getServiceCode();
+            return item.getStatus() == TestRequestStatus.COMPLETED
+                    && (code.equalsIgnoreCase(itemCode) || panel.serviceCode().equalsIgnoreCase(itemCode));
+        })).count();
+    }
+
+    private tools.jackson.databind.JsonNode resultDataForRequest(tools.jackson.databind.JsonNode values,
+                                                                  LaboratoryAnalyteCatalog.Panel panel,
+                                                                  String serviceCode) {
+        if (values == null || !values.isObject()) return values;
+        if (panel.serviceCode().equalsIgnoreCase(serviceCode)) return values;
+        String key = LaboratoryAnalyteCatalog.analyte(serviceCode).map(LaboratoryAnalyteCatalog.Analyte::fieldKey)
+                .orElse(null);
+        if (key == null) return values;
+        tools.jackson.databind.node.ObjectNode result = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        if (values.has(key)) result.set(key, values.get(key));
+        // Do not copy omissions of other paid analytes into this individual
+        // TestRequest.  Each billed analyte keeps only its own clinical data.
+        JsonNode omissions = values.path("_omissions");
+        if (omissions.isObject() && omissions.has(key)) {
+            tools.jackson.databind.node.ObjectNode ownOmissions = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+            ownOmissions.set(key, omissions.get(key));
+            result.set("_omissions", ownOmissions);
+        }
+        return result;
+    }
+
+    private record PanelContext(TestRequest anchor, LaboratoryAnalyteCatalog.Panel panel,
+                                List<TestRequest> requests, java.util.Map<String, TestRequest> purchasedByCode) {}
 
     @Transactional(readOnly = true)
     public List<TestRequestResponse> listByVisit(UUID visitId) {
@@ -239,6 +452,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         MedicalService service = serviceRepo.findById(req.serviceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + req.serviceId()));
         requireParaclinicalService(service);
+        validateSelectionAgainstExistingRequests(record, List.of(service.getServiceId()));
         ensureNoSignedSameDayResult(record, service);
         ensureServiceNotAlreadyRequested(record, service.getServiceId());
         Department dept = selectPerformingDepartment(service);
@@ -461,6 +675,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     private void publishLabQueueUpdated(UUID departmentId) {
         try {
             messagingTemplate.convertAndSend("/topic/department-" + departmentId + "-lab-queue", "LAB_UPDATED");
+            messagingTemplate.convertAndSend("/topic/queue-display", "QUEUE_UPDATED");
         } catch (Exception ignored) {
             // Khong de WebSocket lam huy giao dich nghiep vu.
         }
@@ -472,6 +687,7 @@ public class TestRequestService implements TestRequestServiceInterface {
             messagingTemplate.convertAndSend(
                     "/topic/department-" + queueTicket.getDepartment().getDepartmentId() + "-queue",
                     "QUEUE_UPDATED");
+            messagingTemplate.convertAndSend("/topic/queue-display", "QUEUE_UPDATED");
         } catch (Exception ignored) {
             // Khong de WebSocket lam huy giao dich nghiep vu.
         }
@@ -499,7 +715,9 @@ public class TestRequestService implements TestRequestServiceInterface {
                             "TestRequest",
                             t.getTestRequestId()
                     ));
-                } catch (Exception e) {}
+                } catch (Exception e) {
+                    log.warn("Không thể gửi thông báo cho yêu cầu CLS {}", t.getTestRequestId(), e);
+                }
             }
         }
     }
@@ -514,7 +732,9 @@ public class TestRequestService implements TestRequestServiceInterface {
         TestRequest saved = repo.save(t);
         try {
             messagingTemplate.convertAndSend("/topic/department-" + saved.getPerformingDepartment().getDepartmentId() + "-lab-queue", "LAB_UPDATED");
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            log.warn("Không thể phát sự kiện cập nhật hàng chờ CLS {}", saved.getTestRequestId(), e);
+        }
         
         return TestRequestResponse.from(saved);
     }
@@ -535,7 +755,9 @@ public class TestRequestService implements TestRequestServiceInterface {
                     "TestRequest",
                     t.getTestRequestId()
             ));
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            log.warn("Không thể gửi thông báo kết quả CLS {}", t.getTestRequestId(), e);
+        }
     }
 
     public void delete(UUID id) {
@@ -569,7 +791,8 @@ public class TestRequestService implements TestRequestServiceInterface {
         var version = result != null && result.getFormTemplateVersion() != null
                 ? result.getFormTemplateVersion()
                 : clinicalFormTemplateService.resolveVersion(request.getService().getServiceId(), null);
-        return clinicalFormTemplateService.resolvedResponse(version, result == null ? null : result.getResultData());
+        return clinicalFormTemplateService.resolvedResponse(version,
+                result == null ? null : result.getResultData(), request.getService().getServiceCode());
     }
 
     public TestResultResponse createResult(UUID testRequestId, TestResultCreateRequest req) {
@@ -734,7 +957,10 @@ public class TestRequestService implements TestRequestServiceInterface {
                         java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS, TestRequestStatus.BLOCKED));
 
                 completeStandaloneRecordIfReady(t.getMedicalRecord(), totalTestRequests, incompleteCount);
-                if (totalTestRequests > 0 && incompleteCount == 0) {
+                boolean waitingForCarriedPrebookedTests = patientJourneyService
+                        .hasOutstandingTestsForExamination(queueTicket.getTicketId());
+                if (totalTestRequests > 0 && incompleteCount == 0
+                        && !waitingForCarriedPrebookedTests) {
                     queueTicket.setStatus(QueueStatus.TEST_DONE);
                 } else {
                     queueTicket.setStatus(QueueStatus.WAITING_FOR_TEST);
@@ -743,6 +969,10 @@ public class TestRequestService implements TestRequestServiceInterface {
                 queueTicketRepo.save(queueTicket);
                 publishExaminationQueueUpdated(queueTicket);
             }
+            // CLS dat truoc co MedicalRecord ky thuat rieng, nen sau khi no
+            // hoan thanh can kiem tra lai benh an bac si dang cho ket qua.
+            patientJourneyService.refreshWaitingExaminationsAfterTestCompletion(
+                    t.getMedicalRecord().getVisit().getVisitId());
             if (queueTicket == null || queueTicket.getStatus() != QueueStatus.TEST_DONE)
                 patientJourneyService.activateNext(t.getMedicalRecord().getVisit().getVisitId());
         }
@@ -763,7 +993,9 @@ public class TestRequestService implements TestRequestServiceInterface {
                 request.getService().getServiceId(), effectiveVersionId);
         var patient = request.getMedicalRecord() == null || request.getMedicalRecord().getVisit() == null
                 ? null : request.getMedicalRecord().getVisit().getCustomer();
-        JsonNode normalized = clinicalFormEngine.validateAndEnrich(version.getSchemaJson(), effectiveInput,
+        JsonNode effectiveSchema = clinicalFormTemplateService.schemaForService(
+                request.getService().getServiceCode(), version);
+        JsonNode normalized = clinicalFormEngine.validateAndEnrich(effectiveSchema, effectiveInput,
                 patient == null ? null : patient.getDateOfBirth(),
                 patient == null ? null : patient.getGender(), LocalDate.now(CLINIC_ZONE), requireComplete);
         result.setFormTemplateVersion(version);
@@ -842,7 +1074,9 @@ public class TestRequestService implements TestRequestServiceInterface {
                     request.getService().getServiceId(), req.formTemplateVersionId());
             var patient = request.getMedicalRecord() == null || request.getMedicalRecord().getVisit() == null
                     ? null : request.getMedicalRecord().getVisit().getCustomer();
-            revision.setResultData(clinicalFormEngine.validateAndEnrich(version.getSchemaJson(), req.resultData(),
+            JsonNode effectiveSchema = clinicalFormTemplateService.schemaForService(
+                    request.getService().getServiceCode(), version);
+            revision.setResultData(clinicalFormEngine.validateAndEnrich(effectiveSchema, req.resultData(),
                     patient == null ? null : patient.getDateOfBirth(), patient == null ? null : patient.getGender(),
                     LocalDate.now(CLINIC_ZONE), false));
             revision.setTemplateVersion(version);
@@ -860,8 +1094,10 @@ public class TestRequestService implements TestRequestServiceInterface {
         TestResult result = revision.getTestResult();
         var patient = request.getMedicalRecord() == null || request.getMedicalRecord().getVisit() == null
                 ? null : request.getMedicalRecord().getVisit().getCustomer();
+        JsonNode effectiveSchema = clinicalFormTemplateService.schemaForService(
+                request.getService().getServiceCode(), revision.getTemplateVersion());
         revision.setResultData(clinicalFormEngine.validateAndEnrich(
-                revision.getTemplateVersion().getSchemaJson(), revision.getResultData(),
+                effectiveSchema, revision.getResultData(),
                 patient == null ? null : patient.getDateOfBirth(),
                 patient == null ? null : patient.getGender(), LocalDate.now(CLINIC_ZONE), true));
         revisionRepo.findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
@@ -915,6 +1151,19 @@ public class TestRequestService implements TestRequestServiceInterface {
             result.setSampleStatus(null);
             return;
         }
+        if (normalizedSampleId == null && (result.getSampleId() == null || result.getSampleId().isBlank())) {
+            String compactId = request.getTestRequestId().toString().replace("-", "")
+                    .substring(0, 8).toUpperCase(java.util.Locale.ROOT);
+            normalizedSampleId = "SMP-" + LocalDate.now(CLINIC_ZONE)
+                    .format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE) + "-" + compactId;
+        }
+        if (sampleType == null && result.getSampleType() == null) {
+            sampleType = defaultSpecimenType(request);
+        }
+        if (sampleStatus == null && result.getSampleStatus() == null) {
+            sampleStatus = org.example.doansummer2026.enums.SpecimenStatus.ACCEPTED;
+        }
+        hasSpecimenInput = normalizedSampleId != null || sampleType != null || sampleStatus != null;
         if (normalizedSampleId != null) result.setSampleId(normalizedSampleId);
         if (sampleType != null) result.setSampleType(sampleType);
         if (sampleStatus != null) result.setSampleStatus(sampleStatus);
@@ -927,6 +1176,17 @@ public class TestRequestService implements TestRequestServiceInterface {
             result.setCollectedAt(LocalDateTime.now());
             result.setCollectedBy(collector);
         }
+    }
+
+    private org.example.doansummer2026.enums.SpecimenType defaultSpecimenType(TestRequest request) {
+        String service = request.getService() == null ? "" : ((request.getService().getServiceCode() == null ? "" : request.getService().getServiceCode())
+                + " " + (request.getService().getName() == null ? "" : request.getService().getName()))
+                .toLowerCase(java.util.Locale.ROOT);
+        if (service.contains("nước tiểu") || service.contains("urine"))
+            return org.example.doansummer2026.enums.SpecimenType.URINE;
+        if (service.contains("ngoáy") || service.contains("swab") || service.contains("cúm"))
+            return org.example.doansummer2026.enums.SpecimenType.SWAB;
+        return org.example.doansummer2026.enums.SpecimenType.BLOOD;
     }
 
     /**
@@ -1160,14 +1420,17 @@ public class TestRequestService implements TestRequestServiceInterface {
         }
 
         InvoiceItem finalInvoiceItem = invoiceItem;
-        java.util.List<TestRequest> toCreate = req.serviceIds().stream()
-                .distinct()
-                .map((java.util.function.Function<java.util.UUID, TestRequest>) serviceId -> {
-                    MedicalService service = serviceRepo.findById(serviceId)
-                            .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
+        java.util.List<MedicalService> normalizedServices = serviceSelectionPolicyService != null
+                ? serviceSelectionPolicyService.normalizeOrThrow(req.serviceIds())
+                : req.serviceIds().stream().distinct().map(id -> serviceRepo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + id))).toList();
+        validateSelectionAgainstExistingRequests(record,
+                normalizedServices.stream().map(MedicalService::getServiceId).toList());
+        java.util.List<TestRequest> toCreate = normalizedServices.stream()
+                .map((java.util.function.Function<MedicalService, TestRequest>) service -> {
                     requireParaclinicalService(service);
                     ensureNoSignedSameDayResult(record, service);
-                    ensureServiceNotAlreadyRequested(record, serviceId);
+                    ensureServiceNotAlreadyRequested(record, service.getServiceId());
                     Department dept = selectPerformingDepartment(service);
                     return TestRequest.builder()
                             .medicalRecord(record)
@@ -1196,6 +1459,13 @@ public class TestRequestService implements TestRequestServiceInterface {
                 visitId, serviceId, TestRequestStatus.CANCELLED)) {
             throw new ConflictException("Dịch vụ này đã được chỉ định trong lượt khám hiện tại.");
         }
+    }
+
+    private void validateSelectionAgainstExistingRequests(MedicalRecord record, List<UUID> requestedServiceIds) {
+        if (serviceSelectionPolicyService == null || record == null || record.getVisit() == null) return;
+        serviceSelectionPolicyService.validateAgainstExisting(requestedServiceIds,
+                repo.findDistinctActiveServiceIdsByVisit(
+                        record.getVisit().getVisitId(), TestRequestStatus.CANCELLED));
     }
 
     private void requireParaclinicalService(MedicalService service) {

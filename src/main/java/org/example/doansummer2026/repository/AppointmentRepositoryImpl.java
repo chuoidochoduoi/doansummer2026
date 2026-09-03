@@ -11,6 +11,7 @@ import jakarta.persistence.TypedQuery;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.Collection;
 
 public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
 
@@ -79,11 +80,18 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
 
     @Override
     public Page<Appointment> searchForCustomer(UUID customerId, String code, String specialty, String status, LocalDateTime from, LocalDateTime to, Pageable pageable) {
+        return searchForCustomers(java.util.List.of(customerId), code, specialty, status, from, to, pageable);
+    }
+
+    @Override
+    public Page<Appointment> searchForCustomers(Collection<UUID> customerIds, String code, String specialty,
+                                                String status, LocalDateTime from, LocalDateTime to,
+                                                Pageable pageable) {
         StringBuilder jpql = new StringBuilder(
-            "SELECT DISTINCT a FROM Appointment a LEFT JOIN FETCH a.customer LEFT JOIN FETCH a.services s LEFT JOIN FETCH s.department d WHERE a.deleted = false AND a.customer.profileId = :customerId"
+            "SELECT DISTINCT a FROM Appointment a LEFT JOIN FETCH a.customer LEFT JOIN FETCH a.services s LEFT JOIN FETCH s.department d WHERE a.deleted = false AND a.customer.profileId IN :customerIds"
         );
         StringBuilder countJpql = new StringBuilder(
-            "SELECT COUNT(DISTINCT a) FROM Appointment a WHERE a.deleted = false AND a.customer.profileId = :customerId"
+            "SELECT COUNT(DISTINCT a) FROM Appointment a WHERE a.deleted = false AND a.customer.profileId IN :customerIds"
         );
 
         if (code != null && !code.isEmpty()) {
@@ -124,8 +132,8 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryCustom {
         TypedQuery<Appointment> query = em.createQuery(jpql.toString(), Appointment.class);
         TypedQuery<Long> countQuery = em.createQuery(countJpql.toString(), Long.class);
 
-        query.setParameter("customerId", customerId);
-        countQuery.setParameter("customerId", customerId);
+        query.setParameter("customerIds", customerIds);
+        countQuery.setParameter("customerIds", customerIds);
 
         if (code != null && !code.isEmpty()) {
             // Frontend sends APPT-XXXX, but UUID is lowercase with hyphens, we just search wildcard

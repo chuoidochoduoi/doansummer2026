@@ -45,6 +45,7 @@ public class MedicalRecordController {
     private final AuthService authService;
     private final org.example.doansummer2026.service.AppointmentService appointmentService;
     private final org.example.doansummer2026.service.ProfileService profileService;
+    private final org.example.doansummer2026.service.FamilyAccessService familyAccessService;
 
     // --- MAIN ENDPOINTS ---
 
@@ -170,8 +171,9 @@ public class MedicalRecordController {
     @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
     public ResponseEntity<ReceptionistRecordPageResponse<MedicalHistoryResponse>> getMedicalHistory(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) UUID patientProfileId,
             Pageable pageable) {
-        UUID profileId = authService.currentProfileId();
+        UUID profileId = patientProfileId(patientProfileId, false);
         if (profileId == null) {
             return RestResponses.ok(new ReceptionistRecordPageResponse<>(java.util.Collections.emptyList(), 0L, 0));
         }
@@ -181,8 +183,9 @@ public class MedicalRecordController {
 
     @GetMapping("/api/patient/medical-history/{recordId}")
     @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
-    public ResponseEntity<VisitDetailResponse> getVisitDetail(@PathVariable UUID recordId) {
-        UUID profileId = authService.currentProfileId();
+    public ResponseEntity<VisitDetailResponse> getVisitDetail(@PathVariable UUID recordId,
+                                                               @RequestParam(required = false) UUID patientProfileId) {
+        UUID profileId = patientProfileId(patientProfileId, false);
         if (profileId == null) {
             throw new org.example.doansummer2026.exception.ResourceNotFoundException("Không tìm thấy hồ sơ cá nhân");
         }
@@ -193,8 +196,9 @@ public class MedicalRecordController {
     @GetMapping("/api/patient/medical-history/visits")
     @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
     public ResponseEntity<ReceptionistRecordPageResponse<VisitHistorySummaryResponse>> getVisitHistory(
-            @RequestParam(required = false) String search, Pageable pageable) {
-        UUID profileId = authService.currentProfileId();
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) UUID patientProfileId, Pageable pageable) {
+        UUID profileId = patientProfileId(patientProfileId, false);
         if (profileId == null) {
             return RestResponses.ok(new ReceptionistRecordPageResponse<>(java.util.List.of(), 0L, 0));
         }
@@ -204,8 +208,9 @@ public class MedicalRecordController {
 
     @GetMapping("/api/patient/medical-history/visits/{visitId}")
     @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
-    public ResponseEntity<VisitDetailResponse> getPatientVisitDetail(@PathVariable UUID visitId) {
-        UUID profileId = authService.currentProfileId();
+    public ResponseEntity<VisitDetailResponse> getPatientVisitDetail(@PathVariable UUID visitId,
+                                                                      @RequestParam(required = false) UUID patientProfileId) {
+        UUID profileId = patientProfileId(patientProfileId, false);
         if (profileId == null) {
             throw new org.example.doansummer2026.exception.ResourceNotFoundException(
                     "Không tìm thấy hồ sơ cá nhân");
@@ -216,16 +221,18 @@ public class MedicalRecordController {
     @GetMapping("/api/patient/medical-history/{recordId}/clinical-form")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
     public ResponseEntity<org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse> getPatientClinicalForm(
-            @PathVariable UUID recordId) {
-        return RestResponses.ok(service.getClinicalFormForPatient(recordId, authService.currentProfileId()));
+            @PathVariable UUID recordId,
+            @RequestParam(required = false) UUID patientProfileId) {
+        return RestResponses.ok(service.getClinicalFormForPatient(recordId, patientProfileId(patientProfileId, false)));
     }
 
     @PostMapping("/api/patient/medical-history/{recordId}/rate")
     @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
     @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "recordId", description = "Đánh giá lượt khám")
     public ResponseEntity<MedicalRecordResponse> rateVisit(@PathVariable UUID recordId,
+                                                          @RequestParam(required = false) UUID patientProfileId,
                                                           @RequestParam int ratingScore) {
-        UUID profileId = authService.currentProfileId();
+        UUID profileId = patientProfileId(patientProfileId, true);
         if (profileId == null) {
             throw new org.example.doansummer2026.exception.ResourceNotFoundException(
                     "Không tìm thấy hồ sơ cá nhân");
@@ -240,18 +247,23 @@ public class MedicalRecordController {
     @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "recordId", description = "Gửi phản hồi lượt khám")
     public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse> submitFeedback(
             @PathVariable UUID recordId,
+            @RequestParam(required = false) UUID patientProfileId,
             @Valid @RequestBody org.example.doansummer2026.dto.medicalRecord.FeedbackRequest req) {
-        return RestResponses.ok(service.submitFeedback(recordId, authService.currentProfileId(), req));
+        return RestResponses.ok(service.submitFeedback(recordId, patientProfileId(patientProfileId, true), req));
+    }
+
+    private UUID patientProfileId(UUID requestedProfileId, boolean activeRequired) {
+        UUID accountId = authService.currentAccount().getAccountId();
+        return (activeRequired
+                ? familyAccessService.resolveActiveProfile(accountId, requestedProfileId)
+                : familyAccessService.resolveReadableProfile(accountId, requestedProfileId)).getProfileId();
     }
 
     @GetMapping("/api/v1/feedbacks")
-    @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER','ROLE_RECEPTIONIST','ROLE_DOCTOR')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER','ROLE_RECEPTIONIST')")
     public ResponseEntity<org.example.doansummer2026.common.PageResponse<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse>> feedbacks(
             Pageable pageable) {
-        UUID doctorId = (authService.getCurrentSystemRole() == org.example.doansummer2026.enums.SystemRole.CLINIC_MANAGER
-                || authService.getCurrentSystemRole() == org.example.doansummer2026.enums.SystemRole.RECEPTIONIST)
-                ? null : authService.currentStaffId();
-        return RestResponses.ok(service.listFeedbacks(doctorId, pageable));
+        return RestResponses.ok(service.listFeedbacks(null, pageable));
     }
 
     @GetMapping("/api/v1/feedbacks/stats/unanswered-count")
@@ -266,14 +278,6 @@ public class MedicalRecordController {
     public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse> respond(
             @PathVariable UUID id, @RequestBody java.util.Map<String,String> body) {
         return RestResponses.ok(service.respondFeedback(id, authService.currentStaffId(), body.get("response")));
-    }
-
-    @PutMapping("/api/v1/feedbacks/{id}/explain")
-    @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
-    @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "id", description = "Bác sĩ giải trình đánh giá")
-    public ResponseEntity<org.example.doansummer2026.dto.medicalRecord.FeedbackResponse> explain(
-            @PathVariable UUID id, @RequestBody java.util.Map<String,String> body) {
-        return RestResponses.ok(service.explainFeedback(id, authService.currentStaffId(), body.get("explanation")));
     }
 
     // --- RECEPTIONIST ENDPOINTS ---

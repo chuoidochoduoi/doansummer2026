@@ -13,6 +13,7 @@ import org.example.doansummer2026.dto.schedule.ScheduleResponse;
 import org.example.doansummer2026.dto.schedule.ScheduleShiftUpdateRequest;
 import org.example.doansummer2026.dto.schedule.ScheduleUpdateRequest;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
+import org.example.doansummer2026.repository.DepartmentRepository;
 import org.example.doansummer2026.service.StaffScheduleService;
 import org.example.doansummer2026.service.AuthService;
 import org.springframework.data.domain.Pageable;
@@ -42,6 +43,7 @@ public class StaffScheduleController {
 
     private final StaffScheduleService service;
     private final ShiftConfigRepository shiftConfigRepo;
+    private final DepartmentRepository departmentRepo;
     private final AuthService authService;
 
     // --- MAIN ENDPOINTS ---
@@ -132,8 +134,15 @@ public class StaffScheduleController {
                         && departmentId.equals(schedule.getStaff().getDepartment().getDepartmentId())))
                 .filter(schedule -> matchesStaffGroup(schedule, staffGroup))
                 .toList();
+        boolean requiresDoctorForProfessionalRoom = departmentId == null
+                || departmentRepo.findById(departmentId)
+                .map(department -> department.getDepartmentType() == null
+                        || department.getDepartmentType().normalized()
+                        == org.example.doansummer2026.enums.DepartmentType.EXAMINATION)
+                .orElse(true);
         var response = ClinicManagerScheduleResponse.from(
-                schedules, weekStart, shiftConfigRepo.findAllByIsActiveTrueOrderByStartTimeAsc(), staffGroup);
+                schedules, weekStart, shiftConfigRepo.findAllByIsActiveTrueOrderByStartTimeAsc(),
+                staffGroup, requiresDoctorForProfessionalRoom);
         return RestResponses.ok(response);
     }
 

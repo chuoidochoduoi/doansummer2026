@@ -43,6 +43,7 @@ public class InvoiceController {
     private final InvoiceService service;
     private final AuthService authService;
     private final org.example.doansummer2026.service.PayOSService payOSService;
+    private final org.example.doansummer2026.service.FamilyAccessService familyAccessService;
 
     // --- MAIN ENDPOINTS ---
 
@@ -146,11 +147,13 @@ public class InvoiceController {
     @GetMapping("/api/patient/payments")
     @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
     public ResponseEntity<ReceptionistRecordPageResponse<PaymentHistoryResponse>> getPaymentHistory(
+            @RequestParam(required = false) UUID patientProfileId,
             @RequestParam(required = false) String fromDate,
             @RequestParam(required = false) String toDate,
             @RequestParam(required = false) String method,
             Pageable pageable) {
-        UUID profileId = authService.currentProfileId();
+        UUID profileId = familyAccessService.resolveReadableProfile(
+                authService.currentAccount().getAccountId(), patientProfileId).getProfileId();
         if (profileId == null) {
             return RestResponses.ok(new ReceptionistRecordPageResponse<>(java.util.Collections.emptyList(), 0L, 0));
         }
@@ -171,8 +174,11 @@ public class InvoiceController {
     @GetMapping("/api/patient/payments/{invoiceId}")
     @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
     public ResponseEntity<ReceiptDetailResponse> getReceiptDetail(
-            @PathVariable UUID invoiceId) {
-        ReceiptDetailResponse response = service.getReceiptDetail(invoiceId, authService.currentProfileId());
+            @PathVariable UUID invoiceId,
+            @RequestParam(required = false) UUID patientProfileId) {
+        UUID profileId = familyAccessService.resolveReadableProfile(
+                authService.currentAccount().getAccountId(), patientProfileId).getProfileId();
+        ReceiptDetailResponse response = service.getReceiptDetail(invoiceId, profileId);
         return RestResponses.ok(response);
     }
 
@@ -181,6 +187,7 @@ public class InvoiceController {
             case "appbanking", "banking", "bank_transfer" -> PaymentMethod.BANK_TRANSFER;
             case "cash" -> PaymentMethod.CASH;
             case "card" -> PaymentMethod.CARD;
+            case "membership_card", "membership" -> PaymentMethod.MEMBERSHIP_CARD;
             default -> null;
         };
     }

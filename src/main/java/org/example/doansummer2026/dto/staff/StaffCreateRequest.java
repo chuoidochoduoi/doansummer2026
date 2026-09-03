@@ -23,6 +23,7 @@ public record StaffCreateRequest(
         @NotNull @Past(message = "Ngày sinh phải là ngày trong quá khứ") LocalDate dateOfBirth,
         @NotBlank @Pattern(regexp = "(?i)^(MALE|FEMALE)$", message = "Giới tính chỉ nhận MALE hoặc FEMALE") String gender,
         @Size(max = 255) String address,
+        @Size(max = 2000000, message = "Dữ liệu ảnh đại diện quá lớn") String avatarUrl,
         // StaffInfo
         // Phong chuyen mon duoc gan tai man Quan ly phong, khong gan luc tao tai khoan.
         // specializationId: bat buoc cho DOCTOR; Kham tong quat cung la mot chuyen khoa phuc vu

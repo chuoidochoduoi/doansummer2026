@@ -204,7 +204,6 @@ public class AuditLogAspect {
             case "Appointment" -> "Lịch hẹn";
             case "ClinicInformation" -> "Thông tin phòng khám";
             case "System" -> "Hệ thống";
-            case "Attendance" -> "Điểm danh";
             case "AuditLog" -> "Nhật ký hệ thống";
             case "Auth" -> "Xác thực tài khoản";
             case "Bhxh", "Insurance" -> "Bảo hiểm y tế";

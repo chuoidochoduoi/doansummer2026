@@ -65,6 +65,16 @@ public interface InvoiceItemRepository extends JpaRepository<InvoiceItem, UUID> 
             @Param("visitId") UUID visitId,
             @Param("excludedInvoiceId") UUID excludedInvoiceId);
 
+    @Query(value = """
+            SELECT DISTINCT ii.service_id FROM invoice_item ii
+            JOIN invoice i ON i.invoice_id = ii.invoice_id
+            WHERE i.visit_id = :visitId AND i.status <> 'CANCELLED'
+              AND (:excludedInvoiceId IS NULL OR i.invoice_id <> :excludedInvoiceId)
+            """, nativeQuery = true)
+    List<UUID> findDistinctActiveServiceIdsByVisit(
+            @Param("visitId") UUID visitId,
+            @Param("excludedInvoiceId") UUID excludedInvoiceId);
+
     @Query("""
             SELECT ii FROM InvoiceItem ii
             JOIN FETCH ii.invoice i

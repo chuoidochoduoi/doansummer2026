@@ -1,6 +1,7 @@
 package org.example.doansummer2026.config;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.model.Insurance;
 import org.example.doansummer2026.model.InsuranceRule;
@@ -14,6 +15,7 @@ import java.util.List;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class InsuranceDataSeeder implements CommandLineRunner {
 
     private final InsuranceRepository insuranceRepository;
@@ -64,7 +66,7 @@ public class InsuranceDataSeeder implements CommandLineRunner {
                     createRule(pvi, DepartmentType.IMAGING, new BigDecimal("5.00"))
             ));
 
-            System.out.println("Seeded real Insurance Data.");
+            log.info("Đã khởi tạo dữ liệu quy tắc bảo hiểm mặc định");
         }
     }
 
