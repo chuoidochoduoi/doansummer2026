@@ -12,7 +12,7 @@ import org.example.doansummer2026.dto.medicalRecord.MedicalRecordResponse;
 import org.example.doansummer2026.dto.medicalRecord.MedicalRecordUpdateRequest;
 import org.example.doansummer2026.dto.medicalRecord.TestRequestInExaminationRequest;
 import org.example.doansummer2026.dto.icd.ICD10SelectionCreateRequest;
-import org.example.doansummer2026.dto.testRequest.TestRequestCreateRequest;
+import org.example.doansummer2026.dto.testrequest.TestRequestCreateRequest;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.exception.ConflictException;
@@ -1024,7 +1024,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         if (q.getVisit() == null) {
             throw new BadRequestException("Phiếu không có thông tin lượt khám");
         }
-        List<org.example.doansummer2026.dto.testRequest.TestRequestResponse> requests =
+        List<org.example.doansummer2026.dto.testrequest.TestRequestResponse> requests =
                 testRequestService.listByVisit(q.getVisit().getVisitId());
         if (requests.isEmpty()) {
             throw new BadRequestException("Lượt khám chưa có yêu cầu cận lâm sàng");

@@ -4,11 +4,11 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.common.RestResponses;
-import org.example.doansummer2026.dto.testRequest.TestRequestBatchCreateRequest;
-import org.example.doansummer2026.dto.testRequest.TestRequestCreateRequest;
-import org.example.doansummer2026.dto.testRequest.TestRequestResponse;
-import org.example.doansummer2026.dto.testRequest.TestRequestUpdateRequest;
-import org.example.doansummer2026.dto.testRequest.TestRequestCancelRequest;
+import org.example.doansummer2026.dto.testrequest.TestRequestBatchCreateRequest;
+import org.example.doansummer2026.dto.testrequest.TestRequestCreateRequest;
+import org.example.doansummer2026.dto.testrequest.TestRequestResponse;
+import org.example.doansummer2026.dto.testrequest.TestRequestUpdateRequest;
+import org.example.doansummer2026.dto.testrequest.TestRequestCancelRequest;
 import org.example.doansummer2026.dto.testresult.TestResultCreateRequest;
 import org.example.doansummer2026.dto.testresult.TestResultResponse;
 import org.example.doansummer2026.dto.testresult.TestResultUpdateRequest;
@@ -61,7 +61,7 @@ public class TestRequestController {
     /** Group billable analytes into one laboratory workbench per parent panel. */
     @GetMapping("/panels")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
-    public ResponseEntity<PageResponse<org.example.doansummer2026.dto.testRequest.LabPanelSummaryResponse>> panels(
+    public ResponseEntity<PageResponse<org.example.doansummer2026.dto.testrequest.LabPanelSummaryResponse>> panels(
             @RequestParam(required = false) UUID recordId,
             @RequestParam(required = false) UUID departmentId,
             @RequestParam(required = false) TestRequestStatus status,
@@ -81,30 +81,30 @@ public class TestRequestController {
 
     @GetMapping("/{id}/panel-workbench")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
-    public ResponseEntity<org.example.doansummer2026.dto.testRequest.LabPanelWorkbenchResponse> panelWorkbench(
+    public ResponseEntity<org.example.doansummer2026.dto.testrequest.LabPanelWorkbenchResponse> panelWorkbench(
             @PathVariable UUID id) {
         return RestResponses.ok(service.getPanelWorkbench(id));
     }
 
     @PutMapping("/{id}/panel-workbench/result")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
-    public ResponseEntity<org.example.doansummer2026.dto.testRequest.LabPanelWorkbenchResponse> savePanelResult(
+    public ResponseEntity<org.example.doansummer2026.dto.testrequest.LabPanelWorkbenchResponse> savePanelResult(
             @PathVariable UUID id,
-            @Valid @RequestBody org.example.doansummer2026.dto.testRequest.LabPanelResultRequest req) {
+            @Valid @RequestBody org.example.doansummer2026.dto.testrequest.LabPanelResultRequest req) {
         return RestResponses.ok(service.savePanelResult(id, req, false));
     }
 
     @PostMapping("/{id}/panel-workbench/complete")
     @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
-    public ResponseEntity<org.example.doansummer2026.dto.testRequest.LabPanelWorkbenchResponse> completePanelResult(
+    public ResponseEntity<org.example.doansummer2026.dto.testrequest.LabPanelWorkbenchResponse> completePanelResult(
             @PathVariable UUID id,
-            @Valid @RequestBody org.example.doansummer2026.dto.testRequest.LabPanelResultRequest req) {
+            @Valid @RequestBody org.example.doansummer2026.dto.testrequest.LabPanelResultRequest req) {
         return RestResponses.ok(service.savePanelResult(id, req, true));
     }
 
     @GetMapping("/{id}/action-permissions")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
-    public ResponseEntity<org.example.doansummer2026.dto.testRequest.TestRequestActionPermissionsResponse> actionPermissions(
+    public ResponseEntity<org.example.doansummer2026.dto.testrequest.TestRequestActionPermissionsResponse> actionPermissions(
             @PathVariable UUID id) {
         return RestResponses.ok(service.actionPermissions(id));
     }

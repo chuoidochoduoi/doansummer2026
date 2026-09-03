@@ -9,7 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Set;
 import org.example.doansummer2026.common.PageResponse;
-import org.example.doansummer2026.dto.testRequest.*;
+import org.example.doansummer2026.dto.testrequest.*;
 import org.example.doansummer2026.dto.testresult.TestResultCreateRequest;
 import org.example.doansummer2026.dto.testresult.TestResultResponse;
 import org.example.doansummer2026.dto.testresult.TestResultUpdateRequest;

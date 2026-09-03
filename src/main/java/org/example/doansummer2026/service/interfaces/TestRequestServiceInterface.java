@@ -1,10 +1,10 @@
 package org.example.doansummer2026.service.interfaces;
 
 import org.example.doansummer2026.common.PageResponse;
-import org.example.doansummer2026.dto.testRequest.TestRequestCancelRequest;
-import org.example.doansummer2026.dto.testRequest.TestRequestResponse;
-import org.example.doansummer2026.dto.testRequest.TestRequestCreateRequest;
-import org.example.doansummer2026.dto.testRequest.TestRequestUpdateRequest;
+import org.example.doansummer2026.dto.testrequest.TestRequestCancelRequest;
+import org.example.doansummer2026.dto.testrequest.TestRequestResponse;
+import org.example.doansummer2026.dto.testrequest.TestRequestCreateRequest;
+import org.example.doansummer2026.dto.testrequest.TestRequestUpdateRequest;
 import org.example.doansummer2026.dto.testresult.TestResultResponse;
 import org.example.doansummer2026.dto.testresult.TestResultCreateRequest;
 import org.example.doansummer2026.dto.testresult.TestResultUpdateRequest;

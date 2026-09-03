@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.testRequest;
+package org.example.doansummer2026.dto.testrequest;
 
 import tools.jackson.databind.JsonNode;
 import org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse;

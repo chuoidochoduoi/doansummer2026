@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.testRequest;
+package org.example.doansummer2026.dto.testrequest;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
