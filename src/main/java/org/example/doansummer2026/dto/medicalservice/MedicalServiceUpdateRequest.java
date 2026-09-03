@@ -1,28 +1,24 @@
-package org.example.doansummer2026.dto.medicalService;
+package org.example.doansummer2026.dto.medicalservice;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import org.example.doansummer2026.enums.ServiceStatus;
 import org.example.doansummer2026.enums.DepartmentType;
+import java.math.BigDecimal;
+import java.util.UUID;
 import org.example.doansummer2026.enums.Gender;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Max;
 
-import java.math.BigDecimal;
-import java.util.UUID;
-
 /**
- * Tao dich vu moi - mac dinh la DRAFT.
+ * Cap nhat dich vu; DRAFT chi duoc chuyen sang ACTIVE, ACTIVE va INACTIVE co the chuyen qua lai.
  */
-public record MedicalServiceCreateRequest(
-        @NotBlank @Size(max = 20) String serviceCode,
-        @NotBlank @Size(max = 200) String name,
+public record MedicalServiceUpdateRequest(
+        @Size(max = 200) String name,
         @Size(max = 1000) String description,
-        @NotNull DepartmentType departmentType,
-        @NotNull @PositiveOrZero BigDecimal price,
+        DepartmentType departmentType,
+        @PositiveOrZero BigDecimal price,
         ServiceStatus status,
         Boolean isPointOfCare,
         @Positive Integer durationMinutes,

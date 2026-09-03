@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.medicalService;
+package org.example.doansummer2026.dto.medicalservice;
 
 import java.util.List;
 import java.util.UUID;

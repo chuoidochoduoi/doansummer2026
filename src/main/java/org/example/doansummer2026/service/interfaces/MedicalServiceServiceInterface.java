@@ -1,9 +1,9 @@
 package org.example.doansummer2026.service.interfaces;
 
 import org.example.doansummer2026.common.PageResponse;
-import org.example.doansummer2026.dto.medicalService.MedicalServiceResponse;
-import org.example.doansummer2026.dto.medicalService.MedicalServiceCreateRequest;
-import org.example.doansummer2026.dto.medicalService.MedicalServiceUpdateRequest;
+import org.example.doansummer2026.dto.medicalservice.MedicalServiceResponse;
+import org.example.doansummer2026.dto.medicalservice.MedicalServiceCreateRequest;
+import org.example.doansummer2026.dto.medicalservice.MedicalServiceUpdateRequest;
 import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.enums.ServiceStatus;
 import org.example.doansummer2026.enums.DepartmentType;

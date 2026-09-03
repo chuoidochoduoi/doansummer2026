@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.medicalService;
+package org.example.doansummer2026.dto.medicalservice;
 
 import jakarta.persistence.EntityNotFoundException;
 import org.example.doansummer2026.model.MedicalService;

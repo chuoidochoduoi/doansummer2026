@@ -1,8 +1,8 @@
 package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
-import org.example.doansummer2026.dto.medicalService.MedicalServiceResponse;
-import org.example.doansummer2026.dto.medicalService.ServiceSelectionResolutionResponse;
+import org.example.doansummer2026.dto.medicalservice.MedicalServiceResponse;
+import org.example.doansummer2026.dto.medicalservice.ServiceSelectionResolutionResponse;
 import org.example.doansummer2026.enums.ServiceRelationType;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
