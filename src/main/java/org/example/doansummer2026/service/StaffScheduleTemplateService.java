@@ -1,8 +1,8 @@
 package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
-import org.example.doansummer2026.dto.scheduleTemplate.ScheduleTemplateRequest;
-import org.example.doansummer2026.dto.scheduleTemplate.ScheduleTemplateResponse;
+import org.example.doansummer2026.dto.scheduletemplate.ScheduleTemplateRequest;
+import org.example.doansummer2026.dto.scheduletemplate.ScheduleTemplateResponse;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.ShiftConfig;

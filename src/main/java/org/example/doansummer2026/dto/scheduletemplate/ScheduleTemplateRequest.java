@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.scheduleTemplate;
+package org.example.doansummer2026.dto.scheduletemplate;
 
 import jakarta.validation.constraints.NotNull;
 import java.time.DayOfWeek;

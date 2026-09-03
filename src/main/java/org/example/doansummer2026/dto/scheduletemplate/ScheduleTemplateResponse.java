@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.scheduleTemplate;
+package org.example.doansummer2026.dto.scheduletemplate;
 
 import org.example.doansummer2026.dto.schedule.ShiftResponse;
 import org.example.doansummer2026.model.StaffScheduleTemplate;

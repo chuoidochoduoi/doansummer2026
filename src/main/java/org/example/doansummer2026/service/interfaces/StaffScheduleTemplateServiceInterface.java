@@ -1,7 +1,7 @@
 package org.example.doansummer2026.service.interfaces;
 
-import org.example.doansummer2026.dto.scheduleTemplate.ScheduleTemplateResponse;
-import org.example.doansummer2026.dto.scheduleTemplate.ScheduleTemplateRequest;
+import org.example.doansummer2026.dto.scheduletemplate.ScheduleTemplateResponse;
+import org.example.doansummer2026.dto.scheduletemplate.ScheduleTemplateRequest;
 import org.example.doansummer2026.model.StaffScheduleTemplate;
 
 import java.util.List;
