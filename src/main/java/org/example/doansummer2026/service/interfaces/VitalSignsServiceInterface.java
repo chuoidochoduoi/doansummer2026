@@ -1,8 +1,8 @@
 package org.example.doansummer2026.service.interfaces;
 
-import org.example.doansummer2026.dto.vitalSigns.VitalSignsResponse;
-import org.example.doansummer2026.dto.vitalSigns.VitalSignsCreateRequest;
-import org.example.doansummer2026.dto.vitalSigns.VitalSignsUpdateRequest;
+import org.example.doansummer2026.dto.vitalsigns.VitalSignsResponse;
+import org.example.doansummer2026.dto.vitalsigns.VitalSignsCreateRequest;
+import org.example.doansummer2026.dto.vitalsigns.VitalSignsUpdateRequest;
 import org.example.doansummer2026.model.VitalSigns;
 
 import java.util.UUID;

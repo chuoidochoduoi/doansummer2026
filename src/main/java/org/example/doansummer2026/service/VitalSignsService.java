@@ -1,9 +1,9 @@
 package org.example.doansummer2026.service;
 
 import lombok.RequiredArgsConstructor;
-import org.example.doansummer2026.dto.vitalSigns.VitalSignsCreateRequest;
-import org.example.doansummer2026.dto.vitalSigns.VitalSignsResponse;
-import org.example.doansummer2026.dto.vitalSigns.VitalSignsUpdateRequest;
+import org.example.doansummer2026.dto.vitalsigns.VitalSignsCreateRequest;
+import org.example.doansummer2026.dto.vitalsigns.VitalSignsResponse;
+import org.example.doansummer2026.dto.vitalsigns.VitalSignsUpdateRequest;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;

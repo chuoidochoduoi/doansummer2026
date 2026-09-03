@@ -3,7 +3,7 @@ package org.example.doansummer2026.dto.medicalRecord;
 import org.example.doansummer2026.dto.icd.ICD10SelectionResponse;
 import org.example.doansummer2026.model.MedicalRecord;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
-import org.example.doansummer2026.dto.vitalSigns.VitalSignsResponse;
+import org.example.doansummer2026.dto.vitalsigns.VitalSignsResponse;
 import org.example.doansummer2026.dto.medicalRecord.PrescriptionItemResponse;
 import org.example.doansummer2026.dto.testRequest.TestRequestResponse;
 

@@ -66,7 +66,7 @@ public record VisitDetailResponse(
                                       String conclusion, String treatmentPlan, String patientInstruction,
                                       String followUpNote, String prescription,
                                       List<PrescriptionItemResponse> prescriptionItems,
-                                      org.example.doansummer2026.dto.vitalSigns.VitalSignsResponse vitalSigns,
+                                      org.example.doansummer2026.dto.vitalsigns.VitalSignsResponse vitalSigns,
                                       org.example.doansummer2026.dto.clinicalForm.ResolvedClinicalFormResponse clinicalForm) {}
 
     public record SkippedServiceResponse(UUID serviceId, String serviceName, String departmentName,
@@ -222,7 +222,7 @@ public record VisitDetailResponse(
                 record.getConclusion(), record.getPatientInstruction(), record.getFollowUpNote(),
                 prescriptionTextFrom(record), prescriptionItems,
                 record.getVitalSigns() != null
-                        ? org.example.doansummer2026.dto.vitalSigns.VitalSignsResponse.from(record.getVitalSigns())
+                        ? org.example.doansummer2026.dto.vitalsigns.VitalSignsResponse.from(record.getVitalSigns())
                         : null,
                 clinicalFormFrom(record)
         );

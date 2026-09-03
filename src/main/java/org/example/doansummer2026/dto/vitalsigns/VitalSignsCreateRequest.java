@@ -1,4 +1,4 @@
-package org.example.doansummer2026.dto.vitalSigns;
+package org.example.doansummer2026.dto.vitalsigns;
 
 import jakarta.validation.constraints.NotNull;
 
