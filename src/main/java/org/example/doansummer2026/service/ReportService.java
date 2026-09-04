@@ -23,10 +23,136 @@ import java.time.YearMonth;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import org.example.doansummer2026.repository.CustomerVisitRepository;
+import org.example.doansummer2026.repository.TransactionRepository;
+import org.example.doansummer2026.repository.MembershipCardLedgerRepository;
+import org.example.doansummer2026.repository.TestResultRevisionRepository;
+import org.example.doansummer2026.dto.report.ClinicOverviewResponse;
+import java.time.temporal.ChronoUnit;
+import org.example.doansummer2026.exception.BadRequestException;
+import org.example.doansummer2026.enums.TransactionStatus;
+import org.example.doansummer2026.enums.PaymentMethod;
+import org.example.doansummer2026.enums.TestResultRevisionStatus;
+import org.example.doansummer2026.enums.MedicalRecordStatus;
+import org.example.doansummer2026.enums.DepartmentType;
+import org.example.doansummer2026.enums.TestRequestStatus;
+import org.example.doansummer2026.enums.VisitStatus;
+import java.math.BigDecimal;
+import org.example.doansummer2026.enums.MembershipLedgerType;
+import java.time.LocalDateTime;
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ReportService {
+
+    private final CustomerVisitRepository visitRepo;
+    private final TransactionRepository transactionRepo;
+    private final MembershipCardLedgerRepository ledgerRepo;
+    private final TestResultRevisionRepository revisionRepo;
+
+    /** Canonical report for the manager UI; old response contracts remain available. */
+    public ClinicOverviewResponse getOverview(LocalDate from, LocalDate to) {
+        if (from == null && to == null) from = to = LocalDate.now(CLINIC_ZONE);
+        if (from == null || to == null || to.isBefore(from) || ChronoUnit.DAYS.between(from, to) > 366) {
+            throw new BadRequestException("Chọn khoảng ngày hợp lệ, tối đa 367 ngày.");
+        }
+        final LocalDate start = from, end = to;
+        var visits = visitRepo.findAll();
+        var queues = queueTicketRepo.findAll();
+        var records = medicalRecordRepo.findAll();
+        var tests = testRequestRepo.findAll();
+        var invoices = invoiceRepo.findAll().stream().filter(i -> i.getStatus() != InvoiceStatus.CANCELLED)
+                .filter(i -> inPeriod(i.getIssueDate(), start, end)).toList();
+        var invoiceIds = invoices.stream().map(Invoice::getInvoiceId).collect(Collectors.toSet());
+        var items = invoiceItemRepo.findAll().stream().filter(i -> i.getInvoice() != null
+                && invoiceIds.contains(i.getInvoice().getInvoiceId())).toList();
+        // A cancelled/failed transaction is never counted, even when its invoice still exists.
+        var payments = transactionRepo.findAll().stream()
+                .filter(t -> t.getStatus() == TransactionStatus.SUCCESS)
+                .filter(t -> t.getPaymentMethod() != PaymentMethod.INSURANCE)
+                .filter(t -> inPeriod(t.getPaidAt(), start, end)).toList();
+        var signedTests = revisionRepo.findAll().stream()
+                .filter(r -> !Boolean.TRUE.equals(r.getDeleted()) && r.getSignedAt() != null && r.getSignedBy() != null)
+                .filter(r -> r.getStatus() == TestResultRevisionStatus.SIGNED)
+                .filter(r -> r.getTestResult() != null && r.getTestResult().getTestRequest() != null)
+                .map(r -> r.getTestResult().getTestRequest().getTestRequestId()).collect(Collectors.toSet());
+        var completedRecords = records.stream()
+                .filter(r -> r.getStatus() == MedicalRecordStatus.COMPLETED)
+                .filter(r -> r.getQueueTicket() != null && r.getQueueTicket().getService() != null
+                        && r.getQueueTicket().getService().getDepartmentType() == DepartmentType.EXAMINATION)
+                .filter(r -> inPeriod(r.getCompletedAt(), start, end)).toList();
+        var completedTests = tests.stream()
+                .filter(t -> t.getStatus() == TestRequestStatus.COMPLETED)
+                .filter(t -> signedTests.contains(t.getTestRequestId()) && inPeriod(t.getCompletedAt(), start, end)).toList();
+        var skippedVisits = queues.stream().filter(q -> q.getStatus() == QueueStatus.SKIPPED && q.getVisit() != null)
+                .map(q -> q.getVisit().getVisitId()).collect(Collectors.toSet());
+        var closed = visits.stream().filter(v -> inPeriod(v.getCheckOutTime(), start, end))
+                .filter(v -> v.getStatus() == VisitStatus.COMPLETED).toList();
+        var activity = new ClinicOverviewResponse.Activity(
+                visits.stream().filter(v -> inPeriod(v.getCheckInTime(), start, end)).count(), closed.size(),
+                closed.stream().filter(v -> skippedVisits.contains(v.getVisitId())).count(),
+                visits.stream().filter(v -> v.getStatus() == VisitStatus.CANCELLED
+                        && inPeriod(v.getCheckOutTime(), start, end)).count(), completedRecords.size(), completedTests.size());
+
+        var gross = invoices.stream().map(i -> money(i.getSubtotal())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        var discount = invoices.stream().map(i -> money(i.getDiscount())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        var insurance = items.stream().map(i -> money(i.getBhytFund())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        var care = ledgerRepo.findAll().stream().filter(l -> !Boolean.TRUE.equals(l.getDeleted()))
+                .filter(l -> l.getType() == MembershipLedgerType.PAYMENT)
+                .filter(l -> l.getInvoice() != null && invoiceIds.contains(l.getInvoice().getInvoiceId()))
+                .filter(l -> l.getPaymentTransaction() != null && l.getPaymentTransaction().getStatus()
+                        == TransactionStatus.SUCCESS)
+                .map(l -> money(l.getBenefitDiscount())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        var finance = new ClinicOverviewResponse.Finance(
+                payments.stream().map(t -> money(t.getAmount())).reduce(BigDecimal.ZERO, BigDecimal::add), payments.size(),
+                gross, insurance, care, discount.subtract(insurance).subtract(care),
+                invoices.stream().map(i -> money(i.getTax())).reduce(BigDecimal.ZERO, BigDecimal::add),
+                invoices.stream().map(i -> money(i.getTotalAmount())).reduce(BigDecimal.ZERO, BigDecimal::add),
+                invoices.stream().map(i -> money(i.getPaidAmount())).reduce(BigDecimal.ZERO, BigDecimal::add),
+                invoices.stream().map(i -> money(i.getTotalAmount()).subtract(money(i.getPaidAmount())).max(BigDecimal.ZERO))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add));
+        Map<String, BigDecimal> trend = new TreeMap<>(), methods = new TreeMap<>();
+        boolean monthly = ChronoUnit.DAYS.between(start, end) > 62;
+        for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) trend.put(monthly ? YearMonth.from(d).toString() : d.toString(), BigDecimal.ZERO);
+        payments.forEach(t -> {
+            String key = monthly ? YearMonth.from(t.getPaidAt()).toString() : t.getPaidAt().toLocalDate().toString();
+            trend.merge(key, money(t.getAmount()), BigDecimal::add);
+            methods.merge(t.getPaymentMethod() == null ? "OTHER" : t.getPaymentMethod().name(), money(t.getAmount()), BigDecimal::add);
+        });
+        var rooms = departmentRepo.findAll().stream().sorted(Comparator.comparing(d -> d.getRoomCode())).map(d -> {
+            var roomQueues = queues.stream().filter(q -> q.getDepartment() != null && d.getDepartmentId().equals(q.getDepartment().getDepartmentId()))
+                    .filter(q -> inPeriod(q.getWorkDate(), start, end)).toList();
+            var ratings = records.stream().filter(r -> r.getRatingScore() != null && inPeriod(r.getRatedAt(), start, end))
+                    .filter(r -> r.getQueueTicket() != null && r.getQueueTicket().getDepartment() != null
+                            && d.getDepartmentId().equals(r.getQueueTicket().getDepartment().getDepartmentId())).toList();
+            return new ClinicOverviewResponse.Room(d.getRoomCode(), d.getName(),
+                    completedRecords.stream().filter(r -> r.getQueueTicket().getDepartment() != null && d.getDepartmentId().equals(r.getQueueTicket().getDepartment().getDepartmentId())).count(),
+                    completedTests.stream().filter(t -> t.getPerformingDepartment() != null && d.getDepartmentId().equals(t.getPerformingDepartment().getDepartmentId())).count(),
+                    roomQueues.stream().filter(q -> Set.of(QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.TEST_DONE).contains(q.getStatus())).count(),
+                    roomQueues.stream().filter(q -> Set.of(QueueStatus.IN_PROGRESS, QueueStatus.WAITING_FOR_TEST).contains(q.getStatus())).count(),
+                    roomQueues.stream().filter(q -> q.getStatus() == QueueStatus.SKIPPED).count(),
+                    ratings.isEmpty() ? null : Math.round(ratings.stream().mapToInt(r -> r.getRatingScore()).average().orElse(0)*10)/10.0, ratings.size());
+        }).toList();
+        // Use invoice snapshots, not today's list price; item finalPrice already covers the entire quantity.
+        var groups = items.stream().collect(Collectors.groupingBy(i -> Objects.toString(i.getServiceCodeSnapshot(), "UNKNOWN") + "|" + Objects.toString(i.getServiceSnapshot(), "Dịch vụ"), TreeMap::new, Collectors.toList()));
+        var services = groups.values().stream().map(group -> {
+            var first = group.get(0);
+            return new ClinicOverviewResponse.ServiceLine(first.getServiceCodeSnapshot(), first.getServiceSnapshot(),
+                    first.getService() == null || first.getService().getDepartmentType() == null ? "OTHER" : first.getService().getDepartmentType().name(),
+                    group.stream().mapToLong(i -> i.getQuantity() == null ? 1 : i.getQuantity()).sum(),
+                    group.stream().map(i -> money(i.getUnitPrice()).multiply(BigDecimal.valueOf(i.getQuantity() == null ? 1 : i.getQuantity()))).reduce(BigDecimal.ZERO, BigDecimal::add),
+                    group.stream().map(i -> money(i.getBhytFund())).reduce(BigDecimal.ZERO, BigDecimal::add),
+                    group.stream().map(i -> money(i.getFinalPrice() == null ? i.getLineTotal() : i.getFinalPrice())).reduce(BigDecimal.ZERO, BigDecimal::add));
+        }).toList();
+        return new ClinicOverviewResponse(start, end, activity, finance,
+                trend.entrySet().stream().map(e -> new ClinicOverviewResponse.AmountPoint(e.getKey(),e.getValue())).toList(),
+                methods.entrySet().stream().map(e -> new ClinicOverviewResponse.AmountPoint(e.getKey(),e.getValue())).toList(), rooms, services);
+    }
+
+    private static BigDecimal money(BigDecimal amount) { return amount == null ? BigDecimal.ZERO : amount; }
+    private static boolean inPeriod(LocalDateTime value, LocalDate from, LocalDate to) { return value != null && inPeriod(value.toLocalDate(), from, to); }
+    private static boolean inPeriod(LocalDate value, LocalDate from, LocalDate to) { return value != null && !value.isBefore(from) && !value.isAfter(to); }
 
     private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
 

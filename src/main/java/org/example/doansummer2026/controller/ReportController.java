@@ -23,6 +23,14 @@ public class ReportController {
 
     private final ReportService reportService;
 
+    @GetMapping("/overview")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<org.example.doansummer2026.dto.report.ClinicOverviewResponse> getOverview(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+        return RestResponses.ok(reportService.getOverview(fromDate, toDate));
+    }
+
     /**
      * Thong ke dashboard cho CLINIC_MANAGER.
      */

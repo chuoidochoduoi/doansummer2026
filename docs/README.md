@@ -9,11 +9,13 @@
 - [Vai trò và phân quyền](roles-and-permissions.md)
 - [Các luồng nghiệp vụ chính](workflows.md)
 - [Bảng truy vết chức năng](traceability.md)
+- [Thống kê Clinic Manager và quy tắc tính số liệu](reports.md)
 
 ## Phát triển và vận hành
 
 - [Cài đặt, cấu hình và kiểm thử](development.md)
 - [Baseline hiện tại](baseline.md)
+- [Dữ liệu demo, reset an toàn và tài khoản](demo/README.md)
 - [ERD tổng quan](diagrams/ERD-Tong-Quan.drawio)
 - [ERD chi tiết](diagrams/ERD-Chi-Tiet.drawio)
 - [Schema tham khảo](../database-schema.sql)
