@@ -19,6 +19,7 @@ import org.example.doansummer2026.repository.MedicalServiceRepository;
 import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.example.doansummer2026.repository.TestRequestRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -28,6 +29,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -35,6 +37,10 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ReportServiceTest {
+    @BeforeAll
+    static void useTheSameBusinessTimezoneAsReports() {
+        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
+    }
 
     @Mock
     private InvoiceRepository invoiceRepo;

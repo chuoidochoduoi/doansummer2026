@@ -242,6 +242,7 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                 normalizedWeekStart, normalizedWeekStart.plusDays(6));
 
         List<StaffSchedule> toCreate = new ArrayList<>();
+        List<StaffSchedule> toReplace = new ArrayList<>();
         for (StaffInfo staff : targets) {
             List<StaffScheduleTemplate> templates = templateRepo.findByStaff(staff);
             for (StaffScheduleTemplate t : templates) {
@@ -250,12 +251,13 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                 List<StaffSchedule> existing = findExactSchedules(staff, workDate, t.getShift());
                 if (!existing.isEmpty()) {
                     if (!override) continue;
-                    // Du lieu cu co the da bi lap do thao tac sao chep truoc day.
-                    // Override phai thay the toan bo, khong chi xoa mot ban ghi.
-                    scheduleRepo.deleteAll(existing);
-                    scheduleRepo.flush();
+                    for (StaffSchedule schedule : existing) {
+                        if (schedule.getStatus() != ScheduleStatus.SCHEDULED) {
+                            throw new ConflictException("Không thể ghi đè lịch trực đã được xử lý");
+                        }
+                        ensureScheduleHasNotStarted(schedule);
+                    }
                 }
-                validateNoOverlappingShift(staff, workDate, t.getShift(), null);
                 ShiftScheduleResolver.ResolvedShift resolved = requireOpenShift(workDate, t.getShift());
                 StaffSchedule schedule = StaffSchedule.builder()
                         .staff(staff)
@@ -268,8 +270,18 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
                         .isCustom(false)
                         .template(t)
                         .build();
+                ensureScheduleHasNotStarted(schedule);
+                Set<UUID> replacedIds = existing.stream().map(StaffSchedule::getScheduleId)
+                        .collect(java.util.stream.Collectors.toSet());
+                validateNoOverlappingShiftsExcluding(staff, workDate, t.getShift(), replacedIds);
+                toReplace.addAll(existing);
                 toCreate.add(schedule);
             }
+        }
+        // Validate the entire batch before deleting any existing assignment.
+        if (!toReplace.isEmpty()) {
+            scheduleRepo.deleteAll(toReplace);
+            scheduleRepo.flush();
         }
         return scheduleRepo.saveAll(toCreate).stream().map(ScheduleResponse::from).toList();
     }
@@ -482,14 +494,20 @@ public class StaffScheduleService implements StaffScheduleServiceInterface {
 
     private void validateNoOverlappingShift(StaffInfo staff, LocalDate date,
                                             ShiftConfig shift, UUID excludedScheduleId) {
+        validateNoOverlappingShiftsExcluding(staff, date, shift,
+                excludedScheduleId == null ? Set.of() : Set.of(excludedScheduleId));
+    }
+
+    private void validateNoOverlappingShiftsExcluding(StaffInfo staff, LocalDate date,
+                                                      ShiftConfig shift, Set<UUID> excludedScheduleIds) {
         ShiftScheduleResolver.ResolvedShift requested = requireOpenShift(date, shift);
         LocalTime newStart = requested.startTime();
         LocalTime newEnd = requested.endTime();
         boolean overlaps = scheduleRepo.findAllByStaff_StaffIdAndWorkDate(staff.getStaffId(), date)
                 .stream()
                 .filter(schedule -> schedule.getShift() != null)
-                .filter(schedule -> excludedScheduleId == null
-                        || !schedule.getScheduleId().equals(excludedScheduleId))
+                .filter(schedule -> excludedScheduleIds.isEmpty()
+                        || !excludedScheduleIds.contains(schedule.getScheduleId()))
                 .anyMatch(schedule -> {
                     ShiftScheduleResolver.ResolvedShift existing = shiftScheduleResolver.resolve(schedule.getShift(), date);
                     if (!existing.available()) return false;

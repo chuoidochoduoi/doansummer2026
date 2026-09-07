@@ -18,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -73,6 +74,15 @@ class AppointmentServiceTest {
 
     @Mock
     private ShiftConfigRepository shiftConfigRepository;
+
+    @Mock
+    private FamilyMemberRepository familyMemberRepository;
+
+    @Mock
+    private FamilyAccessService familyAccessService;
+
+    @Mock
+    private CustomerVisitService customerVisitService;
 
     @InjectMocks
     private AppointmentService appointmentService;
@@ -502,6 +512,8 @@ class AppointmentServiceTest {
         AppointmentCreateRequest req =
                 mock(AppointmentCreateRequest.class);
 
+        when(req.serviceIds()).thenReturn(Set.of(UUID.randomUUID()));
+
         when(req.customerId())
                 .thenReturn(accountId);
 
@@ -542,6 +554,8 @@ class AppointmentServiceTest {
                         appointmentService.create(req)
         );
 
+        verify(repo).existsCustomerConflict(eq(profileId), anyList(), any(), any());
+
         verify(
                 repo,
                 never()
@@ -576,6 +590,8 @@ class AppointmentServiceTest {
 
         AppointmentCreateRequest req =
                 mock(AppointmentCreateRequest.class);
+
+        when(req.serviceIds()).thenReturn(Set.of(UUID.randomUUID()));
 
         when(req.customerId())
                 .thenReturn(accountId);
@@ -2195,7 +2211,7 @@ class AppointmentServiceTest {
     // =========================================================
 
     @Test
-    void checkIn_ShouldReject_WhenCustomerHasActiveVisit() {
+    void checkIn_ShouldReject_WhenSameDayExaminationAlreadyRegistered() {
 
         UUID appointmentId =
                 UUID.randomUUID();
@@ -2204,9 +2220,6 @@ class AppointmentServiceTest {
                 UUID.randomUUID();
 
         UUID profileId =
-                UUID.randomUUID();
-
-        UUID activeVisitId =
                 UUID.randomUUID();
 
         Profile customer =
@@ -2269,28 +2282,9 @@ class AppointmentServiceTest {
                 Optional.of(customer)
         );
 
-        CustomerVisit activeVisit =
-                CustomerVisit.builder()
-                        .visitId(activeVisitId)
-                        .status(
-                                VisitStatus.IN_PROGRESS
-                        )
-                        .build();
-
-        when(
-                visitRepo
-                        .findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                                eq(profileId),
-                                eq(
-                                        List.of(
-                                                VisitStatus.CHECKED_IN,
-                                                VisitStatus.IN_PROGRESS
-                                        )
-                                )
-                        )
-        ).thenReturn(
-                Optional.of(activeVisit)
-        );
+        doThrow(new ConflictException("Dịch vụ đã được đăng ký hôm nay"))
+                .when(customerVisitService).validateNoSameDayExaminationRegistration(
+                        profileId, List.of(service.getServiceId()));
 
         assertThrows(
                 ConflictException.class,
@@ -2393,20 +2387,7 @@ class AppointmentServiceTest {
                 Optional.of(customer)
         );
 
-        when(
-                visitRepo
-                        .findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                                eq(profileId),
-                                eq(
-                                        List.of(
-                                                VisitStatus.CHECKED_IN,
-                                                VisitStatus.IN_PROGRESS
-                                        )
-                                )
-                        )
-        ).thenReturn(
-                Optional.empty()
-        );
+
 
         when(
                 visitRepo
@@ -2525,7 +2506,7 @@ class AppointmentServiceTest {
     // =========================================================
 
     @Test
-    void guestCheckIn_ShouldReject_WhenActiveVisitExists() {
+    void guestCheckIn_ShouldReject_WhenSameDayExaminationAlreadyRegistered() {
 
         UUID profileId =
                 UUID.randomUUID();
@@ -2599,30 +2580,9 @@ class AppointmentServiceTest {
                 Optional.of(guest)
         );
 
-        CustomerVisit active =
-                CustomerVisit.builder()
-                        .visitId(
-                                UUID.randomUUID()
-                        )
-                        .status(
-                                VisitStatus.CHECKED_IN
-                        )
-                        .build();
-
-        when(
-                visitRepo
-                        .findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                                eq(profileId),
-                                eq(
-                                        List.of(
-                                                VisitStatus.CHECKED_IN,
-                                                VisitStatus.IN_PROGRESS
-                                        )
-                                )
-                        )
-        ).thenReturn(
-                Optional.of(active)
-        );
+        doThrow(new ConflictException("Dịch vụ đã được đăng ký hôm nay"))
+                .when(customerVisitService).validateNoSameDayExaminationRegistration(
+                        profileId, List.of(service.getServiceId()));
 
         assertThrows(
                 ConflictException.class,
@@ -2728,20 +2688,7 @@ class AppointmentServiceTest {
                 Optional.of(guest)
         );
 
-        when(
-                visitRepo
-                        .findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                                eq(profileId),
-                                eq(
-                                        List.of(
-                                                VisitStatus.CHECKED_IN,
-                                                VisitStatus.IN_PROGRESS
-                                        )
-                                )
-                        )
-        ).thenReturn(
-                Optional.empty()
-        );
+
 
         when(staffRepo.findById(staffId))
                 .thenReturn(
@@ -2826,14 +2773,8 @@ class AppointmentServiceTest {
         UUID customerId =
                 UUID.randomUUID();
 
-        when(
-                profileRepo
-                        .findFirstByAccount_AccountId(
-                                customerId
-                        )
-        ).thenReturn(
-                Optional.empty()
-        );
+        when(familyAccessService.ownerProfile(customerId))
+                .thenThrow(new ResourceNotFoundException("Không tìm thấy hồ sơ chủ tài khoản"));
 
         assertThrows(
                 ResourceNotFoundException.class,
@@ -2885,14 +2826,8 @@ class AppointmentServiceTest {
                         other
                 );
 
-        when(
-                profileRepo
-                        .findFirstByAccount_AccountId(
-                                accountId
-                        )
-        ).thenReturn(
-                Optional.of(customer)
-        );
+        when(familyAccessService.resolveReadableProfile(accountId, other.getProfileId()))
+                .thenThrow(new BadRequestException("Bạn không có quyền truy cập hồ sơ bệnh nhân này"));
 
         when(repo.findById(appointmentId))
                 .thenReturn(
@@ -2936,14 +2871,8 @@ class AppointmentServiceTest {
                         customer(UUID.randomUUID())
                 );
 
-        when(
-                profileRepo
-                        .findFirstByAccount_AccountId(
-                                accountId
-                        )
-        ).thenReturn(
-                Optional.of(customer)
-        );
+        when(familyAccessService.resolveActiveProfile(accountId, appointment.getCustomer().getProfileId()))
+                .thenThrow(new BadRequestException("Bạn không có quyền quản lý hồ sơ bệnh nhân này"));
 
         when(
                 repo.findByIdForUpdate(
@@ -2994,14 +2923,7 @@ class AppointmentServiceTest {
                         customer
                 );
 
-        when(
-                profileRepo
-                        .findFirstByAccount_AccountId(
-                                accountId
-                        )
-        ).thenReturn(
-                Optional.of(customer)
-        );
+        when(familyAccessService.resolveActiveProfile(accountId, profileId)).thenReturn(customer);
 
         when(
                 repo.findByIdForUpdate(
@@ -3052,14 +2974,7 @@ class AppointmentServiceTest {
                         customer
                 );
 
-        when(
-                profileRepo
-                        .findFirstByAccount_AccountId(
-                                accountId
-                        )
-        ).thenReturn(
-                Optional.of(customer)
-        );
+        when(familyAccessService.resolveActiveProfile(accountId, profileId)).thenReturn(customer);
 
         when(
                 repo.findByIdForUpdate(
@@ -3112,14 +3027,7 @@ class AppointmentServiceTest {
                         customer
                 );
 
-        when(
-                profileRepo
-                        .findFirstByAccount_AccountId(
-                                accountId
-                        )
-        ).thenReturn(
-                Optional.of(customer)
-        );
+        when(familyAccessService.resolveActiveProfile(accountId, profileId)).thenReturn(customer);
 
         when(
                 repo.findByIdForUpdate(
@@ -3138,5 +3046,94 @@ class AppointmentServiceTest {
                                         appointmentId
                                 )
         );
+    }
+
+    @Test
+    void contactAndPhoneHelpers_ShouldNormalizeAllSupportedForms() {
+        assertEquals(Set.of(), ReflectionTestUtils.invokeMethod(appointmentService, "contactValues", (Object) null));
+        assertEquals(Set.of(), ReflectionTestUtils.invokeMethod(appointmentService, "contactValues", "  "));
+        assertEquals(Set.of("a@b.vn"), ReflectionTestUtils.invokeMethod(appointmentService, "contactValues", " a@b.vn "));
+
+        assertEquals(Set.of(), ReflectionTestUtils.invokeMethod(appointmentService, "phoneVariants", (Object) null));
+        assertEquals(Set.of(), ReflectionTestUtils.invokeMethod(appointmentService, "phoneVariants", "   "));
+        assertEquals(Set.of("+84 912-345-678", "0912345678", "84912345678", "+84912345678"),
+                ReflectionTestUtils.invokeMethod(appointmentService, "phoneVariants", "+84 912-345-678"));
+        assertEquals(Set.of("0912345678", "84912345678", "+84912345678"),
+                ReflectionTestUtils.invokeMethod(appointmentService, "phoneVariants", "0912345678"));
+        assertEquals(Set.of("123"), ReflectionTestUtils.invokeMethod(appointmentService, "phoneVariants", "123"));
+        assertEquals(Set.of("+"), ReflectionTestUtils.invokeMethod(appointmentService, "phoneVariants", "+"));
+
+        assertNull(ReflectionTestUtils.invokeMethod(appointmentService, "normalizeOptional", (Object) null));
+        assertNull(ReflectionTestUtils.invokeMethod(appointmentService, "normalizeOptional", "   "));
+        assertEquals("Hà Nội", ReflectionTestUtils.invokeMethod(appointmentService, "normalizeOptional", " Hà Nội "));
+    }
+
+    @Test
+    void appointmentOwnershipAndAwaitingHelpers_ShouldCoverBothSides() {
+        Appointment appointment = Appointment.builder().build();
+        assertTrue(Boolean.TRUE.equals(ReflectionTestUtils.invokeMethod(appointmentService,
+                "appointmentHasNoRegisteredCustomer", appointment)));
+        appointment.setCustomer(Profile.builder().profileId(UUID.randomUUID()).build());
+        assertFalse(Boolean.TRUE.equals(ReflectionTestUtils.invokeMethod(appointmentService,
+                "appointmentHasNoRegisteredCustomer", appointment)));
+        assertTrue(Boolean.TRUE.equals(ReflectionTestUtils.invokeMethod(appointmentService,
+                "isAwaitingCheckIn", AppointmentStatus.PENDING)));
+        assertTrue(Boolean.TRUE.equals(ReflectionTestUtils.invokeMethod(appointmentService,
+                "isAwaitingCheckIn", AppointmentStatus.RESCHEDULED)));
+        assertFalse(Boolean.TRUE.equals(ReflectionTestUtils.invokeMethod(appointmentService,
+                "isAwaitingCheckIn", AppointmentStatus.CANCELLED)));
+        assertEquals(List.of(AppointmentStatus.PENDING, AppointmentStatus.RESCHEDULED),
+                ReflectionTestUtils.invokeMethod(appointmentService, "activeAppointmentStatuses"));
+    }
+
+    @Test
+    void resolveAppointmentAge_ShouldPreferRequestedBirthThenCustomerBirthThenExplicitOrGuestAge() {
+        LocalDate scheduled = LocalDate.now(CLINIC_ZONE).plusDays(10);
+        Appointment appointment = Appointment.builder().scheduledAt(scheduled.atTime(8, 0)).guestAge(42).build();
+        assertEquals(Integer.valueOf(20), ReflectionTestUtils.invokeMethod(appointmentService, "resolveAppointmentAge",
+                appointment, scheduled.minusYears(20), 33));
+        appointment.setCustomer(Profile.builder().dateOfBirth(scheduled.minusYears(30)).build());
+        assertEquals(Integer.valueOf(30), ReflectionTestUtils.invokeMethod(appointmentService, "resolveAppointmentAge",
+                appointment, null, 33));
+        appointment.getCustomer().setDateOfBirth(null);
+        assertEquals(Integer.valueOf(33), ReflectionTestUtils.invokeMethod(appointmentService, "resolveAppointmentAge",
+                appointment, null, 33));
+        assertEquals(Integer.valueOf(42), ReflectionTestUtils.invokeMethod(appointmentService, "resolveAppointmentAge",
+                appointment, null, null));
+    }
+
+    @Test
+    void validateStaffStatusUpdate_ShouldCoverNoopAndEveryRejectedOrAllowedTransition() {
+        AppointmentUpdateRequest req = mock(AppointmentUpdateRequest.class);
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(appointmentService,
+                "validateStaffStatusUpdate", AppointmentStatus.PENDING, req));
+        when(req.status()).thenReturn(AppointmentStatus.PENDING);
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(appointmentService,
+                "validateStaffStatusUpdate", AppointmentStatus.PENDING, req));
+
+        when(req.status()).thenReturn(AppointmentStatus.CHECKED_IN);
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(appointmentService,
+                "validateStaffStatusUpdate", AppointmentStatus.PENDING, req));
+        when(req.status()).thenReturn(AppointmentStatus.PENDING);
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(appointmentService,
+                "validateStaffStatusUpdate", AppointmentStatus.CANCELLED, req));
+        when(req.status()).thenReturn(AppointmentStatus.RESCHEDULED);
+        when(req.scheduledAt()).thenReturn(null);
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(appointmentService,
+                "validateStaffStatusUpdate", AppointmentStatus.PENDING, req));
+        when(req.scheduledAt()).thenReturn(LocalDateTime.now().plusDays(1));
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(appointmentService,
+                "validateStaffStatusUpdate", AppointmentStatus.PENDING, req));
+
+        when(req.status()).thenReturn(AppointmentStatus.CANCELLED);
+        when(req.cancelReason()).thenReturn(null);
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(appointmentService,
+                "validateStaffStatusUpdate", AppointmentStatus.PENDING, req));
+        when(req.cancelReason()).thenReturn("  ");
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(appointmentService,
+                "validateStaffStatusUpdate", AppointmentStatus.PENDING, req));
+        when(req.cancelReason()).thenReturn("Bệnh nhân yêu cầu");
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(appointmentService,
+                "validateStaffStatusUpdate", AppointmentStatus.PENDING, req));
     }
 }

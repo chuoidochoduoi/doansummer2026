@@ -30,10 +30,22 @@ public class QueueReturnRequestController {
         return RestResponses.ok(service.pendingRequests());
     }
 
+    @GetMapping("/skipped-today")
+    public ResponseEntity<List<QueueReturnRequestResponse>> skippedToday() {
+        return RestResponses.ok(service.skippedToday());
+    }
+
     @PostMapping("/{queueTicketId}/confirm")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket",
             idParamName = "queueTicketId", description = "Xác nhận bệnh nhân vắng đã quay lại quầy")
     public ResponseEntity<QueueReturnRequestResponse> confirm(@PathVariable UUID queueTicketId) {
         return RestResponses.ok(service.confirm(queueTicketId));
+    }
+
+    @PostMapping("/{queueTicketId}/restore")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket",
+            idParamName = "queueTicketId", description = "Lễ tân đưa bệnh nhân vắng quay lại hàng chờ")
+    public ResponseEntity<QueueReturnRequestResponse> restore(@PathVariable UUID queueTicketId) {
+        return RestResponses.ok(service.restore(queueTicketId));
     }
 }

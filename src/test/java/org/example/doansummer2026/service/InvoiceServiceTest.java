@@ -3,6 +3,8 @@ package org.example.doansummer2026.service;
 import org.example.doansummer2026.dto.invoice.InvoiceCreateRequest;
 import org.example.doansummer2026.dto.invoice.InvoiceItemCreateRequest;
 import org.example.doansummer2026.dto.invoice.InvoiceUpdateRequest;
+import org.example.doansummer2026.dto.invoice.InvoiceInsuranceRequest;
+import org.example.doansummer2026.dto.insurance.BhxhCheckResponse;
 import org.example.doansummer2026.enums.*;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
@@ -95,6 +97,10 @@ class InvoiceServiceTest {
 
     @Mock
     private SimpMessagingTemplate messagingTemplate;
+
+    @Mock private MembershipCardLedgerRepository membershipCardLedgerRepo;
+    @Mock private SameDayParaclinicalResultService sameDayParaclinicalResultService;
+    @Mock private PatientJourneyService patientJourneyService;
 
     @InjectMocks
     private InvoiceService invoiceService;
@@ -827,6 +833,8 @@ class InvoiceServiceTest {
                 List.of()
         );
 
+        when(visitRepo.findById(visitId)).thenReturn(Optional.of(visit));
+
         var result =
                 invoiceService.create(req);
 
@@ -863,6 +871,133 @@ class InvoiceServiceTest {
         service.setPrice(new BigDecimal("150000"));
         assertEquals(0, new BigDecimal("100000").compareTo(savedItem.getUnitPrice()));
         assertEquals(0, new BigDecimal("200000").compareTo(savedItem.getLineTotal()));
+    }
+
+    @Test
+    void applyInsuranceCalculatesRulesButNeverDiscountsIndividualAnalytes() {
+        UUID invoiceId = UUID.randomUUID();
+        UUID insuranceId = UUID.randomUUID();
+        Profile patient = customer(UUID.randomUUID());
+        patient.setFullName("Nguyễn Anh Đức");
+        Insurance insurance = Insurance.builder().insuranceId(insuranceId).code("BHYT").name("BHYT").build();
+        MedicalService examination = examinationService(UUID.randomUUID(), "Khám Nội", new BigDecimal("200000"),
+                Department.builder().departmentId(UUID.randomUUID()).departmentType(DepartmentType.EXAMINATION).build());
+        MedicalService analyte = paraclinicalService(UUID.randomUUID(), "Đường huyết", new BigDecimal("100000"));
+        analyte.setServiceCode("AN-GLUCOSE");
+        Invoice invoice = Invoice.builder().invoiceId(invoiceId).invoiceCode("INV-01").customer(patient)
+                .status(InvoiceStatus.PENDING).discount(BigDecimal.ZERO).tax(BigDecimal.ZERO)
+                .items(new ArrayList<>()).build();
+        invoice.getItems().add(InvoiceItem.builder().invoice(invoice).service(examination)
+                .lineTotal(new BigDecimal("200000")).unitPrice(new BigDecimal("200000")).quantity(1)
+                .discountAmount(BigDecimal.ZERO).finalPrice(new BigDecimal("200000")).build());
+        invoice.getItems().add(InvoiceItem.builder().invoice(invoice).service(analyte)
+                .lineTotal(new BigDecimal("100000")).unitPrice(new BigDecimal("100000")).quantity(1)
+                .discountAmount(BigDecimal.ZERO).finalPrice(new BigDecimal("100000")).build());
+        when(repo.findByIdForUpdate(invoiceId)).thenReturn(Optional.of(invoice));
+        when(transactionRepo.findByInvoice_InvoiceId(invoiceId)).thenReturn(List.of());
+        when(insuranceRepository.findById(insuranceId)).thenReturn(Optional.of(insurance));
+        when(bhxhIntegrationService.checkBhytCard("DN4010123456789")).thenReturn(
+                new BhxhCheckResponse(true, "Hợp lệ", insuranceId, "BHYT", "nguyen anh duc", "01/01/2000"));
+        when(insuranceRuleRepository.findByInsurance_InsuranceId(insuranceId)).thenReturn(List.of(
+                InsuranceRule.builder().insurance(insurance).departmentType(DepartmentType.EXAMINATION)
+                        .discountPercent(new BigDecimal("80")).build()));
+        when(repo.save(invoice)).thenReturn(invoice);
+
+        invoiceService.applyInsurance(invoiceId,
+                new InvoiceInsuranceRequest(insuranceId, " DN4010123456789 "));
+
+        assertEquals(new BigDecimal("160000.00"), invoice.getDiscount());
+        assertEquals(new BigDecimal("140000.00"), invoice.getTotalAmount());
+        assertEquals(new BigDecimal("0.00"), invoice.getItems().get(1).getBhytFund());
+        assertEquals("DN4010123456789", patient.getInsuranceId());
+        verify(profileRepo).save(patient);
+    }
+
+    @Test
+    void applyInsuranceRejectsWrongStatePaymentMissingInsuranceAndInvalidCard() {
+        UUID id = UUID.randomUUID();
+        Invoice invoice = Invoice.builder().invoiceId(id).status(InvoiceStatus.PAID).build();
+        when(repo.findByIdForUpdate(id)).thenReturn(Optional.of(invoice));
+        assertThrows(ConflictException.class, () -> invoiceService.applyInsurance(id,
+                new InvoiceInsuranceRequest(UUID.randomUUID(), "CARD")));
+
+        invoice.setStatus(InvoiceStatus.PENDING);
+        when(transactionRepo.findByInvoice_InvoiceId(id)).thenReturn(List.of(
+                Transaction.builder().status(TransactionStatus.SUCCESS).build()));
+        assertThrows(ConflictException.class, () -> invoiceService.applyInsurance(id,
+                new InvoiceInsuranceRequest(UUID.randomUUID(), "CARD")));
+
+        when(transactionRepo.findByInvoice_InvoiceId(id)).thenReturn(List.of());
+        UUID insuranceId = UUID.randomUUID();
+        when(insuranceRepository.findById(insuranceId)).thenReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> invoiceService.applyInsurance(id,
+                new InvoiceInsuranceRequest(insuranceId, "CARD")));
+
+        Insurance insurance = Insurance.builder().insuranceId(insuranceId).build();
+        when(insuranceRepository.findById(insuranceId)).thenReturn(Optional.of(insurance));
+        when(bhxhIntegrationService.checkBhytCard("CARD")).thenReturn(
+                new BhxhCheckResponse(false, "Thẻ hết hạn", insuranceId, null, null, null));
+        assertThrows(BadRequestException.class, () -> invoiceService.applyInsurance(id,
+                new InvoiceInsuranceRequest(insuranceId, "CARD")));
+    }
+
+    @Test
+    void applyInsuranceRejectsMismatchedInsuranceAndIncompleteIdentity() {
+        UUID id = UUID.randomUUID();
+        UUID insuranceId = UUID.randomUUID();
+        Invoice invoice = Invoice.builder().invoiceId(id).status(InvoiceStatus.PENDING)
+                .customer(customer(UUID.randomUUID())).items(new ArrayList<>()).build();
+        Insurance insurance = Insurance.builder().insuranceId(insuranceId).build();
+        when(repo.findByIdForUpdate(id)).thenReturn(Optional.of(invoice));
+        when(transactionRepo.findByInvoice_InvoiceId(id)).thenReturn(List.of());
+        when(insuranceRepository.findById(insuranceId)).thenReturn(Optional.of(insurance));
+        when(bhxhIntegrationService.checkBhytCard("CARD")).thenReturn(
+                new BhxhCheckResponse(true, "ok", UUID.randomUUID(), null, "Nguyen Van A", "2000-01-01"));
+        assertThrows(BadRequestException.class, () -> invoiceService.applyInsurance(id,
+                new InvoiceInsuranceRequest(insuranceId, "CARD")));
+
+        when(bhxhIntegrationService.checkBhytCard("CARD")).thenReturn(
+                new BhxhCheckResponse(true, "ok", insuranceId, null, null, null));
+        assertThrows(BadRequestException.class, () -> invoiceService.applyInsurance(id,
+                new InvoiceInsuranceRequest(insuranceId, "CARD")));
+        invoice.getCustomer().setFullName(null);
+        assertThrows(BadRequestException.class, () -> invoiceService.applyInsurance(id,
+                new InvoiceInsuranceRequest(insuranceId, "CARD")));
+    }
+
+    @Test
+    void applyInsuranceValidatesNameBirthDateAndDateFormats() {
+        UUID id = UUID.randomUUID();
+        UUID insuranceId = UUID.randomUUID();
+        Profile patient = customer(UUID.randomUUID());
+        Invoice invoice = Invoice.builder().invoiceId(id).status(InvoiceStatus.PENDING).customer(patient)
+                .items(new ArrayList<>()).discount(BigDecimal.ZERO).tax(BigDecimal.ZERO).build();
+        Insurance insurance = Insurance.builder().insuranceId(insuranceId).build();
+        when(repo.findByIdForUpdate(id)).thenReturn(Optional.of(invoice));
+        when(transactionRepo.findByInvoice_InvoiceId(id)).thenReturn(List.of());
+        when(insuranceRepository.findById(insuranceId)).thenReturn(Optional.of(insurance));
+
+        when(bhxhIntegrationService.checkBhytCard("CARD")).thenReturn(
+                new BhxhCheckResponse(true, "ok", insuranceId, null, "Tên khác", "2000-01-01"));
+        assertThrows(BadRequestException.class, () -> invoiceService.applyInsurance(id,
+                new InvoiceInsuranceRequest(insuranceId, "CARD")));
+
+        when(bhxhIntegrationService.checkBhytCard("CARD")).thenReturn(
+                new BhxhCheckResponse(true, "ok", insuranceId, null, "Nguyen Van A", "2/1/2000"));
+        assertThrows(BadRequestException.class, () -> invoiceService.applyInsurance(id,
+                new InvoiceInsuranceRequest(insuranceId, "CARD")));
+
+        when(bhxhIntegrationService.checkBhytCard("CARD")).thenReturn(
+                new BhxhCheckResponse(true, "ok", insuranceId, null, "Nguyen Van A", "not-a-date"));
+        assertThrows(BadRequestException.class, () -> invoiceService.applyInsurance(id,
+                new InvoiceInsuranceRequest(insuranceId, "CARD")));
+
+        when(bhxhIntegrationService.checkBhytCard("CARD")).thenReturn(
+                new BhxhCheckResponse(true, "ok", insuranceId, null, "SKIP_VALIDATION", "ignored"));
+        when(insuranceRuleRepository.findByInsurance_InsuranceId(insuranceId)).thenReturn(List.of());
+        when(repo.save(invoice)).thenReturn(invoice);
+        assertDoesNotThrow(() -> invoiceService.applyInsurance(id,
+                new InvoiceInsuranceRequest(insuranceId, "CARD")));
     }
 
 
@@ -2258,6 +2393,11 @@ class InvoiceServiceTest {
         ).thenReturn(
                 Optional.of(newlyCreated)
         );
+
+        when(doctor.getSystemRole()).thenReturn(SystemRole.DOCTOR);
+        when(doctor.getProfile()).thenReturn(Profile.builder()
+                .account(Account.builder().isActive(true).build()).build());
+        when(staffRepo.findByDepartment_DepartmentId(departmentId)).thenReturn(List.of(doctor));
 
         invoiceService.pay(
                 invoiceId,

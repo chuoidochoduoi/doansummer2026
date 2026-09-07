@@ -107,7 +107,22 @@ class PatientQueueServiceTest {
 
     @Test void returningPatientUsesOriginalRoomQueue() {
         var self = ticket(8, QueueStatus.TEST_DONE, visit, room);
-        ownTickets(self); roomQueue(room, self);
+        var lab = Department.builder().departmentId(UUID.randomUUID()).name("Xét nghiệm")
+                .roomCode("LAB-1").departmentType(DepartmentType.PARACLINICAL).build();
+        var labTicket = ticket(9, QueueStatus.DONE, visit, lab);
+        var record = MedicalRecord.builder().recordId(UUID.randomUUID()).visit(visit)
+                .queueTicket(self).status(MedicalRecordStatus.IN_PROGRESS).build();
+        var invoice = Invoice.builder().invoiceId(UUID.randomUUID()).visit(visit)
+                .medicalRecord(record).status(InvoiceStatus.PAID).build();
+        invoice.setCreatedAt(date.atTime(9, 0));
+        var completedTest = TestRequest.builder().testRequestId(UUID.randomUUID()).medicalRecord(record)
+                .queueTicket(labTicket).performingDepartment(lab).status(TestRequestStatus.COMPLETED)
+                .invoiceItem(InvoiceItem.builder().invoice(invoice).build()).build();
+        completedTest.setCreatedAt(date.atTime(9, 10));
+        when(invoiceRepo.findAllByVisit_VisitId(visit.getVisitId())).thenReturn(List.of(invoice));
+        when(testRepo.findAllByMedicalRecord_Visit_VisitId(visit.getVisitId())).thenReturn(List.of(completedTest));
+        when(recordRepo.findByQueueTicket_TicketId(self.getTicketId())).thenReturn(Optional.of(record));
+        ownTickets(self, labTicket); roomQueue(room, self);
         var result = read();
         assertEquals("TEST_DONE", result.currentStatus());
         assertEquals(1, result.waitingPosition());

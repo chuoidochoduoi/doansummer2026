@@ -4,6 +4,7 @@ import org.example.doansummer2026.dto.testrequest.TestRequestCancelRequest;
 import org.example.doansummer2026.enums.QueueStatus;
 import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.enums.TestRequestStatus;
+import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.model.Department;
 import org.example.doansummer2026.model.QueueTicket;
 import org.example.doansummer2026.model.StaffInfo;
@@ -12,6 +13,8 @@ import org.example.doansummer2026.repository.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -46,6 +49,7 @@ class TestRequestAuthorizationServiceTest {
     @Mock AuthService authService;
     @Mock ClinicalFormTemplateService clinicalFormTemplateService;
     @Mock ClinicalFormEngine clinicalFormEngine;
+    @Mock StaffDutyService staffDutyService;
 
     @InjectMocks TestRequestService service;
 
@@ -108,8 +112,10 @@ class TestRequestAuthorizationServiceTest {
         Department department = departmentWithHead(doctor());
         TestRequest request = activeRequest(department, requester);
         stubLockedActor(request, requester);
+        when(staffDutyService.requireCurrentStaffOnDuty(department, true))
+                .thenThrow(new BadRequestException("Nhân sự không thuộc phòng thực hiện"));
 
-        assertThrows(AccessDeniedException.class,
+        assertThrows(BadRequestException.class,
                 () -> service.completeResult(request.getTestRequestId(), null));
         verifyNoInteractions(resultRepo);
         assertEquals(TestRequestStatus.IN_PROGRESS, request.getStatus());
@@ -121,8 +127,10 @@ class TestRequestAuthorizationServiceTest {
         Department department = departmentWithHead(doctor());
         TestRequest request = activeRequest(department, requester);
         stubLockedActor(request, requester);
+        when(staffDutyService.requireCurrentStaffOnDuty(department, true))
+                .thenThrow(new BadRequestException("Nhân sự không thuộc phòng thực hiện"));
 
-        assertThrows(AccessDeniedException.class,
+        assertThrows(BadRequestException.class,
                 () -> service.cancel(request.getTestRequestId(), new TestRequestCancelRequest("Không thực hiện")));
         verify(repo, never()).save(any());
     }
@@ -133,6 +141,7 @@ class TestRequestAuthorizationServiceTest {
         Department department = departmentWithHead(head);
         TestRequest request = activeRequest(department, doctor());
         stubLockedActor(request, head);
+        when(staffDutyService.requireCurrentStaffOnDuty(department, true)).thenReturn(head);
         when(repo.save(request)).thenReturn(request);
 
         var response = service.cancel(request.getTestRequestId(),
@@ -140,6 +149,54 @@ class TestRequestAuthorizationServiceTest {
 
         assertEquals(TestRequestStatus.CANCELLED, response.status());
         assertEquals("Mẫu không đủ điều kiện xử lý", request.getCancelReason());
+        assertEquals(QueueStatus.DONE, request.getQueueTicket().getStatus());
+        verify(queueTicketRepo).save(request.getQueueTicket());
+        verify(staffDutyService).requireCurrentStaffOnDuty(department, true);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = TestRequestStatus.class, names = {"COMPLETED", "CANCELLED"})
+    void finishedRequestsRemainReadableButExposeNoMutationActions(TestRequestStatus status) {
+        StaffInfo doctor = doctor();
+        TestRequest request = activeRequest(departmentWithHead(doctor), doctor());
+        request.setStatus(status);
+        stubView(request, doctor);
+
+        var permissions = service.actionPermissions(request.getTestRequestId());
+
+        assertTrue(permissions.canView());
+        assertFalse(permissions.canEditResult());
+        assertFalse(permissions.canUpload());
+        assertFalse(permissions.canSign());
+        assertFalse(permissions.canCancel());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = QueueStatus.class, names = {"BLOCKED", "WAITING", "CALLED"})
+    void resultEntryRequiresPatientToHaveEnteredRoom(QueueStatus status) {
+        StaffInfo doctor = doctor();
+        TestRequest request = activeRequest(departmentWithHead(doctor), doctor());
+        request.getQueueTicket().setStatus(status);
+        stubView(request, doctor);
+
+        var permissions = service.actionPermissions(request.getTestRequestId());
+
+        assertTrue(permissions.canView());
+        assertFalse(permissions.canEditResult());
+        assertFalse(permissions.canUpload());
+        assertFalse(permissions.canSign());
+        assertTrue(permissions.canCancel());
+    }
+
+    @Test
+    void unrelatedDoctorCannotViewRequest() {
+        StaffInfo stranger = doctor();
+        TestRequest request = activeRequest(departmentWithHead(doctor()), doctor());
+        stubView(request, stranger);
+
+        assertThrows(AccessDeniedException.class,
+                () -> service.actionPermissions(request.getTestRequestId()));
+        verifyNoInteractions(resultRepo, revisionRepo, attachmentRepo);
     }
 
     private void stubView(TestRequest request, StaffInfo actor) {
@@ -153,7 +210,6 @@ class TestRequestAuthorizationServiceTest {
         when(departmentRepo.findByIdForUpdate(request.getPerformingDepartment().getDepartmentId()))
                 .thenReturn(Optional.of(request.getPerformingDepartment()));
         when(authService.currentStaffId()).thenReturn(actor.getStaffId());
-        when(staffRepo.findById(actor.getStaffId())).thenReturn(Optional.of(actor));
     }
 
     private TestRequest activeRequest(Department department, StaffInfo requester) {
@@ -171,13 +227,15 @@ class TestRequestAuthorizationServiceTest {
     }
 
     private Department departmentWithHead(StaffInfo head) {
-        return Department.builder()
+        Department department = Department.builder()
                 .departmentId(UUID.randomUUID())
                 .roomCode("LAB-" + UUID.randomUUID())
                 .name("Phòng xét nghiệm " + UUID.randomUUID())
                 .headDoctor(head)
                 .nurses(new ArrayList<>())
                 .build();
+        head.setDepartment(department);
+        return department;
     }
 
     private StaffInfo doctor() {

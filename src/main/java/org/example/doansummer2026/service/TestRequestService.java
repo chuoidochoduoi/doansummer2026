@@ -136,8 +136,10 @@ public class TestRequestService implements TestRequestServiceInterface {
                                                       LabPanelResultRequest request,
                                                       boolean complete) {
         PanelContext context = resolvePanelContext(representativeId);
+        ensureResultNotCancelled(context.anchor);
         java.util.LinkedHashSet<TestRequest> targets = new java.util.LinkedHashSet<>(context.purchasedByCode.values());
         if (targets.isEmpty()) throw new BadRequestException("Phiếu xét nghiệm chưa có chỉ số đã thanh toán");
+        targets.forEach(this::ensureResultNotCancelled);
 
         for (TestRequest target : targets) {
             String code = target.getService() == null ? "" : target.getService().getServiceCode();
@@ -869,6 +871,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         TestRequest t = repo.findByIdForUpdate(testRequestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
         StaffInfo verifier = requireResponsibleDoctorLocked(t);
+        ensureResultNotCancelled(t);
 
         // Kiem tra neu da COMPLETED thi khong cho tao/cap nhat nua
         if (t.getStatus() == TestRequestStatus.COMPLETED) {
@@ -904,7 +907,7 @@ public class TestRequestService implements TestRequestServiceInterface {
             applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         }
 
-        if (req.sampleStatus() == org.example.doansummer2026.enums.SpecimenStatus.REJECTED || req.sampleStatus() == org.example.doansummer2026.enums.SpecimenStatus.RECOLLECT) {
+        if (r.getSampleStatus() == org.example.doansummer2026.enums.SpecimenStatus.REJECTED || r.getSampleStatus() == org.example.doansummer2026.enums.SpecimenStatus.RECOLLECT) {
             throw new BadRequestException("Không thể hoàn thành kết quả khi mẫu vật bị hỏng hoặc cần lấy lại");
         }
 
@@ -1067,6 +1070,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         TestRequest request = repo.findByIdForUpdate(testRequestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
         requireResponsibleDoctorLocked(request);
+        ensureResultNotCancelled(request);
         var revision = findDraftRevision(request, revisionId);
         if (req.conclusion() != null) revision.setConclusion(req.conclusion());
         if (req.resultData() != null || req.formTemplateVersionId() != null) {
@@ -1088,6 +1092,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         TestRequest request = repo.findByIdForUpdate(testRequestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
         StaffInfo signer = requireResponsibleDoctorLocked(request);
+        ensureResultNotCancelled(request);
         var revision = findDraftRevision(request, revisionId);
         if (revision.getConclusion() == null || revision.getConclusion().isBlank())
             throw new BadRequestException("Vui lòng nhập kết luận đính chính");
@@ -1120,6 +1125,8 @@ public class TestRequestService implements TestRequestServiceInterface {
 
     private org.example.doansummer2026.model.TestResultRevision findDraftRevision(
             TestRequest request, UUID revisionId) {
+        if (request.getStatus() != TestRequestStatus.COMPLETED)
+            throw new ConflictException("Chỉ kết quả đã hoàn thành mới được sửa hoặc ký đính chính");
         var revision = revisionRepo.findById(revisionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bản đính chính"));
         if (revision.getTestResult() == null || revision.getTestResult().getTestRequest() == null
@@ -1127,6 +1134,8 @@ public class TestRequestService implements TestRequestServiceInterface {
             throw new BadRequestException("Bản đính chính không thuộc yêu cầu này");
         if (revision.getStatus() != TestResultRevisionStatus.DRAFT)
             throw new ConflictException("Bản đính chính đã ký không thể sửa trực tiếp");
+        if (revision.getAmendmentReason() == null || revision.getAmendmentReason().isBlank())
+            throw new ConflictException("Bản nháp ban đầu phải được ký qua chức năng hoàn thành kết quả");
         return revision;
     }
 
@@ -1565,7 +1574,14 @@ public class TestRequestService implements TestRequestServiceInterface {
         staffDutyService.requireCurrentStaffOnDuty(department, false);
     }
 
+    private void ensureResultNotCancelled(TestRequest request) {
+        if (request.getStatus() == TestRequestStatus.CANCELLED) {
+            throw new ConflictException("Yêu cầu cận lâm sàng đã hủy, không thể ghi hoặc ký kết quả");
+        }
+    }
+
     private void ensureExecutionStarted(TestRequest request) {
+        ensureResultNotCancelled(request);
         QueueTicket queue = request.getQueueTicket();
         if (queue == null || (queue.getStatus() != QueueStatus.IN_PROGRESS
                 && queue.getStatus() != QueueStatus.DONE)) {

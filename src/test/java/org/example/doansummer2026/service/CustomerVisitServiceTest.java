@@ -34,6 +34,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -83,6 +84,12 @@ class CustomerVisitServiceTest {
     @Mock
     private StaffInfoRepository staffInfoRepository;
 
+    @Mock private org.example.doansummer2026.repository.InvoiceItemRepository invoiceItemRepo;
+    @Mock private org.example.doansummer2026.repository.QueueTicketRepository queueTicketRepo;
+    @Mock private org.example.doansummer2026.repository.ShiftConfigRepository shiftConfigRepository;
+    @Mock private ShiftScheduleResolver shiftScheduleResolver;
+    @Mock private ServiceAvailabilityService serviceAvailabilityService;
+
     @InjectMocks
     private CustomerVisitService customerVisitService;
 
@@ -90,6 +97,16 @@ class CustomerVisitServiceTest {
     // =========================================================
     // HELPERS
     // =========================================================
+
+    private void availableExaminationShift() {
+        var shift = org.example.doansummer2026.model.ShiftConfig.builder().shiftId(UUID.randomUUID()).build();
+        when(shiftConfigRepository.findAllByIsActiveTrueOrderByStartTimeAsc()).thenReturn(List.of(shift));
+        when(shiftScheduleResolver.resolve(eq(shift), any())).thenReturn(
+                new ShiftScheduleResolver.ResolvedShift(shift, null, java.time.LocalTime.MIN,
+                        java.time.LocalTime.MAX, org.example.doansummer2026.enums.ShiftTimeSource.NORMAL, null));
+        when(serviceAvailabilityService.evaluate(any(), any(), eq(shift), eq(false)))
+                .thenReturn(new ServiceAvailabilityService.Evaluation(true, null, List.of()));
+    }
 
     private LocalDate clinicToday() {
         return LocalDate.now(CLINIC_ZONE);
@@ -676,16 +693,23 @@ class CustomerVisitServiceTest {
     // =========================================================
 
     @Test
-    void create_ShouldRejectDuplicateServices() {
+    void create_ShouldNormalizeDuplicateServicesBeforeResolvingPatient() {
         UUID serviceId = UUID.randomUUID();
+        UUID missingPatientId = UUID.randomUUID();
+        MedicalService selected = medicalService(serviceId, "Khám Nội", "EX-1",
+                new BigDecimal("200000"), DepartmentType.EXAMINATION);
         CustomerVisitCreateRequest req = mock(CustomerVisitCreateRequest.class);
         when(req.serviceIds()).thenReturn(List.of(serviceId, serviceId));
+        when(req.customerId()).thenReturn(missingPatientId);
+        when(serviceRepo.findById(serviceId)).thenReturn(Optional.of(selected));
 
-        BadRequestException exception = assertThrows(BadRequestException.class,
+        ResourceNotFoundException error = assertThrows(ResourceNotFoundException.class,
                 () -> customerVisitService.create(req));
 
-        assertTrue(exception.getMessage().contains("trùng dịch vụ"));
-        verifyNoInteractions(profileRepo);
+        assertTrue(error.getMessage().contains("Khách hàng không tồn tại"));
+        verify(serviceRepo).findById(serviceId);
+        verify(profileRepo).findById(missingPatientId);
+        verifyNoInteractions(invoiceService);
     }
 
 
@@ -860,6 +884,7 @@ class CustomerVisitServiceTest {
 
     @Test
     void create_ShouldReuseExistingGuestProfile_WhenPhoneExists() {
+        availableExaminationShift();
 
         UUID profileId =
                 UUID.randomUUID();
@@ -902,6 +927,7 @@ class CustomerVisitServiceTest {
                 .thenReturn(
                         "Guest Updated"
                 );
+        when(req.updatePatientProfile()).thenReturn(true);
 
         when(req.guestPhone())
                 .thenReturn(
@@ -934,9 +960,7 @@ class CustomerVisitServiceTest {
         );
 
         when(
-                profileRepo.findFirstByPhone(
-                        "0901234567"
-                )
+                profileRepo.findFirstByPhoneIn(List.of("0901234567", "+84901234567"))
         ).thenReturn(
                 Optional.of(existing)
         );
@@ -949,14 +973,7 @@ class CustomerVisitServiceTest {
                 Optional.of(existing)
         );
 
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(
-                Optional.empty()
-        );
+
 
         when(
                 staffInfoRepository.findById(
@@ -1023,6 +1040,7 @@ class CustomerVisitServiceTest {
 
     @Test
     void create_ShouldCreateNewGuestProfile() {
+        availableExaminationShift();
 
         UUID profileId =
                 UUID.randomUUID();
@@ -1099,9 +1117,7 @@ class CustomerVisitServiceTest {
         );
 
         when(
-                profileRepo.findFirstByPhone(
-                        "0909999999"
-                )
+                profileRepo.findFirstByPhoneIn(List.of("0909999999", "+84909999999"))
         ).thenReturn(
                 Optional.empty()
         );
@@ -1153,14 +1169,7 @@ class CustomerVisitServiceTest {
                 }
         );
 
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(
-                Optional.empty()
-        );
+
 
         when(
                 staffInfoRepository.findById(
@@ -1224,7 +1233,7 @@ class CustomerVisitServiceTest {
     // =========================================================
 
     @Test
-    void create_ShouldReject_WhenCustomerAlreadyHasActiveVisit() {
+    void create_ShouldReject_WhenExaminationAlreadyRegisteredToday() {
 
         UUID profileId =
                 UUID.randomUUID();
@@ -1286,19 +1295,9 @@ class CustomerVisitServiceTest {
                 Optional.of(customer)
         );
 
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        eq(
-                                List.of(
-                                        VisitStatus.CHECKED_IN,
-                                        VisitStatus.IN_PROGRESS
-                                )
-                        )
-                )
-        ).thenReturn(
-                Optional.of(active)
-        );
+        when(invoiceItemRepo.findSameDayExaminationRegistrations(eq(profileId), any(), any(), eq(null)))
+                .thenReturn(List.of(org.example.doansummer2026.model.InvoiceItem.builder()
+                        .service(service).invoice(Invoice.builder().visit(active).build()).build()));
 
         ConflictException exception =
                 assertThrows(
@@ -1388,14 +1387,7 @@ class CustomerVisitServiceTest {
                 Optional.of(customer)
         );
 
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(
-                Optional.empty()
-        );
+
 
         when(
                 appointmentRepo.findByIdForUpdate(
@@ -1478,14 +1470,7 @@ class CustomerVisitServiceTest {
                 Optional.of(customer)
         );
 
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(
-                Optional.empty()
-        );
+
 
         BadRequestException exception =
                 assertThrows(
@@ -1572,14 +1557,7 @@ class CustomerVisitServiceTest {
                 Optional.of(customer)
         );
 
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(
-                Optional.empty()
-        );
+
 
         when(
                 staffInfoRepository.findById(
@@ -1604,6 +1582,7 @@ class CustomerVisitServiceTest {
 
     @Test
     void create_ShouldCreateCheckedInVisitAndInvoice() {
+        availableExaminationShift();
 
         UUID profileId =
                 UUID.randomUUID();
@@ -1675,14 +1654,7 @@ class CustomerVisitServiceTest {
                 Optional.of(customer)
         );
 
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(
-                Optional.empty()
-        );
+
 
         when(
                 staffInfoRepository.findById(
@@ -1780,6 +1752,7 @@ class CustomerVisitServiceTest {
 
     @Test
     void create_ShouldMarkAppointmentCheckedIn() {
+        availableExaminationShift();
 
         UUID profileId =
                 UUID.randomUUID();
@@ -1871,14 +1844,7 @@ class CustomerVisitServiceTest {
                 Optional.of(customer)
         );
 
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(
-                Optional.empty()
-        );
+
 
         when(
                 appointmentRepo.findByIdForUpdate(
@@ -2020,14 +1986,7 @@ class CustomerVisitServiceTest {
                 Optional.of(customer)
         );
 
-        when(
-                repo.findFirstByCustomer_ProfileIdAndStatusInOrderByCheckInTimeDesc(
-                        eq(profileId),
-                        anyList()
-                )
-        ).thenReturn(
-                Optional.empty()
-        );
+
 
         when(
                 staffInfoRepository.findById(
@@ -2460,5 +2419,120 @@ class CustomerVisitServiceTest {
                 repo,
                 never()
         ).deleteById(any());
+    }
+
+    @Test
+    void queueStatusLabel_ShouldCoverEveryStatusAndNull() {
+        assertEquals("Đã đăng ký", ReflectionTestUtils.invokeMethod(customerVisitService, "queueStatusLabel", (Object) null));
+        assertEquals("Chưa đến lượt", ReflectionTestUtils.invokeMethod(customerVisitService, "queueStatusLabel", org.example.doansummer2026.enums.QueueStatus.BLOCKED));
+        assertEquals("Đang chờ gọi", ReflectionTestUtils.invokeMethod(customerVisitService, "queueStatusLabel", org.example.doansummer2026.enums.QueueStatus.WAITING));
+        assertEquals("Đã gọi", ReflectionTestUtils.invokeMethod(customerVisitService, "queueStatusLabel", org.example.doansummer2026.enums.QueueStatus.CALLED));
+        assertEquals("Đang khám", ReflectionTestUtils.invokeMethod(customerVisitService, "queueStatusLabel", org.example.doansummer2026.enums.QueueStatus.IN_PROGRESS));
+        assertEquals("Chờ cận lâm sàng", ReflectionTestUtils.invokeMethod(customerVisitService, "queueStatusLabel", org.example.doansummer2026.enums.QueueStatus.WAITING_FOR_TEST));
+        assertEquals("Chờ quay lại bác sĩ", ReflectionTestUtils.invokeMethod(customerVisitService, "queueStatusLabel", org.example.doansummer2026.enums.QueueStatus.TEST_DONE));
+        assertEquals("Đã hoàn thành", ReflectionTestUtils.invokeMethod(customerVisitService, "queueStatusLabel", org.example.doansummer2026.enums.QueueStatus.DONE));
+        assertEquals("Vắng mặt", ReflectionTestUtils.invokeMethod(customerVisitService, "queueStatusLabel", org.example.doansummer2026.enums.QueueStatus.SKIPPED));
+    }
+
+    @Test
+    void normalizationHelpers_ShouldCoverNullBlankInternationalAndLocalValues() {
+        assertNull(ReflectionTestUtils.invokeMethod(customerVisitService, "normalizeVietnamesePhone", (Object) null));
+        assertNull(ReflectionTestUtils.invokeMethod(customerVisitService, "normalizeVietnamesePhone", "  -  "));
+        assertEquals("0912345678", ReflectionTestUtils.invokeMethod(customerVisitService, "normalizeVietnamesePhone", "+84 912.345.678"));
+        assertEquals("0912345678", ReflectionTestUtils.invokeMethod(customerVisitService, "normalizeVietnamesePhone", "0912-345-678"));
+        assertNull(ReflectionTestUtils.invokeMethod(customerVisitService, "normalizeEmail", (Object) null));
+        assertNull(ReflectionTestUtils.invokeMethod(customerVisitService, "normalizeEmail", "  "));
+        assertEquals("patient@example.com", ReflectionTestUtils.invokeMethod(customerVisitService, "normalizeEmail", " Patient@Example.COM "));
+        assertEquals("", ReflectionTestUtils.invokeMethod(customerVisitService, "normalizePhone", (Object) null));
+        assertEquals("0912345678", ReflectionTestUtils.invokeMethod(customerVisitService, "normalizePhone", "+84 912-345-678"));
+        assertEquals("0912345678", ReflectionTestUtils.invokeMethod(customerVisitService, "normalizePhone", "0912.345.678"));
+
+        assertEquals(List.of(), ReflectionTestUtils.invokeMethod(customerVisitService, "phoneVariants", (Object) null));
+        assertEquals(List.of(), ReflectionTestUtils.invokeMethod(customerVisitService, "phoneVariants", "  "));
+        assertEquals(List.of("0912345678", "+84912345678"),
+                ReflectionTestUtils.invokeMethod(customerVisitService, "phoneVariants", "0912345678"));
+        assertEquals(List.of("12345"), ReflectionTestUtils.invokeMethod(customerVisitService, "phoneVariants", "12345"));
+    }
+
+    @Test
+    void findExistingGuestProfile_ShouldPreferPhoneOrEmailAndRejectDifferentOwners() {
+        Profile phoneOwner = Profile.builder().profileId(UUID.randomUUID()).build();
+        Profile emailOwner = Profile.builder().profileId(UUID.randomUUID()).build();
+        when(profileRepo.findFirstByPhoneIn(anyList())).thenReturn(Optional.empty());
+        when(profileRepo.findFirstByEmailIgnoreCase("a@b.vn")).thenReturn(Optional.empty());
+        assertNull(ReflectionTestUtils.invokeMethod(customerVisitService,
+                "findExistingGuestProfile", "0900000000", "a@b.vn"));
+
+        when(profileRepo.findFirstByPhoneIn(anyList())).thenReturn(Optional.of(phoneOwner));
+        assertSame(phoneOwner, ReflectionTestUtils.invokeMethod(customerVisitService,
+                "findExistingGuestProfile", "0900000000", null));
+        when(profileRepo.findFirstByPhoneIn(anyList())).thenReturn(Optional.empty());
+        when(profileRepo.findFirstByEmailIgnoreCase("a@b.vn")).thenReturn(Optional.of(emailOwner));
+        assertSame(emailOwner, ReflectionTestUtils.invokeMethod(customerVisitService,
+                "findExistingGuestProfile", null, "a@b.vn"));
+
+        when(profileRepo.findFirstByPhoneIn(anyList())).thenReturn(Optional.of(phoneOwner));
+        when(profileRepo.findFirstByEmailIgnoreCase("a@b.vn")).thenReturn(Optional.of(phoneOwner));
+        assertSame(phoneOwner, ReflectionTestUtils.invokeMethod(customerVisitService,
+                "findExistingGuestProfile", "0900000000", "a@b.vn"));
+        when(profileRepo.findFirstByEmailIgnoreCase("a@b.vn")).thenReturn(Optional.of(emailOwner));
+        assertThrows(ConflictException.class, () -> ReflectionTestUtils.invokeMethod(customerVisitService,
+                "findExistingGuestProfile", "0900000000", "a@b.vn"));
+    }
+
+    @Test
+    void hasActiveExaminationInvoice_ShouldCoverMissingPartsAndMembership() {
+        var empty = org.example.doansummer2026.model.QueueTicket.builder().build();
+        assertFalse(Boolean.TRUE.equals(ReflectionTestUtils.invokeMethod(customerVisitService,
+                "hasActiveExaminationInvoice", empty)));
+        var visit = CustomerVisit.builder().visitId(UUID.randomUUID()).build();
+        empty.setVisit(visit);
+        assertFalse(Boolean.TRUE.equals(ReflectionTestUtils.invokeMethod(customerVisitService,
+                "hasActiveExaminationInvoice", empty)));
+        MedicalService service = MedicalService.builder().serviceId(UUID.randomUUID()).build();
+        empty.setService(service);
+        when(invoiceItemRepo.findDistinctExaminationServiceIdsByVisit(visit.getVisitId(), null))
+                .thenReturn(List.of());
+        assertFalse(Boolean.TRUE.equals(ReflectionTestUtils.invokeMethod(customerVisitService,
+                "hasActiveExaminationInvoice", empty)));
+        when(invoiceItemRepo.findDistinctExaminationServiceIdsByVisit(visit.getVisitId(), null))
+                .thenReturn(List.of(service.getServiceId()));
+        assertTrue(Boolean.TRUE.equals(ReflectionTestUtils.invokeMethod(customerVisitService,
+                "hasActiveExaminationInvoice", empty)));
+    }
+
+    @Test
+    void validateServiceEligibility_ShouldCoverStatusAgeAndGenderBoundaries() {
+        Profile adultFemale = Profile.builder().dateOfBirth(LocalDate.now(CLINIC_ZONE).minusYears(30))
+                .gender(Gender.FEMALE).build();
+        MedicalService service = MedicalService.builder().name("Khám chuyên khoa")
+                .status(ServiceStatus.INACTIVE).build();
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(customerVisitService,
+                "validateServiceEligibility", service, adultFemale));
+
+        service.setStatus(ServiceStatus.ACTIVE);
+        service.setMinimumAge(18);
+        Profile noDob = Profile.builder().gender(Gender.FEMALE).build();
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(customerVisitService,
+                "validateServiceEligibility", service, noDob));
+        service.setMinimumAge(31);
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(customerVisitService,
+                "validateServiceEligibility", service, adultFemale));
+        service.setMinimumAge(18);
+        service.setMaximumAge(29);
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(customerVisitService,
+                "validateServiceEligibility", service, adultFemale));
+        service.setMaximumAge(60);
+        service.setAllowedGender(Gender.MALE);
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(customerVisitService,
+                "validateServiceEligibility", service, adultFemale));
+        service.setAllowedGender(Gender.FEMALE);
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(customerVisitService,
+                "validateServiceEligibility", service, adultFemale));
+        service.setAllowedGender(null);
+        service.setMinimumAge(null);
+        service.setMaximumAge(null);
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(customerVisitService,
+                "validateServiceEligibility", service, noDob));
     }
 }

@@ -19,6 +19,7 @@ import org.example.doansummer2026.repository.NotificationRepository;
 import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -131,18 +132,44 @@ public class QueueReturnRequestService {
                 .toList();
     }
 
+    /**
+     * Phiếu vắng trong ngày để lễ tân chủ động xác nhận người bệnh đã quay lại.
+     * Không phụ thuộc vào yêu cầu do Customer/Guest gửi từ giao diện.
+     */
+    @Transactional(readOnly = true)
+    public List<QueueReturnRequestResponse> skippedToday() {
+        LocalDate today = LocalDate.now(CLINIC_ZONE);
+        return queueTicketRepository.search(null, today, QueueStatus.SKIPPED, Pageable.unpaged())
+                .getContent().stream()
+                .sorted(Comparator.comparing(QueueTicket::getCalledAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(ticket -> response(ticket, null, "SKIPPED", null))
+                .toList();
+    }
+
     public QueueReturnRequestResponse confirm(UUID ticketId) {
         List<Notification> requests = pending(ticketId);
         if (requests.isEmpty()) {
             throw new ConflictException("Yêu cầu quay lại không còn chờ xác nhận");
         }
+        return restoreAtReception(ticketId, requests);
+    }
+
+    /** Lễ tân chủ động đưa người bệnh vắng trở lại sau khi đối chiếu có mặt tại quầy. */
+    public QueueReturnRequestResponse restore(UUID ticketId) {
+        return restoreAtReception(ticketId, pending(ticketId));
+    }
+
+    private QueueReturnRequestResponse restoreAtReception(UUID ticketId, List<Notification> requests) {
         var restored = queueTicketService.confirmReturnToQueue(ticketId);
         LocalDateTime now = LocalDateTime.now(CLINIC_ZONE);
         requests.forEach(item -> {
             item.setStatus(NotificationStatus.READ);
             item.setReadAt(now);
         });
-        notificationRepository.saveAll(requests);
+        if (!requests.isEmpty()) {
+            notificationRepository.saveAll(requests);
+        }
         publishReturnRequestsChanged();
         QueueTicket ticket = queueTicketRepository.findById(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("Phiếu hàng chờ không tồn tại"));

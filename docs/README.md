@@ -9,11 +9,15 @@
 - [Vai trò và phân quyền](roles-and-permissions.md)
 - [Các luồng nghiệp vụ chính](workflows.md)
 - [Bảng truy vết chức năng](traceability.md)
+- [Actor và Use Case Catalog MEMS-GC — Word, đối chiếu source và mẫu cũ](use-cases/README.md)
+- [Danh sách chức năng toàn hệ thống — System Function List](function-list/README.md)
 - [Thống kê Clinic Manager và quy tắc tính số liệu](reports.md)
 
 ## Phát triển và vận hành
 
 - [Cài đặt, cấu hình và kiểm thử](development.md)
+- [JUnit coverage, cổng 85% và lỗi cần phê duyệt](unit-test-coverage.md)
+- [Khôi phục luồng chuyên khoa và bảo toàn test](specialist-workflow-restoration.md)
 - [Baseline hiện tại](baseline.md)
 - [Dữ liệu demo, reset an toàn và tài khoản](demo/README.md)
 - [ERD tổng quan](diagrams/ERD-Tong-Quan.drawio)

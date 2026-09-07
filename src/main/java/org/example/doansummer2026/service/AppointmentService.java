@@ -110,7 +110,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                 .orElseThrow(() -> new ResourceNotFoundException("Bệnh nhân không tồn tại"));
 
         return createForPatient(customer, req.scheduledAt(), req.cancelReason(), req.shiftId(),
-                (List<UUID>) req.serviceIds(), false);
+                req.serviceIds() == null ? null : new java.util.ArrayList<>(req.serviceIds()), false);
     }
 
     @Override

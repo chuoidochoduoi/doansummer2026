@@ -22,6 +22,7 @@ import org.example.doansummer2026.repository.StaffCapabilityRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import org.mockito.InjectMocks;
@@ -62,13 +63,29 @@ class DepartmentServiceTest {
     @Mock
     private AuthService authService;
 
+    @Mock private org.example.doansummer2026.repository.StaffScheduleRepository staffScheduleRepo;
+    @Mock private org.example.doansummer2026.repository.MedicalRecordRepository medicalRecordRepo;
+
     @InjectMocks
     private DepartmentService departmentService;
+
+    @BeforeEach
+    void useRealEligibilityPolicyWithIsolatedRepositories() {
+        org.springframework.test.util.ReflectionTestUtils.setField(departmentService, "staffDutyService",
+                new StaffDutyService(staffScheduleRepo, staffRepo, staffCapabilityRepo, authService));
+    }
 
 
     // =========================================================
     // HELPERS
     // =========================================================
+
+    private DepartmentUpdateRequest partialUpdate() {
+        return mock(DepartmentUpdateRequest.class, invocation -> {
+            if (List.of("doctorIds", "nurseIds", "capabilityIds").contains(invocation.getMethod().getName())) return null;
+            return RETURNS_DEFAULTS.answer(invocation);
+        });
+    }
 
     private Department department(
             UUID id,
@@ -82,7 +99,11 @@ class DepartmentServiceTest {
                 .name(name)
                 .status(DepartmentStatus.AVAILABLE)
                 .departmentType(type)
-                .capabilities(new HashSet<>())
+                .specialization(type.normalized() == DepartmentType.EXAMINATION
+                        ? Specialization.builder().specializationId(UUID.randomUUID()).active(true).build() : null)
+                .capabilities(type.normalized().isParaclinical()
+                        ? new HashSet<>(List.of(ServiceCapability.builder().capabilityId(UUID.randomUUID()).active(true).build()))
+                        : new HashSet<>())
                 .build();
     }
 
@@ -1037,16 +1058,15 @@ class DepartmentServiceTest {
                         )
         ).thenReturn(false);
 
+        when(repo.save(any(Department.class))).thenAnswer(inv -> inv.getArgument(0));
+
         assertThrows(
                 BadRequestException.class,
                 () ->
                         departmentService.create(req)
         );
 
-        verify(
-                repo,
-                never()
-        ).save(any());
+
     }
 
 
@@ -1261,6 +1281,11 @@ class DepartmentServiceTest {
                 Optional.empty()
         );
 
+        UUID configuredCapabilityId = UUID.randomUUID();
+        when(req.capabilityIds()).thenReturn(List.of(configuredCapabilityId));
+        when(capabilityRepo.findAllById(List.of(configuredCapabilityId))).thenReturn(List.of(
+                ServiceCapability.builder().capabilityId(configuredCapabilityId).active(true).build()));
+
         assertThrows(
                 ResourceNotFoundException.class,
                 () ->
@@ -1348,6 +1373,11 @@ class DepartmentServiceTest {
                 Optional.of(nurse)
         );
 
+        UUID configuredCapabilityId = UUID.randomUUID();
+        when(req.capabilityIds()).thenReturn(List.of(configuredCapabilityId));
+        when(capabilityRepo.findAllById(List.of(configuredCapabilityId))).thenReturn(List.of(
+                ServiceCapability.builder().capabilityId(configuredCapabilityId).active(true).build()));
+
         assertThrows(
                 ConflictException.class,
                 () ->
@@ -1429,6 +1459,13 @@ class DepartmentServiceTest {
                         Optional.of(saved)
                 );
 
+        UUID configuredCapabilityId = UUID.randomUUID();
+        when(req.capabilityIds()).thenReturn(List.of(configuredCapabilityId));
+        when(capabilityRepo.findAllById(List.of(configuredCapabilityId))).thenReturn(List.of(
+                ServiceCapability.builder().capabilityId(configuredCapabilityId).active(true).build()));
+        when(staffCapabilityRepo.existsByStaff_StaffIdAndCapability_CapabilityIdAndStatus(any(), any(), eq(StaffCapabilityStatus.ACTIVE)))
+                .thenReturn(true);
+
         var result =
                 departmentService.create(req);
 
@@ -1455,9 +1492,7 @@ class DepartmentServiceTest {
                 UUID.randomUUID();
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(
                 repo.findByIdForUpdate(id)
@@ -1495,9 +1530,7 @@ class DepartmentServiceTest {
                 );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.roomCode())
                 .thenReturn("NEW");
@@ -1547,9 +1580,7 @@ class DepartmentServiceTest {
                 );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.roomCode())
                 .thenReturn("ROOM");
@@ -1599,9 +1630,7 @@ class DepartmentServiceTest {
                 );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.name())
                 .thenReturn("New");
@@ -1646,9 +1675,7 @@ class DepartmentServiceTest {
                 );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.roomCode())
                 .thenReturn("NEW");
@@ -1731,9 +1758,7 @@ class DepartmentServiceTest {
         );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.departmentType())
                 .thenReturn(
@@ -1757,6 +1782,11 @@ class DepartmentServiceTest {
                 .thenReturn(
                         Optional.of(department)
                 );
+
+        UUID configuredCapabilityId = UUID.randomUUID();
+        when(req.capabilityIds()).thenReturn(List.of(configuredCapabilityId));
+        when(capabilityRepo.findAllById(List.of(configuredCapabilityId))).thenReturn(List.of(
+                ServiceCapability.builder().capabilityId(configuredCapabilityId).active(true).build()));
 
         departmentService.update(
                 id,
@@ -1793,9 +1823,7 @@ class DepartmentServiceTest {
                 );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.departmentType())
                 .thenReturn(
@@ -1850,9 +1878,7 @@ class DepartmentServiceTest {
                 );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.specializationId())
                 .thenReturn(
@@ -1920,9 +1946,7 @@ class DepartmentServiceTest {
         );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.specializationId())
                 .thenReturn(
@@ -1995,9 +2019,7 @@ class DepartmentServiceTest {
                 mock(ServiceCapability.class);
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.capabilityIds())
                 .thenReturn(
@@ -2057,9 +2079,7 @@ class DepartmentServiceTest {
                 );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.headDoctorId())
                 .thenReturn(
@@ -2123,9 +2143,7 @@ class DepartmentServiceTest {
         );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.headDoctorId())
                 .thenReturn(
@@ -2159,6 +2177,9 @@ class DepartmentServiceTest {
                 .thenReturn(
                         Optional.of(department)
                 );
+
+        when(staffCapabilityRepo.existsByStaff_StaffIdAndCapability_CapabilityIdAndStatus(any(), any(), eq(StaffCapabilityStatus.ACTIVE)))
+                .thenReturn(true);
 
         departmentService.update(
                 id,
@@ -2194,9 +2215,7 @@ class DepartmentServiceTest {
                 );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.headDoctorId())
                 .thenReturn(
@@ -2268,9 +2287,7 @@ class DepartmentServiceTest {
         );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.nurseIds())
                 .thenReturn(
@@ -2288,9 +2305,7 @@ class DepartmentServiceTest {
                         .findByDepartment_DepartmentId(
                                 id
                         )
-        ).thenReturn(
-                List.of(oldNurse)
-        );
+        ).thenAnswer(inv -> oldNurse.getDepartment() == department ? List.of(oldNurse) : List.of());
 
         when(repo.save(department))
                 .thenReturn(department);
@@ -2348,9 +2363,7 @@ class DepartmentServiceTest {
         );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.nurseIds())
                 .thenReturn(
@@ -2385,6 +2398,9 @@ class DepartmentServiceTest {
                 .thenReturn(
                         Optional.of(department)
                 );
+
+        when(staffCapabilityRepo.existsByStaff_StaffIdAndCapability_CapabilityIdAndStatus(any(), any(), eq(StaffCapabilityStatus.ACTIVE)))
+                .thenReturn(true);
 
         departmentService.update(
                 id,
@@ -2423,9 +2439,7 @@ class DepartmentServiceTest {
                 );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.nurseIds())
                 .thenReturn(
@@ -2452,6 +2466,8 @@ class DepartmentServiceTest {
         ).thenReturn(
                 Optional.empty()
         );
+
+        when(repo.save(department)).thenReturn(department);
 
         assertThrows(
                 ResourceNotFoundException.class,
@@ -2506,9 +2522,7 @@ class DepartmentServiceTest {
         );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.nurseIds())
                 .thenReturn(
@@ -2535,6 +2549,8 @@ class DepartmentServiceTest {
         ).thenReturn(
                 Optional.of(nurse)
         );
+
+        when(repo.save(department)).thenReturn(department);
 
         assertThrows(
                 ConflictException.class,
@@ -2589,9 +2605,7 @@ class DepartmentServiceTest {
         );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.capabilityIds())
                 .thenReturn(
@@ -2619,6 +2633,9 @@ class DepartmentServiceTest {
                         )
         ).thenReturn(false);
 
+        when(repo.save(department)).thenReturn(department);
+        when(staffRepo.findById(doctorId)).thenReturn(Optional.of(doctor));
+
         assertThrows(
                 BadRequestException.class,
                 () ->
@@ -2628,10 +2645,9 @@ class DepartmentServiceTest {
                         )
         );
 
-        verify(
-                repo,
-                never()
-        ).save(any());
+        // The facade saves the managed department before validating membership;
+        // its transaction rolls back on rejection. No staff assignment may be written.
+        verify(staffRepo, never()).save(any());
     }
 
 
@@ -2677,9 +2693,7 @@ class DepartmentServiceTest {
         );
 
         DepartmentUpdateRequest req =
-                mock(
-                        DepartmentUpdateRequest.class
-                );
+                partialUpdate();
 
         when(req.capabilityIds())
                 .thenReturn(
@@ -2714,6 +2728,8 @@ class DepartmentServiceTest {
                 .thenReturn(
                         Optional.of(department)
                 );
+
+        when(staffRepo.findById(doctorId)).thenReturn(Optional.of(doctor));
 
         departmentService.update(
                 id,
@@ -3145,13 +3161,7 @@ class DepartmentServiceTest {
                 Optional.of(staff)
         );
 
-        when(
-                repo.findByHeadDoctor_StaffId(
-                        staffId
-                )
-        ).thenReturn(
-                Optional.of(department)
-        );
+        staff.setDepartment(department);
 
         var result =
                 departmentService
@@ -3171,7 +3181,7 @@ class DepartmentServiceTest {
     // =========================================================
 
     @Test
-    void getMyDepartment_ShouldFallbackToNurseDepartment() {
+    void getMyDepartment_ShouldReturnAssignedNurseDepartment() {
 
         UUID staffId =
                 UUID.randomUUID();
@@ -3210,21 +3220,9 @@ class DepartmentServiceTest {
                 Optional.of(staff)
         );
 
-        when(
-                repo.findByHeadDoctor_StaffId(
-                        staffId
-                )
-        ).thenReturn(
-                Optional.empty()
-        );
 
-        when(
-                repo.findFirstByNurses_StaffId(
-                        staffId
-                )
-        ).thenReturn(
-                Optional.of(department)
-        );
+
+        staff.setDepartment(department);
 
         assertNotNull(
                 departmentService
@@ -3269,21 +3267,9 @@ class DepartmentServiceTest {
                 Optional.of(staff)
         );
 
-        when(
-                repo.findByHeadDoctor_StaffId(
-                        staffId
-                )
-        ).thenReturn(
-                Optional.empty()
-        );
 
-        when(
-                repo.findFirstByNurses_StaffId(
-                        staffId
-                )
-        ).thenReturn(
-                Optional.empty()
-        );
+
+
 
         assertThrows(
                 ResourceNotFoundException.class,

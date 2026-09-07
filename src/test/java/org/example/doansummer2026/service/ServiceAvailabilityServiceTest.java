@@ -5,6 +5,8 @@ import org.example.doansummer2026.model.*;
 import org.example.doansummer2026.repository.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -21,6 +23,7 @@ class ServiceAvailabilityServiceTest {
     @Mock MedicalServiceRepository medicalServiceRepository;
     @Mock ShiftConfigRepository shiftRepository;
     @Mock ShiftScheduleResolver shiftResolver;
+    @Mock DepartmentRepository departmentRepository;
     @InjectMocks ServiceAvailabilityService service;
 
     private final LocalDate date = LocalDate.of(2026, 9, 10);
@@ -46,6 +49,7 @@ class ServiceAvailabilityServiceTest {
     void examinationIsAvailableWithScheduledDoctorInSpecialization() {
         Specialization specialization = Specialization.builder().specializationId(UUID.randomUUID()).active(true).build();
         staff.setSpecialization(specialization);
+        department.setSpecialization(specialization);
         MedicalService medicalService = MedicalService.builder().serviceId(UUID.randomUUID()).name("Exam")
                 .serviceCode("EX-1").status(ServiceStatus.ACTIVE).allowCustomerBooking(true)
                 .departmentType(DepartmentType.EXAMINATION).department(department)
@@ -83,6 +87,64 @@ class ServiceAvailabilityServiceTest {
                         .status(StaffCapabilityStatus.ACTIVE).expiryDate(date.minusDays(1)).build()));
         assertEquals(ShiftUnavailableReason.NO_QUALIFIED_STAFF,
                 service.evaluate(medicalService, date, shift, true).reason());
+    }
+
+    @ParameterizedTest @ValueSource(strings={"inactiveService","unavailableRoom","missingCapability","inactiveCapability","wrongSpecialization"})
+    void unavailableConfigurationRejectsBeforeStaffLookup(String reason) {
+        MedicalService medicalService = MedicalService.builder().serviceId(UUID.randomUUID()).status(ServiceStatus.ACTIVE)
+                .departmentType(DepartmentType.EXAMINATION).department(department).build();
+        ShiftUnavailableReason expected;
+        if(reason.equals("inactiveService")) { medicalService.setStatus(null); expected=ShiftUnavailableReason.SERVICE_INACTIVE; }
+        else if(reason.equals("unavailableRoom")) { department.setStatus(null); expected=ShiftUnavailableReason.DEPARTMENT_UNAVAILABLE; }
+        else if(reason.equals("wrongSpecialization")) {
+            medicalService.setRequiredSpecialization(Specialization.builder().specializationId(UUID.randomUUID()).build()); expected=ShiftUnavailableReason.DEPARTMENT_UNAVAILABLE;
+        } else {
+            ServiceCapability capability=ServiceCapability.builder().capabilityId(UUID.randomUUID()).active(false).build();
+            medicalService.setRequiredCapability(capability);
+            if(reason.equals("inactiveCapability")) department.getCapabilities().add(capability);
+            expected=ShiftUnavailableReason.CAPABILITY_UNAVAILABLE;
+        }
+        assertEquals(expected,service.evaluate(medicalService,date,shift,false).reason()); verifyNoInteractions(scheduleRepository);
+    }
+
+    @ParameterizedTest @ValueSource(strings={"noProfile","noAccount","inactive","wrongRoom","noRoom","nurse","noRole","wrongSpecialization","excluded"})
+    void onlyQualifiedActiveAssignedStaffCanCoverExamination(String reason) {
+        Specialization specialty = Specialization.builder().specializationId(UUID.randomUUID()).build();
+        department.setSpecialization(specialty); staff.setSpecialization(specialty);
+        MedicalService medicalService = MedicalService.builder().serviceId(UUID.randomUUID()).status(ServiceStatus.ACTIVE)
+                .departmentType(DepartmentType.EXAMINATION).department(department).requiredSpecialization(specialty).build();
+        switch(reason) {
+            case "noProfile" -> staff.setProfile(null);
+            case "noAccount" -> staff.getProfile().setAccount(null);
+            case "inactive" -> staff.getProfile().getAccount().setIsActive(false);
+            case "wrongRoom" -> staff.setDepartment(Department.builder().departmentId(UUID.randomUUID()).build());
+            case "noRoom" -> staff.setDepartment(null);
+            case "nurse" -> staff.setSystemRole(SystemRole.NURSE);
+            case "noRole" -> staff.setSystemRole(null);
+            case "wrongSpecialization" -> staff.setSpecialization(null);
+        }
+        when(scheduleRepository.findAllByWorkDateAndShift_ShiftIdAndStatus(date,shift.getShiftId(),ScheduleStatus.SCHEDULED)).thenReturn(List.of(StaffSchedule.builder().staff(staff).build()));
+        var result=service.evaluate(medicalService,date,shift,false,reason.equals("excluded")?staff.getStaffId():null);
+        assertFalse(result.available()); assertEquals(ShiftUnavailableReason.NO_QUALIFIED_STAFF,result.reason()); assertTrue(result.eligibleStaff().isEmpty());
+    }
+
+    @ParameterizedTest @ValueSource(booleans={true,false})
+    void unassignedServiceResolvesSpecialtyRooms(boolean roomAvailable) {
+        Specialization specialty = Specialization.builder().specializationId(UUID.randomUUID()).build(); staff.setSpecialization(specialty);
+        MedicalService medicalService=MedicalService.builder().serviceId(UUID.randomUUID()).status(ServiceStatus.ACTIVE)
+                .departmentType(DepartmentType.EXAMINATION).requiredSpecialization(specialty).build();
+        when(departmentRepository.findEligibleExaminationRoomsBySpecialization(specialty.getSpecializationId())).thenReturn(List.of(department));
+        if(!roomAvailable) department.setStatus(null);
+        else when(scheduleRepository.findAllByWorkDateAndShift_ShiftIdAndStatus(date,shift.getShiftId(),ScheduleStatus.SCHEDULED))
+                .thenReturn(List.of(StaffSchedule.builder().staff(staff).build(),StaffSchedule.builder().staff(staff).build()));
+        var result=service.evaluate(medicalService,date,shift,false);
+        assertEquals(roomAvailable,result.available()); assertEquals(roomAvailable?1:0,result.eligibleStaff().size());
+    }
+
+    @Test void closedShiftPreservesReasonAndDoesNotLoadOtherData() {
+        when(shiftResolver.resolve(shift,date)).thenReturn(new ShiftScheduleResolver.ResolvedShift(shift,null,null,null,ShiftTimeSource.NORMAL,ShiftUnavailableReason.CLINIC_CLOSED));
+        assertEquals(ShiftUnavailableReason.CLINIC_CLOSED,service.evaluate(new MedicalService(),date,shift,false).reason());
+        verifyNoInteractions(scheduleRepository,capabilityRepository,departmentRepository);
     }
 
     @Test

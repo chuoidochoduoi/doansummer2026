@@ -422,6 +422,9 @@ public class PatientJourneyService {
                 .sorted(workflowOrder())
                 .toList();
         java.util.Set<UUID> addedQueueIds = new java.util.HashSet<>();
+        // A shared Lab call can include tests from another examination. Keep this
+        // visit-wide so the fallback path does not render those tests a second time.
+        Set<UUID> includedTestIds = new HashSet<>();
 
         // Xay dung dung thu tu nghiep vu, khong chi sap theo createdAt. CLS da
         // gan MedicalRecord nam ngay sau phong kham nguon, sau do la buoc quay
@@ -439,7 +442,8 @@ public class PatientJourneyService {
             // separate medical records.  A later service is only reached after the previous
             // record has really been completed (including any return after ordered tests).
             for (QueueTicket examination : examinationGroup) {
-                steps.add(examinationGroupStep(List.of(examination), examination));
+                steps.add(examinationGroupStep(List.of(examination), examination,
+                        hasClinicalCycle(examination, invoices, journeyTests)));
                 addedQueueIds.add(examination.getTicketId());
 
                 List<CycleInvoice> examinationCycles = invoices.stream()
@@ -451,7 +455,6 @@ public class PatientJourneyService {
                 Set<UUID> examinationInvoiceIds = examinationCycles.stream()
                         .map(cycle -> cycle.invoice().getInvoiceId())
                         .filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
-                Set<UUID> includedTestIds = new HashSet<>();
 
                 for (int cycleIndex = 0; cycleIndex < examinationCycles.size(); cycleIndex++) {
                     CycleInvoice cycle = examinationCycles.get(cycleIndex);
@@ -942,20 +945,19 @@ public class PatientJourneyService {
     }
 
     private PatientJourneyResponse.Step examinationGroupStep(
-            java.util.List<QueueTicket> group, QueueTicket representative) {
+            java.util.List<QueueTicket> group, QueueTicket representative,
+            boolean initialPhaseFinished) {
+        // WAITING_FOR_TEST/TEST_DONE mean the doctor has already finished the
+        // initial examination and handed the patient to the dependent flow.
+        boolean handedToParaclinical = initialPhaseFinished || representative.getStatus() == QueueStatus.WAITING_FOR_TEST
+                || representative.getStatus() == QueueStatus.TEST_DONE;
         java.util.List<PatientJourneyResponse.ServiceProgress> progress = group.stream()
                 .map(queue -> new PatientJourneyResponse.ServiceProgress(
                         queue.getService() != null ? queue.getService().getServiceId() : null,
                         queue.getService() != null ? queue.getService().getServiceCode() : null,
                         queue.getService() != null ? queue.getService().getName() : "Khám bệnh",
-                        queue.getStatus().name()))
+                        handedToParaclinical ? QueueStatus.DONE.name() : queue.getStatus().name()))
                 .toList();
-        // WAITING_FOR_TEST/TEST_DONE mean the doctor has already finished the
-        // examination record and handed the patient to the clinical-test flow.
-        // Present the examination itself as completed; the next CLS step owns
-        // the "waiting for tests" state.
-        boolean handedToParaclinical = representative.getStatus() == QueueStatus.WAITING_FOR_TEST
-                || representative.getStatus() == QueueStatus.TEST_DONE;
         int completed = handedToParaclinical ? group.size()
                 : (int) group.stream().filter(queue -> queue.getStatus() == QueueStatus.DONE).count();
         String names = progress.stream().map(PatientJourneyResponse.ServiceProgress::serviceName)

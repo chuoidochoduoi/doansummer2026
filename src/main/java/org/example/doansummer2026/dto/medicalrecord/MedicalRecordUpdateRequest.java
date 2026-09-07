@@ -35,4 +35,3 @@ public record MedicalRecordUpdateRequest(
         JsonNode specialtyData,
         Long version
 ) {}
-

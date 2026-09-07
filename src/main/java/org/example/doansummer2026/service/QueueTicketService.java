@@ -770,9 +770,12 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
     private void ensureCallableToday(QueueTicket queue) {
         LocalDate today = LocalDate.now(CLINIC_ZONE);
+        boolean calledTodayFromCompletedTests = queue.getStatus() == QueueStatus.CALLED
+                && queue.getCalledAt() != null
+                && today.equals(queue.getCalledAt().toLocalDate());
         boolean returningAfterCompletedTests = queue.getWorkDate() != null
                 && queue.getWorkDate().isBefore(today)
-                && queue.getStatus() == QueueStatus.TEST_DONE;
+                && (queue.getStatus() == QueueStatus.TEST_DONE || calledTodayFromCompletedTests);
         // A TEST_DONE examination ticket has already produced clinical work
         // (the ordered tests).  It may be called on a later day only so the
         // responsible doctor can review the result and close that record.

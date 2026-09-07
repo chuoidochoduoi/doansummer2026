@@ -21,6 +21,8 @@ import org.example.doansummer2026.repository.QueueTicketRepository;
 import org.example.doansummer2026.repository.TestRequestRepository;
 import org.example.doansummer2026.repository.NotificationRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -34,6 +36,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,6 +51,70 @@ class PatientJourneyCycleTimelineTest {
     @Mock SimpMessagingTemplate messagingTemplate;
     @Mock QueuePriorityService queuePriorityService;
     @InjectMocks PatientJourneyService service;
+
+
+    @ParameterizedTest
+    @CsvSource({"WAITING_FOR_TEST,BLOCKED,IN_PROGRESS", "WAITING_FOR_TEST,TEST_DONE,COMPLETED", "TEST_DONE,TEST_DONE,COMPLETED", "CALLED,CALLED,COMPLETED", "IN_PROGRESS,IN_PROGRESS,COMPLETED", "DONE,DONE,COMPLETED"})
+    void specialistInitialPhaseRemainsCompletedDuringReturn(String examinationStatus, String returnStatus, String testStatus) {
+        var base = LocalDateTime.of(2026, 9, 1, 8, 0);
+        var visit = CustomerVisit.builder().visitId(UUID.randomUUID()).status(VisitStatus.IN_PROGRESS)
+                .checkInTime(base).customer(Profile.builder().profileId(UUID.randomUUID()).fullName("Nguyễn Anh Đức").build()).build();
+        var room = Department.builder().departmentId(UUID.randomUUID()).departmentType(DepartmentType.EXAMINATION).build();
+        var labRoom = Department.builder().departmentId(UUID.randomUUID()).departmentType(DepartmentType.PARACLINICAL).build();
+        var examinationService = MedicalService.builder().serviceId(UUID.randomUUID()).serviceCode("EX-INT-001").name("Khám Nội tổng quát").build();
+        var nextService = MedicalService.builder().serviceId(UUID.randomUUID()).serviceCode("EX-INT-002").name("Khám Tim mạch").build();
+        var labService = MedicalService.builder().serviceId(UUID.randomUUID()).serviceCode("LAB-001").name("Công thức máu").department(labRoom).build();
+        var examination = ticket(visit, room, examinationService, QueueStatus.valueOf(examinationStatus), 1, base);
+        var next = ticket(visit, room, nextService, QueueStatus.BLOCKED, 2, base.plusMinutes(1));
+        var record = MedicalRecord.builder().recordId(UUID.randomUUID()).visit(visit).queueTicket(examination).build();
+        var initial = invoice(visit, null, InvoiceStatus.PAID, base);
+        var order = invoice(visit, record, InvoiceStatus.PAID, base.plusMinutes(20));
+        boolean testsCompleted = "COMPLETED".equals(testStatus);
+        var lab = ticket(visit, labRoom, labService, testsCompleted ? QueueStatus.DONE : QueueStatus.IN_PROGRESS, 3, base.plusMinutes(25));
+        var result = test(record, labService, labRoom, lab, order, TestRequestStatus.valueOf(testStatus), base.plusMinutes(25));
+        when(visitRepo.findById(visit.getVisitId())).thenReturn(Optional.of(visit));
+        when(invoiceRepo.findAllByVisit_VisitId(visit.getVisitId())).thenReturn(List.of(initial, order));
+        when(queueRepo.findAllByVisit_VisitId(visit.getVisitId())).thenReturn(List.of(next, lab, examination));
+        when(testRepo.findAllByMedicalRecord_Visit_VisitId(visit.getVisitId())).thenReturn(List.of(result));
+
+        var journey = service.get(visit.getVisitId());
+
+        assertEquals(List.of("INITIAL_PAYMENT", "INITIAL_EXAMINATION", "ORDER_PAYMENT", "PARACLINICAL", "RETURN_EXAMINATION", "INITIAL_EXAMINATION"),
+                journey.steps().stream().map(step -> step.phase()).toList());
+        assertEquals("DONE", journey.steps().get(1).status());
+        assertEquals("DONE", journey.steps().get(1).services().get(0).status());
+        assertEquals(returnStatus, journey.steps().get(4).status());
+        assertEquals(examination.getTicketId(), journey.steps().get(4).queueTicketId());
+        assertEquals("BLOCKED", journey.steps().get(5).status());
+        assertEquals(next.getTicketId(), journey.steps().get(5).queueTicketId());
+        if (!testsCompleted) assertEquals(journey.steps().get(3).id(), journey.currentStepId());
+        else if (!"DONE".equals(returnStatus)) assertEquals(journey.steps().get(4).id(), journey.currentStepId());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"true", "false"})
+    void independentSpecialistExaminationsDoNotCompleteTogether(boolean sameRoom) {
+        var base = LocalDateTime.of(2026, 9, 1, 8, 0);
+        var visit = CustomerVisit.builder().visitId(UUID.randomUUID()).status(VisitStatus.IN_PROGRESS)
+                .checkInTime(base).customer(Profile.builder().profileId(UUID.randomUUID()).fullName("Nguyễn Anh Đức").build()).build();
+        var room = Department.builder().departmentId(UUID.randomUUID()).departmentType(DepartmentType.EXAMINATION).build();
+        var nextRoom = sameRoom ? room : Department.builder().departmentId(UUID.randomUUID()).departmentType(DepartmentType.EXAMINATION).build();
+        var firstService = MedicalService.builder().serviceId(UUID.randomUUID()).serviceCode("EX-INT-001").name("Khám Nội tổng quát").build();
+        var secondService = MedicalService.builder().serviceId(UUID.randomUUID()).serviceCode("EX-INT-002").name("Khám Tim mạch").build();
+        var first = ticket(visit, room, firstService, QueueStatus.IN_PROGRESS, 1, base);
+        var next = ticket(visit, nextRoom, secondService, QueueStatus.BLOCKED, 2, base.plusMinutes(1));
+        when(visitRepo.findById(visit.getVisitId())).thenReturn(Optional.of(visit));
+        when(queueRepo.findAllByVisit_VisitId(visit.getVisitId())).thenReturn(List.of(next, first));
+        when(invoiceRepo.findAllByVisit_VisitId(visit.getVisitId())).thenReturn(List.of(invoice(visit, null, InvoiceStatus.PAID, base)));
+
+        var journey = service.get(visit.getVisitId());
+
+        assertEquals(List.of("INITIAL_PAYMENT", "INITIAL_EXAMINATION", "INITIAL_EXAMINATION"), journey.steps().stream().map(step -> step.phase()).toList());
+        assertEquals("IN_PROGRESS", journey.steps().get(1).status());
+        assertEquals("BLOCKED", journey.steps().get(2).status());
+        assertEquals(0, journey.steps().get(2).completedServices());
+        assertEquals(journey.steps().get(1).id(), journey.currentStepId());
+    }
 
     @Test
     void twoClinicalCyclesRemainOrderedAndOnlyLatestReturnIsCurrent() {
@@ -100,8 +167,9 @@ class PatientJourneyCycleTimelineTest {
         assertEquals(examination.getTicketId(), result.steps().get(7).queueTicketId());
     }
 
-    @Test
-    void sharedLabQueueAcrossSameRoomRecordsCreatesOneCycleAndPointsToLabStep() {
+    @ParameterizedTest
+    @CsvSource({"true,true", "true,false", "false,true", "false,false"})
+    void sharedLabQueueAcrossSameRoomRecordsCreatesOneCycleAndPointsToLabStep(boolean sharedCall, boolean sameExaminationRoom) {
         LocalDateTime base = LocalDateTime.of(2026, 9, 1, 8, 0);
         CustomerVisit visit = CustomerVisit.builder()
                 .visitId(UUID.randomUUID()).status(VisitStatus.IN_PROGRESS).checkInTime(base)
@@ -124,7 +192,10 @@ class PatientJourneyCycleTimelineTest {
 
         QueueTicket examination1 = ticket(visit, examinationRoom, examinationService1,
                 QueueStatus.DONE, 1, base.plusMinutes(5));
-        QueueTicket examination2 = ticket(visit, examinationRoom, examinationService2,
+        Department secondRoom = sameExaminationRoom ? examinationRoom : Department.builder()
+                .departmentId(UUID.randomUUID()).name("Phong kham Tim mach").roomCode("INT-105")
+                .departmentType(DepartmentType.EXAMINATION).build();
+        QueueTicket examination2 = ticket(visit, secondRoom, examinationService2,
                 QueueStatus.DONE, 2, base.plusMinutes(35));
         MedicalRecord record1 = MedicalRecord.builder().recordId(UUID.randomUUID())
                 .visit(visit).queueTicket(examination1).build();
@@ -136,7 +207,9 @@ class PatientJourneyCycleTimelineTest {
                 QueueStatus.BLOCKED, 3, base.plusMinutes(50));
         TestRequest linked = test(record1, labService1, labRoom, sharedLabQueue, order,
                 TestRequestStatus.BLOCKED, base.plusMinutes(50));
-        TestRequest sameCallLegacy = test(record2, labService2, labRoom, sharedLabQueue, null,
+        QueueTicket legacyQueue = sharedCall ? sharedLabQueue : ticket(visit, labRoom, labService2,
+                QueueStatus.BLOCKED, 4, base.plusMinutes(60));
+        TestRequest sameCallLegacy = test(record2, labService2, labRoom, legacyQueue, null,
                 TestRequestStatus.BLOCKED, base.plusMinutes(51));
 
         when(visitRepo.findById(visit.getVisitId())).thenReturn(Optional.of(visit));
@@ -144,19 +217,30 @@ class PatientJourneyCycleTimelineTest {
         when(testRepo.findAllByMedicalRecord_Visit_VisitId(visit.getVisitId()))
                 .thenReturn(List.of(linked, sameCallLegacy));
         when(queueRepo.findAllByVisit_VisitId(visit.getVisitId()))
-                .thenReturn(List.of(examination2, sharedLabQueue, examination1));
+                .thenReturn(sharedCall ? List.of(examination2, sharedLabQueue, examination1)
+                        : List.of(examination2, legacyQueue, sharedLabQueue, examination1));
 
         var result = service.get(visit.getVisitId());
-        assertEquals(List.of(
+        assertEquals(sharedCall ? List.of(
                         "INITIAL_PAYMENT", "INITIAL_EXAMINATION", "ORDER_PAYMENT",
-                        "PARACLINICAL", "RETURN_EXAMINATION"),
+                        "PARACLINICAL", "RETURN_EXAMINATION", "INITIAL_EXAMINATION") : List.of(
+                        "INITIAL_PAYMENT", "INITIAL_EXAMINATION", "ORDER_PAYMENT", "PARACLINICAL",
+                        "RETURN_EXAMINATION", "INITIAL_EXAMINATION", "PARACLINICAL", "RETURN_EXAMINATION"),
                 result.steps().stream().map(step -> step.phase()).toList());
-        assertEquals(2, result.steps().get(3).totalServices());
+        assertEquals(sharedCall ? 2 : 1, result.steps().get(3).totalServices());
         assertEquals("BLOCKED", result.steps().get(3).status());
         assertEquals(result.steps().get(3).id(), result.currentStepId());
-        assertEquals(1, result.steps().stream()
+        assertEquals(sharedCall ? 1 : 2, result.steps().stream()
                 .filter(step -> "RETURN_EXAMINATION".equals(step.phase())).count());
+        assertEquals(examination1.getTicketId(), result.steps().get(4).queueTicketId());
+        assertEquals("BLOCKED", result.steps().get(4).status());
+        if (!sharedCall) {
+            assertEquals(legacyQueue.getTicketId(), result.steps().get(6).queueTicketId());
+            assertEquals(examination2.getTicketId(), result.steps().get(7).queueTicketId());
+        }
     }
+
+
 
     private QueueTicket ticket(CustomerVisit visit, Department room, MedicalService medicalService,
                                QueueStatus status, int number, LocalDateTime createdAt) {

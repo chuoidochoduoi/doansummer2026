@@ -1,1559 +1,303 @@
-//package org.example.doansummer2026.service;
-//
-//import org.example.doansummer2026.dto.staff.*;
-//import org.example.doansummer2026.enums.*;
-//import org.example.doansummer2026.exception.ConflictException;
-//import org.example.doansummer2026.exception.ResourceNotFoundException;
-//import org.example.doansummer2026.model.*;
-//import org.example.doansummer2026.repository.*;
-//import org.junit.jupiter.api.Test;
-//import org.junit.jupiter.api.extension.ExtendWith;
-//import org.mockito.InjectMocks;
-//import org.mockito.Mock;
-//import org.mockito.junit.jupiter.MockitoExtension;
-//import org.springframework.data.domain.PageImpl;
-//import org.springframework.data.domain.PageRequest;
-//import org.springframework.security.crypto.password.PasswordEncoder;
-//
-//import java.time.LocalDate;
-//import java.util.ArrayList;
-//import java.util.List;
-//import java.util.Optional;
-//import java.util.UUID;
-//
-//import static org.junit.jupiter.api.Assertions.*;
-//import static org.mockito.ArgumentMatchers.*;
-//import static org.mockito.Mockito.*;
-//
-//@ExtendWith(MockitoExtension.class)
-//class StaffServiceTest {
-//
-//    @Mock
-//    private StaffInfoRepository staffRepo;
-//
-//    @Mock
-//    private ProfileRepository profileRepo;
-//
-//    @Mock
-//    private AccountRepository accountRepo;
-//
-//    @Mock
-//    private DepartmentRepository departmentRepo;
-//
-//    @Mock
-//    private SpecializationService specializationService;
-//
-//    @Mock
-//    private PasswordEncoder passwordEncoder;
-//
-//    @Mock
-//    private StaffCapabilityRepository staffCapabilityRepo;
-//
-//    @Mock
-//    private ServiceCapabilityRepository capabilityRepo;
-//
-//    @InjectMocks
-//    private StaffService staffService;
-//
-//
-//    // =========================================================
-//    // HELPER
-//    // =========================================================
-//
-//    private StaffInfo staff(UUID staffId, SystemRole role) {
-//
-//        Account account = Account.builder()
-//                .accountId(UUID.randomUUID())
-//                .username("staff01")
-//                .role(Role.STAFF)
-//                .isActive(true)
-//                .build();
-//
-//        Profile profile = Profile.builder()
-//                .profileId(UUID.randomUUID())
-//                .account(account)
-//                .fullName("Nguyen Van Staff")
-//                .phone("0900000000")
-//                .build();
-//
-//        return StaffInfo.builder()
-//                .staffId(staffId)
-//                .profile(profile)
-//                .systemRole(role)
-//                .build();
-//    }
-//
-//
-//    // =========================================================
-//    // FIND BY ID
-//    // =========================================================
-//
-//    @Test
-//    void findById_ShouldReturn_WhenExists() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.NURSE);
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        assertSame(
-//                staff,
-//                staffService.findById(id)
-//        );
-//    }
-//
-//
-//    @Test
-//    void findById_ShouldThrow_WhenMissing() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.empty());
-//
-//        assertThrows(
-//                ResourceNotFoundException.class,
-//                () -> staffService.findById(id)
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // GET
-//    // =========================================================
-//
-//    @Test
-//    void get_ShouldReturnResponse_WhenStaffExists() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.NURSE);
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        var result =
-//                staffService.get(id);
-//
-//        assertNotNull(result);
-//    }
-//
-//
-//    // =========================================================
-//    // GET BY ACCOUNT
-//    // =========================================================
-//
-//    @Test
-//    void getByAccountId_ShouldThrow_WhenMissing() {
-//
-//        UUID accountId = UUID.randomUUID();
-//
-//        when(
-//                staffRepo.findFirstByProfile_Account_AccountId(accountId)
-//        ).thenReturn(Optional.empty());
-//
-//        assertThrows(
-//                ResourceNotFoundException.class,
-//                () -> staffService.getByAccountId(accountId)
-//        );
-//    }
-//
-//
-//    @Test
-//    void getByAccountId_ShouldReturn_WhenFound() {
-//
-//        UUID accountId = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(UUID.randomUUID(), SystemRole.NURSE);
-//
-//        when(
-//                staffRepo.findFirstByProfile_Account_AccountId(accountId)
-//        ).thenReturn(Optional.of(staff));
-//
-//        assertNotNull(
-//                staffService.getByAccountId(accountId)
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // CREATE - DUPLICATE USERNAME
-//    // =========================================================
-//
-//    @Test
-//    void create_ShouldRejectDuplicateUsername() {
-//
-//        StaffCreateRequest req =
-//                mock(StaffCreateRequest.class);
-//
-//        when(req.systemRole())
-//                .thenReturn(SystemRole.NURSE);
-//
-//        when(req.username())
-//                .thenReturn("nurse01");
-//
-//        when(accountRepo.existsByUsername("nurse01"))
-//                .thenReturn(true);
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.create(req)
-//        );
-//
-//        verify(accountRepo, never())
-//                .save(any());
-//    }
-//
-//
-//    // =========================================================
-//    // CREATE - DUPLICATE NATIONAL ID
-//    // =========================================================
-//
-//    @Test
-//    void create_ShouldRejectDuplicateNationalId() {
-//
-//        StaffCreateRequest req =
-//                mock(StaffCreateRequest.class);
-//
-//        when(req.systemRole())
-//                .thenReturn(SystemRole.NURSE);
-//
-//        when(req.username())
-//                .thenReturn("nurse01");
-//
-//        when(req.nationalId())
-//                .thenReturn("001234567890");
-//
-//        when(accountRepo.existsByUsername("nurse01"))
-//                .thenReturn(false);
-//
-//        when(staffRepo.existsByNationalId("001234567890"))
-//                .thenReturn(true);
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.create(req)
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // CREATE - BLANK NATIONAL ID SHOULD SKIP CHECK
-//    // =========================================================
-//
-//    @Test
-//    void create_ShouldIgnoreNationalIdDuplicateCheck_WhenBlank() {
-//
-//        StaffCreateRequest req =
-//                mock(StaffCreateRequest.class);
-//
-//        when(req.systemRole())
-//                .thenReturn(SystemRole.DOCTOR);
-//
-//        when(req.username())
-//                .thenReturn("doctor01");
-//
-//        when(req.nationalId())
-//                .thenReturn(" ");
-//
-//        when(accountRepo.existsByUsername("doctor01"))
-//                .thenReturn(false);
-//
-//        /*
-//         * Doctor không có specialization sẽ fail ở nhánh sau.
-//         * Mục tiêu ở đây là chứng minh nationalId blank không query repository.
-//         */
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.create(req)
-//        );
-//
-//        verify(staffRepo, never())
-//                .existsByNationalId(anyString());
-//    }
-//
-//
-//    // =========================================================
-//    // CREATE - DUPLICATE LICENSE
-//    // =========================================================
-//
-//    @Test
-//    void create_ShouldRejectDuplicateLicenseNumber() {
-//
-//        StaffCreateRequest req =
-//                mock(StaffCreateRequest.class);
-//
-//        when(req.systemRole())
-//                .thenReturn(SystemRole.NURSE);
-//
-//        when(req.username())
-//                .thenReturn("staff01");
-//
-//        when(req.licenseNumber())
-//                .thenReturn("LICENSE-001");
-//
-//        when(accountRepo.existsByUsername("staff01"))
-//                .thenReturn(false);
-//
-//        when(staffRepo.existsByLicenseNumber("LICENSE-001"))
-//                .thenReturn(true);
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.create(req)
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // CREATE - DUPLICATE PHONE
-//    // =========================================================
-//
-//    @Test
-//    void create_ShouldRejectDuplicatePhone() {
-//
-//        StaffCreateRequest req =
-//                mock(StaffCreateRequest.class);
-//
-//        when(req.systemRole())
-//                .thenReturn(SystemRole.NURSE);
-//
-//        when(req.username())
-//                .thenReturn("staff01");
-//
-//        when(req.phone())
-//                .thenReturn("0901234567");
-//
-//        when(accountRepo.existsByUsername("staff01"))
-//                .thenReturn(false);
-//
-//        when(profileRepo.findFirstByPhone("0901234567"))
-//                .thenReturn(Optional.of(mock(Profile.class)));
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.create(req)
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // CREATE - DUPLICATE EMAIL
-//    // =========================================================
-//
-//    @Test
-//    void create_ShouldRejectDuplicateEmail() {
-//
-//        StaffCreateRequest req =
-//                mock(StaffCreateRequest.class);
-//
-//        when(req.systemRole())
-//                .thenReturn(SystemRole.NURSE);
-//
-//        when(req.username())
-//                .thenReturn("staff01");
-//
-//        when(req.phone())
-//                .thenReturn("0901234567");
-//
-//        when(req.email())
-//                .thenReturn("staff@test.com");
-//
-//        when(accountRepo.existsByUsername("staff01"))
-//                .thenReturn(false);
-//
-//        when(profileRepo.findFirstByPhone("0901234567"))
-//                .thenReturn(Optional.empty());
-//
-//        when(profileRepo.findFirstByEmail("staff@test.com"))
-//                .thenReturn(Optional.of(mock(Profile.class)));
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.create(req)
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // CREATE - DOCTOR REQUIRES SPECIALIZATION
-//    // =========================================================
-//
-//    @Test
-//    void create_ShouldRejectDoctorWithoutSpecialization() {
-//
-//        StaffCreateRequest req =
-//                mock(StaffCreateRequest.class);
-//
-//        when(req.systemRole())
-//                .thenReturn(SystemRole.DOCTOR);
-//
-//        when(req.username())
-//                .thenReturn("doctor01");
-//
-//        when(req.phone())
-//                .thenReturn("0901111111");
-//
-//        when(req.email())
-//                .thenReturn("doctor@test.com");
-//
-//        when(accountRepo.existsByUsername("doctor01"))
-//                .thenReturn(false);
-//
-//        when(profileRepo.findFirstByPhone(any()))
-//                .thenReturn(Optional.empty());
-//
-//        when(profileRepo.findFirstByEmail(any()))
-//                .thenReturn(Optional.empty());
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.create(req)
-//        );
-//
-//        verify(accountRepo, never())
-//                .save(any());
-//    }
-//
-//
-//    // =========================================================
-//    // CREATE - INVALID GENDER
-//    // =========================================================
-//
-//    @Test
-//    void create_ShouldRejectInvalidGender() {
-//
-//        StaffCreateRequest req =
-//                mock(StaffCreateRequest.class);
-//
-//        when(req.systemRole())
-//                .thenReturn(SystemRole.NURSE);
-//
-//        when(req.username())
-//                .thenReturn("nurse02");
-//
-//        when(req.password())
-//                .thenReturn("123456");
-//
-//        when(req.phone())
-//                .thenReturn("0902222222");
-//
-//        when(req.email())
-//                .thenReturn("nurse02@test.com");
-//
-//        when(req.gender())
-//                .thenReturn("INVALID");
-//
-//        when(accountRepo.existsByUsername(any()))
-//                .thenReturn(false);
-//
-//        when(profileRepo.findFirstByPhone(any()))
-//                .thenReturn(Optional.empty());
-//
-//        when(profileRepo.findFirstByEmail(any()))
-//                .thenReturn(Optional.empty());
-//
-//        when(passwordEncoder.encode("123456"))
-//                .thenReturn("encoded");
-//
-//        when(accountRepo.save(any(Account.class)))
-//                .thenAnswer(i -> i.getArgument(0));
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.create(req)
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // CREATE - GENDER OTHER IS FORBIDDEN
-//    // =========================================================
-//
-//    @Test
-//    void create_ShouldRejectOtherGender() {
-//
-//        StaffCreateRequest req =
-//                mock(StaffCreateRequest.class);
-//
-//        when(req.systemRole())
-//                .thenReturn(SystemRole.NURSE);
-//
-//        when(req.username())
-//                .thenReturn("nurse03");
-//
-//        when(req.password())
-//                .thenReturn("123456");
-//
-//        when(req.phone())
-//                .thenReturn("0903333333");
-//
-//        when(req.email())
-//                .thenReturn("nurse03@test.com");
-//
-//        when(req.gender())
-//                .thenReturn("OTHER");
-//
-//        when(accountRepo.existsByUsername(any()))
-//                .thenReturn(false);
-//
-//        when(profileRepo.findFirstByPhone(any()))
-//                .thenReturn(Optional.empty());
-//
-//        when(profileRepo.findFirstByEmail(any()))
-//                .thenReturn(Optional.empty());
-//
-//        when(passwordEncoder.encode(any()))
-//                .thenReturn("encoded");
-//
-//        when(accountRepo.save(any(Account.class)))
-//                .thenAnswer(i -> i.getArgument(0));
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.create(req)
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // CREATE - SUCCESS NURSE
-//    // =========================================================
-//
-//    @Test
-//    void create_ShouldCreateNurseSuccessfully() {
-//
-//        StaffCreateRequest req =
-//                mock(StaffCreateRequest.class);
-//
-//        when(req.systemRole())
-//                .thenReturn(SystemRole.NURSE);
-//
-//        when(req.username())
-//                .thenReturn("nurse01");
-//
-//        when(req.password())
-//                .thenReturn("123456");
-//
-//        when(req.fullName())
-//                .thenReturn("Nguyen Thi Nurse");
-//
-//        when(req.phone())
-//                .thenReturn("0901234567");
-//
-//        when(req.email())
-//                .thenReturn("nurse@test.com");
-//
-//        when(req.gender())
-//                .thenReturn("female");
-//
-//        when(req.nationalId())
-//                .thenReturn(" 001122334455 ");
-//
-//        when(req.highestDegree())
-//                .thenReturn(" Bachelor ");
-//
-//        when(req.university())
-//                .thenReturn(" FPT ");
-//
-//        when(accountRepo.existsByUsername("nurse01"))
-//                .thenReturn(false);
-//
-//        when(staffRepo.existsByNationalId(anyString()))
-//                .thenReturn(false);
-//
-//        when(profileRepo.findFirstByPhone(any()))
-//                .thenReturn(Optional.empty());
-//
-//        when(profileRepo.findFirstByEmail(any()))
-//                .thenReturn(Optional.empty());
-//
-//        when(passwordEncoder.encode("123456"))
-//                .thenReturn("encoded");
-//
-//        when(accountRepo.save(any(Account.class)))
-//                .thenAnswer(i -> {
-//                    Account a = i.getArgument(0);
-//                    a.setAccountId(UUID.randomUUID());
-//                    return a;
-//                });
-//
-//        when(profileRepo.save(any(Profile.class)))
-//                .thenAnswer(i -> {
-//                    Profile p = i.getArgument(0);
-//                    p.setProfileId(UUID.randomUUID());
-//                    return p;
-//                });
-//
-//        when(staffRepo.save(any(StaffInfo.class)))
-//                .thenAnswer(i -> {
-//                    StaffInfo s = i.getArgument(0);
-//                    s.setStaffId(UUID.randomUUID());
-//                    return s;
-//                });
-//
-//        var result =
-//                staffService.create(req);
-//
-//        assertNotNull(result);
-//
-//        verify(passwordEncoder)
-//                .encode("123456");
-//
-//        verify(staffRepo)
-//                .save(argThat(s ->
-//                        s.getSystemRole() == SystemRole.NURSE
-//                                && "001122334455".equals(s.getNationalId())
-//                                && "Bachelor".equals(s.getHighestDegree())
-//                                && "FPT".equals(s.getUniversity())
-//                ));
-//    }
-//
-//
-//    // =========================================================
-//    // UPDATE - DUPLICATE NATIONAL ID
-//    // =========================================================
-//
-//    @Test
-//    void update_ShouldRejectDuplicateNewNationalId() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.NURSE);
-//
-//        staff.setNationalId("OLD");
-//
-//        StaffUpdateRequest req =
-//                mock(StaffUpdateRequest.class);
-//
-//        when(req.nationalId())
-//                .thenReturn("NEW");
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(staffRepo.existsByNationalId("NEW"))
-//                .thenReturn(true);
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.update(id, req)
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // UPDATE - DUPLICATE LICENSE
-//    // =========================================================
-//
-//    @Test
-//    void update_ShouldRejectDuplicateNewLicense() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.NURSE);
-//
-//        staff.setLicenseNumber("OLD");
-//
-//        StaffUpdateRequest req =
-//                mock(StaffUpdateRequest.class);
-//
-//        when(req.licenseNumber())
-//                .thenReturn("NEW-LICENSE");
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(staffRepo.existsByLicenseNumber("NEW-LICENSE"))
-//                .thenReturn(true);
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.update(id, req)
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // UPDATE - BECOMES DOCTOR WITHOUT SPECIALIZATION
-//    // =========================================================
-//
-//    @Test
-//    void update_ShouldRejectDoctorWithoutSpecialization() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.NURSE);
-//
-//        StaffUpdateRequest req =
-//                mock(StaffUpdateRequest.class);
-//
-//        when(req.systemRole())
-//                .thenReturn(SystemRole.DOCTOR);
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.update(id, req)
-//        );
-//
-//        verify(staffRepo, never())
-//                .save(staff);
-//    }
-//
-//
-//    // =========================================================
-//    // UPDATE - SUCCESS BASIC FIELDS
-//    // =========================================================
-//
-//    @Test
-//    void update_ShouldUpdateBasicFields() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.NURSE);
-//
-//        StaffUpdateRequest req =
-//                mock(StaffUpdateRequest.class);
-//
-//        when(req.username())
-//                .thenReturn("new.username");
-//
-//        when(req.fullName())
-//                .thenReturn("New Full Name");
-//
-//        when(req.phone())
-//                .thenReturn("0999999999");
-//
-//        when(req.email())
-//                .thenReturn("new@test.com");
-//
-//        when(req.gender())
-//                .thenReturn("male");
-//
-//        when(req.address())
-//                .thenReturn("Ha Noi");
-//
-//        when(req.bankAccount())
-//                .thenReturn("123456789");
-//
-//        when(req.highestDegree())
-//                .thenReturn(" Master ");
-//
-//        when(req.university())
-//                .thenReturn(" FPT University ");
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(staffRepo.save(staff))
-//                .thenReturn(staff);
-//
-//        var result =
-//                staffService.update(id, req);
-//
-//        assertNotNull(result);
-//
-//        assertEquals(
-//                "new.username",
-//                staff.getProfile()
-//                        .getAccount()
-//                        .getUsername()
-//        );
-//
-//        assertEquals(
-//                "New Full Name",
-//                staff.getProfile().getFullName()
-//        );
-//
-//        assertEquals(
-//                Gender.MALE,
-//                staff.getProfile().getGender()
-//        );
-//
-//        assertEquals(
-//                "Master",
-//                staff.getHighestDegree()
-//        );
-//
-//        assertEquals(
-//                "FPT University",
-//                staff.getUniversity()
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // UPDATE - BLANK USERNAME IS IGNORED
-//    // =========================================================
-//
-//    @Test
-//    void update_ShouldIgnoreBlankUsername() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.NURSE);
-//
-//        String oldUsername =
-//                staff.getProfile()
-//                        .getAccount()
-//                        .getUsername();
-//
-//        StaffUpdateRequest req =
-//                mock(StaffUpdateRequest.class);
-//
-//        when(req.username())
-//                .thenReturn("   ");
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(staffRepo.save(staff))
-//                .thenReturn(staff);
-//
-//        staffService.update(id, req);
-//
-//        assertEquals(
-//                oldUsername,
-//                staff.getProfile()
-//                        .getAccount()
-//                        .getUsername()
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // UPDATE PROFESSIONAL INFO
-//    // =========================================================
-//
-//    @Test
-//    void updateOwnProfessionalInfo_ShouldTrimValues() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.DOCTOR);
-//
-//        StaffProfessionalUpdateRequest req =
-//                mock(StaffProfessionalUpdateRequest.class);
-//
-//        when(req.highestDegree())
-//                .thenReturn(" CKI ");
-//
-//        when(req.university())
-//                .thenReturn(" DH Y Ha Noi ");
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(staffRepo.save(staff))
-//                .thenReturn(staff);
-//
-//        var result =
-//                staffService.updateOwnProfessionalInfo(
-//                        id,
-//                        req
-//                );
-//
-//        assertNotNull(result);
-//
-//        assertEquals(
-//                "CKI",
-//                staff.getHighestDegree()
-//        );
-//
-//        assertEquals(
-//                "DH Y Ha Noi",
-//                staff.getUniversity()
-//        );
-//    }
-//
-//
-//    @Test
-//    void updateOwnProfessionalInfo_ShouldConvertBlankToNull() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.NURSE);
-//
-//        StaffProfessionalUpdateRequest req =
-//                mock(StaffProfessionalUpdateRequest.class);
-//
-//        when(req.highestDegree())
-//                .thenReturn(" ");
-//
-//        when(req.university())
-//                .thenReturn(null);
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(staffRepo.save(staff))
-//                .thenReturn(staff);
-//
-//        staffService.updateOwnProfessionalInfo(
-//                id,
-//                req
-//        );
-//
-//        assertNull(
-//                staff.getHighestDegree()
-//        );
-//
-//        assertNull(
-//                staff.getUniversity()
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // DELETE
-//    // =========================================================
-//
-//    @Test
-//    void delete_ShouldThrow_WhenMissing() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        when(staffRepo.existsById(id))
-//                .thenReturn(false);
-//
-//        assertThrows(
-//                ResourceNotFoundException.class,
-//                () -> staffService.delete(id)
-//        );
-//    }
-//
-//
-//    @Test
-//    void delete_ShouldDelete_WhenExists() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        when(staffRepo.existsById(id))
-//                .thenReturn(true);
-//
-//        staffService.delete(id);
-//
-//        verify(staffRepo)
-//                .deleteById(id);
-//    }
-//
-//
-//    // =========================================================
-//    // LOCK
-//    // =========================================================
-//
-//    @Test
-//    void lock_ShouldRejectAdmin() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.ADMIN);
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.lock(id)
-//        );
-//
-//        verifyNoInteractions(accountRepo);
-//    }
-//
-//
-//    @Test
-//    void lock_ShouldRejectClinicManager() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.CLINIC_MANAGER);
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.lock(id)
-//        );
-//    }
-//
-//
-//    @Test
-//    void lock_ShouldDeactivateNormalStaffAccount() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.NURSE);
-//
-//        Account account =
-//                staff.getProfile()
-//                        .getAccount();
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(accountRepo.save(account))
-//                .thenReturn(account);
-//
-//        var result =
-//                staffService.lock(id);
-//
-//        assertNotNull(result);
-//
-//        assertFalse(
-//                account.getIsActive()
-//        );
-//
-//        verify(accountRepo)
-//                .save(account);
-//    }
-//
-//
-//    // =========================================================
-//    // SEARCH
-//    // =========================================================
-//
-//    @Test
-//    void search_ShouldReturnMappedPage() {
-//
-//        UUID staffId = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(staffId, SystemRole.NURSE);
-//
-//        var pageable =
-//                PageRequest.of(0, 10);
-//
-//        when(
-//                staffRepo.search(
-//                        "abc",
-//                        null,
-//                        SystemRole.NURSE,
-//                        pageable
-//                )
-//        ).thenReturn(
-//                new PageImpl<>(List.of(staff))
-//        );
-//
-//        var result =
-//                staffService.search(
-//                        "abc",
-//                        null,
-//                        SystemRole.NURSE,
-//                        pageable
-//                );
-//
-//        assertNotNull(result);
-//    }
-//
-//
-//    // =========================================================
-//    // CAPABILITIES - LIST
-//    // =========================================================
-//
-//    @Test
-//    void listCapabilities_ShouldThrow_WhenStaffMissing() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.empty());
-//
-//        assertThrows(
-//                ResourceNotFoundException.class,
-//                () -> staffService.listCapabilities(id)
-//        );
-//    }
-//
-//
-//    @Test
-//    void listCapabilities_ShouldReturnEmpty_WhenNoCapabilities() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.DOCTOR);
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(
-//                staffCapabilityRepo
-//                        .findAllByStaff_StaffId(id)
-//        ).thenReturn(List.of());
-//
-//        var result =
-//                staffService.listCapabilities(id);
-//
-//        assertNotNull(result);
-//        assertTrue(result.isEmpty());
-//    }
-//
-//
-//    // =========================================================
-//    // REPLACE CAPABILITIES - NON DOCTOR
-//    // =========================================================
-//
-//    @Test
-//    void replaceCapabilities_ShouldRejectNonDoctor() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.NURSE);
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        assertThrows(
-//                ConflictException.class,
-//                () -> staffService.replaceCapabilities(
-//                        id,
-//                        List.of()
-//                )
-//        );
-//
-//        verify(staffCapabilityRepo, never())
-//                .deleteAllByStaff_StaffId(id);
-//    }
-//
-//
-//    // =========================================================
-//    // REPLACE CAPABILITIES - NULL REQUEST
-//    // =========================================================
-//
-//    @Test
-//    void replaceCapabilities_ShouldClearAll_WhenRequestsNull() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.DOCTOR);
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(staffCapabilityRepo.saveAll(any()))
-//                .thenReturn(List.of());
-//
-//        var result =
-//                staffService.replaceCapabilities(
-//                        id,
-//                        null
-//                );
-//
-//        assertTrue(result.isEmpty());
-//
-//        verify(staffCapabilityRepo)
-//                .deleteAllByStaff_StaffId(id);
-//    }
-//
-//
-//    // =========================================================
-//    // REPLACE CAPABILITIES - NULL CAPABILITY IDs FILTERED
-//    // =========================================================
-//
-//    @Test
-//    void replaceCapabilities_ShouldIgnoreRequestWithNullCapabilityId() {
-//
-//        UUID id = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(id, SystemRole.DOCTOR);
-//
-//        StaffCapabilityRequest req =
-//                mock(StaffCapabilityRequest.class);
-//
-//        when(staffRepo.findById(id))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(staffCapabilityRepo.saveAll(any()))
-//                .thenReturn(List.of());
-//
-//        var result =
-//                staffService.replaceCapabilities(
-//                        id,
-//                        List.of(req)
-//                );
-//
-//        assertTrue(result.isEmpty());
-//
-//        verifyNoInteractions(capabilityRepo);
-//    }
-//
-//
-//    // =========================================================
-//    // REPLACE CAPABILITIES - CAPABILITY MISSING
-//    // =========================================================
-//
-//    @Test
-//    void replaceCapabilities_ShouldThrow_WhenCapabilityMissing() {
-//
-//        UUID staffId = UUID.randomUUID();
-//        UUID capabilityId = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(staffId, SystemRole.DOCTOR);
-//
-//        StaffCapabilityRequest req =
-//                mock(StaffCapabilityRequest.class);
-//
-//        when(req.capabilityId())
-//                .thenReturn(capabilityId);
-//
-//        when(staffRepo.findById(staffId))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(capabilityRepo.findById(capabilityId))
-//                .thenReturn(Optional.empty());
-//
-//        assertThrows(
-//                ResourceNotFoundException.class,
-//                () -> staffService.replaceCapabilities(
-//                        staffId,
-//                        List.of(req)
-//                )
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // REPLACE CAPABILITIES - REMOVE DUPLICATES
-//    // =========================================================
-//
-//    @Test
-//    void replaceCapabilities_ShouldRemoveDuplicateCapabilityIds() {
-//
-//        UUID staffId = UUID.randomUUID();
-//        UUID capabilityId = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(staffId, SystemRole.DOCTOR);
-//
-//        StaffCapabilityRequest first =
-//                mock(StaffCapabilityRequest.class);
-//
-//        StaffCapabilityRequest duplicate =
-//                mock(StaffCapabilityRequest.class);
-//
-//        when(first.capabilityId())
-//                .thenReturn(capabilityId);
-//
-//        when(duplicate.capabilityId())
-//                .thenReturn(capabilityId);
-//
-//        var capability =
-//                mock(
-//                        org.example.doansummer2026.model.ServiceCapability.class
-//                );
-//
-//        when(staffRepo.findById(staffId))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(capabilityRepo.findById(capabilityId))
-//                .thenReturn(Optional.of(capability));
-//
-//        when(staffCapabilityRepo.saveAll(any()))
-//                .thenAnswer(i -> {
-//                    Iterable<StaffCapability> iterable =
-//                            i.getArgument(0);
-//
-//                    List<StaffCapability> result =
-//                            new ArrayList<>();
-//
-//                    iterable.forEach(result::add);
-//
-//                    return result;
-//                });
-//
-//        var result =
-//                staffService.replaceCapabilities(
-//                        staffId,
-//                        List.of(
-//                                first,
-//                                duplicate
-//                        )
-//                );
-//
-//        assertEquals(
-//                1,
-//                result.size()
-//        );
-//
-//        verify(capabilityRepo, times(1))
-//                .findById(capabilityId);
-//    }
-//
-//
-//    // =========================================================
-//    // REPLACE CAPABILITIES - DEFAULT ACTIVE STATUS
-//    // =========================================================
-//
-//    @Test
-//    void replaceCapabilities_ShouldUseActiveStatus_WhenStatusNull() {
-//
-//        UUID staffId = UUID.randomUUID();
-//        UUID capabilityId = UUID.randomUUID();
-//
-//        StaffInfo staff =
-//                staff(staffId, SystemRole.DOCTOR);
-//
-//        StaffCapabilityRequest req =
-//                mock(StaffCapabilityRequest.class);
-//
-//        when(req.capabilityId())
-//                .thenReturn(capabilityId);
-//
-//        when(req.certificateNumber())
-//                .thenReturn(" CERT-01 ");
-//
-//        when(req.issuingOrganization())
-//                .thenReturn(" Hospital ");
-//
-//        var capability =
-//                mock(
-//                        org.example.doansummer2026.model.ServiceCapability.class
-//                );
-//
-//        when(staffRepo.findById(staffId))
-//                .thenReturn(Optional.of(staff));
-//
-//        when(capabilityRepo.findById(capabilityId))
-//                .thenReturn(Optional.of(capability));
-//
-//        when(staffCapabilityRepo.saveAll(any()))
-//                .thenAnswer(i -> {
-//                    Iterable<StaffCapability> iterable =
-//                            i.getArgument(0);
-//
-//                    List<StaffCapability> list =
-//                            new ArrayList<>();
-//
-//                    iterable.forEach(list::add);
-//
-//                    return list;
-//                });
-//
-//        var result =
-//                staffService.replaceCapabilities(
-//                        staffId,
-//                        List.of(req)
-//                );
-//
-//        assertEquals(1, result.size());
-//
-//        verify(staffCapabilityRepo)
-//                .saveAll(argThat(iterable -> {
-//
-//                    StaffCapability value =
-//                            iterable.iterator().next();
-//
-//                    return value.getStatus()
-//                            == StaffCapabilityStatus.ACTIVE
-//                            &&
-//                            "CERT-01".equals(
-//                                    value.getCertificateNumber()
-//                            )
-//                            &&
-//                            "Hospital".equals(
-//                                    value.getIssuingOrganization()
-//                            );
-//                }));
-//    }
-//
-//
-//    // =========================================================
-//    // LIST FOR SCHEDULE
-//    // =========================================================
-//
-//    @Test
-//    void listForSchedule_ShouldLoadAll_WhenRoleNull() {
-//
-//        when(staffRepo.findAll())
-//                .thenReturn(List.of());
-//
-//        var result =
-//                staffService.listForSchedule(null);
-//
-//        assertTrue(result.isEmpty());
-//
-//        verify(staffRepo)
-//                .findAll();
-//    }
-//
-//
-//    @Test
-//    void listForSchedule_ShouldUseSingleRole_WhenNotDoctor() {
-//
-//        when(
-//                staffRepo.findAllBySystemRoleIn(
-//                        List.of(SystemRole.NURSE)
-//                )
-//        ).thenReturn(List.of());
-//
-//        staffService.listForSchedule(
-//                SystemRole.NURSE
-//        );
-//
-//        verify(staffRepo)
-//                .findAllBySystemRoleIn(
-//                        List.of(SystemRole.NURSE)
-//                );
-//    }
-//
-//
-//    @Test
-//    void listForSchedule_ShouldNormalizeDoctorRoles() {
-//
-//        when(
-//                staffRepo.findAllBySystemRoleIn(anyList())
-//        ).thenReturn(List.of());
-//
-//        staffService.listForSchedule(
-//                SystemRole.DOCTOR
-//        );
-//
-//        verify(staffRepo)
-//                .findAllBySystemRoleIn(
-//                        argThat(roles ->
-//                                roles.contains(SystemRole.DOCTOR)
-//                                        && roles.contains(SystemRole.GENERAL_DOCTOR)
-//                                        && roles.contains(SystemRole.SPECIALIST_DOCTOR)
-//                        )
-//                );
-//    }
-//
-//
-//    // =========================================================
-//    // FIND ALL DOCTORS
-//    // =========================================================
-//
-//    @Test
-//    void findAllDoctors_ShouldReturnEmpty_WhenNoDoctors() {
-//
-//        when(
-//                staffRepo.findAllBySystemRoleIn(anyList())
-//        ).thenReturn(List.of());
-//
-//        when(departmentRepo.findAll())
-//                .thenReturn(List.of());
-//
-//        var result =
-//                staffService.findAllDoctors();
-//
-//        assertTrue(result.isEmpty());
-//    }
-//
-//
-//    @Test
-//    void findAllDoctors_ShouldMapHeadDoctorDepartment() {
-//
-//        UUID doctorId = UUID.randomUUID();
-//        UUID departmentId = UUID.randomUUID();
-//
-//        StaffInfo doctor =
-//                staff(doctorId, SystemRole.DOCTOR);
-//
-//        Department department =
-//                Department.builder()
-//                        .departmentId(departmentId)
-//                        .headDoctor(doctor)
-//                        .build();
-//
-//        when(
-//                staffRepo.findAllBySystemRoleIn(anyList())
-//        ).thenReturn(List.of(doctor));
-//
-//        when(departmentRepo.findAll())
-//                .thenReturn(List.of(department));
-//
-//        var result =
-//                staffService.findAllDoctors();
-//
-//        assertEquals(
-//                1,
-//                result.size()
-//        );
-//    }
-//
-//
-//    // =========================================================
-//    // FIND ALL NURSES
-//    // =========================================================
-//
-//    @Test
-//    void findAllNurses_ShouldHandleNurseWithoutDepartment() {
-//
-//        StaffInfo nurse =
-//                staff(
-//                        UUID.randomUUID(),
-//                        SystemRole.NURSE
-//                );
-//
-//        when(
-//                staffRepo.findAllBySystemRoleIn(
-//                        List.of(SystemRole.NURSE)
-//                )
-//        ).thenReturn(List.of(nurse));
-//
-//        var result =
-//                staffService.findAllNurses();
-//
-//        assertEquals(
-//                1,
-//                result.size()
-//        );
-//    }
-//
-//
-//    @Test
-//    void findAllNurses_ShouldIncludeDepartment_WhenAssigned() {
-//
-//        UUID departmentId = UUID.randomUUID();
-//
-//        StaffInfo nurse =
-//                staff(
-//                        UUID.randomUUID(),
-//                        SystemRole.NURSE
-//                );
-//
-//        Department department =
-//                Department.builder()
-//                        .departmentId(departmentId)
-//                        .build();
-//
-//        nurse.setDepartment(department);
-//
-//        when(
-//                staffRepo.findAllBySystemRoleIn(
-//                        List.of(SystemRole.NURSE)
-//                )
-//        ).thenReturn(List.of(nurse));
-//
-//        var result =
-//                staffService.findAllNurses();
-//
-//        assertEquals(
-//                1,
-//                result.size()
-//        );
-//    }
-//}
+package org.example.doansummer2026.service;
+
+import org.example.doansummer2026.dto.staff.*;
+import org.example.doansummer2026.enums.*;
+import org.example.doansummer2026.exception.*;
+import org.example.doansummer2026.model.*;
+import org.example.doansummer2026.repository.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.*;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.*;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import java.time.LocalDate;
+import java.util.*;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class StaffServiceTest {
+    @Mock StaffInfoRepository staffRepo;
+    @Mock ProfileRepository profileRepo;
+    @Mock AccountRepository accountRepo;
+    @Mock DepartmentRepository departmentRepo;
+    @Mock SpecializationService specializationService;
+    @Mock PasswordEncoder passwordEncoder;
+    @Mock StaffCapabilityRepository staffCapabilityRepo;
+    @Mock ServiceCapabilityRepository capabilityRepo;
+    @InjectMocks StaffService service;
+
+    StaffInfo staff(SystemRole role) {
+        Account account = Account.builder().accountId(UUID.randomUUID()).username("staff.demo")
+                .role(Role.STAFF).isActive(true).build();
+        Profile profile = Profile.builder().profileId(UUID.randomUUID()).account(account)
+                .fullName("Nguyễn Minh An").dateOfBirth(LocalDate.of(1990, 1, 1))
+                .gender(Gender.MALE).phone("0900000000").email("staff@example.test").build();
+        StaffInfo staff = StaffInfo.builder().staffId(UUID.randomUUID()).profile(profile).systemRole(role).build();
+        if (role.isDoctor()) staff.setSpecialization(Specialization.builder()
+                .specializationId(UUID.randomUUID()).name("Nội khoa").build());
+        return staff;
+    }
+
+    void lookup(StaffInfo staff) { when(staffRepo.findById(staff.getStaffId())).thenReturn(Optional.of(staff)); }
+    void saveStaff() { when(staffRepo.save(any())).thenAnswer(call -> call.getArgument(0)); }
+    StaffCreateRequest createRequest(SystemRole role, UUID specializationId) {
+        return new StaffCreateRequest(" staff.demo ", "password-123", "Nguyễn Minh An", " 0900000000 ",
+                " STAFF@EXAMPLE.TEST ", LocalDate.of(1990, 1, 1), "male", " Hà Nội ", " /avatar.png ",
+                specializationId, role, "123456789012", "123456", " Đại học ", " Y Hà Nội ", "LICENSE-1");
+    }
+
+    @ParameterizedTest @EnumSource(SystemRole.class)
+    void createNormalizesIdentityAndKeepsAccountStaffRole(SystemRole role) {
+        UUID specializationId = role.isDoctor() ? UUID.randomUUID() : null;
+        if (specializationId != null) when(specializationService.findActiveById(specializationId))
+                .thenReturn(Specialization.builder().specializationId(specializationId).name("Nội khoa").build());
+        when(passwordEncoder.encode("password-123")).thenReturn("hashed-password");
+        when(accountRepo.save(any())).thenAnswer(call -> call.getArgument(0));
+        when(profileRepo.save(any())).thenAnswer(call -> call.getArgument(0));
+        saveStaff();
+        StaffResponse response = service.create(createRequest(role, specializationId));
+        ArgumentCaptor<Profile> profile = ArgumentCaptor.forClass(Profile.class);
+        verify(profileRepo).save(profile.capture());
+        assertEquals("staff.demo", profile.getValue().getAccount().getUsername());
+        assertEquals("hashed-password", profile.getValue().getAccount().getPasswordHash());
+        assertEquals(Role.STAFF, profile.getValue().getAccount().getRole());
+        assertEquals("staff@example.test", profile.getValue().getEmail());
+        assertEquals("0900000000", profile.getValue().getPhone());
+        assertEquals("/avatar.png", profile.getValue().getAvatarUrl());
+        assertEquals(role.normalized().name(), response.systemRole().name());
+    }
+
+    @ParameterizedTest @ValueSource(strings={"username", "nationalId", "license", "phone", "email", "specialization"})
+    void createRejectsConflictsBeforeCreatingAccount(String conflict) {
+        switch (conflict) {
+            case "username" -> when(accountRepo.existsByUsername("staff.demo")).thenReturn(true);
+            case "nationalId" -> when(staffRepo.existsByNationalId("123456789012")).thenReturn(true);
+            case "license" -> when(staffRepo.existsByLicenseNumber("LICENSE-1")).thenReturn(true);
+            case "phone" -> when(profileRepo.findFirstByPhone("0900000000")).thenReturn(Optional.of(new Profile()));
+            case "email" -> when(profileRepo.findFirstByEmailIgnoreCase("staff@example.test")).thenReturn(Optional.of(new Profile()));
+        }
+        assertThrows(ConflictException.class, () -> service.create(createRequest(SystemRole.DOCTOR, null)));
+        verify(accountRepo, never()).save(any());
+        verify(staffRepo, never()).save(any());
+    }
+
+    @Test void updateChangesOnlyPermittedIdentityAndProfessionalFields() {
+        StaffInfo staff = staff(SystemRole.DOCTOR); lookup(staff); saveStaff();
+        when(accountRepo.findFirstByUsername("staff.demo")).thenReturn(Optional.of(staff.getProfile().getAccount()));
+        when(profileRepo.findFirstByPhone("0900000000")).thenReturn(Optional.of(staff.getProfile()));
+        when(profileRepo.findFirstByEmailIgnoreCase("staff@example.test")).thenReturn(Optional.of(staff.getProfile()));
+        service.update(staff.getStaffId(), new StaffUpdateRequest(" staff.demo ", " Nguyễn   Minh Anh ",
+                "0900000000", "STAFF@EXAMPLE.TEST", LocalDate.of(1991, 2, 3), "female", " Đà Nẵng ", " /new.png ",
+                staff.getSpecialization().getSpecializationId(), SystemRole.DOCTOR, "NEW-ID", "bank", " Thạc sĩ ", " Trường Y ", "NEW-LICENSE"));
+        assertEquals("Nguyễn Minh Anh", staff.getProfile().getFullName());
+        assertEquals(Gender.FEMALE, staff.getProfile().getGender());
+        assertEquals("staff@example.test", staff.getProfile().getEmail());
+        assertEquals("Đà Nẵng", staff.getProfile().getAddress());
+        assertEquals("Thạc sĩ", staff.getHighestDegree());
+        assertEquals("NEW-LICENSE", staff.getLicenseNumber());
+        assertEquals("bank", staff.getBankAccount());
+        verify(staffRepo).save(staff);
+    }
+
+    @ParameterizedTest @ValueSource(strings={"name", "digits", "birthMissing", "birthFuture", "gender", "contact", "role", "specialization", "doctorMissingSpecialization", "nationalId", "license", "username", "phone", "email"})
+    void updateRejectsInvalidOrConflictingDataWithoutSaving(String condition) {
+        StaffInfo staff = staff(SystemRole.DOCTOR); lookup(staff);
+        StaffUpdateRequest request = mock(StaffUpdateRequest.class);
+        switch(condition) {
+            case "name" -> staff.getProfile().setFullName(" ");
+            case "digits" -> when(request.fullName()).thenReturn("An 123");
+            case "birthMissing" -> staff.getProfile().setDateOfBirth(null);
+            case "birthFuture" -> when(request.dateOfBirth()).thenReturn(LocalDate.of(2999, 1, 1));
+            case "gender" -> staff.getProfile().setGender(null);
+            case "contact" -> { staff.getProfile().setEmail(null); staff.getProfile().setPhone(" "); }
+            case "role" -> when(request.systemRole()).thenReturn(SystemRole.NURSE);
+            case "specialization" -> when(request.specializationId()).thenReturn(UUID.randomUUID());
+            case "doctorMissingSpecialization" -> staff.setSpecialization(null);
+            case "nationalId" -> { when(request.nationalId()).thenReturn("duplicate"); when(staffRepo.existsByNationalId("duplicate")).thenReturn(true); }
+            case "license" -> { when(request.licenseNumber()).thenReturn("duplicate"); when(staffRepo.existsByLicenseNumber("duplicate")).thenReturn(true); }
+            case "username" -> { when(request.username()).thenReturn("other"); when(accountRepo.findFirstByUsername("other")).thenReturn(Optional.of(Account.builder().accountId(UUID.randomUUID()).build())); }
+            case "phone" -> { when(request.phone()).thenReturn("0901111111"); when(profileRepo.findFirstByPhone("0901111111")).thenReturn(Optional.of(Profile.builder().profileId(UUID.randomUUID()).build())); }
+            case "email" -> { when(request.email()).thenReturn("other@example.test"); when(profileRepo.findFirstByEmailIgnoreCase("other@example.test")).thenReturn(Optional.of(Profile.builder().profileId(UUID.randomUUID()).build())); }
+        }
+        RuntimeException error = assertThrows(RuntimeException.class, () -> service.update(staff.getStaffId(), request));
+        assertTrue(error instanceof BadRequestException || error instanceof ConflictException);
+        verify(staffRepo, never()).save(any());
+    }
+
+    @ParameterizedTest @ValueSource(strings={"OTHER", "invalid", " ", "female"})
+    void updateValidatesGender(String gender) {
+        StaffInfo staff = staff(SystemRole.NURSE); lookup(staff);
+        StaffUpdateRequest request = mock(StaffUpdateRequest.class);
+        when(request.gender()).thenReturn(gender);
+        if (gender.equals("female")) {
+            saveStaff(); service.update(staff.getStaffId(), request);
+            assertEquals(Gender.FEMALE, staff.getProfile().getGender());
+        } else {
+            assertThrows(RuntimeException.class, () -> service.update(staff.getStaffId(), request));
+            verify(staffRepo, never()).save(any());
+        }
+    }
+
+    @Test void professionalUpdateTrimsAndClearsValues() {
+        StaffInfo staff = staff(SystemRole.NURSE); lookup(staff); saveStaff();
+        service.updateOwnProfessionalInfo(staff.getStaffId(), new StaffProfessionalUpdateRequest(" Cao đẳng ", " "));
+        assertEquals("Cao đẳng", staff.getHighestDegree()); assertNull(staff.getUniversity());
+    }
+
+    @ParameterizedTest @EnumSource(SystemRole.class)
+    void lockProtectsManagersAndDeactivatesOtherAccounts(SystemRole role) {
+        StaffInfo staff = staff(role); lookup(staff);
+        if (role == SystemRole.ADMIN || role == SystemRole.CLINIC_MANAGER) {
+            assertThrows(ConflictException.class, () -> service.lock(staff.getStaffId()));
+            verify(accountRepo, never()).save(any());
+        } else {
+            service.lock(staff.getStaffId());
+            assertFalse(staff.getProfile().getAccount().getIsActive());
+            verify(accountRepo).save(staff.getProfile().getAccount());
+        }
+    }
+
+    @Test void lockCannotAbandonAssignedRoomOrOngoingWork() {
+        StaffInfo staff = staff(SystemRole.DOCTOR); lookup(staff);
+        when(staffRepo.countBlockingLockReferences(staff.getStaffId())).thenReturn(1L);
+        assertThrows(ConflictException.class, () -> service.lock(staff.getStaffId()));
+        assertTrue(staff.getProfile().getAccount().getIsActive()); verify(accountRepo, never()).save(any());
+    }
+
+    @Test void missingAndExistingStaffCannotBeDeleted() {
+        UUID id = UUID.randomUUID();
+        assertThrows(ResourceNotFoundException.class, () -> service.delete(id));
+        when(staffRepo.existsById(id)).thenReturn(true);
+        assertThrows(ConflictException.class, () -> service.delete(id));
+        verify(staffRepo, never()).deleteById(any());
+    }
+
+    @Test void capabilitiesAreDeduplicatedAndPersistedWithCertificateData() {
+        StaffInfo staff = staff(SystemRole.DOCTOR); lookup(staff);
+        UUID capabilityId = UUID.randomUUID();
+        ServiceCapability capability = ServiceCapability.builder().capabilityId(capabilityId)
+                .code("LAB").name("Xét nghiệm").active(true).build();
+        when(capabilityRepo.findById(capabilityId)).thenReturn(Optional.of(capability));
+        when(staffCapabilityRepo.saveAll(any())).thenAnswer(call -> call.getArgument(0));
+        StaffCapabilityRequest first = new StaffCapabilityRequest(capabilityId, " CERT-1 ",
+                LocalDate.of(2020, 1, 1), LocalDate.of(2030, 1, 1), " Bệnh viện ", null);
+        StaffCapabilityRequest duplicate = new StaffCapabilityRequest(capabilityId, "CERT-2", null, null, null, null);
+        StaffCapabilityRequest empty = new StaffCapabilityRequest(null, null, null, null, null, null);
+        List<StaffCapabilityResponse> results = service.replaceCapabilities(staff.getStaffId(), List.of(first, duplicate, empty));
+        assertEquals(1, results.size());
+        assertEquals("CERT-1", results.get(0).certificateNumber());
+        assertEquals(StaffCapabilityStatus.ACTIVE, results.get(0).status());
+        assertEquals("Bệnh viện", results.get(0).issuingOrganization());
+        assertEquals(first.expiryDate(), results.get(0).expiryDate());
+        verify(staffCapabilityRepo).deleteAllByStaff_StaffId(staff.getStaffId());
+        verify(capabilityRepo).findById(capabilityId);
+    }
+
+    @Test void nullCapabilitiesClearDoctorAssignments() {
+        StaffInfo staff = staff(SystemRole.DOCTOR); lookup(staff);
+        when(staffCapabilityRepo.saveAll(List.of())).thenReturn(List.of());
+        assertTrue(service.replaceCapabilities(staff.getStaffId(), null).isEmpty());
+        verify(staffCapabilityRepo).deleteAllByStaff_StaffId(staff.getStaffId());
+        verifyNoInteractions(capabilityRepo);
+    }
+
+    @Test void nursesCannotReplaceTechnicalAssignments() {
+        StaffInfo staff = staff(SystemRole.NURSE); lookup(staff);
+        assertThrows(ConflictException.class, () -> service.replaceCapabilities(staff.getStaffId(), List.of()));
+        verifyNoInteractions(staffCapabilityRepo, capabilityRepo);
+    }
+
+    @ParameterizedTest @ValueSource(booleans={false, true})
+    void missingOrInactiveCapabilityCannotBeSaved(boolean exists) {
+        StaffInfo staff = staff(SystemRole.DOCTOR); lookup(staff);
+        UUID capabilityId = UUID.randomUUID();
+        if (exists) when(capabilityRepo.findById(capabilityId)).thenReturn(Optional.of(
+                ServiceCapability.builder().capabilityId(capabilityId).active(false).build()));
+        RuntimeException error = assertThrows(RuntimeException.class, () -> service.replaceCapabilities(staff.getStaffId(),
+                List.of(new StaffCapabilityRequest(capabilityId, null, null, null, null, null))));
+        assertTrue(exists ? error instanceof ConflictException : error instanceof ResourceNotFoundException);
+        verify(staffCapabilityRepo, never()).saveAll(any());
+        // Deletion is within the facade transaction; Mockito does not establish rollback behavior.
+    }
+
+    @ParameterizedTest @EnumSource(StaffCapabilityStatus.class)
+    void capabilityListingAndReplacementPreserveExplicitStatus(StaffCapabilityStatus status) {
+        StaffInfo staff = staff(SystemRole.DOCTOR); lookup(staff);
+        UUID id = UUID.randomUUID();
+        ServiceCapability capability = ServiceCapability.builder().capabilityId(id).code("LAB").name("Lab").active(true).build();
+        when(capabilityRepo.findById(id)).thenReturn(Optional.of(capability));
+        when(staffCapabilityRepo.saveAll(any())).thenAnswer(call -> call.getArgument(0));
+        assertEquals(status, service.replaceCapabilities(staff.getStaffId(), List.of(
+                new StaffCapabilityRequest(id, null, null, null, null, status))).get(0).status());
+        when(staffCapabilityRepo.findAllByStaff_StaffId(staff.getStaffId())).thenReturn(List.of(
+                StaffCapability.builder().staff(staff).capability(capability).status(status).build()));
+        assertEquals(id, service.listCapabilities(staff.getStaffId()).get(0).capabilityId());
+    }
+
+    @ParameterizedTest @ValueSource(strings={"all", "doctor", "nurse", "public", "headDoctors", "nurses"})
+    void staffOptionsExcludeInactiveAndIncompleteAccounts(String mode) {
+        StaffInfo active = staff(SystemRole.DOCTOR);
+        StaffInfo inactive = staff(SystemRole.DOCTOR); inactive.getProfile().getAccount().setIsActive(false);
+        StaffInfo noAccount = staff(SystemRole.DOCTOR); noAccount.getProfile().setAccount(null);
+        StaffInfo noProfile = staff(SystemRole.DOCTOR); noProfile.setProfile(null);
+        StaffInfo unknownActivity = staff(SystemRole.DOCTOR); unknownActivity.getProfile().getAccount().setIsActive(null);
+        List<StaffInfo> values = List.of(inactive, noAccount, active, noProfile, unknownActivity);
+        if (mode.equals("all")) when(staffRepo.findAll()).thenReturn(values);
+        else when(staffRepo.findAllBySystemRoleIn(any())).thenReturn(values);
+        UUID departmentId = UUID.randomUUID();
+        active.setDepartment(Department.builder().departmentId(departmentId).build());
+        ServiceCapability capability = ServiceCapability.builder().capabilityId(UUID.randomUUID()).build();
+        StaffCapability valid = StaffCapability.builder().capability(capability).build();
+        when(staffCapabilityRepo.findAllByStaff_StaffIdAndStatus(active.getStaffId(), StaffCapabilityStatus.ACTIVE))
+                .thenReturn(List.of(valid, valid, new StaffCapability()));
+        List<StaffOptionResponse> result = switch(mode) {
+            case "all" -> service.listForSchedule(null);
+            case "doctor" -> service.listForSchedule(SystemRole.DOCTOR);
+            case "nurse" -> service.listForSchedule(SystemRole.NURSE);
+            case "public" -> service.getPublicActiveDoctors();
+            case "headDoctors" -> service.findAllDoctors();
+            default -> service.findAllNurses();
+        };
+        assertEquals(1, result.size());
+        assertEquals(active.getStaffId(), result.get(0).staffId());
+        assertEquals(departmentId, result.get(0).assignedDepartmentId());
+        assertEquals(List.of(capability.getCapabilityId()), result.get(0).capabilityIds());
+        if (mode.equals("doctor")) verify(staffRepo).findAllBySystemRoleIn(List.of(SystemRole.DOCTOR, SystemRole.GENERAL_DOCTOR, SystemRole.SPECIALIST_DOCTOR));
+        if (mode.equals("nurse") || mode.equals("nurses")) verify(staffRepo).findAllBySystemRoleIn(List.of(SystemRole.NURSE));
+    }
+
+    @Test void publicDoctorsSortBySpecializationThenName() {
+        StaffInfo first = staff(SystemRole.DOCTOR); first.setSpecialization(null); first.getProfile().setFullName("An");
+        StaffInfo second = staff(SystemRole.DOCTOR); second.getProfile().setFullName("Bình");
+        StaffInfo third = staff(SystemRole.DOCTOR); third.getProfile().setFullName("Dung");
+        when(staffRepo.findAllBySystemRoleIn(any())).thenReturn(List.of(third, second, first));
+        assertEquals(List.of(first.getStaffId(), second.getStaffId(), third.getStaffId()),
+                service.getPublicActiveDoctors().stream().map(StaffOptionResponse::staffId).toList());
+    }
+
+    @Test void searchPreservesPagingAndManagerProjection() {
+        StaffInfo staff = staff(SystemRole.NURSE); lookup(staff);
+        var pageable = org.springframework.data.domain.PageRequest.of(1, 10);
+        var page = new org.springframework.data.domain.PageImpl<>(List.of(staff), pageable, 11);
+        when(staffRepo.search("An", null, SystemRole.NURSE, pageable)).thenReturn(page);
+        var result = service.search("An", null, SystemRole.NURSE, pageable);
+        assertEquals(11, result.totalElements()); assertEquals(1, result.page());
+        assertEquals(staff.getStaffId(), result.content().get(0).staffId());
+        when(staffRepo.search("An", null, null, pageable)).thenReturn(page);
+        assertEquals(11, service.searchForClinicManager("An", pageable).totalElements());
+        assertNotNull(service.getForClinicManager(staff.getStaffId()));
+    }
+
+    @Test void lookupUsesExactStaffAndAccountIds() {
+        StaffInfo staff = staff(SystemRole.NURSE); lookup(staff);
+        UUID accountId = staff.getProfile().getAccount().getAccountId();
+        when(staffRepo.findFirstByProfile_Account_AccountId(accountId)).thenReturn(Optional.of(staff));
+        assertEquals(staff.getStaffId(), service.get(staff.getStaffId()).staffId());
+        assertEquals(staff.getStaffId(), service.getByAccountId(accountId).staffId());
+        assertThrows(ResourceNotFoundException.class, () -> service.get(UUID.randomUUID()));
+        assertThrows(ResourceNotFoundException.class, () -> service.getByAccountId(UUID.randomUUID()));
+    }
+}
