@@ -668,7 +668,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                 new org.example.doansummer2026.dto.medicalrecord.MedicalRecordCreateRequest(
                         visitId,
                         responsibleStaff.getStaffId(),
-                        "Dich vu can lam sang",
+                        "Dịch vụ cận lâm sàng",
                         null, null, null, null, null, null));
         return recordRepo.findById(created.recordId())
                 .orElseThrow(() -> new ResourceNotFoundException("Không thể tạo hồ sơ cận lâm sàng cho lượt khám"));
@@ -743,16 +743,16 @@ public class TestRequestService implements TestRequestServiceInterface {
     
     private void notifyDoctorResult(TestRequest t) {
         if (t.getRequestedBy() == null || t.getRequestedBy().getProfile() == null) return;
-        String patientName = t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null && t.getMedicalRecord().getVisit().getCustomer() != null ? t.getMedicalRecord().getVisit().getCustomer().getFullName() : "Khach";
-        String serviceName = t.getService() != null ? t.getService().getName() : "Can lam sang";
-        String content = String.format("Benh nhan %s da co ket qua %s", patientName, serviceName);
+        String patientName = t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null && t.getMedicalRecord().getVisit().getCustomer() != null ? t.getMedicalRecord().getVisit().getCustomer().getFullName() : "Khách";
+        String serviceName = t.getService() != null ? t.getService().getName() : "Cận lâm sàng";
+        String content = String.format("Bệnh nhân %s đã có kết quả %s", patientName, serviceName);
         
         try {
             notificationService.create(new org.example.doansummer2026.dto.notification.NotificationCreateRequest(
                     t.getRequestedBy().getProfile().getProfileId(),
                     org.example.doansummer2026.enums.NotificationType.GENERAL,
                     org.example.doansummer2026.enums.NotificationChannel.IN_APP,
-                    "Ket qua xet nghiem",
+                    "Kết quả xét nghiệm",
                     content,
                     "TestRequest",
                     t.getTestRequestId()

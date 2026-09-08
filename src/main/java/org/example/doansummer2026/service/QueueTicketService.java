@@ -167,12 +167,12 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     
     private void notifyDoctors(QueueTicket q) {
         if (q.getDepartment() == null) return;
-        String patientName = q.getVisit() != null && q.getVisit().getAppointment() != null ? q.getVisit().getAppointment().getGuestFullName() : "Khach";
+        String patientName = q.getVisit() != null && q.getVisit().getAppointment() != null ? q.getVisit().getAppointment().getGuestFullName() : "Khách";
         if (q.getVisit() != null && q.getVisit().getCustomer() != null) {
             patientName = q.getVisit().getCustomer().getFullName();
         }
         String roomName = q.getDepartment() != null ? q.getDepartment().getName() : "";
-        String content = String.format("Co benh nhan moi (Ten: %s) xep hang cho kham tai phong %s", patientName, roomName);
+        String content = String.format("Có bệnh nhân mới (Tên: %s) xếp hàng chờ khám tại phòng %s", patientName, roomName);
         
         for (StaffInfo staff : staffDutyService.findOnDutyStaff(q.getDepartment(), LocalDateTime.now(CLINIC_ZONE))) {
             if (staff.getSystemRole() == null || (!staff.getSystemRole().isDoctor()

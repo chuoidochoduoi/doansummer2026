@@ -157,6 +157,10 @@ class MembershipCardServiceTest {
                 cashier.getStaffId());
         assertEquals(MembershipCardStatus.ACTIVE, card.getStatus());
         assertNotNull(card.getActivatedAt());
+        assertNotNull(card.getBenefitStartsAt());
+        assertEquals(card.getActivatedAt().toLocalDate().plusDays(1), card.getBenefitStartsAt().toLocalDate());
+        assertEquals(LocalDateTime.of(card.getBenefitStartsAt().toLocalDate(), java.time.LocalTime.MIDNIGHT),
+                card.getBenefitStartsAt());
         assertNotNull(card.getBenefitExpiresAt());
         assertEquals(new BigDecimal("1000000"), card.getBalance());
         assertEquals("Lê Quốc Bảo", response.cashierName());
@@ -169,6 +173,7 @@ class MembershipCardServiceTest {
     void qualifyingTopUpExtendsFutureBenefitWhileSmallTopUpDoesNot() {
         MembershipCard card = card(MembershipCardStatus.ACTIVE);
         LocalDateTime expiry = LocalDateTime.now().plusMonths(2);
+        card.setBenefitStartsAt(LocalDateTime.now().minusDays(1));
         card.setBenefitExpiresAt(expiry);
         when(cardRepository.findByCodeForUpdate(card.getCardCode())).thenReturn(Optional.of(card));
         when(policyRepository.findFirstByActiveTrueOrderByCreatedAtDesc()).thenReturn(Optional.of(policy));
@@ -326,6 +331,29 @@ class MembershipCardServiceTest {
         verify(transactionRepository).save(tx.capture());
         assertEquals(fixture.invoice.getTotalAmount(), tx.getValue().getAmount());
         verify(invoiceRepository, never()).save(any());
+    }
+
+    @Test
+    void benefitWaitsUntilNextDayAndDoesNotApplyToOlderInvoice() {
+        PayFixture waiting = payFixture(true);
+        waiting.card.setBenefitStartsAt(LocalDateTime.now().plusDays(1).toLocalDate().atStartOfDay());
+        waiting.request = paymentRequest(waiting.invoice.getInvoiceId(), waiting.patient.getProfileId(), true,
+                null, "waiting-benefit");
+        when(invoiceService.get(waiting.invoice.getInvoiceId())).thenReturn(mock(InvoiceResponse.class));
+        service.pay(accountId, waiting.request);
+        assertEquals(BigDecimal.ZERO, waiting.invoice.getDiscount());
+
+        reset(transactionRepository, ledgerRepository, invoiceService);
+        PayFixture oldInvoice = payFixture(true);
+        oldInvoice.card.setBenefitStartsAt(LocalDateTime.now().minusDays(1).toLocalDate().atStartOfDay());
+        oldInvoice.invoice.setIssueDate(oldInvoice.card.getBenefitStartsAt().toLocalDate().minusDays(1));
+        oldInvoice.request = paymentRequest(oldInvoice.invoice.getInvoiceId(), oldInvoice.patient.getProfileId(), true,
+                null, "old-invoice");
+        when(transactionRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(ledgerRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(invoiceService.get(oldInvoice.invoice.getInvoiceId())).thenReturn(mock(InvoiceResponse.class));
+        service.pay(accountId, oldInvoice.request);
+        assertEquals(BigDecimal.ZERO, oldInvoice.invoice.getDiscount());
     }
 
     @Test
@@ -502,6 +530,7 @@ class MembershipCardServiceTest {
     private PayFixture payFixture(boolean activeBenefit) {
         MembershipCard card = card(MembershipCardStatus.ACTIVE);
         card.setBalance(new BigDecimal("1000000"));
+        card.setBenefitStartsAt(activeBenefit ? LocalDateTime.now().minusDays(1) : null);
         card.setBenefitExpiresAt(activeBenefit ? LocalDateTime.now().plusDays(30) : null);
         Profile patient = Profile.builder().profileId(UUID.randomUUID()).fullName("Trần Minh Anh").build();
         Invoice invoice = invoice(UUID.randomUUID(), patient);

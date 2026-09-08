@@ -602,12 +602,12 @@ FROM demo2_test_cases c JOIN test_result r ON r.result_id=pg_temp.d2id('result:'
 DELETE FROM membership_card_ledger;
 DELETE FROM membership_card;
 INSERT INTO membership_card(card_id,card_code,owner_profile_id,status,balance,pin_hash,benefit_percent,
- activated_at,benefit_expires_at,version,created_at,updated_at,deleted)
+ activated_at,benefit_starts_at,benefit_expires_at,version,created_at,updated_at,deleted)
 SELECT pg_temp.d2id('card:'||p.profile_id),'CS-DEMO-'||lpad(regexp_replace(p.patient_code,'[^0-9]','','g'),4,'0'),p.profile_id,'ACTIVE',
  5000000-COALESCE((SELECT sum(t.amount) FROM payment_transaction t JOIN invoice i ON i.invoice_id=t.invoice_id
                     WHERE i.customer_id=p.profile_id AND t.status='SUCCESS' AND t.payment_method='MEMBERSHIP_CARD'),0),
  '$2a$10$fl4JcFQUApjxYX0D1xqsmOpZ761fONcBHLozxvF85tUkybPyRFXKq',15,
- pg_temp.d2_date()-90,pg_temp.d2_date()+365,1,pg_temp.d2_date()-90,pg_temp.d2_now(),false
+ pg_temp.d2_date()-90,pg_temp.d2_date()-89,pg_temp.d2_date()+365,1,pg_temp.d2_date()-90,pg_temp.d2_now(),false
 FROM profile p JOIN account a ON a.account_id=p.account_id WHERE a.role='CUSTOMER';
 
 INSERT INTO membership_card_ledger(ledger_id,card_id,type,amount,balance_before,balance_after,

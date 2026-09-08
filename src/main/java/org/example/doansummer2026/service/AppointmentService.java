@@ -345,7 +345,7 @@ public class AppointmentService implements AppointmentServiceInterface {
     }
 
     private void notifyReceptionists(Appointment a) {
-        String patientName = (a.getIsGuest() != null && a.getIsGuest()) ? a.getGuestFullName() : (a.getCustomer() != null ? a.getCustomer().getFullName() : "Khach");
+        String patientName = (a.getIsGuest() != null && a.getIsGuest()) ? a.getGuestFullName() : (a.getCustomer() != null ? a.getCustomer().getFullName() : "Khách");
         String content = String.format("Có lịch hẹn mới từ %s vào lúc %s", patientName, a.getScheduledAt());
         notificationService.notifyStaffByRole(SystemRole.RECEPTIONIST, "Lịch hẹn mới", content, "Appointment", a.getAppointmentId());
     }
@@ -353,14 +353,14 @@ public class AppointmentService implements AppointmentServiceInterface {
     private void notifyCustomerStatusChange(Appointment a, AppointmentStatus oldStatus) {
         if ((a.getIsGuest() != null && a.getIsGuest()) || a.getCustomer() == null) return;
         if (a.getStatus() == AppointmentStatus.CHECKED_IN || a.getStatus() == AppointmentStatus.CANCELLED || a.getStatus() == AppointmentStatus.RESCHEDULED) {
-            String statusStr = a.getStatus() == AppointmentStatus.CHECKED_IN ? "da duoc tiep nhan" : (a.getStatus() == AppointmentStatus.CANCELLED ? "bi huy" : "duoc doi lich");
-            String content = String.format("Lich hen cua ban vao luc %s %s", a.getScheduledAt(), statusStr);
+            String statusStr = a.getStatus() == AppointmentStatus.CHECKED_IN ? "đã được tiếp nhận" : (a.getStatus() == AppointmentStatus.CANCELLED ? "bị hủy" : "được đổi lịch");
+            String content = String.format("Lịch hẹn của bạn vào lúc %s %s", a.getScheduledAt(), statusStr);
             try {
                 notificationService.create(new NotificationCreateRequest(
                         familyAccessService.notificationRecipientProfileId(a.getCustomer()),
                         NotificationType.GENERAL,
                         NotificationChannel.IN_APP,
-                        "Cap nhat lich hen",
+                        "Cập nhật lịch hẹn",
                         content,
                         "Appointment",
                         a.getAppointmentId()

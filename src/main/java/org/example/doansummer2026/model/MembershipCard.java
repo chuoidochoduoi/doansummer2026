@@ -23,6 +23,7 @@ public class MembershipCard extends BaseEntity {
     @Column(name = "pin_hash", nullable = false, length = 100) private String pinHash;
     @Column(name = "benefit_percent", nullable = false, precision = 5, scale = 2) private BigDecimal benefitPercent;
     @Column(name = "activated_at") private LocalDateTime activatedAt;
+    @Column(name = "benefit_starts_at") private LocalDateTime benefitStartsAt;
     @Column(name = "benefit_expires_at") private LocalDateTime benefitExpiresAt;
     @Version private Long version;
 }

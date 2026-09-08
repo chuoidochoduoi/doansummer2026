@@ -234,9 +234,9 @@ public class InvoiceService implements InvoiceServiceInterface {
     }
     
     private void notifyCashiers(Invoice invoice) {
-        String patientName = invoice.getCustomer() != null ? invoice.getCustomer().getFullName() : (invoice.getVisit() != null && invoice.getVisit().getAppointment() != null ? invoice.getVisit().getAppointment().getGuestFullName() : "Khach");
-        if (patientName == null) patientName = "Khach";
-        String content = String.format("Co hoa don moi (Ma: %s) can thanh toan tu benh nhan %s", invoice.getInvoiceCode(), patientName);
+        String patientName = invoice.getCustomer() != null ? invoice.getCustomer().getFullName() : (invoice.getVisit() != null && invoice.getVisit().getAppointment() != null ? invoice.getVisit().getAppointment().getGuestFullName() : "Khách");
+        if (patientName == null) patientName = "Khách";
+        String content = String.format("Có hóa đơn mới (Mã: %s) cần thanh toán từ bệnh nhân %s", invoice.getInvoiceCode(), patientName);
 
         List<StaffInfo> cashiers = staffRepo.findAllBySystemRoleIn(List.of(org.example.doansummer2026.enums.SystemRole.CASHIER));
         for (StaffInfo staff : cashiers) {
@@ -246,7 +246,7 @@ public class InvoiceService implements InvoiceServiceInterface {
                             staff.getProfile().getProfileId(),
                             org.example.doansummer2026.enums.NotificationType.GENERAL,
                             org.example.doansummer2026.enums.NotificationChannel.IN_APP,
-                            "Hoa don moi",
+                            "Hóa đơn mới",
                             content,
                             "Invoice",
                             invoice.getInvoiceId()

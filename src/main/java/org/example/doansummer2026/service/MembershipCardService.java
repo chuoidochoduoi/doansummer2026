@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 @Slf4j
 public class MembershipCardService {
+    private static final ZoneId CLINIC_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final BigDecimal DEFAULT_MINIMUM = new BigDecimal("1000000");
     private static final BigDecimal DEFAULT_DISCOUNT = new BigDecimal("15");
     private static final int DEFAULT_MONTHS = 12;
@@ -97,15 +98,27 @@ public class MembershipCardService {
         }
         BigDecimal before = card.getBalance();
         card.setBalance(before.add(request.amount()));
+        LocalDateTime now = LocalDateTime.now(CLINIC_ZONE);
         if (card.getStatus() == MembershipCardStatus.PENDING) {
             card.setStatus(MembershipCardStatus.ACTIVE);
-            card.setActivatedAt(LocalDateTime.now());
+            card.setActivatedAt(now);
             card.setBenefitPercent(policy.getDiscountPercent());
         }
         if (request.amount().compareTo(policy.getMinimumTopUp()) >= 0) {
-            LocalDateTime base = card.getBenefitExpiresAt() != null && card.getBenefitExpiresAt().isAfter(LocalDateTime.now())
-                    ? card.getBenefitExpiresAt() : LocalDateTime.now();
-            card.setBenefitExpiresAt(base.plusMonths(policy.getValidityMonths()));
+            LocalDateTime existingStartsAt = benefitStartsAt(card);
+            if (card.getBenefitStartsAt() == null && existingStartsAt != null) {
+                card.setBenefitStartsAt(existingStartsAt);
+            }
+            boolean hasCurrentOrScheduledBenefit = existingStartsAt != null
+                    && card.getBenefitExpiresAt() != null
+                    && now.isBefore(card.getBenefitExpiresAt());
+            if (hasCurrentOrScheduledBenefit) {
+                card.setBenefitExpiresAt(card.getBenefitExpiresAt().plusMonths(policy.getValidityMonths()));
+            } else {
+                LocalDateTime startsAt = now.toLocalDate().plusDays(1).atStartOfDay();
+                card.setBenefitStartsAt(startsAt);
+                card.setBenefitExpiresAt(startsAt.plusMonths(policy.getValidityMonths()));
+            }
             card.setBenefitPercent(policy.getDiscountPercent());
         }
         cardRepository.save(card);
@@ -142,8 +155,16 @@ public class MembershipCardService {
         }
         if (invoice.getStatus() != InvoiceStatus.PENDING) throw new ConflictException("Chỉ thanh toán hóa đơn đang chờ");
 
+        LocalDateTime startsAt = benefitStartsAt(card);
+        if (card.getBenefitStartsAt() == null && startsAt != null) {
+            card.setBenefitStartsAt(startsAt);
+        }
+        LocalDateTime now = LocalDateTime.now(CLINIC_ZONE);
         boolean benefit = Boolean.TRUE.equals(request.useBenefit())
-                && card.getBenefitExpiresAt() != null && card.getBenefitExpiresAt().isAfter(LocalDateTime.now());
+                && startsAt != null && !now.isBefore(startsAt)
+                && card.getBenefitExpiresAt() != null && now.isBefore(card.getBenefitExpiresAt())
+                && invoice.getIssueDate() != null
+                && !invoice.getIssueDate().isBefore(startsAt.toLocalDate());
         if (benefit && transactionRepository.findByInvoice_InvoiceId(invoice.getInvoiceId()).stream()
                 .anyMatch(t -> t.getStatus() == TransactionStatus.SUCCESS)) {
             throw new ConflictException("Ưu đãi thẻ chỉ áp dụng khi thẻ thanh toán toàn bộ hóa đơn");
@@ -159,7 +180,7 @@ public class MembershipCardService {
         cardRepository.save(card);
         Transaction tx = transactionRepository.save(Transaction.builder().invoice(invoice)
                 .transactionCode(reference("THE")).amount(amount).paymentMethod(PaymentMethod.MEMBERSHIP_CARD)
-                .status(TransactionStatus.SUCCESS).paidAt(LocalDateTime.now())
+                .status(TransactionStatus.SUCCESS).paidAt(now)
                 .note(benefit ? "Thanh toán thẻ CareS có áp dụng ưu đãi" : "Thanh toán bằng số dư thẻ CareS").build());
         ledgerRepository.save(MembershipCardLedger.builder().card(card).type(MembershipLedgerType.PAYMENT)
                 .amount(amount).balanceBefore(before).balanceAfter(card.getBalance()).invoice(invoice)
@@ -303,6 +324,12 @@ public class MembershipCardService {
         invoice.setTotalAmount(invoice.getSubtotal().subtract(invoice.getDiscount()).add(invoice.getTax()));
         invoiceRepository.save(invoice);
         return added;
+    }
+
+    private LocalDateTime benefitStartsAt(MembershipCard card) {
+        if (card.getBenefitStartsAt() != null) return card.getBenefitStartsAt();
+        if (card.getActivatedAt() == null || card.getBenefitExpiresAt() == null) return null;
+        return card.getActivatedAt().toLocalDate().plusDays(1).atStartOfDay();
     }
 
     private void restoreBenefit(Invoice invoice, BigDecimal discount) {

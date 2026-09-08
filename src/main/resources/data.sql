@@ -20,6 +20,9 @@ AS 'SELECT moment::date FROM demo_clock';
 CREATE OR REPLACE FUNCTION pg_temp.did(key text) RETURNS uuid LANGUAGE sql IMMUTABLE
 AS 'SELECT md5(''CareS-demo-v2:'' || key)::uuid';
 
+ALTER TABLE membership_card
+    ADD COLUMN IF NOT EXISTS benefit_starts_at timestamp;
+
 TRUNCATE TABLE
     clinic_information, membership_card_ledger, membership_card, membership_policy, family_member,
     test_result_attachment, test_result_revision,
@@ -933,6 +936,10 @@ BEGIN
         JOIN staff_info si ON si.staff_id = ss.staff_id
         WHERE ss.deleted = false AND ss.status = 'SCHEDULED'
           AND si.system_role <> 'DOCTOR'
+          AND si.staff_id NOT IN (
+              '90000012-5555-5555-5555-555555555555'::uuid,
+              '90000013-6666-6666-6666-666666666666'::uuid
+          )
           AND ss.work_date BETWEEN (pg_temp.demo_date() - 30)
                                AND pg_temp.demo_date() + 14
         GROUP BY ss.staff_id, si.staff_code, ss.work_date
@@ -1520,10 +1527,10 @@ SELECT pg_temp.did('payment:'||invoice_id),invoice_id,'PAY-'||left(replace(invoi
  NULL,'Giao dịch mô phỏng, không chuyển tiền thực tế',issued_by,issue_date,issue_date,false
 FROM invoice WHERE status='PAID';
 INSERT INTO membership_card(card_id,card_code,owner_profile_id,status,balance,pin_hash,
- benefit_percent,activated_at,benefit_expires_at,version,created_at,updated_at,deleted)
+ benefit_percent,activated_at,benefit_starts_at,benefit_expires_at,version,created_at,updated_at,deleted)
 SELECT pg_temp.did('card:T12'),'CS-DEMO-0003',customer_id,'ACTIVE',1000000-total_amount,
  '$2a$10$fl4JcFQUApjxYX0D1xqsmOpZ761fONcBHLozxvF85tUkybPyRFXKq',15,
- pg_temp.demo_date()-10+time '06:30',pg_temp.demo_date()+365+time '06:30',2,
+ pg_temp.demo_date()-10+time '06:30',pg_temp.demo_date()-9,pg_temp.demo_date()+365+time '06:30',2,
  pg_temp.demo_date()-10+time '06:30',pg_temp.demo_now(),false
 FROM invoice WHERE invoice_id=pg_temp.did('invoice:initial:T12');
 INSERT INTO membership_card_ledger(ledger_id,card_id,type,amount,balance_before,balance_after,
