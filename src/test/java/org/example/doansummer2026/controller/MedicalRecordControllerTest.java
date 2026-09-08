@@ -228,19 +228,6 @@ class MedicalRecordControllerTest {
         assertSame(updated, controller.updateCustomerForReceptionist(customerId, update).getBody());
     }
 
-    @Test
-    void receptionistFollowUpEndpointsDelegate() {
-        UUID recordId = UUID.randomUUID();
-        var pageable = PageRequest.of(0, 10);
-        PageResponse<FollowUpResponse> page = page();
-        when(service.getPendingFollowUps("an", pageable)).thenReturn(page);
-        assertSame(page, controller.getPendingFollowUps("an", pageable).getBody());
-        AppointmentCreateRequest request = mock(AppointmentCreateRequest.class);
-        FollowUpResponse response = mock(FollowUpResponse.class);
-        when(service.scheduleFollowUp(recordId, request)).thenReturn(response);
-        assertSame(response, controller.scheduleFollowUp(recordId, request).getBody());
-    }
-
     private MedicalRecordResponse record(UUID id) {
         MedicalRecordResponse response = mock(MedicalRecordResponse.class);
         lenient().when(response.recordId()).thenReturn(id);

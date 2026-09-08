@@ -4,7 +4,7 @@ Ngày kiểm tra: 06/09/2026.
 
 ## Phạm vi đối chiếu
 
-- 125 use case duy nhất và 194 quan hệ actor–use case được ghi rõ.
+- 124 use case hiện hành và 192 quan hệ actor–use case được ghi rõ; RC-11 đã gỡ vẫn được giữ mã dự phòng trong bảng đối chiếu.
 - 90 ID từ mẫu cũ đã được đối chiếu: 81 ID tiếp tục sử dụng, 9 ID được gộp, chuyển actor, loại bỏ hoặc phân loại lại; 44 ID mới được bổ sung.
 - 71 route frontend đã đăng ký đều được gắn với use case và vai trò khai báo.
 - 314 endpoint backend thuộc 41 controller đều được gắn use case hoặc phân loại rõ là API hỗ trợ, API tương thích, backend-only hay thao tác bị từ chối có chủ đích.

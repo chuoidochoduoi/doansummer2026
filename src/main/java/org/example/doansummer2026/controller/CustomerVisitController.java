@@ -8,6 +8,7 @@ import org.example.doansummer2026.dto.customervisit.CustomerVisitCreateRequest;
 import org.example.doansummer2026.dto.customervisit.CustomerVisitResponse;
 import org.example.doansummer2026.dto.customervisit.CustomerVisitUpdateRequest;
 import org.example.doansummer2026.enums.VisitStatus;
+import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.service.AuthService;
 import org.example.doansummer2026.service.CustomerVisitService;
 import org.springframework.data.domain.Pageable;
@@ -34,6 +35,7 @@ public class CustomerVisitController {
     private final CustomerVisitService service;
     private final AuthService authService;
     private final org.example.doansummer2026.service.SameDayParaclinicalResultService sameDayResultService;
+    private final org.example.doansummer2026.service.StaffDutyService staffDutyService;
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
@@ -69,6 +71,7 @@ public class CustomerVisitController {
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<CustomerVisitResponse> create(@Valid @RequestBody CustomerVisitCreateRequest req) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.RECEPTIONIST);
         UUID issuedById = authService.currentStaffId();
         var updatedReq = new CustomerVisitCreateRequest(
                 req.customerId(),
@@ -95,12 +98,14 @@ public class CustomerVisitController {
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<CustomerVisitResponse> update(@PathVariable UUID id,
                                                         @Valid @RequestBody CustomerVisitUpdateRequest req) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.RECEPTIONIST);
         return RestResponses.ok(service.update(id, req));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.RECEPTIONIST);
         service.delete(id);
         return RestResponses.noContent();
     }

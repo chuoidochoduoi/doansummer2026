@@ -588,7 +588,9 @@ public class PatientJourneyService {
         boolean finished = current==null && next==null && !steps.isEmpty();
         String name = visit.getCustomer()!=null ? visit.getCustomer().getFullName() : visit.getAppointment()!=null ? visit.getAppointment().getGuestFullName() : "Khách vãng lai";
         String phone = visit.getCustomer()!=null ? visit.getCustomer().getPhone() : visit.getAppointment()!=null ? visit.getAppointment().getGuestPhone() : null;
-        long waiting = current!=null && visit.getCheckInTime()!=null ? Math.max(0, Duration.between(visit.getCheckInTime(), LocalDateTime.now()).toMinutes()) : 0;
+        long waiting = current!=null && visit.getCheckInTime()!=null
+                ? Math.max(0, Duration.between(visit.getCheckInTime(),
+                        LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"))).toMinutes()) : 0;
         String state = visitClosed ? visit.getStatus().name()
                 : current!=null?current.status():finished?"COMPLETED":"UNASSIGNED";
         boolean guest = visit.getCustomer() == null || visit.getCustomer().getAccount() == null;

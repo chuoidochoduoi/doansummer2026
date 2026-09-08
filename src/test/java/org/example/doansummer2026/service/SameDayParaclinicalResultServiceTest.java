@@ -180,15 +180,16 @@ class SameDayParaclinicalResultServiceTest {
 
     @Test
     void findForCustomerTodayUsesClinicDateAndNullContextFieldsAreAllowed() throws Exception {
-        LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        LocalDateTime clinicNow = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        LocalDate today = clinicNow.toLocalDate();
         Profile patient = Profile.builder().profileId(UUID.randomUUID()).build();
         CustomerVisit source = visit(patient, today.atStartOfDay(), null);
         MedicalService lab = service("LAB-001", "Xét nghiệm", DepartmentType.PARACLINICAL);
-        TestRequest request = request(source, lab, today.atTime(1, 0), true);
+        TestRequest request = request(source, lab, clinicNow.minusMinutes(2), true);
         request.setPerformingDepartment(null);
         request.getMedicalRecord().setQueueTicket(null);
         request.getMedicalRecord().setDoctor(null);
-        TestResultRevision revision = signedRevision(request, today.atTime(1, 5), false, false);
+        TestResultRevision revision = signedRevision(request, clinicNow.minusMinutes(1), false, false);
         revision.setSignedBy(StaffInfo.builder().staffId(UUID.randomUUID()).profile(null).build());
         when(profileRepository.findById(patient.getProfileId())).thenReturn(Optional.of(patient));
         when(testRequestRepository.findByProfileIdAndStatusCompleted(patient.getProfileId()))

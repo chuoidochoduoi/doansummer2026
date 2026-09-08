@@ -53,6 +53,26 @@ class StaffDutyServiceTest {
     }
 
     @Test
+    void operationalRoleMustBeOnDutyButOtherRolesAreNotRestrictedByThisGate() {
+        doctor.setSystemRole(SystemRole.RECEPTIONIST);
+        when(auth.currentStaffId()).thenReturn(doctor.getStaffId());
+        when(staffRepository.findById(doctor.getStaffId())).thenReturn(Optional.of(doctor));
+
+        BadRequestException error = assertThrows(BadRequestException.class,
+                () -> service.requireCurrentStaffOnDuty(SystemRole.RECEPTIONIST));
+        assertEquals("Bạn hiện không trong ca trực nên không thể thực hiện thao tác này", error.getMessage());
+
+        doctor.setSystemRole(SystemRole.CLINIC_MANAGER);
+        assertDoesNotThrow(() -> service.requireCurrentStaffOnDuty(SystemRole.RECEPTIONIST));
+    }
+
+    @Test
+    void operationalGateIgnoresAuthenticatedActorsWithoutStaffIdentity() {
+        assertDoesNotThrow(() -> service.requireCurrentStaffOnDuty(SystemRole.RECEPTIONIST));
+        verifyNoInteractions(staffRepository, schedules);
+    }
+
+    @Test
     void staffFromAnotherRoomIsRejectedBeforeScheduleLookup() {
         when(auth.currentStaffId()).thenReturn(doctor.getStaffId());
         when(staffRepository.findById(doctor.getStaffId())).thenReturn(Optional.of(doctor));

@@ -2795,6 +2795,47 @@ class AppointmentServiceTest {
         );
     }
 
+    @Test
+    void getMyAppointments_ShouldMapSelectedFamilyProfileAndRelationship() {
+        UUID accountId = UUID.randomUUID();
+        Profile owner = customer(UUID.randomUUID());
+        Profile child = customer(UUID.randomUUID());
+        Appointment appointment = appointment(UUID.randomUUID(), AppointmentStatus.PENDING, child);
+        appointment.setServices(Set.of(service(UUID.randomUUID(), "Khám Nhi")));
+        var pageable = PageRequest.of(0, 10);
+        when(familyAccessService.ownerProfile(accountId)).thenReturn(owner);
+        when(familyAccessService.resolveReadableProfile(accountId, child.getProfileId())).thenReturn(child);
+        when(familyAccessService.relationship(accountId, child.getProfileId())).thenReturn(FamilyRelationship.CHILD);
+        when(repo.searchForCustomers(eq(List.of(child.getProfileId())), isNull(), isNull(), isNull(),
+                isNull(), isNull(), eq(pageable))).thenReturn(new PageImpl<>(List.of(appointment), pageable, 1));
+
+        var result = appointmentService.getMyAppointments(accountId, child.getProfileId(), false,
+                null, null, null, null, null, pageable);
+
+        assertEquals(1, result.content().size());
+        assertEquals("Con", result.content().get(0).relationship());
+        assertFalse(result.content().get(0).isSelf());
+    }
+
+    @Test
+    void getMyAppointments_ShouldMapReadableProfilesIncludingGuestRow() {
+        UUID accountId = UUID.randomUUID();
+        Profile owner = customer(UUID.randomUUID());
+        Appointment guest = appointment(UUID.randomUUID(), AppointmentStatus.PENDING, null);
+        guest.setGuestFullName("Khách vãng lai");
+        var pageable = PageRequest.of(0, 10);
+        when(familyAccessService.ownerProfile(accountId)).thenReturn(owner);
+        when(familyAccessService.readableProfiles(accountId, true)).thenReturn(List.of(owner));
+        when(repo.searchForCustomers(eq(List.of(owner.getProfileId())), isNull(), isNull(), isNull(),
+                isNull(), isNull(), eq(pageable))).thenReturn(new PageImpl<>(List.of(guest), pageable, 1));
+
+        var result = appointmentService.getMyAppointments(accountId, null, true,
+                null, null, null, null, null, pageable);
+
+        assertEquals("Khách vãng lai", result.content().get(0).patientName());
+        assertNull(result.content().get(0).relationship());
+    }
+
 
     // =========================================================
     // GET MY DETAIL - NOT OWNER
@@ -2843,6 +2884,32 @@ class AppointmentServiceTest {
                                         appointmentId
                                 )
         );
+    }
+
+    @Test
+    void getMyAppointmentDetail_ShouldRejectGuestAppointment() {
+        UUID appointmentId = UUID.randomUUID();
+        when(repo.findById(appointmentId)).thenReturn(Optional.of(
+                appointment(appointmentId, AppointmentStatus.PENDING, null)));
+
+        assertThrows(BadRequestException.class,
+                () -> appointmentService.getMyAppointmentDetail(UUID.randomUUID(), appointmentId));
+    }
+
+    @Test
+    void getMyAppointmentDetail_ShouldReturnOwnedAppointment() {
+        UUID accountId = UUID.randomUUID();
+        Profile owner = customer(UUID.randomUUID());
+        Appointment appointment = appointment(UUID.randomUUID(), AppointmentStatus.PENDING, owner);
+        when(repo.findById(appointment.getAppointmentId())).thenReturn(Optional.of(appointment));
+        when(familyAccessService.resolveReadableProfile(accountId, owner.getProfileId())).thenReturn(owner);
+        when(familyAccessService.ownerProfile(accountId)).thenReturn(owner);
+        when(familyAccessService.relationship(accountId, owner.getProfileId())).thenReturn(null);
+
+        var result = appointmentService.getMyAppointmentDetail(accountId, appointment.getAppointmentId());
+
+        assertTrue(result.isSelf());
+        assertEquals(owner.getProfileId(), result.patientProfileId());
     }
 
 
@@ -2945,6 +3012,24 @@ class AppointmentServiceTest {
                                         )
                                 )
         );
+    }
+
+    @Test
+    void updateMyAppointment_ShouldSaveUnchangedPendingAppointment() {
+        UUID accountId = UUID.randomUUID();
+        Profile owner = customer(UUID.randomUUID());
+        Appointment appointment = appointment(UUID.randomUUID(), AppointmentStatus.PENDING, owner);
+        AppointmentUpdateRequest request = mock(AppointmentUpdateRequest.class);
+        when(repo.findByIdForUpdate(appointment.getAppointmentId())).thenReturn(Optional.of(appointment));
+        when(familyAccessService.resolveActiveProfile(accountId, owner.getProfileId())).thenReturn(owner);
+        when(familyAccessService.ownerProfile(accountId)).thenReturn(owner);
+        when(familyAccessService.relationship(accountId, owner.getProfileId())).thenReturn(FamilyRelationship.OTHER);
+        when(repo.save(appointment)).thenReturn(appointment);
+
+        var result = appointmentService.updateMyAppointment(accountId, appointment.getAppointmentId(), request);
+
+        assertEquals("Khác", result.relationship());
+        verify(repo).save(appointment);
     }
 
 

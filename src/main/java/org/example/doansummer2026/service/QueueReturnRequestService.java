@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Period;
 import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -219,9 +220,20 @@ public class QueueReturnRequestService {
     private QueueReturnRequestResponse response(QueueTicket ticket, LocalDateTime requestedAt,
                                                 String status, String message) {
         CustomerVisit visit = ticket.getVisit();
+        Profile patient = visit.getCustomer();
+        String phone = patient != null ? patient.getPhone()
+                : visit.getAppointment() != null ? visit.getAppointment().getGuestPhone() : null;
+        Integer age = patient != null && patient.getDateOfBirth() != null
+                ? Integer.valueOf(Period.between(patient.getDateOfBirth(), LocalDate.now(CLINIC_ZONE)).getYears())
+                : visit.getAppointment() != null ? visit.getAppointment().getGuestAge() : null;
         return new QueueReturnRequestResponse(ticket.getTicketId(), visit.getVisitId(),
                 visitCode(visit.getVisitId()),
-                visit.getCustomer() != null ? visit.getCustomer().getFullName() : "Người được khám",
+                patient != null ? patient.getFullName() : visit.getAppointment() != null
+                        ? visit.getAppointment().getGuestFullName() : "Người được khám",
+                patient != null ? patient.getPatientCode() : null,
+                phone,
+                patient != null ? patient.getDateOfBirth() : null,
+                age,
                 ticket.getDepartment() != null ? ticket.getDepartment().getName() : null,
                 ticket.getDepartment() != null ? ticket.getDepartment().getRoomCode() : null,
                 ticket.getQueueNumber(), ticket.getCalledAt(), requestedAt, status, message);

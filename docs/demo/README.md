@@ -17,7 +17,8 @@ Các ca lịch sử chủ yếu là khám kiểm tra/tư vấn, không chỉ đ�
 
 ## Reset an toàn
 
-**Không chạy trên `order_db` hoặc database chứa dữ liệu cần giữ.** Script chỉ chấp nhận tên database bắt đầu bằng `cares_demo` hoặc `cares_seed_validation`, và yêu cầu xác nhận reset trong cùng session.
+**Không chạy trên `order_db` hoặc database chứa dữ liệu cần giữ.** Tên database không bị ràng buộc;
+script yêu cầu xác nhận phá hủy bằng `SET cares.demo_reset = 'yes'` trong đúng session thực thi.
 
 1. Dừng backend. Sao lưu database demo nếu muốn giữ lần trình diễn trước; mỗi lần chạy sẽ xóa toàn bộ dữ liệu trong các bảng được liệt kê ở đầu script, không chỉ ca hôm nay.
 2. Tạo một database riêng, ví dụ `cares_demo`, trên PostgreSQL đang dùng. Tạo schema bằng chính phiên bản backend hiện tại: đặt `DATABASE_URL=jdbc:postgresql://localhost:5437/cares_demo`, `SPRING_SQL_INIT_MODE=never`; chạy backend một lần để Hibernate tạo các bảng rồi **dừng backend**. Không dùng một bản schema cũ không khớp source.

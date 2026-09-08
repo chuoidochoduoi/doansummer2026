@@ -361,22 +361,6 @@ public class MedicalRecordController {
         return RestResponses.ok(result);
     }
 
-    @GetMapping("/api/receptionist/follow-ups")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    public ResponseEntity<PageResponse<org.example.doansummer2026.dto.medicalrecord.FollowUpResponse>> getPendingFollowUps(
-            @RequestParam(required = false) String search,
-            Pageable pageable) {
-        return RestResponses.ok(service.getPendingFollowUps(search, pageable));
-    }
-
-    @PostMapping("/api/receptionist/follow-ups/{recordId}/schedule")
-    @Auditable(action = AuditAction.CREATE, entityName = "Appointment", idParamName = "recordId", description = "Lễ tân xếp lịch tái khám")
-    @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
-    public ResponseEntity<org.example.doansummer2026.dto.medicalrecord.FollowUpResponse> scheduleFollowUp(
-            @PathVariable UUID recordId,
-            @Valid @RequestBody org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {
-        return RestResponses.ok(service.scheduleFollowUp(recordId, req));
-    }
 }
 
 

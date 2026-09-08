@@ -137,4 +137,85 @@ class ClinicOverviewReportTest {
         assertThrows(BadRequestException.class,() -> service.getOverview(day,day.plusDays(367)));
         verifyNoInteractions(invoiceRepo,transactionRepo,visitRepo);
     }
+
+    @Test void defaultRangeAndNullOrExcludedRowsProduceAStableEmptyOverview() {
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+        var cancelledInvoice = Invoice.builder().invoiceId(UUID.randomUUID()).issueDate(today)
+                .status(InvoiceStatus.CANCELLED).build();
+        var insurancePayment = Transaction.builder().status(TransactionStatus.SUCCESS)
+                .paymentMethod(PaymentMethod.INSURANCE).paidAt(today.atTime(12, 0)).amount(b(99)).build();
+        var noDatePayment = Transaction.builder().status(TransactionStatus.SUCCESS)
+                .paymentMethod(PaymentMethod.CASH).amount(b(99)).build();
+        var deletedRevision = TestResultRevision.builder()
+                .status(TestResultRevisionStatus.SIGNED).signedAt(today.atTime(12, 0))
+                .signedBy(StaffInfo.builder().staffId(UUID.randomUUID()).build()).build();
+        deletedRevision.setDeleted(true);
+        var incompleteRevision = TestResultRevision.builder().status(TestResultRevisionStatus.DRAFT).build();
+        incompleteRevision.setDeleted(false);
+        var orphanItem = InvoiceItem.builder().invoice(null).build();
+        var orphanQueue = QueueTicket.builder().status(QueueStatus.SKIPPED).visit(null).workDate(today).build();
+        var cancelledVisit = CustomerVisit.builder().visitId(UUID.randomUUID()).status(VisitStatus.CANCELLED)
+                .checkOutTime(today.minusDays(1).atTime(12, 0)).build();
+
+        when(invoiceRepo.findAll()).thenReturn(List.of(cancelledInvoice));
+        when(transactionRepo.findAll()).thenReturn(List.of(insurancePayment, noDatePayment));
+        when(revisionRepo.findAll()).thenReturn(List.of(deletedRevision, incompleteRevision));
+        when(invoiceItemRepo.findAll()).thenReturn(List.of(orphanItem));
+        when(queueTicketRepo.findAll()).thenReturn(List.of(orphanQueue));
+        when(visitRepo.findAll()).thenReturn(List.of(cancelledVisit));
+
+        var result = service.getOverview(null, null);
+
+        assertEquals(today, result.fromDate());
+        assertEquals(today, result.toDate());
+        // Arrival is counted from check-in time even when the visit is later cancelled.
+        assertEquals(1, result.activity().arrivals());
+        assertEquals(0, result.finance().collected().signum());
+        assertTrue(result.services().isEmpty());
+    }
+
+    @Test void overviewCoversMonthlyTrendRoomStatesFallbacksAndNullMoney() {
+        LocalDate start = day.minusDays(70);
+        var room = Department.builder().departmentId(UUID.randomUUID()).roomCode("LAB-1").name("Lab").build();
+        var visit = CustomerVisit.builder().visitId(UUID.randomUUID()).status(VisitStatus.CANCELLED)
+                .checkInTime(day.atTime(8, 0)).checkOutTime(day.atTime(9, 0)).build();
+        var invoice = Invoice.builder().invoiceId(UUID.randomUUID()).issueDate(day).status(InvoiceStatus.PAID)
+                .subtotal(null).discount(null).tax(null).totalAmount(b(100)).paidAmount(b(150)).build();
+        var item = InvoiceItem.builder().invoice(invoice).service(null).serviceCodeSnapshot(null)
+                .serviceSnapshot(null).quantity(null).unitPrice(null).bhytFund(null)
+                .lineTotal(b(100)).finalPrice(null).build();
+        var payment = payment(invoice, 100, TransactionStatus.SUCCESS);
+        payment.setPaymentMethod(null);
+        var waiting = QueueTicket.builder().department(room).visit(visit).workDate(day)
+                .status(QueueStatus.WAITING).build();
+        var called = QueueTicket.builder().department(room).visit(visit).workDate(day)
+                .status(QueueStatus.CALLED).build();
+        var testDone = QueueTicket.builder().department(room).visit(visit).workDate(day)
+                .status(QueueStatus.TEST_DONE).build();
+        var active = QueueTicket.builder().department(room).visit(visit).workDate(day)
+                .status(QueueStatus.IN_PROGRESS).build();
+        var waitingTest = QueueTicket.builder().department(room).visit(visit).workDate(day)
+                .status(QueueStatus.WAITING_FOR_TEST).build();
+        var skipped = QueueTicket.builder().department(room).visit(visit).workDate(day)
+                .status(QueueStatus.SKIPPED).build();
+
+        when(visitRepo.findAll()).thenReturn(List.of(visit));
+        when(invoiceRepo.findAll()).thenReturn(List.of(invoice));
+        when(invoiceItemRepo.findAll()).thenReturn(List.of(item));
+        when(transactionRepo.findAll()).thenReturn(List.of(payment));
+        when(queueTicketRepo.findAll()).thenReturn(List.of(waiting, called, testDone, active, waitingTest, skipped));
+        when(departmentRepo.findAll()).thenReturn(List.of(room));
+
+        var result = service.getOverview(start, day);
+
+        assertTrue(result.paymentChart().size() > 1);
+        assertEquals("OTHER", result.paymentMethods().get(0).label());
+        assertEquals(3, result.rooms().get(0).waiting());
+        assertEquals(2, result.rooms().get(0).inProgress());
+        assertEquals(1, result.rooms().get(0).skipped());
+        assertNull(result.services().get(0).code());
+        assertEquals("OTHER", result.services().get(0).category());
+        assertEquals(1, result.services().get(0).quantity());
+        assertEquals(0, result.finance().outstanding().signum());
+    }
 }

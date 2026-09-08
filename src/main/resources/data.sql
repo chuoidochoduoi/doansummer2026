@@ -1,14 +1,13 @@
 -- CareS: dữ liệu GIẢ LẬP cho database demo riêng, không dùng cho khám chữa bệnh.
 -- Không chạy khi backend đang hoạt động. Xem docs/demo/README.md.
+ROLLBACK;
+SET cares.demo_reset = 'yes';
 BEGIN;
 SET LOCAL TIME ZONE 'Asia/Ho_Chi_Minh';
 DO $guard$
 BEGIN
- IF current_database() NOT LIKE 'cares_demo%' AND current_database() NOT LIKE 'cares_seed_validation%' THEN
-  RAISE EXCEPTION 'Chỉ chạy trên database riêng có tên cares_demo* hoặc cares_seed_validation*';
- END IF;
  IF current_setting('cares.demo_reset', true) IS DISTINCT FROM 'yes' THEN
-  RAISE EXCEPTION 'Reset bị chặn. Dừng backend, chọn database demo riêng rồi SET cares.demo_reset = ''yes''.';
+  RAISE EXCEPTION 'Reset bị chặn. Dừng backend và SET cares.demo_reset = ''yes'' trong cùng session trước khi chạy data.sql.';
  END IF;
 END $guard$;
 CREATE TEMP TABLE demo_clock ON COMMIT DROP AS
@@ -677,6 +676,41 @@ WHERE NOT EXISTS (
   );
 
 -- Lịch trùng sẽ bị phát hiện bởi assertion, không tự che bằng soft-delete.
+
+-- Hai tài khoản quầy chính dùng khi trình diễn được phủ đủ ba ca để việc kiểm
+-- thử tiếp nhận và thanh toán không bị gián đoạn khi đổi thời điểm trong ngày.
+-- Các tài khoản quầy còn lại vẫn giữ đúng ca riêng đã phân công ở phía trên.
+WITH primary_counter_staff(staff_id) AS (
+    VALUES
+    ('90000012-5555-5555-5555-555555555555'::uuid), -- receptionist1
+    ('90000013-6666-6666-6666-666666666666'::uuid)  -- cashier1
+), extra_shifts(shift_id) AS (
+    VALUES
+    ('70000002-2222-2222-2222-222222222222'::uuid),
+    ('70000003-3333-3333-3333-333333333333'::uuid)
+), calendar AS (
+    SELECT d::date AS work_date
+    FROM generate_series(pg_temp.demo_date() - 30, pg_temp.demo_date() + 14, interval '1 day') d
+)
+INSERT INTO staff_schedule (
+    schedule_id, created_at, updated_at, deleted, is_custom, note,
+    status, work_date, shift_id, shift_version_id,
+    actual_start_time, actual_end_time, staff_id, template_id
+)
+SELECT gen_random_uuid(), pg_temp.demo_now()-interval '60 days', pg_temp.demo_now()-interval '60 days',
+       false, true, 'Lịch ba ca dành cho tài khoản quầy kiểm thử', 'SCHEDULED', c.work_date,
+       s.shift_id, v.shift_version_id, v.start_time, v.end_time, p.staff_id, NULL
+FROM primary_counter_staff p
+CROSS JOIN extra_shifts s
+CROSS JOIN calendar c
+JOIN shift_version v ON v.shift_id=s.shift_id
+    AND v.effective_from<=c.work_date
+    AND (v.effective_to IS NULL OR v.effective_to>=c.work_date)
+WHERE NOT EXISTS (
+    SELECT 1 FROM staff_schedule existing
+    WHERE existing.staff_id=p.staff_id AND existing.work_date=c.work_date
+      AND existing.shift_id=s.shift_id AND existing.deleted=false
+);
 
 -- Kiem tra du lieu trinh dien: moi dich vu ACTIVE phai co it nhat mot nhan su
 -- dung phong, dung chuyen khoa/nang luc trong tung ca cua 14 ngay mau.

@@ -8,6 +8,7 @@ import org.example.doansummer2026.dto.transaction.TransactionCreateRequest;
 import org.example.doansummer2026.dto.transaction.TransactionResponse;
 import org.example.doansummer2026.dto.transaction.TransactionUpdateRequest;
 import org.example.doansummer2026.enums.TransactionStatus;
+import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.service.TransactionService;
 import org.example.doansummer2026.service.AuthService;
 import org.springframework.data.domain.Pageable;
@@ -34,6 +35,7 @@ public class TransactionController {
 
     private final TransactionService service;
     private final AuthService authService;
+    private final org.example.doansummer2026.service.StaffDutyService staffDutyService;
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
@@ -55,6 +57,7 @@ public class TransactionController {
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<TransactionResponse> create(@Valid @RequestBody TransactionCreateRequest req) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         UUID receivedById = authService.currentStaffId();
         TransactionResponse created = service.create(new TransactionCreateRequest(
                 req.invoiceId(), req.amount(), req.paymentMethod(), req.gatewayReference(),
@@ -66,18 +69,21 @@ public class TransactionController {
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<TransactionResponse> update(@PathVariable UUID id,
                                                        @Valid @RequestBody TransactionUpdateRequest req) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         return RestResponses.ok(service.update(id, req));
     }
 
     @PostMapping("/{id}/confirm")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<TransactionResponse> confirm(@PathVariable UUID id) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         return RestResponses.ok(service.confirm(id));
     }
 
     @PostMapping("/{id}/fail")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<TransactionResponse> fail(@PathVariable UUID id) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         return RestResponses.ok(service.fail(id));
     }
 
@@ -85,6 +91,7 @@ public class TransactionController {
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         service.delete(id);
         return RestResponses.noContent();
     }

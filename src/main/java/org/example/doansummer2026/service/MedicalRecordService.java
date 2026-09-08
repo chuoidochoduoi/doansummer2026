@@ -1172,13 +1172,6 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         return org.example.doansummer2026.dto.medicalrecord.FeedbackResponse.from(repo.save(r));
     }
 
-    /** Lấy danh sách yêu cầu tái khám (follow-up) chưa đặt lịch cho lễ tân */
-    public PageResponse<org.example.doansummer2026.dto.medicalrecord.FollowUpResponse> getPendingFollowUps(String search, Pageable pageable) {
-        String normalizedSearch = search == null ? "" : search.trim().toLowerCase(java.util.Locale.ROOT);
-        Page<MedicalRecord> page = repo.findPendingFollowUps(normalizedSearch, pageable);
-        return PageResponse.from(page, org.example.doansummer2026.dto.medicalrecord.FollowUpResponse::from);
-    }
-
     /** Tạo lịch hẹn từ yêu cầu tái khám và cập nhật vào hồ sơ bệnh án */
     public org.example.doansummer2026.dto.medicalrecord.FollowUpResponse scheduleFollowUp(UUID recordId, org.example.doansummer2026.dto.appointment.AppointmentCreateRequest req) {
         MedicalRecord record = findById(recordId);

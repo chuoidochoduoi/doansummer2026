@@ -111,7 +111,7 @@ The supplied tab-delimited catalog is the reference. Removed or merged IDs remai
 | CU-21 | — | Added | CU-21 | Print Customer Receipt; UI + backend. |
 | CU-22 | — | Added | CU-22 | Pay with Own CareS Card through API; Backend only. |
 | RC-10 | — | Added | RC-10 | Confirm Patient Return; UI + backend. |
-| RC-11 | — | Added | RC-11 | Schedule Requested Follow-up; UI + backend. |
+| RC-11 | — | Removed and reserved | — | The separate Receptionist follow-up queue was removed. Doctors create follow-up appointments from the medical record; Receptionists support existing appointments through ordinary appointment management. |
 | RC-12 | — | Added | RC-12 | Review Patient Visit History; UI + backend. |
 | RC-13 | — | Added | RC-13 | Recover an Eligible Blocked Journey through API; Backend only. |
 | RC-14 | — | Added | RC-14 | Open Queue Display Screens; UI + backend. |

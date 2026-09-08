@@ -35,7 +35,8 @@ class AppointmentControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new AppointmentController(service, authService);
+        controller = new AppointmentController(service, authService,
+                mock(org.example.doansummer2026.service.StaffDutyService.class));
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
     }
 

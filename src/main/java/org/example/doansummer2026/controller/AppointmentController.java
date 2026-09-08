@@ -18,6 +18,7 @@ import org.example.doansummer2026.dto.appointment.CustomerAppointmentDetailRespo
 import org.example.doansummer2026.dto.appointment.CustomerAppointmentCreateRequest;
 import org.example.doansummer2026.dto.appointment.GroupAppointmentCreateRequest;
 import org.example.doansummer2026.enums.AppointmentStatus;
+import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.service.AppointmentService;
 import org.example.doansummer2026.service.AuthService;
 import org.springframework.data.domain.Pageable;
@@ -46,6 +47,7 @@ public class AppointmentController {
 
     private final AppointmentService service;
     private final AuthService authService;
+    private final org.example.doansummer2026.service.StaffDutyService staffDutyService;
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER')")
@@ -67,6 +69,7 @@ public class AppointmentController {
     @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER', 'ROLE_RECEPTIONIST', 'ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "Appointment")
     public ResponseEntity<AppointmentResponse> create(@Valid @RequestBody AppointmentCreateRequest req) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.RECEPTIONIST);
         var current = authService.currentAccount();
         if (current.getRole() == org.example.doansummer2026.enums.Role.CUSTOMER
                 && !current.getAccountId().equals(req.customerId())) {
@@ -90,6 +93,7 @@ public class AppointmentController {
     @Auditable(action = AuditAction.UPDATE, entityName = "Appointment", idParamName = "id")
     public ResponseEntity<AppointmentResponse> update(@PathVariable UUID id,
                                                       @Valid @RequestBody AppointmentUpdateRequest req) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.RECEPTIONIST);
         return RestResponses.ok(service.update(id, req));
     }
 
@@ -112,6 +116,7 @@ public class AppointmentController {
     public ResponseEntity<AppointmentCheckInResponse> checkIn(
             @PathVariable UUID id,
             @Valid @RequestBody AppointmentCheckInRequest req) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.RECEPTIONIST);
         UUID issuedById = authService.currentStaffId();
         return RestResponses.ok(service.checkIn(new AppointmentCheckInRequest(
                 id, req.serviceIds(), issuedById,
@@ -129,6 +134,7 @@ public class AppointmentController {
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Appointment")
     public ResponseEntity<GuestCheckInResponse> guestCheckIn(
             @Valid @RequestBody GuestCheckInRequest req) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.RECEPTIONIST);
         UUID staffId = authService.currentStaffId();
         return RestResponses.ok(service.guestCheckIn(new GuestCheckInRequest(req.guestFullName(), req.guestPhone(),
                 req.guestAddress(), req.guestAge(), req.guestGender(), req.serviceIds(), staffId)));

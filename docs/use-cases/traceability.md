@@ -49,7 +49,6 @@ Scope: current source, including uncommitted files. Related test files below are
 | RC-07 | Review and Coordinate Patient Journey | Theo dõi và điều phối hành trình | Receptionist, Clinic Manager | UI + backend |
 | RC-08 | Manage Support Conversations | Quản lý hội thoại hỗ trợ | Receptionist, Clinic Manager | UI + backend |
 | RC-10 | Confirm Patient Return | Xác nhận khách đã quay lại | Receptionist, Clinic Manager | UI + backend |
-| RC-11 | Schedule Requested Follow-up | Đặt lịch từ yêu cầu tái khám | Receptionist, Clinic Manager | UI + backend |
 | RC-12 | Review Patient Visit History | Xem lịch sử bệnh nhân tại lễ tân | Receptionist, Clinic Manager | UI + backend |
 | RC-13 | Recover an Eligible Blocked Journey through API | Khôi phục bước bị kẹt qua API | Clinic Manager, Administrator | Backend only |
 | RC-14 | Open Queue Display Screens | Mở màn hình gọi bệnh nhân | Receptionist, Clinic Manager | UI + backend |
@@ -1172,28 +1171,6 @@ Review pending same-day return requests and confirm the patient is present. The 
 **Related backend tests (not run here):**
 
 - [src/test/java/org/example/doansummer2026/service/QueueReturnRequestServiceTest.java](../../src/test/java/org/example/doansummer2026/service/QueueReturnRequestServiceTest.java)
-
-## RC-11 Schedule Requested Follow-up
-
-Vietnamese: Đặt lịch từ yêu cầu tái khám. Actors: Receptionist, Clinic Manager. Delivery: UI + backend.
-
-Find a pending follow-up recommendation, select the appointment date and shift, and create the follow-up booking. Existing scheduled follow-ups are not treated as unset requests.
-
-**Registered routes:** `/receptionist/follow-ups`
-
-**Frontend evidence:** [src/pages/receptionist/FollowUpListPage.jsx](../../../untitled/src/pages/receptionist/FollowUpListPage.jsx)
-
-**Primary API and service evidence:**
-
-| Endpoint | Controller | Direct service calls |
-| --- | --- | --- |
-| GET /api/receptionist/follow-ups | [MedicalRecordController.getPendingFollowUps](../../src/main/java/org/example/doansummer2026/controller/MedicalRecordController.java) line 364 | [MedicalRecordService.getPendingFollowUps](../../src/main/java/org/example/doansummer2026/service/MedicalRecordService.java) |
-| POST /api/receptionist/follow-ups/{recordId}/schedule | [MedicalRecordController.scheduleFollowUp](../../src/main/java/org/example/doansummer2026/controller/MedicalRecordController.java) line 372 | [MedicalRecordService.scheduleFollowUp](../../src/main/java/org/example/doansummer2026/service/MedicalRecordService.java) |
-
-**Related backend tests (not run here):**
-
-- [src/test/java/org/example/doansummer2026/controller/MedicalRecordControllerTest.java](../../src/test/java/org/example/doansummer2026/controller/MedicalRecordControllerTest.java)
-- [src/test/java/org/example/doansummer2026/service/MedicalRecordServiceTest.java](../../src/test/java/org/example/doansummer2026/service/MedicalRecordServiceTest.java)
 
 ## RC-12 Review Patient Visit History
 

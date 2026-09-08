@@ -16,7 +16,7 @@ PayOS, Mock BHXH Service, Email Service and SMS Gateway are supporting integrati
 
 This catalog describes the inspected working trees, including uncommitted changes, rather than a proposed feature set. It is a static source review, not a claim that every screen or integration was exercised. Endpoint declarations were reconciled with frontend routes and action code; important service-level restrictions are recorded below. Full payload contracts remain in OpenAPI and source.
 
-The inventory contains 71 registered page routes and 314 application endpoint mappings across 41 controllers. The catalog has 125 unique use-case IDs and 194 explicit actor-to-use-case associations. Shared IDs are counted once. Inherited account relations are not added again to that association total. Supporting endpoints, rejected operations and legacy APIs are individually classified in endpoint-inventory.md.
+The inventory contains 70 registered page routes and 312 application endpoint mappings across 41 controllers. The catalog has 124 current unique use-case IDs and 192 explicit actor-to-use-case associations. Shared IDs are counted once. Inherited account relations are not added again to that association total. Supporting endpoints, rejected operations and legacy APIs are individually classified in endpoint-inventory.md; removed ID RC-11 remains reserved in old-to-new.md.
 
 ## 2 Actor Summary
 
@@ -45,11 +45,11 @@ There are eight concrete human actors including Guest, one abstract parent and f
 | Guest | 8 | G-01, G-02, G-03, G-05, G-06, G-07, G-08, G-09 |
 | Registered User | 6 | RU-01, RU-02, RU-03, RU-04, RU-05, RU-06 |
 | Customer | 20 | CU-01, CU-02, CU-03, CU-04, CU-06, CU-07, CU-08, CU-09, CU-11, CU-12, CU-13, CU-14, CU-15, CU-16, CU-17, CU-18, CU-19, CU-20, CU-21, CU-22 |
-| Receptionist | 16 | RU-07, RU-08, RC-01, RC-02, RC-03, RC-04, RC-05, RC-06, RC-07, RC-08, RC-10, RC-11, RC-12, RC-14, RC-15, CM-06 |
+| Receptionist | 15 | RU-07, RU-08, RC-01, RC-02, RC-03, RC-04, RC-05, RC-06, RC-07, RC-08, RC-10, RC-12, RC-14, RC-15, CM-06 |
 | Cashier | 14 | RU-07, RU-08, CA-01, CA-02, CA-03, CA-04, CA-05, CA-06, CA-07, CA-08, CA-09, CA-10, CA-11, CA-12 |
 | Nurse | 21 | RU-07, RU-08, RC-15, NU-01, NU-02, NU-03, NU-04, NU-05, NU-06, NU-07, DR-15, DS-01, DS-02, DS-03, DS-04, DS-05, DS-06, DS-07, DS-08, DS-11, DS-13 |
 | Doctor | 36 | RU-07, RU-08, CU-20, RC-15, NU-04, NU-07, DR-01, DR-02, DR-03, DR-04, DR-05, DR-06, DR-07, DR-09, DR-10, DR-11, DR-12, DR-13, DR-14, DR-15, DR-16, DR-17, DS-01, DS-02, DS-03, DS-04, DS-05, DS-06, DS-07, DS-08, DS-09, DS-10, DS-11, DS-12, DS-13, DS-14 |
-| Clinic Manager | 48 | RU-07, RU-08, RC-01, RC-02, RC-03, RC-04, RC-05, RC-06, RC-07, RC-08, RC-10, RC-11, RC-12, RC-13, RC-14, RC-15, CA-01, CA-02, CA-03, CA-04, CA-05, CA-06, CA-07, CA-08, CA-09, CA-10, CA-11, CA-12, CM-01, CM-02, CM-03, CM-04, CM-05, CM-06, CM-08, CM-09, CM-10, CM-11, CM-12, CM-13, AD-01, AD-02, AD-03, AD-06, AD-07, AD-09, AD-10, AD-11 |
+| Clinic Manager | 47 | RU-07, RU-08, RC-01, RC-02, RC-03, RC-04, RC-05, RC-06, RC-07, RC-08, RC-10, RC-12, RC-13, RC-14, RC-15, CA-01, CA-02, CA-03, CA-04, CA-05, CA-06, CA-07, CA-08, CA-09, CA-10, CA-11, CA-12, CM-01, CM-02, CM-03, CM-04, CM-05, CM-06, CM-08, CM-09, CM-10, CM-11, CM-12, CM-13, AD-01, AD-02, AD-03, AD-06, AD-07, AD-09, AD-10, AD-11 |
 | Administrator | 21 | RU-08, RC-13, RC-15, CM-02, CM-03, CM-04, CM-05, CM-08, CM-12, CM-13, AD-01, AD-02, AD-03, AD-05, AD-06, AD-07, AD-09, AD-10, AD-11, AD-12, AD-13 |
 | PayOS | 1 | EXT-01 |
 | Mock BHXH Service | 1 | EXT-02 |
@@ -124,7 +124,6 @@ RU-01 to RU-06 are inherited common functions. All other shared associations are
 | RC-07 | Review and Coordinate Patient Journey | Inspect the visit timeline, current department, payment gates, blocked steps and completed or skipped services to direct the patient. Viewing a later step does not make it callable. Actors: Receptionist, Clinic Manager. Delivery: UI + backend. |
 | RC-08 | Manage Support Conversations | View active or closed conversations, open messages, reply to Customer or Guest and close an eligible session. This interface is not available to doctors, nurses or cashiers. Actors: Receptionist, Clinic Manager. Delivery: UI + backend. |
 | RC-10 | Confirm Patient Return | Review pending same-day return requests and confirm the patient is present. The backend rechecks the ticket and restores WAITING or BLOCKED as the workflow permits; expired requests cannot be confirmed. Actors: Receptionist, Clinic Manager. Delivery: UI + backend. |
-| RC-11 | Schedule Requested Follow-up | Find a pending follow-up recommendation, select the appointment date and shift, and create the follow-up booking. Existing scheduled follow-ups are not treated as unset requests. Actors: Receptionist, Clinic Manager. Delivery: UI + backend. |
 | RC-12 | Review Patient Visit History | Open the patient, visits and record-detail screens through reception history. Access uses the staff endpoints and is distinct from Customer family-profile authorization. Actors: Receptionist, Clinic Manager. Delivery: UI + backend. |
 | RC-13 | Recover an Eligible Blocked Journey through API | Request recovery of an eligible blocked journey through the management API. The current staff journey screen is explicitly read-only and has no advance action. The backend checks dependencies; this is not an unrestricted override of clinical completion. Actors: Clinic Manager, Administrator. Delivery: Backend only. |
 | RC-14 | Open Queue Display Screens | Use the launcher to open the overall calling screen or a selected room display in an authenticated browser tab. The launcher itself is a staff function, not an external actor. Actors: Receptionist, Clinic Manager. Delivery: UI + backend. |
@@ -280,7 +279,7 @@ Receptionist and Clinic Manager manage feedback. Doctor/Nurse participation can 
 
 ### Follow-up is not referral
 
-The current examination dialog can directly create a follow-up appointment; it coexists with reception follow-up scheduling. This is not cross-specialty referral. The old recommendation-only description is insufficient; the current direct payload and service checks need separate review as recorded in audit-findings.md.
+The Doctor creates the follow-up appointment directly from the examination record. Receptionist support begins only after an appointment exists and uses the ordinary appointment-management workflow; there is no separate reception queue for unscheduled follow-up recommendations. This is not cross-specialty referral.
 
 ### Exceptions to UI parity
 

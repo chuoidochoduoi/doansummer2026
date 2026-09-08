@@ -14,6 +14,8 @@ import org.example.doansummer2026.model.StaffScheduleTemplate;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.repository.StaffScheduleRepository;
 import org.example.doansummer2026.repository.StaffScheduleTemplateRepository;
+import org.example.doansummer2026.repository.StaffInfoRepository;
+import org.example.doansummer2026.repository.AppointmentRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -50,6 +52,12 @@ class StaffScheduleServiceTest {
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock private StaffInfoRepository staffInfoRepository;
+    @Mock private ShiftScheduleResolver shiftScheduleResolver;
+    @Mock private ServiceAvailabilityService serviceAvailabilityService;
+    @Mock private AppointmentRepository appointmentRepository;
+    @Mock private StaffDutyService staffDutyService;
 
     @InjectMocks
     private StaffScheduleService service;
@@ -102,7 +110,6 @@ class StaffScheduleServiceTest {
     // =========================================================
     // CREATE
     // =========================================================
-
     // Legacy scenario no longer matches the current schedule contract.
     private void create_ShouldThrow_WhenShiftMissing() {
 
@@ -125,8 +132,6 @@ class StaffScheduleServiceTest {
                 () -> service.create(req)
         );
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void create_ShouldUseDefaults_WhenStatusAndCustomAreNull() {
 
@@ -167,8 +172,6 @@ class StaffScheduleServiceTest {
                         && s.getShift() == shift
         ));
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void create_ShouldUseProvidedStatusAndCustom() {
 
@@ -208,8 +211,6 @@ class StaffScheduleServiceTest {
                         && "Ghi chu".equals(s.getNote())
         ));
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void create_ShouldAttachTemplate_WhenTemplateExists() {
 
@@ -250,8 +251,6 @@ class StaffScheduleServiceTest {
                 s.getTemplate() == template
         ));
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void create_ShouldAllowMissingTemplate() {
 
@@ -291,8 +290,6 @@ class StaffScheduleServiceTest {
                 s.getTemplate() == null
         ));
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void create_ShouldNotifyStaff_WhenProfileExists() {
 
@@ -330,8 +327,6 @@ class StaffScheduleServiceTest {
                                 && "StaffSchedule".equals(n.relatedEntity())
                 ));
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void create_ShouldIgnoreNotificationException() {
 
@@ -368,8 +363,6 @@ class StaffScheduleServiceTest {
                 () -> service.create(req)
         );
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void create_ShouldSkipNotification_WhenProfileNull() {
 
@@ -413,7 +406,6 @@ class StaffScheduleServiceTest {
     // =========================================================
     // UPDATE
     // =========================================================
-
     // Legacy scenario no longer matches the current schedule contract.
     private void update_ShouldThrow_WhenShiftMissing() {
 
@@ -442,8 +434,6 @@ class StaffScheduleServiceTest {
                 () -> service.update(scheduleId, req)
         );
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void update_ShouldUpdateAllFields() {
 
@@ -482,8 +472,6 @@ class StaffScheduleServiceTest {
         assertTrue(s.getIsCustom());
         assertEquals("Updated", s.getNote());
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void update_ShouldLeaveFieldsUnchanged_WhenRequestNulls() {
 
@@ -515,8 +503,6 @@ class StaffScheduleServiceTest {
         assertFalse(s.getIsCustom());
         assertEquals("Old note", s.getNote());
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void update_ShouldNotify_WhenStaffProfileExists() {
 
@@ -547,8 +533,6 @@ class StaffScheduleServiceTest {
                                 && "StaffSchedule".equals(n.relatedEntity())
                 ));
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void update_ShouldIgnoreNotificationException() {
 
@@ -596,8 +580,6 @@ class StaffScheduleServiceTest {
                 () -> service.delete(id)
         );
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void delete_ShouldDelete_WhenFound() {
 
@@ -618,8 +600,6 @@ class StaffScheduleServiceTest {
         verify(scheduleRepo)
                 .deleteById(id);
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void delete_ShouldNotifyStaff() {
 
@@ -643,8 +623,6 @@ class StaffScheduleServiceTest {
                                 && "StaffSchedule".equals(n.relatedEntity())
                 ));
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void delete_ShouldIgnoreNotificationException() {
 
@@ -936,8 +914,6 @@ class StaffScheduleServiceTest {
                                 !iterable.iterator().hasNext()
                 ));
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void generateFromTemplates_ShouldCreateScheduleForActiveTemplate() {
 
@@ -990,8 +966,6 @@ class StaffScheduleServiceTest {
                         }
                 ));
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void generateFromTemplates_ShouldDeleteExisting_WhenOverrideTrue() {
 
@@ -1040,8 +1014,6 @@ class StaffScheduleServiceTest {
         verify(scheduleRepo)
                 .delete(existing);
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void generateFromTemplates_ShouldNotDeleteExistingDifferentShift() {
 
@@ -1154,7 +1126,6 @@ class StaffScheduleServiceTest {
     // =========================================================
     // ASSIGN STAFF
     // =========================================================
-
     // Legacy scenario no longer matches the current schedule contract.
     private void assignStaff_ShouldThrow_WhenShiftMissing() {
 
@@ -1200,8 +1171,6 @@ class StaffScheduleServiceTest {
 
         verifyNoInteractions(shiftConfigRepo);
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void assignStaff_ShouldRemoveSchedule() {
 
@@ -1237,8 +1206,6 @@ class StaffScheduleServiceTest {
                         shift
                 );
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void assignStaff_ShouldCreate_WhenNotExisting() {
 
@@ -1292,8 +1259,6 @@ class StaffScheduleServiceTest {
                         )
                 ));
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void assignStaff_ShouldSkipCreate_WhenAlreadyExists() {
 
@@ -1351,7 +1316,6 @@ class StaffScheduleServiceTest {
     // =========================================================
     // COPY WEEK
     // =========================================================
-
     // Legacy scenario no longer matches the current schedule contract.
     private void copyWeek_ShouldReturnEmpty_WhenOldWeekHasNoSchedules() {
 
@@ -1376,8 +1340,6 @@ class StaffScheduleServiceTest {
                         .isEmpty()
         );
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void copyWeek_ShouldCopyScheduleToSameDayOfWeek() {
 
@@ -1452,8 +1414,6 @@ class StaffScheduleServiceTest {
                 copied.getNote()
         );
     }
-
-
     // Legacy scenario no longer matches the current schedule contract.
     private void copyWeek_ShouldSkip_WhenScheduleAlreadyExists() {
 
@@ -1517,6 +1477,87 @@ class StaffScheduleServiceTest {
                         (Iterable<StaffSchedule> iterable) ->
                                 !iterable.iterator().hasNext()
                 ));
+    }
+
+    @Test
+    void currentContractRejectsPastCreationBeforeReadingDependencies() {
+        ScheduleCreateRequest request = mock(ScheduleCreateRequest.class);
+        when(request.workDate()).thenReturn(LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(1));
+
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> service.create(request));
+        verifyNoInteractions(staffInfoRepository, shiftConfigRepo, scheduleRepo);
+    }
+
+    @Test
+    void getForStaffEnforcesOwnershipAndMapsOwnedSchedule() {
+        UUID scheduleId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        StaffSchedule withoutStaff = StaffSchedule.builder().scheduleId(scheduleId).build();
+        when(scheduleRepo.findById(scheduleId)).thenReturn(Optional.of(withoutStaff));
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> service.getForStaff(scheduleId, ownerId));
+
+        StaffInfo owner = staff(ownerId, "Điều dưỡng An");
+        ShiftConfig workShift = shift(UUID.randomUUID(), "Ca sáng");
+        StaffSchedule owned = schedule(scheduleId, owner, LocalDate.now().plusDays(2), workShift);
+        when(scheduleRepo.findById(scheduleId)).thenReturn(Optional.of(owned));
+        assertNotNull(service.getForStaff(scheduleId, ownerId));
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> service.getForStaff(scheduleId, UUID.randomUUID()));
+    }
+
+    @Test
+    void deleteRejectsEveryNonFutureScheduledVariant() {
+        UUID id = UUID.randomUUID();
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+        StaffSchedule processed = StaffSchedule.builder().scheduleId(id).status(ScheduleStatus.COMPLETED)
+                .workDate(today.plusDays(1)).build();
+        StaffSchedule missingDate = StaffSchedule.builder().scheduleId(id).status(ScheduleStatus.SCHEDULED).build();
+        StaffSchedule todaySchedule = StaffSchedule.builder().scheduleId(id).status(ScheduleStatus.SCHEDULED)
+                .workDate(today).build();
+
+        when(scheduleRepo.findById(id)).thenReturn(Optional.of(processed), Optional.of(missingDate), Optional.of(todaySchedule));
+
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class, () -> service.delete(id));
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class, () -> service.delete(id));
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class, () -> service.delete(id));
+        verify(scheduleRepo, never()).deleteById(any());
+    }
+
+    @Test
+    void copyWeekRejectsSamePastTargetAndEmptySource() {
+        LocalDate nextMonday = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"))
+                .plusWeeks(2).with(DayOfWeek.MONDAY);
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> service.copyWeek(nextMonday, nextMonday));
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> service.copyWeek(nextMonday.minusWeeks(2), nextMonday.minusWeeks(1)));
+
+        when(scheduleRepo.findAllByWorkDateBetweenForUpdate(any(), any())).thenReturn(List.of());
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> service.copyWeek(nextMonday.minusWeeks(1), nextMonday));
+    }
+
+    @Test
+    void assignRejectsPastDateAndUnsupportedAction() {
+        UUID staffId = UUID.randomUUID();
+        UUID shiftId = UUID.randomUUID();
+        StaffInfo assignedStaff = staff(staffId, "Điều dưỡng Bình");
+        ShiftConfig workShift = shift(shiftId, "Ca sáng");
+        workShift.setIsActive(true);
+        when(shiftConfigRepo.findByIdForScheduleUpdate(shiftId)).thenReturn(Optional.of(workShift));
+        when(staffInfoRepository.findByIdForScheduleUpdate(staffId)).thenReturn(Optional.of(assignedStaff));
+
+        LocalDate pastWeek = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).minusWeeks(2);
+        ScheduleAssignRequest past = new ScheduleAssignRequest(pastWeek, shiftId, "mon", staffId, "add");
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class, () -> service.assignStaff(past));
+
+        LocalDate futureWeek = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).plusWeeks(2);
+        ScheduleAssignRequest unsupported = new ScheduleAssignRequest(futureWeek, shiftId, "mon", staffId, "replace");
+        when(scheduleRepo.findAllByStaff_StaffIdAndWorkDate(eq(staffId), any())).thenReturn(List.of());
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> service.assignStaff(unsupported));
     }
 }
 

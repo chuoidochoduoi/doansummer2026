@@ -5,14 +5,18 @@ import org.example.doansummer2026.dto.testrequest.TestRequestCancelRequest;
 import org.example.doansummer2026.dto.testrequest.TestRequestCreateRequest;
 import org.example.doansummer2026.dto.testrequest.TestRequestUpdateRequest;
 import org.example.doansummer2026.dto.testresult.TestResultCreateRequest;
+import org.example.doansummer2026.dto.testresult.TestResultAmendRequest;
 import org.example.doansummer2026.dto.testresult.TestResultUpdateRequest;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
+import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.enums.QueueStatus;
 import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.enums.TestRequestStatus;
+import org.example.doansummer2026.enums.TestResultRevisionStatus;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
+import org.springframework.security.access.AccessDeniedException;
 import org.example.doansummer2026.model.*;
 import org.example.doansummer2026.repository.*;
 import org.junit.jupiter.api.Test;
@@ -127,6 +131,8 @@ class TestRequestServiceTest {
                 departmentRepo.findById(invocation.getArgument(0)));
         lenient().when(visitRepo.findByIdForUpdate(any())).thenAnswer(invocation ->
                 visitRepo.findById(invocation.getArgument(0)));
+        lenient().when(revisionRepo.save(any(TestResultRevision.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @AfterEach
@@ -154,6 +160,350 @@ class TestRequestServiceTest {
         lenient().when(repo.findByIdForUpdate(id)).thenReturn(Optional.of(request));
         lenient().when(departmentRepo.findById(department.getDepartmentId())).thenReturn(Optional.of(department));
         return request;
+    }
+
+    private TestRequest authorizedRequest(UUID id, TestRequestStatus status, QueueStatus queueStatus) {
+        UUID staffId = UUID.randomUUID();
+        StaffInfo doctor = StaffInfo.builder().staffId(staffId).systemRole(SystemRole.DOCTOR).build();
+        Department department = Department.builder().departmentId(UUID.randomUUID()).build();
+        QueueTicket queue = queueStatus == null ? null : QueueTicket.builder()
+                .ticketId(UUID.randomUUID()).status(queueStatus).build();
+        TestRequest request = TestRequest.builder().testRequestId(id).status(status)
+                .performingDepartment(department).queueTicket(queue).build();
+        when(authService.currentStaffId()).thenReturn(staffId);
+        when(repo.findByIdForUpdate(id)).thenReturn(Optional.of(request));
+        when(departmentRepo.findByIdForUpdate(department.getDepartmentId())).thenReturn(Optional.of(department));
+        when(staffDutyService.requireCurrentStaffOnDuty(department, true)).thenReturn(doctor);
+        return request;
+    }
+
+    private TestResult attachValidatedExistingResult(TestRequest request, String conclusion, String imageUrl) {
+        MedicalService service = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("IMG-TEST").name("Chẩn đoán hình ảnh").requiresSpecimen(false).build();
+        request.setService(service);
+        TestResult result = TestResult.builder().resultId(UUID.randomUUID()).testRequest(request)
+                .performedBy(StaffInfo.builder().staffId(UUID.randomUUID()).staffCode("BS-CLS").build())
+                .conclusion(conclusion).imageUrl(imageUrl).build();
+        request.setTestResult(result);
+        ClinicalFormTemplateVersion version = ClinicalFormTemplateVersion.builder()
+                .versionId(UUID.randomUUID()).build();
+        var schema = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        var normalized = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("value", "normal");
+        when(clinicalFormTemplateService.resolveVersion(eq(service.getServiceId()), isNull())).thenReturn(version);
+        when(clinicalFormTemplateService.schemaForService(service.getServiceCode(), version)).thenReturn(schema);
+        when(clinicalFormEngine.validateAndEnrich(eq(schema), isNull(), isNull(), isNull(),
+                any(LocalDate.class), eq(true))).thenReturn(normalized);
+        return result;
+    }
+
+    @Test
+    void completeResult_ShouldReject_WhenCurrentStaffIsMissing() {
+        UUID id = UUID.randomUUID();
+        TestRequest request = TestRequest.builder().testRequestId(id)
+                .status(TestRequestStatus.IN_PROGRESS)
+                .performingDepartment(Department.builder().departmentId(UUID.randomUUID()).build())
+                .build();
+        when(repo.findByIdForUpdate(id)).thenReturn(Optional.of(request));
+        when(authService.currentStaffId()).thenReturn(null);
+
+        assertThrows(AccessDeniedException.class,
+                () -> testRequestService.completeResult(id, mock(TestResultCreateRequest.class)));
+    }
+
+    @Test
+    void completeResult_ShouldReject_WhenPerformingDepartmentIsMissing() {
+        UUID id = UUID.randomUUID();
+        when(repo.findByIdForUpdate(id)).thenReturn(Optional.of(TestRequest.builder()
+                .testRequestId(id).status(TestRequestStatus.IN_PROGRESS).build()));
+        when(authService.currentStaffId()).thenReturn(UUID.randomUUID());
+
+        assertThrows(AccessDeniedException.class,
+                () -> testRequestService.completeResult(id, mock(TestResultCreateRequest.class)));
+    }
+
+    @Test
+    void completeResult_ShouldReject_WhenLockedDepartmentDisappeared() {
+        UUID id = UUID.randomUUID();
+        UUID departmentId = UUID.randomUUID();
+        Department department = Department.builder().departmentId(departmentId).build();
+        when(repo.findByIdForUpdate(id)).thenReturn(Optional.of(TestRequest.builder()
+                .testRequestId(id).status(TestRequestStatus.IN_PROGRESS)
+                .performingDepartment(department).build()));
+        when(authService.currentStaffId()).thenReturn(UUID.randomUUID());
+        when(departmentRepo.findByIdForUpdate(departmentId)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> testRequestService.completeResult(id, mock(TestResultCreateRequest.class)));
+    }
+
+    @Test
+    void completeResult_ShouldRejectAlreadyCompletedRequest_CurrentContract() {
+        UUID id = UUID.randomUUID();
+        authorizedRequest(id, TestRequestStatus.COMPLETED, QueueStatus.IN_PROGRESS);
+
+        assertThrows(ConflictException.class,
+                () -> testRequestService.completeResult(id, mock(TestResultCreateRequest.class)));
+    }
+
+    @Test
+    void completeResult_ShouldRejectCancelledRequest_CurrentContract() {
+        UUID id = UUID.randomUUID();
+        authorizedRequest(id, TestRequestStatus.CANCELLED, QueueStatus.IN_PROGRESS);
+
+        assertThrows(ConflictException.class,
+                () -> testRequestService.completeResult(id, mock(TestResultCreateRequest.class)));
+    }
+
+    @Test
+    void completeResult_ShouldRequireExecutionQueue() {
+        UUID id = UUID.randomUUID();
+        authorizedRequest(id, TestRequestStatus.IN_PROGRESS, null);
+
+        assertThrows(BadRequestException.class,
+                () -> testRequestService.completeResult(id, mock(TestResultCreateRequest.class)));
+    }
+
+    @Test
+    void completeResult_ShouldRequireStartedExecutionQueue() {
+        UUID id = UUID.randomUUID();
+        authorizedRequest(id, TestRequestStatus.IN_PROGRESS, QueueStatus.WAITING);
+
+        assertThrows(BadRequestException.class,
+                () -> testRequestService.completeResult(id, mock(TestResultCreateRequest.class)));
+    }
+
+    @Test
+    void completeResult_ShouldSignExistingResultAndCloseCompletedLabQueue() {
+        UUID id = UUID.randomUUID();
+        TestRequest request = authorizedRequest(id, TestRequestStatus.IN_PROGRESS, QueueStatus.IN_PROGRESS);
+        TestResult result = attachValidatedExistingResult(request, "Kết quả bình thường", "/uploads/result.pdf");
+        when(repo.countByQueueTicket_TicketIdAndStatusIn(eq(request.getQueueTicket().getTicketId()), anyList()))
+                .thenReturn(0L);
+
+        var response = testRequestService.completeResult(id, mock(TestResultCreateRequest.class));
+
+        assertEquals(id, response.testRequestId());
+        assertEquals(TestRequestStatus.COMPLETED, request.getStatus());
+        assertEquals(QueueStatus.DONE, request.getQueueTicket().getStatus());
+        assertNotNull(result.getVerifiedAt());
+        verify(queueTicketRepo).save(request.getQueueTicket());
+    }
+
+    @Test
+    void completeResult_ShouldKeepLabQueueOpenWhileAnotherRequestRemains() {
+        UUID id = UUID.randomUUID();
+        TestRequest request = authorizedRequest(id, TestRequestStatus.IN_PROGRESS, QueueStatus.IN_PROGRESS);
+        attachValidatedExistingResult(request, "Kết quả bình thường", "/uploads/result.pdf");
+        when(repo.countByQueueTicket_TicketIdAndStatusIn(eq(request.getQueueTicket().getTicketId()), anyList()))
+                .thenReturn(1L);
+
+        testRequestService.completeResult(id, mock(TestResultCreateRequest.class));
+
+        assertEquals(QueueStatus.IN_PROGRESS, request.getQueueTicket().getStatus());
+        verify(queueTicketRepo, never()).save(any());
+    }
+
+    @Test
+    void completeResult_ShouldRejectBlankConclusionAfterValidatingStructuredData() {
+        UUID id = UUID.randomUUID();
+        TestRequest request = authorizedRequest(id, TestRequestStatus.IN_PROGRESS, QueueStatus.IN_PROGRESS);
+        attachValidatedExistingResult(request, "   ", "/uploads/result.pdf");
+
+        assertThrows(BadRequestException.class,
+                () -> testRequestService.completeResult(id, mock(TestResultCreateRequest.class)));
+        verify(resultRepo, never()).save(any());
+    }
+
+    @Test
+    void completeResult_ShouldRequireStructuredDataFileOrAttachment() {
+        UUID id = UUID.randomUUID();
+        TestRequest request = authorizedRequest(id, TestRequestStatus.IN_PROGRESS, QueueStatus.IN_PROGRESS);
+        TestResult result = attachValidatedExistingResult(request, "Bình thường", null);
+        // Simulate a form engine that legitimately has no structured output.
+        when(clinicalFormEngine.validateAndEnrich(any(), isNull(), isNull(), isNull(),
+                any(LocalDate.class), eq(true))).thenReturn(null);
+        when(revisionRepo.findFirstByTestResult_ResultIdOrderByRevisionNoDesc(result.getResultId()))
+                .thenReturn(Optional.empty());
+
+        assertThrows(BadRequestException.class,
+                () -> testRequestService.completeResult(id, mock(TestResultCreateRequest.class)));
+    }
+
+    @Test
+    void completeResult_ShouldCreateDefaultUrineSpecimenAndRecordCollector() {
+        UUID id = UUID.randomUUID();
+        TestRequest request = authorizedRequest(id, TestRequestStatus.IN_PROGRESS, QueueStatus.IN_PROGRESS);
+        TestResult result = attachValidatedExistingResult(request, "Bình thường", "/uploads/result.pdf");
+        request.getService().setRequiresSpecimen(true);
+        request.getService().setServiceCode("LAB-URINE");
+        request.getService().setName("Tổng phân tích nước tiểu");
+        StaffInfo collector = StaffInfo.builder().staffId(authService.currentStaffId()).build();
+        when(staffRepo.findById(authService.currentStaffId())).thenReturn(Optional.of(collector));
+        when(repo.countByQueueTicket_TicketIdAndStatusIn(any(), anyList())).thenReturn(1L);
+
+        testRequestService.completeResult(id, mock(TestResultCreateRequest.class));
+
+        assertTrue(result.getSampleId().startsWith("SMP-"));
+        assertEquals(org.example.doansummer2026.enums.SpecimenType.URINE, result.getSampleType());
+        assertEquals(org.example.doansummer2026.enums.SpecimenStatus.ACCEPTED, result.getSampleStatus());
+        assertSame(collector, result.getCollectedBy());
+        assertNotNull(result.getCollectedAt());
+    }
+
+    @Test
+    void completeResult_ShouldInferSwabSpecimenFromServiceName() {
+        UUID id = UUID.randomUUID();
+        TestRequest request = authorizedRequest(id, TestRequestStatus.IN_PROGRESS, QueueStatus.IN_PROGRESS);
+        TestResult result = attachValidatedExistingResult(request, "Âm tính", "/uploads/result.pdf");
+        request.getService().setRequiresSpecimen(true);
+        request.getService().setServiceCode(null);
+        request.getService().setName("Dịch ngoáy cúm");
+        UUID collectorId = authService.currentStaffId();
+        when(staffRepo.findById(collectorId))
+                .thenReturn(Optional.of(StaffInfo.builder().staffId(collectorId).build()));
+        when(repo.countByQueueTicket_TicketIdAndStatusIn(any(), anyList())).thenReturn(1L);
+
+        testRequestService.completeResult(id, mock(TestResultCreateRequest.class));
+
+        assertEquals(org.example.doansummer2026.enums.SpecimenType.SWAB, result.getSampleType());
+    }
+
+    @Test
+    void completeResult_ShouldRejectSpecimenFieldsForNonSpecimenService() {
+        UUID id = UUID.randomUUID();
+        TestRequest request = authorizedRequest(id, TestRequestStatus.IN_PROGRESS, QueueStatus.IN_PROGRESS);
+        attachValidatedExistingResult(request, "Bình thường", "/uploads/result.pdf");
+        TestResultCreateRequest input = mock(TestResultCreateRequest.class);
+        when(input.sampleId()).thenReturn("SMP-EXPLICIT");
+
+        assertThrows(BadRequestException.class, () -> testRequestService.completeResult(id, input));
+    }
+
+    @Test
+    void completeResult_ShouldRejectRejectedSpecimen() {
+        UUID id = UUID.randomUUID();
+        TestRequest request = authorizedRequest(id, TestRequestStatus.IN_PROGRESS, QueueStatus.IN_PROGRESS);
+        attachValidatedExistingResult(request, "Bình thường", "/uploads/result.pdf");
+        request.getService().setRequiresSpecimen(true);
+        UUID collectorId = authService.currentStaffId();
+        when(staffRepo.findById(collectorId))
+                .thenReturn(Optional.of(StaffInfo.builder().staffId(collectorId).build()));
+        TestResultCreateRequest input = mock(TestResultCreateRequest.class);
+        when(input.sampleStatus()).thenReturn(org.example.doansummer2026.enums.SpecimenStatus.REJECTED);
+
+        assertThrows(BadRequestException.class, () -> testRequestService.completeResult(id, input));
+        verify(resultRepo, never()).save(any());
+    }
+
+    @Test
+    void actionPermissions_ShouldAllowResponsibleDoctorAfterExecutionStarts() {
+        UUID id = UUID.randomUUID();
+        UUID staffId = UUID.randomUUID();
+        Department department = Department.builder().departmentId(UUID.randomUUID()).build();
+        StaffInfo doctor = StaffInfo.builder().staffId(staffId).systemRole(SystemRole.DOCTOR)
+                .department(department).build();
+        TestRequest request = TestRequest.builder().testRequestId(id).status(TestRequestStatus.IN_PROGRESS)
+                .performingDepartment(department)
+                .queueTicket(QueueTicket.builder().status(QueueStatus.IN_PROGRESS).build()).build();
+        when(repo.findById(id)).thenReturn(Optional.of(request));
+        when(authService.currentStaffId()).thenReturn(staffId);
+        when(staffRepo.findById(staffId)).thenReturn(Optional.of(doctor));
+
+        var result = testRequestService.actionPermissions(id);
+
+        assertTrue(result.canView());
+        assertTrue(result.canEditResult());
+        assertTrue(result.canUpload());
+        assertTrue(result.canSign());
+        assertTrue(result.canCancel());
+    }
+
+    @Test
+    void actionPermissions_ShouldAllowAssignedNurseToEditButNotSignOrCancel() {
+        UUID id = UUID.randomUUID();
+        UUID staffId = UUID.randomUUID();
+        Department department = Department.builder().departmentId(UUID.randomUUID()).build();
+        StaffInfo nurse = StaffInfo.builder().staffId(staffId).systemRole(SystemRole.NURSE)
+                .department(department).build();
+        TestRequest request = TestRequest.builder().testRequestId(id).status(TestRequestStatus.PENDING)
+                .performingDepartment(department)
+                .queueTicket(QueueTicket.builder().status(QueueStatus.DONE).build()).build();
+        when(repo.findById(id)).thenReturn(Optional.of(request));
+        when(authService.currentStaffId()).thenReturn(staffId);
+        when(staffRepo.findById(staffId)).thenReturn(Optional.of(nurse));
+
+        var result = testRequestService.actionPermissions(id);
+
+        assertTrue(result.canEditResult());
+        assertFalse(result.canSign());
+        assertFalse(result.canCancel());
+    }
+
+    @Test
+    void actionPermissions_ShouldBeReadOnlyForFinishedRequestWithoutActor() {
+        UUID id = UUID.randomUUID();
+        TestRequest request = TestRequest.builder().testRequestId(id).status(TestRequestStatus.COMPLETED)
+                .performingDepartment(null).queueTicket(null).build();
+        when(repo.findById(id)).thenReturn(Optional.of(request));
+        when(authService.currentStaffId()).thenReturn(null);
+
+        var result = testRequestService.actionPermissions(id);
+
+        assertTrue(result.canView());
+        assertFalse(result.canEditResult());
+        assertFalse(result.canUpload());
+        assertFalse(result.canSign());
+        assertFalse(result.canCancel());
+    }
+
+    @Test
+    void amendResult_ShouldRequireCompletedRequest() {
+        UUID id = UUID.randomUUID();
+        authorizedRequest(id, TestRequestStatus.IN_PROGRESS, QueueStatus.DONE);
+
+        assertThrows(ConflictException.class,
+                () -> testRequestService.amendResult(id, new TestResultAmendRequest("Sửa kết luận")));
+    }
+
+    @Test
+    void amendResult_ShouldRequireExistingResult() {
+        UUID id = UUID.randomUUID();
+        authorizedRequest(id, TestRequestStatus.COMPLETED, QueueStatus.DONE);
+        when(resultRepo.findByTestRequest_TestRequestId(id)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> testRequestService.amendResult(id, new TestResultAmendRequest("Sửa kết luận")));
+    }
+
+    @Test
+    void amendResult_ShouldRejectWhenDraftAlreadyExists() {
+        UUID id = UUID.randomUUID();
+        TestRequest request = authorizedRequest(id, TestRequestStatus.COMPLETED, QueueStatus.DONE);
+        TestResult result = TestResult.builder().resultId(UUID.randomUUID()).testRequest(request).build();
+        when(resultRepo.findByTestRequest_TestRequestId(id)).thenReturn(Optional.of(result));
+        when(revisionRepo.findFirstByTestResult_ResultIdOrderByRevisionNoDesc(result.getResultId()))
+                .thenReturn(Optional.of(TestResultRevision.builder().status(TestResultRevisionStatus.DRAFT).build()));
+
+        assertThrows(ConflictException.class,
+                () -> testRequestService.amendResult(id, new TestResultAmendRequest("Sửa kết luận")));
+    }
+
+    @Test
+    void amendResult_ShouldCreateDraftWithTrimmedReason() {
+        UUID id = UUID.randomUUID();
+        TestRequest request = authorizedRequest(id, TestRequestStatus.COMPLETED, QueueStatus.DONE);
+        StaffInfo performer = StaffInfo.builder().staffId(UUID.randomUUID()).build();
+        TestResult result = TestResult.builder().resultId(UUID.randomUUID()).testRequest(request)
+                .performedBy(performer).conclusion("Cũ").build();
+        when(resultRepo.findByTestRequest_TestRequestId(id)).thenReturn(Optional.of(result));
+        when(revisionRepo.findFirstByTestResult_ResultIdOrderByRevisionNoDesc(result.getResultId()))
+                .thenReturn(Optional.empty());
+        when(staffRepo.findById(authService.currentStaffId())).thenReturn(Optional.empty());
+
+        var response = testRequestService.amendResult(id, new TestResultAmendRequest("  Sửa kết luận  "));
+
+        assertEquals(TestResultRevisionStatus.DRAFT, response.status());
+        assertEquals("Sửa kết luận", response.amendmentReason());
     }
 
 
@@ -201,16 +551,15 @@ class TestRequestServiceTest {
     // DELETE
     // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void delete_ShouldDelete_WhenRequestExists() {
+    @Test
+    void delete_ShouldUseCancellationContractAndNeverHardDelete() {
 
         UUID id = UUID.randomUUID();
 
-        when(repo.existsById(id))
-                .thenReturn(true);
+        when(repo.findByIdForUpdate(id)).thenReturn(Optional.empty());
 
-        testRequestService.delete(id);
-
-        verify(repo).deleteById(id);
+        assertThrows(ResourceNotFoundException.class, () -> testRequestService.delete(id));
+        verify(repo, never()).deleteById(any());
     }
     @Test
     void delete_ShouldThrowNotFound_WhenRequestDoesNotExist() {
@@ -610,7 +959,8 @@ class TestRequestServiceTest {
 // CREATE - STAFF NOT FOUND
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void create_ShouldThrowNotFound_WhenRequestedByDoesNotExist() {
+    @Test
+    void create_ShouldThrowNotFound_WhenRequestedByDoesNotExist() {
 
         UUID recordId = UUID.randomUUID();
         UUID serviceId = UUID.randomUUID();
@@ -638,6 +988,9 @@ class TestRequestServiceTest {
         when(serviceRepo.findById(serviceId))
                 .thenReturn(Optional.of(service));
 
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
+        when(service.getServiceId()).thenReturn(serviceId);
+
         // requiredCapability == null mặc định
         when(service.getDepartment())
                 .thenReturn(department);
@@ -659,7 +1012,8 @@ class TestRequestServiceTest {
 // CREATE - SERVICE KHÔNG CÓ DEPARTMENT/CAPABILITY
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void create_ShouldThrow_WhenServiceHasNoDepartmentAndNoCapability() {
+    @Test
+    void create_ShouldThrow_WhenServiceHasNoDepartmentAndNoCapability() {
 
         UUID recordId = UUID.randomUUID();
         UUID serviceId = UUID.randomUUID();
@@ -682,6 +1036,9 @@ class TestRequestServiceTest {
         when(serviceRepo.findById(serviceId))
                 .thenReturn(Optional.of(service));
 
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
+        when(service.getServiceId()).thenReturn(serviceId);
+
         assertThrows(
                 ResourceNotFoundException.class,
                 () -> testRequestService.create(req)
@@ -696,7 +1053,8 @@ class TestRequestServiceTest {
 // CREATE - INVOICE ITEM NOT FOUND
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void create_ShouldThrowNotFound_WhenInvoiceItemDoesNotExist() {
+    @Test
+    void create_ShouldThrowNotFound_WhenInvoiceItemDoesNotExist() {
 
         UUID recordId = UUID.randomUUID();
         UUID serviceId = UUID.randomUUID();
@@ -739,6 +1097,9 @@ class TestRequestServiceTest {
         when(serviceRepo.findById(serviceId))
                 .thenReturn(Optional.of(service));
 
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
+        when(service.getServiceId()).thenReturn(serviceId);
+
         when(service.getDepartment())
                 .thenReturn(department);
 
@@ -762,7 +1123,8 @@ class TestRequestServiceTest {
 // CREATE - SUCCESS
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void create_ShouldSavePendingRequest_WhenInputIsValid() {
+    @Test
+    void create_ShouldSavePendingRequest_WhenInputIsValid() {
 
         UUID recordId = UUID.randomUUID();
         UUID serviceId = UUID.randomUUID();
@@ -800,6 +1162,9 @@ class TestRequestServiceTest {
 
         when(serviceRepo.findById(serviceId))
                 .thenReturn(Optional.of(service));
+
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
+        when(service.getServiceId()).thenReturn(serviceId);
 
         when(service.getDepartment())
                 .thenReturn(department);
@@ -2186,7 +2551,8 @@ class TestRequestServiceTest {
 // CREATE BATCH - SKIP EXISTING SERVICE
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void createBatch_ShouldThrowConflict_WhenServiceAlreadyRequestedInVisit() {
+    @Test
+    void createBatch_ShouldThrowConflict_WhenServiceAlreadyRequestedInVisit() {
 
         UUID recordId = UUID.randomUUID();
         UUID visitId = UUID.randomUUID();
@@ -2206,6 +2572,8 @@ class TestRequestServiceTest {
         StaffInfo staff = mock(StaffInfo.class);
 
         MedicalService service = mock(MedicalService.class);
+        when(service.getServiceId()).thenReturn(serviceId);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
 
         TestRequestBatchCreateRequest req =
                 mock(TestRequestBatchCreateRequest.class);
@@ -2218,6 +2586,8 @@ class TestRequestServiceTest {
 
         when(req.serviceIds())
                 .thenReturn(List.of(serviceId));
+        when(serviceSelectionPolicyService.normalizeOrThrow(List.of(serviceId)))
+                .thenReturn(List.of(service));
 
         when(recordRepo.findById(recordId))
                 .thenReturn(Optional.of(record));
@@ -2252,7 +2622,8 @@ class TestRequestServiceTest {
 // CREATE FROM PAID INVOICE - DUPLICATE
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void createFromPaidInvoice_ShouldReturnExisting_WhenInvoiceItemAlreadyHasRequest() {
+    @Test
+    void createFromPaidInvoice_ShouldReturnExisting_WhenInvoiceItemAlreadyHasRequest() {
 
         UUID visitId = UUID.randomUUID();
         UUID serviceId = UUID.randomUUID();
@@ -2268,6 +2639,9 @@ class TestRequestServiceTest {
                 .thenReturn(headDoctor);
 
         MedicalService service = mock(MedicalService.class);
+        when(service.getServiceId()).thenReturn(serviceId);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
+        when(service.getDepartment()).thenReturn(dept);
 
         MedicalRecord standaloneRecord = MedicalRecord.builder()
                 .recordId(UUID.randomUUID())
@@ -2290,8 +2664,11 @@ class TestRequestServiceTest {
         when(serviceRepo.findById(serviceId))
                 .thenReturn(Optional.of(service));
 
-        when(repo.findByInvoiceItem_ItemId(invoiceItemId))
-                .thenReturn(List.of(existing));
+        CustomerVisit visit = CustomerVisit.builder().visitId(visitId).build();
+        when(visitRepo.findById(visitId)).thenReturn(Optional.of(visit));
+        when(repo.findTopByInvoiceItem_ItemIdOrderByCreatedAtAsc(invoiceItemId))
+                .thenReturn(Optional.of(existing));
+        when(staffRepo.findByDepartment_DepartmentId(deptId)).thenReturn(List.of(headDoctor));
 
         var result = testRequestService.createFromPaidInvoice(
                 visitId,
@@ -2307,7 +2684,7 @@ class TestRequestServiceTest {
         verify(repo, never())
                 .save(existing);
 
-        verifyNoInteractions(visitRepo);
+        verify(visitRepo).findById(visitId);
     }
 
 
@@ -2344,7 +2721,8 @@ class TestRequestServiceTest {
 // + NOTIFY NURSE
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void createFromPaidInvoice_ShouldUseHeadDoctorAndExistingQueue() {
+    @Test
+    void createFromPaidInvoice_ShouldUseHeadDoctorAndExistingQueue() {
 
         UUID visitId = UUID.randomUUID();
         UUID recordId = UUID.randomUUID();
@@ -2358,6 +2736,7 @@ class TestRequestServiceTest {
         when(dept.getHeadDoctor()).thenReturn(headDoctor);
 
         MedicalService service = mock(MedicalService.class);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
         when(service.getDepartment()).thenReturn(dept);
         when(service.getName()).thenReturn("Xet nghiem mau");
 
@@ -2379,9 +2758,11 @@ class TestRequestServiceTest {
 
         when(visitRepo.findByIdForUpdate(visitId))
                 .thenReturn(Optional.of(visit));
+        when(visitRepo.findById(visitId)).thenReturn(Optional.of(visit));
 
         when(recordRepo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId))
                 .thenReturn(Optional.of(standaloneRecord));
+        when(recordRepo.findById(recordId)).thenReturn(Optional.of(standaloneRecord));
 
         when(departmentRepo.findByIdForUpdate(deptId))
                 .thenReturn(Optional.of(dept));
@@ -2395,7 +2776,7 @@ class TestRequestServiceTest {
                 .thenReturn(Optional.of(existingQueue));
 
         when(staffRepo.findByDepartment_DepartmentId(deptId))
-                .thenReturn(List.of());
+                .thenReturn(List.of(headDoctor));
 
         when(repo.save(any(TestRequest.class)))
                 .thenAnswer(invocation -> {
@@ -2463,7 +2844,8 @@ class TestRequestServiceTest {
 // -> FALLBACK HEAD DOCTOR
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void createFromPaidInvoice_ShouldFallbackToHeadDoctor_WhenRequestedByIdNotFound() {
+    @Test
+    void createFromPaidInvoice_ShouldFallbackToHeadDoctor_WhenRequestedByIdNotFound() {
 
         UUID visitId = UUID.randomUUID();
         UUID recordId = UUID.randomUUID();
@@ -2478,6 +2860,7 @@ class TestRequestServiceTest {
         when(dept.getHeadDoctor()).thenReturn(headDoctor);
 
         MedicalService service = mock(MedicalService.class);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
         when(service.getDepartment()).thenReturn(dept);
 
         CustomerVisit visit = mock(CustomerVisit.class);
@@ -2501,9 +2884,11 @@ class TestRequestServiceTest {
 
         when(visitRepo.findByIdForUpdate(visitId))
                 .thenReturn(Optional.of(visit));
+        when(visitRepo.findById(visitId)).thenReturn(Optional.of(visit));
 
         when(recordRepo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId))
                 .thenReturn(Optional.of(standaloneRecord));
+        when(recordRepo.findById(recordId)).thenReturn(Optional.of(standaloneRecord));
 
         when(departmentRepo.findByIdForUpdate(deptId))
                 .thenReturn(Optional.of(dept));
@@ -2517,7 +2902,7 @@ class TestRequestServiceTest {
                 .thenReturn(Optional.of(queue));
 
         when(staffRepo.findByDepartment_DepartmentId(deptId))
-                .thenReturn(List.of());
+                .thenReturn(List.of(headDoctor));
 
         when(repo.save(any(TestRequest.class)))
                 .thenAnswer(i -> {
@@ -2545,7 +2930,8 @@ class TestRequestServiceTest {
 // ENSURE QUEUE - CREATE NEW QUEUE
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void createFromPaidInvoice_ShouldCreateNewQueue_WhenQueueDoesNotExist() {
+    @Test
+    void createFromPaidInvoice_ShouldCreateNewQueue_WhenQueueDoesNotExist() {
 
         UUID visitId = UUID.randomUUID();
         UUID recordId = UUID.randomUUID();
@@ -2559,6 +2945,7 @@ class TestRequestServiceTest {
         when(dept.getHeadDoctor()).thenReturn(headDoctor);
 
         MedicalService service = mock(MedicalService.class);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
         when(service.getDepartment()).thenReturn(dept);
 
         CustomerVisit visit = mock(CustomerVisit.class);
@@ -2574,9 +2961,11 @@ class TestRequestServiceTest {
 
         when(visitRepo.findByIdForUpdate(visitId))
                 .thenReturn(Optional.of(visit));
+        when(visitRepo.findById(visitId)).thenReturn(Optional.of(visit));
 
         when(recordRepo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId))
                 .thenReturn(Optional.of(standaloneRecord));
+        when(recordRepo.findById(recordId)).thenReturn(Optional.of(standaloneRecord));
 
         when(departmentRepo.findByIdForUpdate(deptId))
                 .thenReturn(Optional.of(dept));
@@ -2605,7 +2994,7 @@ class TestRequestServiceTest {
                 });
 
         when(staffRepo.findByDepartment_DepartmentId(deptId))
-                .thenReturn(List.of());
+                .thenReturn(List.of(headDoctor));
 
         when(repo.save(any(TestRequest.class)))
                 .thenAnswer(i -> {
@@ -2636,7 +3025,8 @@ class TestRequestServiceTest {
 // ENSURE QUEUE - DEPARTMENT MISSING AFTER LOCK
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void createFromPaidInvoice_ShouldThrow_WhenLockedDepartmentDoesNotExist() {
+    @Test
+    void createFromPaidInvoice_ShouldThrow_WhenLockedDepartmentDoesNotExist() {
 
         UUID visitId = UUID.randomUUID();
         UUID recordId = UUID.randomUUID();
@@ -2650,6 +3040,7 @@ class TestRequestServiceTest {
         when(dept.getHeadDoctor()).thenReturn(headDoctor);
 
         MedicalService service = mock(MedicalService.class);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
         when(service.getDepartment()).thenReturn(dept);
 
         CustomerVisit visit = mock(CustomerVisit.class);
@@ -2664,6 +3055,8 @@ class TestRequestServiceTest {
 
         when(visitRepo.findByIdForUpdate(visitId))
                 .thenReturn(Optional.of(visit));
+        when(visitRepo.findById(visitId)).thenReturn(Optional.of(visit));
+        when(staffRepo.findByDepartment_DepartmentId(deptId)).thenReturn(List.of(headDoctor));
 
         when(recordRepo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId))
                 .thenReturn(Optional.of(standaloneRecord));
@@ -2692,7 +3085,8 @@ class TestRequestServiceTest {
 // CREATE FROM PAID INVOICE - AUTO CREATE MEDICAL RECORD
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void createFromPaidInvoice_ShouldCreateMedicalRecord_WhenNoRecordExists() {
+    @Test
+    void createFromPaidInvoice_ShouldCreateMedicalRecord_WhenNoRecordExists() {
 
         UUID visitId = UUID.randomUUID();
         UUID serviceId = UUID.randomUUID();
@@ -2708,6 +3102,7 @@ class TestRequestServiceTest {
         when(dept.getHeadDoctor()).thenReturn(headDoctor);
 
         MedicalService service = mock(MedicalService.class);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
         when(service.getDepartment()).thenReturn(dept);
 
         CustomerVisit visit = mock(CustomerVisit.class);
@@ -2734,6 +3129,7 @@ class TestRequestServiceTest {
 
         when(visitRepo.findByIdForUpdate(visitId))
                 .thenReturn(Optional.of(visit));
+        when(visitRepo.findById(visitId)).thenReturn(Optional.of(visit));
 
         when(recordRepo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId))
                 .thenReturn(Optional.empty());
@@ -2756,7 +3152,7 @@ class TestRequestServiceTest {
                 .thenReturn(Optional.of(queue));
 
         when(staffRepo.findByDepartment_DepartmentId(deptId))
-                .thenReturn(List.of());
+                .thenReturn(List.of(headDoctor));
 
         when(repo.save(any(TestRequest.class)))
                 .thenAnswer(i -> {
@@ -2789,7 +3185,8 @@ class TestRequestServiceTest {
 // PICK LOWEST LOAD
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void createBatch_ShouldChooseDepartmentWithLowestLoad_WhenCapabilityRequired() {
+    @Test
+    void createBatch_ShouldChooseDepartmentWithLowestLoad_WhenCapabilityRequired() {
 
         UUID recordId = UUID.randomUUID();
         UUID staffId = UUID.randomUUID();
@@ -2808,6 +3205,8 @@ class TestRequestServiceTest {
 
         when(service.getRequiredCapability().getCapabilityId())
                 .thenReturn(capabilityId);
+        when(service.getServiceId()).thenReturn(serviceId);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
 
         Department busy = mock(Department.class);
         Department free = mock(Department.class);
@@ -2858,6 +3257,7 @@ class TestRequestServiceTest {
         when(req.medicalRecordId()).thenReturn(recordId);
         when(req.requestedById()).thenReturn(staffId);
         when(req.serviceIds()).thenReturn(List.of(serviceId));
+        when(serviceSelectionPolicyService.normalizeOrThrow(List.of(serviceId))).thenReturn(List.of(service));
 
         var result =
                 testRequestService.createBatch(req);
@@ -2875,7 +3275,8 @@ class TestRequestServiceTest {
 // SELECT PERFORMING DEPARTMENT - NO ELIGIBLE DEPARTMENT
 // =========================================================
     // Legacy scenario no longer matches the current authorization/workflow contract.
-    private void createBatch_ShouldThrow_WhenNoDepartmentSupportsCapability() {
+    @Test
+    void createBatch_ShouldThrow_WhenNoDepartmentSupportsCapability() {
 
         UUID recordId = UUID.randomUUID();
         UUID staffId = UUID.randomUUID();
@@ -2895,6 +3296,8 @@ class TestRequestServiceTest {
 
         when(service.getRequiredCapability().getCapabilityId())
                 .thenReturn(capabilityId);
+        when(service.getServiceId()).thenReturn(serviceId);
+        when(service.getDepartmentType()).thenReturn(DepartmentType.PARACLINICAL);
 
         when(service.getRequiredCapability().getName())
                 .thenReturn("X-Ray");
@@ -2917,6 +3320,7 @@ class TestRequestServiceTest {
         when(req.medicalRecordId()).thenReturn(recordId);
         when(req.requestedById()).thenReturn(staffId);
         when(req.serviceIds()).thenReturn(List.of(serviceId));
+        when(serviceSelectionPolicyService.normalizeOrThrow(List.of(serviceId))).thenReturn(List.of(service));
 
         assertThrows(
                 ResourceNotFoundException.class,

@@ -15,6 +15,7 @@ import org.example.doansummer2026.dto.invoice.ReceiptPrintResponse;
 import org.example.doansummer2026.dto.payment.PayOSPaymentResponse;
 import org.example.doansummer2026.enums.InvoiceStatus;
 import org.example.doansummer2026.enums.PaymentMethod;
+import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.service.AuthService;
 import org.example.doansummer2026.service.InvoiceService;
 import org.springframework.data.domain.Pageable;
@@ -44,6 +45,7 @@ public class InvoiceController {
     private final AuthService authService;
     private final org.example.doansummer2026.service.PayOSService payOSService;
     private final org.example.doansummer2026.service.FamilyAccessService familyAccessService;
+    private final org.example.doansummer2026.service.StaffDutyService staffDutyService;
 
     // --- MAIN ENDPOINTS ---
 
@@ -70,6 +72,7 @@ public class InvoiceController {
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "Invoice")
     public ResponseEntity<InvoiceResponse> create(@Valid @RequestBody InvoiceCreateRequest req) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         UUID issuedById = authService.currentStaffId();
         InvoiceResponse created = service.create(new InvoiceCreateRequest(
                 req.customerId(), req.visitId(), req.medicalRecordId(), req.dueDate(),
@@ -82,6 +85,7 @@ public class InvoiceController {
     @Auditable(action = AuditAction.UPDATE, entityName = "Invoice", idParamName = "id")
     public ResponseEntity<InvoiceResponse> update(@PathVariable UUID id,
                                                     @Valid @RequestBody InvoiceUpdateRequest req) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         return RestResponses.ok(service.update(id, req));
     }
 
@@ -91,6 +95,7 @@ public class InvoiceController {
     public ResponseEntity<InvoiceResponse> applyInsurance(
             @PathVariable UUID id,
             @Valid @RequestBody InvoiceInsuranceRequest req) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         return RestResponses.ok(service.applyInsurance(id, req));
     }
 
@@ -98,6 +103,7 @@ public class InvoiceController {
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Invoice", idParamName = "id")
     public ResponseEntity<InvoiceResponse> issue(@PathVariable UUID id) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         return RestResponses.ok(service.issue(id));
     }
 
@@ -105,6 +111,7 @@ public class InvoiceController {
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "Invoice", idParamName = "id")
     public ResponseEntity<InvoiceResponse> cancel(@PathVariable UUID id) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         return RestResponses.ok(service.cancel(id));
     }
 
@@ -112,6 +119,7 @@ public class InvoiceController {
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.PAYMENT_CONFIRMED, entityName = "Invoice", idParamName = "id", description = "Xác nhận thanh toán hóa đơn")
     public ResponseEntity<InvoiceResponse> pay(@PathVariable UUID id) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         return RestResponses.ok(service.pay(id, authService.currentStaffId()));
     }
 
@@ -122,6 +130,7 @@ public class InvoiceController {
     @Auditable(action = AuditAction.PAYMENT_CONFIRMED, entityName = "Invoice", idParamName = "id", description = "Khởi tạo thanh toán PayOS")
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<?> payosMock(@PathVariable UUID id) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         return RestResponses.ok(payOSService.createPaymentLink(id));
     }
 
@@ -135,6 +144,7 @@ public class InvoiceController {
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.DELETE, entityName = "Invoice", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         service.delete(id);
         return RestResponses.noContent();
     }

@@ -5,6 +5,7 @@ import org.example.doansummer2026.aop.Auditable;
 import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.dto.journey.QueueReturnRequestResponse;
 import org.example.doansummer2026.enums.AuditAction;
+import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.service.QueueReturnRequestService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,6 +25,7 @@ import java.util.UUID;
 public class QueueReturnRequestController {
 
     private final QueueReturnRequestService service;
+    private final org.example.doansummer2026.service.StaffDutyService staffDutyService;
 
     @GetMapping
     public ResponseEntity<List<QueueReturnRequestResponse>> pending() {
@@ -39,6 +41,7 @@ public class QueueReturnRequestController {
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket",
             idParamName = "queueTicketId", description = "Xác nhận bệnh nhân vắng đã quay lại quầy")
     public ResponseEntity<QueueReturnRequestResponse> confirm(@PathVariable UUID queueTicketId) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.RECEPTIONIST);
         return RestResponses.ok(service.confirm(queueTicketId));
     }
 
@@ -46,6 +49,7 @@ public class QueueReturnRequestController {
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket",
             idParamName = "queueTicketId", description = "Lễ tân đưa bệnh nhân vắng quay lại hàng chờ")
     public ResponseEntity<QueueReturnRequestResponse> restore(@PathVariable UUID queueTicketId) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.RECEPTIONIST);
         return RestResponses.ok(service.restore(queueTicketId));
     }
 }

@@ -747,12 +747,7 @@ class MedicalRecordServiceTest {
     }
 
     @Test
-    void pendingFollowUpsNormalizeSearchAndPreviousHistoryHandlesMissingPatient() {
-        PageRequest pageable = PageRequest.of(0, 10);
-        when(medicalRecordRepository.findPendingFollowUps("nguyen", pageable))
-                .thenReturn(new PageImpl<>(List.of()));
-        assertTrue(medicalRecordService.getPendingFollowUps("  NGUYEN ", pageable).content().isEmpty());
-
+    void previousHistoryHandlesMissingPatient() {
         MedicalRecord current = record(UUID.randomUUID());
         when(medicalRecordRepository.findById(current.getRecordId())).thenReturn(Optional.of(current));
         assertTrue(medicalRecordService.getPreviousHistoryForDoctor(current.getRecordId()).isEmpty());

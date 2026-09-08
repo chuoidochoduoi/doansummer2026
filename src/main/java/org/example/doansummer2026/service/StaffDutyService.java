@@ -3,6 +3,7 @@ package org.example.doansummer2026.service;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.enums.ScheduleStatus;
 import org.example.doansummer2026.enums.StaffCapabilityStatus;
+import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
@@ -48,6 +49,26 @@ public class StaffDutyService {
             throw new BadRequestException("Bạn không có lịch trực tại phòng trong ca hiện tại");
         }
         return staff;
+    }
+
+    /**
+     * Enforces the clinic roster for operational counter roles that are not
+     * attached to a treatment room. Administrators and clinic managers are
+     * deliberately left as audited emergency overrides.
+     */
+    @Transactional(readOnly = true)
+    public void requireCurrentStaffOnDuty(SystemRole roleToEnforce) {
+        UUID staffId = authService.currentStaffId();
+        if (staffId == null) return;
+        StaffInfo staff = staffRepository.findById(staffId)
+                .orElseThrow(() -> new ResourceNotFoundException("Nhân sự không tồn tại"));
+        if (staff.getSystemRole() == null
+                || staff.getSystemRole().normalized() != roleToEnforce.normalized()) {
+            return;
+        }
+        if (!isOnDuty(staff, LocalDateTime.now(CLINIC_ZONE))) {
+            throw new BadRequestException("Bạn hiện không trong ca trực nên không thể thực hiện thao tác này");
+        }
     }
 
     @Transactional(readOnly = true)

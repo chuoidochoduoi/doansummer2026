@@ -430,13 +430,7 @@ class ProfileServiceTest {
         when(
                 appointment.getScheduledAt()
         ).thenReturn(
-                LocalDateTime.of(
-                        2026,
-                        8,
-                        10,
-                        10,
-                        0
-                )
+                LocalDateTime.now().plusDays(1)
         );
 
         when(
@@ -521,7 +515,7 @@ class ProfileServiceTest {
         when(
                 appointment.getScheduledAt()
         ).thenReturn(
-                LocalDateTime.now()
+                LocalDateTime.now().plusDays(1)
         );
 
         when(
@@ -607,7 +601,7 @@ class ProfileServiceTest {
         when(
                 appointment.getScheduledAt()
         ).thenReturn(
-                LocalDateTime.now()
+                LocalDateTime.now().plusDays(1)
         );
 
         when(

@@ -6,6 +6,7 @@ import org.example.doansummer2026.aop.Auditable;
 import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.dto.membership.*;
 import org.example.doansummer2026.enums.AuditAction;
+import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.model.MembershipPolicy;
 import org.example.doansummer2026.service.AuthService;
 import org.example.doansummer2026.service.MembershipCardService;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 public class MembershipCardController {
     private final MembershipCardService service;
     private final AuthService authService;
+    private final org.example.doansummer2026.service.StaffDutyService staffDutyService;
 
     @PostMapping("/my/register")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
@@ -52,6 +54,7 @@ public class MembershipCardController {
     @Auditable(action = AuditAction.CREATE, entityName = "MembershipCard", idParamName = "cardCode", description = "Nạp tiền thẻ trả trước CareS")
     public ResponseEntity<MembershipTopUpResponse> topUp(@PathVariable String cardCode,
             @Valid @RequestBody MembershipTopUpRequest request) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         return RestResponses.ok(service.topUp(cardCode, request, authService.currentStaffId()));
     }
 
@@ -59,6 +62,7 @@ public class MembershipCardController {
     @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.PAYMENT_CONFIRMED, entityName = "MembershipCard", description = "Thanh toán hóa đơn bằng thẻ trả trước tại quầy")
     public ResponseEntity<?> payAtCounter(@Valid @RequestBody MembershipCounterPaymentRequest request) {
+        staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
         return RestResponses.ok(service.payAtCounter(request));
     }
 

@@ -33,6 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 import org.example.doansummer2026.model.TestRequest;
 
@@ -69,7 +71,14 @@ public class ProfileService implements ProfileServiceInterface {
                 .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ cá nhân không tồn tại"));
 
         // Lay appointments
-        List<Appointment> appointments = appointmentRepository.findByCustomerId(profile.getProfileId());
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        List<Appointment> appointments = appointmentRepository.findByCustomerId(profile.getProfileId()).stream()
+                .filter(a -> a.getScheduledAt() != null && !a.getScheduledAt().isBefore(now))
+                .filter(a -> a.getStatus() == org.example.doansummer2026.enums.AppointmentStatus.PENDING
+                        || a.getStatus() == org.example.doansummer2026.enums.AppointmentStatus.RESCHEDULED)
+                .sorted(Comparator.comparing(Appointment::getScheduledAt))
+                .limit(4)
+                .toList();
         List<ProfileCustomerResponse.AppointmentSummary> appointmentSummaries = appointments.stream()
                 .map(a -> {
                     // Appointment chưa gắn bác sĩ cho đến khi điều phối vào phòng.

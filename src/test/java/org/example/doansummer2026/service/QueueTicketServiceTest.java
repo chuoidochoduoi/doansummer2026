@@ -597,7 +597,6 @@ class QueueTicketServiceTest {
     // =========================================================
     // UPDATE
     // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void update_ShouldRejectInProgress_FromInvalidStatus() {
 
@@ -626,7 +625,6 @@ class QueueTicketServiceTest {
                 () -> queueTicketService.update(id, req)
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void update_ShouldRejectInProgress_WhenRoomAlreadyBusy() {
 
@@ -661,7 +659,6 @@ class QueueTicketServiceTest {
                 () -> queueTicketService.update(id, req)
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void update_ShouldSetCalledAt_WhenCalled() {
 
@@ -705,7 +702,6 @@ class QueueTicketServiceTest {
                 q.getCalledAt()
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void update_ShouldSetCompletedAt_WhenDone() {
 
@@ -775,7 +771,6 @@ class QueueTicketServiceTest {
                 () -> queueTicketService.call(id)
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void call_ShouldMoveWaitingToCalled() {
 
@@ -842,7 +837,6 @@ class QueueTicketServiceTest {
                 () -> queueTicketService.startExam(id)
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void startExam_ShouldReject_WhenDepartmentAlreadyHasPatient() {
 
@@ -871,7 +865,6 @@ class QueueTicketServiceTest {
                 () -> queueTicketService.startExam(id)
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void startExam_ShouldReject_WhenNoStaffIdInPrincipal() {
 
@@ -911,7 +904,6 @@ class QueueTicketServiceTest {
                 () -> queueTicketService.startExam(id)
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void startExam_ShouldRejectNurse_WhenNoHeadDoctor() {
 
@@ -946,7 +938,6 @@ class QueueTicketServiceTest {
                 () -> queueTicketService.startExam(id)
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void startExam_ShouldCreateRecordAndSetInProgress_ForDoctor() {
 
@@ -1023,7 +1014,6 @@ class QueueTicketServiceTest {
     // =========================================================
     // COMPLETE SIMPLE
     // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void complete_ShouldSetDoneAndActivateNext() {
 
@@ -1075,7 +1065,6 @@ class QueueTicketServiceTest {
     // =========================================================
     // SKIP / RETURN
     // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void skip_ShouldSetSkipped() {
 
@@ -1157,7 +1146,6 @@ class QueueTicketServiceTest {
                 () -> queueTicketService.returnToQueue(id)
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void returnToQueue_ShouldRestoreWaiting() {
 
@@ -1217,7 +1205,6 @@ class QueueTicketServiceTest {
                 () -> queueTicketService.delete(id)
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void delete_ShouldDeleteAndUpdateDepartment() {
 
@@ -1275,7 +1262,6 @@ class QueueTicketServiceTest {
     // =========================================================
     // WAITING BY DEPARTMENT - FOUR BRANCHES
     // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void getWaitingByDepartment_ShouldUseStatusAndDateQuery() {
 
@@ -1304,7 +1290,6 @@ class QueueTicketServiceTest {
                 )
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void getWaitingByDepartment_ShouldUseStatusOnlyQuery() {
 
@@ -1330,7 +1315,6 @@ class QueueTicketServiceTest {
                 )
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void getWaitingByDepartment_ShouldUsePrioritizedQuery_WhenDateSpecified() {
 
@@ -1359,7 +1343,6 @@ class QueueTicketServiceTest {
                 )
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void getWaitingByDepartment_ShouldUseStatusIn_WhenNoStatusOrDate() {
 
@@ -1530,7 +1513,6 @@ class QueueTicketServiceTest {
                 () -> queueTicketService.markTestDone(id)
         );
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void markTestDone_ShouldChangeWaitingForTestToTestDone() {
 
@@ -1568,7 +1550,6 @@ class QueueTicketServiceTest {
     // =========================================================
     // UPDATE DEPARTMENT STATUS INDIRECT COVERAGE
     // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void complete_ShouldSetDepartmentInSession_WhenActiveTicketsRemain() {
 
@@ -1612,7 +1593,6 @@ class QueueTicketServiceTest {
         verify(departmentRepo)
                 .save(dept);
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void complete_ShouldSetDepartmentAvailable_WhenNoActiveTicketsRemain() {
 
@@ -1656,7 +1636,6 @@ class QueueTicketServiceTest {
         verify(departmentRepo)
                 .save(dept);
     }
-
     // Legacy scenario no longer matches the current workflow.
     private void complete_ShouldNotChangeDepartment_WhenMaintenance() {
 
@@ -1704,7 +1683,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // SEARCH
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void search_ShouldReturnEmptyPage_WhenNoQueueTicketFound() {
 
@@ -1845,7 +1823,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // NOTIFY DOCTORS
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void notifyDoctors_ShouldCreateNotification_ForHeadDoctor() {
 
@@ -1932,8 +1909,6 @@ class QueueTicketServiceTest {
                         )
                 );
     }
-
-
     // Legacy scenario no longer matches the current workflow.
     private void notifyDoctors_ShouldUseGuestName_WhenVisitHasNoCustomer() {
 
@@ -2678,11 +2653,14 @@ class QueueTicketServiceTest {
                 .departmentType(DepartmentType.LABORATORY).status(DepartmentStatus.AVAILABLE).build();
         return QueueTicket.builder().ticketId(UUID.randomUUID())
                 .visit(CustomerVisit.builder().visitId(UUID.randomUUID()).build())
-                .department(room).status(status).workDate(LocalDate.now()).queueNumber(1).build();
+                .department(room).status(status)
+                .workDate(LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")))
+                .queueNumber(1).build();
     }
 
     private void stubOperationalTicket(QueueTicket ticket) {
         when(repo.findById(ticket.getTicketId())).thenReturn(Optional.of(ticket));
+        when(repo.findByIdForUpdate(ticket.getTicketId())).thenReturn(Optional.of(ticket));
         when(departmentRepo.findById(ticket.getDepartment().getDepartmentId()))
                 .thenReturn(Optional.of(ticket.getDepartment()));
         when(repo.save(any(QueueTicket.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -2745,7 +2723,7 @@ class QueueTicketServiceTest {
         assertThrows(BadRequestException.class, () -> queueTicketService.startExam(invalid.getTicketId()));
 
         QueueTicket noRoom = QueueTicket.builder().ticketId(UUID.randomUUID()).status(QueueStatus.CALLED)
-                .workDate(LocalDate.now()).build();
+                .workDate(LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"))).build();
         when(repo.findById(noRoom.getTicketId())).thenReturn(Optional.of(noRoom));
         assertThrows(BadRequestException.class, () -> queueTicketService.startExam(noRoom.getTicketId()));
     }
@@ -2946,7 +2924,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // COMPLETE AND RETURN RECORD - USER NOT DOCTOR/OWNER
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldReject_WhenCurrentUserIsNotRecordDoctor() {
 
@@ -2993,7 +2970,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // COMPLETE AND RETURN RECORD - ADMIN CAN COMPLETE
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldAllowAdmin() {
 
@@ -3076,7 +3052,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // COMPLETE - VERSION CONFLICT
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldThrowConflict_WhenVersionMismatch() {
 
@@ -3128,7 +3103,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // COMPLETE - UNPAID INVOICE
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldReject_WhenPendingInvoiceExists() {
 
@@ -3178,7 +3152,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // COMPLETE - NO DIAGNOSIS / CONCLUSION / ICD
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldReject_WhenNoDiagnosisConclusionOrIcd() {
 
@@ -3223,7 +3196,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // COMPLETE - SUCCESS WITH DIAGNOSIS
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldCompleteRecordAndQueue_WhenNoTests() {
 
@@ -3318,7 +3290,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // COMPLETE - HAS TEST REQUEST BUT NO DOCTOR
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldRejectTestCreation_WhenDoctorMissing() {
 
@@ -3440,7 +3411,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // COMPLETE - TEST REQUEST -> CREATE INVOICE
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldCreateInvoiceAndWaitForTests() {
 
@@ -3822,7 +3792,6 @@ class QueueTicketServiceTest {
 // UPDATE MEDICAL RECORD FIELDS
 // test thông qua completeAndReturnRecord(req)
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldUpdateBasicMedicalRecordFields() {
 
@@ -3906,7 +3875,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // UPDATE MEDICAL RECORD - PRESCRIPTION
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldReplacePrescriptionItems() {
 
@@ -4005,7 +3973,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // UPDATE MEDICAL RECORD - ICD WITH NAME PROVIDED
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldAddIcd_WhenCodeNameProvided() {
 
@@ -4095,7 +4062,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // ICD LOOKUP FALLBACK
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldLookupIcdName_WhenCodeNameMissing() {
 
@@ -4187,7 +4153,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // VITAL SIGNS - CREATE NEW
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldCreateVitalSigns_WhenMissing() {
 
@@ -4267,7 +4232,6 @@ class QueueTicketServiceTest {
 // =========================================================
 // VITAL SIGNS - UPDATE EXISTING
 // =========================================================
-
     // Legacy scenario no longer matches the current workflow.
     private void completeAndReturnRecord_ShouldUpdateExistingVitalSigns() {
 

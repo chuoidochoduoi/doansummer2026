@@ -1,5 +1,6 @@
 package org.example.doansummer2026.dto.journey;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -8,6 +9,10 @@ public record QueueReturnRequestResponse(
         UUID visitId,
         String visitCode,
         String patientName,
+        String patientCode,
+        String phone,
+        LocalDate dateOfBirth,
+        Integer age,
         String roomName,
         String roomCode,
         Integer queueNumber,
