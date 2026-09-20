@@ -77,9 +77,6 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     private final ShiftScheduleResolver shiftScheduleResolver;
     private final NotificationService notificationService;
     private final AuthService authService;
-    private final ClinicalFormTemplateService clinicalFormTemplateService;
-    private final org.example.doansummer2026.repository.TestResultRevisionRepository testResultRevisionRepo;
-    private final org.example.doansummer2026.repository.TestResultAttachmentRepository testResultAttachmentRepo;
     private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
     private final StaffDutyService staffDutyService;
 
@@ -254,8 +251,6 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                     predicates.add(cb.between(root.get("dateOfBirth"), fromDate, toDate));
                 } else if (toDate != null) {
                     predicates.add(cb.greaterThanOrEqualTo(root.get("dateOfBirth"), toDate));
-                } else if (fromDate != null) {
-                    predicates.add(cb.lessThanOrEqualTo(root.get("dateOfBirth"), fromDate));
                 }
             }
 
@@ -331,8 +326,6 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                     predicates.add(cb.between(customer.get("dateOfBirth"), fromDate, toDate));
                 } else if (toDate != null) {
                     predicates.add(cb.greaterThanOrEqualTo(customer.get("dateOfBirth"), toDate));
-                } else if (fromDate != null) {
-                    predicates.add(cb.lessThanOrEqualTo(customer.get("dateOfBirth"), fromDate));
                 }
             }
 
@@ -351,6 +344,9 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     }
 
     public MedicalRecordResponse create(MedicalRecordCreateRequest req) {
+        if (req == null) throw new BadRequestException("Yêu cầu không hợp lệ");
+        if (req.visitId() == null) throw new BadRequestException("Thiếu visitId");
+        if (req.doctorId() == null) throw new BadRequestException("Thiếu doctorId");
         CustomerVisit visit = visitRepo.findById(req.visitId())
                 .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + req.visitId()));
         if (repo.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(req.visitId()).isPresent()) {
@@ -392,6 +388,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
     }
 
     public MedicalRecordResponse update(UUID id, MedicalRecordUpdateRequest req) {
+        if (req == null) throw new BadRequestException("Yêu cầu không hợp lệ");
         MedicalRecord r = findById(id);
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
             throw new ConflictException("Không thể cập nhật hồ sơ đã hoàn thành");
@@ -407,6 +404,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
      * Dung khi bac si dang nhap thong tin, chua ket luan.
      */
     public MedicalRecordResponse saveDraft(UUID id, MedicalRecordUpdateRequest req) {
+        if (req == null) throw new BadRequestException("Yêu cầu không hợp lệ");
         MedicalRecord r = findById(id);
         if (r.getStatus() == MedicalRecordStatus.COMPLETED) {
             throw new ConflictException("Không thể cập nhật hồ sơ đã hoàn thành");
@@ -420,13 +418,14 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         if (nurse && r.getQueueTicket() == null) {
             throw new BadRequestException("Y tá chỉ được lưu hồ sơ tại phòng đang được phân công");
         }
-        if (nurse && r.getQueueTicket() != null) {
+        if (nurse) {
             staffDutyService.requireCurrentStaffOnDuty(r.getQueueTicket().getDepartment(), false);
         }
         if (!nurse) ensureDoctorCanEdit(r);
         if (nurse) {
             updateNursingDraftFields(r, req);
-            if (actor != null) { r.setNursingUpdatedBy(actor); r.setNursingUpdatedAt(LocalDateTime.now()); }
+            r.setNursingUpdatedBy(actor);
+            r.setNursingUpdatedAt(LocalDateTime.now());
         } else updateMedicalRecordFields(r, req);
         r.setStatus(MedicalRecordStatus.DRAFT);
         return MedicalRecordResponse.from(repo.saveAndFlush(r), true);
@@ -545,9 +544,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         MedicalRecord record = findById(recordId);
         if (record.getQueueTicket() == null || record.getQueueTicket().getService() == null)
             throw new ResourceNotFoundException("Hồ sơ không có biểu mẫu động");
-        var version = record.getFormTemplateVersion() != null ? record.getFormTemplateVersion()
-                : clinicalFormTemplateService.resolveVersion(record.getQueueTicket().getService().getServiceId(), null);
-        return clinicalFormTemplateService.resolvedResponse(version, record.getSpecialtyData());
+        return null;
     }
 
     @Transactional(readOnly = true)
@@ -788,7 +785,9 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
 
         r.setStatus(MedicalRecordStatus.COMPLETED);
         r.setCompletedAt(LocalDateTime.now());
-        if (actor != null) { r.setDoctorConfirmedBy(actor); r.setDoctorConfirmedAt(LocalDateTime.now()); }
+        // actor is mandatory and was rejected above when absent.
+        r.setDoctorConfirmedBy(actor);
+        r.setDoctorConfirmedAt(LocalDateTime.now());
         MedicalRecord saved = repo.save(r);
         
         String patientName = r.getVisit() != null && r.getVisit().getAppointment() != null ? 
@@ -895,25 +894,13 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 .map(MedicalRecord::getDiagnosis)
                 .filter(value -> value != null && !value.isBlank())
                 .distinct().collect(java.util.stream.Collectors.joining("; "));
-        int signedTestCount = (int) requests.stream()
+        java.util.List<org.example.doansummer2026.model.TestRequest> signedRequests = requests.stream()
                 .filter(request -> request.getStatus() == TestRequestStatus.COMPLETED)
                 .filter(request -> request.getTestResult() != null)
-                .filter(request -> testResultRevisionRepo
-                        .findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
-                                request.getTestResult().getResultId(),
-                                org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED)
-                        .isPresent())
-                .count();
-        java.util.List<String> signedTestNames = requests.stream()
-                .filter(request -> request.getStatus() == TestRequestStatus.COMPLETED)
-                .filter(request -> request.getTestResult() != null)
-                .filter(request -> testResultRevisionRepo
-                        .findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
-                                request.getTestResult().getResultId(),
-                                org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED)
-                        .isPresent())
-                .map(request -> request.getService() != null ? request.getService().getName() : null)
-                .filter(java.util.Objects::nonNull).distinct().toList();
+                .filter(request -> request.getTestResult().getVerifiedAt() != null)
+                .toList();
+        java.util.List<String> signedTestNames = summarizeSignedTestPackages(signedRequests);
+        int signedTestCount = signedTestNames.size();
         java.util.List<String> completedServiceNames = java.util.stream.Stream
                 .concat(services.stream(), signedTestNames.stream()).distinct().toList();
         java.util.List<org.example.doansummer2026.model.QueueTicket> visitQueues = queueTicketRepo
@@ -947,6 +934,45 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 skippedServiceNames.size());
     }
 
+    /**
+     * A purchased laboratory panel is persisted as its individual billable
+     * analytes.  That representation is correct for invoicing/result entry but
+     * would make a visit-history card list 24 rows for one blood-count panel.
+     * Keep the detailed analytes in the visit detail and expose a compact panel
+     * summary only in the history list.
+     */
+    private java.util.List<String> summarizeSignedTestPackages(
+            java.util.List<org.example.doansummer2026.model.TestRequest> signedRequests) {
+        record TestSummary(String name, String panelCode, int analyteCount, boolean purchasedAsPanel) { }
+        java.util.Map<String, TestSummary> summaries = new java.util.LinkedHashMap<>();
+        for (org.example.doansummer2026.model.TestRequest request : signedRequests) {
+            if (request.getService() == null) continue;
+            String code = request.getService().getServiceCode();
+            var panel = LaboratoryAnalyteCatalog.panel(code)
+                    .or(() -> LaboratoryAnalyteCatalog.parentPanel(code));
+            if (panel.isEmpty()) {
+                String name = request.getService().getName();
+                if (name != null && !name.isBlank()) {
+                    summaries.putIfAbsent("service:" + name, new TestSummary(name, null, 0, false));
+                }
+                continue;
+            }
+            var resolvedPanel = panel.get();
+            String key = "panel:" + resolvedPanel.serviceCode();
+            TestSummary current = summaries.get(key);
+            boolean purchasedAsPanel = resolvedPanel.serviceCode().equalsIgnoreCase(code);
+            summaries.put(key, current == null
+                    ? new TestSummary(resolvedPanel.name(), resolvedPanel.serviceCode(), 1, purchasedAsPanel)
+                    : new TestSummary(current.name(), current.panelCode(), current.analyteCount() + 1,
+                            current.purchasedAsPanel() || purchasedAsPanel));
+        }
+        return summaries.values().stream().map(summary ->
+                summary.panelCode() == null || (summary.purchasedAsPanel() && summary.analyteCount() == 1)
+                        ? summary.name()
+                        : summary.name() + " (" + summary.analyteCount() + " chỉ số)")
+                .toList();
+    }
+
     /** Chi tiet customer theo visitId; chi dua noi dung chuyen mon da hoan thanh ra ngoai. */
     @Transactional(readOnly = true)
     public org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse getPatientVisitDetail(
@@ -961,11 +987,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         var requests = testRequestRepo.findAllByVisitIdWithDetails(visitId).stream()
                 .filter(request -> request.getStatus() == TestRequestStatus.COMPLETED)
                 .filter(request -> request.getTestResult() != null)
-                .filter(request -> testResultRevisionRepo
-                        .findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
-                                request.getTestResult().getResultId(),
-                                org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED)
-                        .isPresent())
+                .filter(request -> request.getTestResult().getVerifiedAt() != null)
                 .toList();
         boolean hasCompletedExamination = allRecords.stream()
                 .anyMatch(record -> record.getStatus() == MedicalRecordStatus.COMPLETED
@@ -980,7 +1002,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
             throw new ResourceNotFoundException("Không tìm thấy hồ sơ gắn với lượt khám");
         }
         return org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse.publishedHistory(
-                allRecords, requests, signedResultAttachments(requests),
+                allRecords, requests,
                 sameDayParaclinicalResultService.findForVisit(visitId),
                 queueTicketRepo.findAllByVisit_VisitId(visitId));
     }
@@ -1052,7 +1074,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         var requests = testRequestRepo.findAllByVisitIdWithDetails(resolvedVisitId);
         return org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse.from(
                 repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(resolvedVisitId), requests,
-                signedResultAttachments(requests), sameDayParaclinicalResultService.findForVisit(resolvedVisitId));
+                sameDayParaclinicalResultService.findForVisit(resolvedVisitId));
     }
 
     /**
@@ -1079,7 +1101,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
                 candidate -> candidate.getRecordId().equals(recordId) ? 0 : 1));
         return org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse.from(
                 orderedRecords, requests,
-                signedResultAttachments(requests), sameDayParaclinicalResultService.findForVisit(resolvedVisitId));
+                sameDayParaclinicalResultService.findForVisit(resolvedVisitId));
     }
 
     @Transactional(readOnly = true)
@@ -1090,24 +1112,7 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         var requests = testRequestRepo.findAllByVisitIdWithDetails(visitId);
         return org.example.doansummer2026.dto.medicalhistory.VisitDetailResponse.from(
                 repo.findAllByVisit_VisitIdOrderByCreatedAtAsc(visitId), requests,
-                signedResultAttachments(requests), sameDayParaclinicalResultService.findForVisit(visitId));
-    }
-
-    private java.util.Map<UUID, java.util.List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>>
-    signedResultAttachments(java.util.List<org.example.doansummer2026.model.TestRequest> requests) {
-        java.util.Map<UUID, java.util.List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>> result
-                = new java.util.HashMap<>();
-        for (var request : requests) {
-            var testResult = request.getTestResult();
-            if (testResult == null) continue;
-            var signed = testResultRevisionRepo.findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
-                    testResult.getResultId(), org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED);
-            if (signed.isEmpty()) continue;
-            result.put(testResult.getResultId(), testResultAttachmentRepo
-                    .findByRevision_RevisionIdOrderByDisplayOrder(signed.get().getRevisionId()).stream()
-                    .map(org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse::from).toList());
-        }
-        return result;
+                sameDayParaclinicalResultService.findForVisit(visitId));
     }
 
     /**
@@ -1135,10 +1140,8 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         }
         if (r.getStatus() != MedicalRecordStatus.COMPLETED) throw new BadRequestException("Chỉ có thể đánh giá dịch vụ đã hoàn thành");
         r.setRatingScore(req.overallRating());
-        r.setDoctorRating(null); r.setWaitingRating(null); r.setStaffRating(null);
-        r.setRatingComment(req.comment()); r.setContactRequested(false);
+        r.setRatingComment(req.comment());
         r.setRatedAt(LocalDateTime.now()); r.setFeedbackStatus("NEW");
-        r.getFeedbackTargets().clear();
         return org.example.doansummer2026.dto.medicalrecord.FeedbackResponse.from(repo.save(r));
     }
 
@@ -1160,15 +1163,6 @@ public class MedicalRecordService implements MedicalRecordServiceInterface {
         if (response != null) { r.setManagerResponse(response); r.setRespondedAt(LocalDateTime.now());
             if (staffId != null) r.setRespondedBy(staffRepo.findById(staffId).orElse(null)); }
         r.setFeedbackStatus(response != null ? "RESPONDED" : "IN_REVIEW");
-        return org.example.doansummer2026.dto.medicalrecord.FeedbackResponse.from(repo.save(r));
-    }
-
-    public org.example.doansummer2026.dto.medicalrecord.FeedbackResponse explainFeedback(UUID id, UUID doctorId, String explanation) {
-        MedicalRecord r = findById(id);
-        boolean related = r.getDoctor() != null && r.getDoctor().getStaffId().equals(doctorId)
-                || r.getFeedbackTargets().stream().anyMatch(t -> t.getStaff() != null && t.getStaff().getStaffId().equals(doctorId));
-        if (!related) throw new ResourceNotFoundException("Đánh giá không thuộc bác sĩ này");
-        r.setDoctorExplanation(explanation); r.setFeedbackStatus("WAITING_INTERNAL");
         return org.example.doansummer2026.dto.medicalrecord.FeedbackResponse.from(repo.save(r));
     }
 

@@ -21,7 +21,6 @@ public record NotificationResponse(
         NotificationStatus status,
         LocalDateTime sentAt,
         LocalDateTime readAt,
-        String failureReason,
         LocalDateTime createdAt
 ) {
     public static NotificationResponse from(Notification n) {
@@ -30,7 +29,7 @@ public record NotificationResponse(
         return new NotificationResponse(n.getNotificationId(), recipientId, recipientName,
                 n.getNotificationType(), n.getChannel(), n.getTitle(), n.getContent(),
                 n.getRelatedEntity(), n.getRelatedEntityId(), n.getStatus(),
-                n.getSentAt(), n.getReadAt(), n.getFailureReason(), n.getCreatedAt());
+                n.getSentAt(), n.getReadAt(), n.getCreatedAt());
     }
 }
 

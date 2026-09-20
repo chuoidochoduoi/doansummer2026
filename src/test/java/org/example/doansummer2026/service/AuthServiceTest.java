@@ -399,4 +399,20 @@ class AuthServiceTest {
         assertTrue(error.getMessage().startsWith("Số điện thoại"));
         verifyNoInteractions(otp, accounts, jwt);
     }
+
+    @Test
+    void phoneNormalizationAndVariantsCoverDomesticInternationalAndInvalidInputs() {
+        assertEquals("", ReflectionTestUtils.invokeMethod(service, "normalizePhone", (Object) null));
+        assertEquals("", ReflectionTestUtils.invokeMethod(service, "normalizePhone", "  "));
+        assertEquals("0912345678", ReflectionTestUtils.invokeMethod(service, "normalizePhone", "+84 912-345-678"));
+        assertEquals("0912345678", ReflectionTestUtils.invokeMethod(service, "normalizePhone", "0912.345.678"));
+
+        assertEquals(Set.of(), ReflectionTestUtils.invokeMethod(service, "phoneVariants", (Object) null));
+        assertEquals(Set.of(), ReflectionTestUtils.invokeMethod(service, "phoneVariants", "  "));
+        assertEquals(Set.of("0912345678", "84912345678", "+84912345678"),
+                ReflectionTestUtils.invokeMethod(service, "phoneVariants", "0912345678"));
+        assertEquals(Set.of("+84 912-345-678", "0912345678", "84912345678", "+84912345678"),
+                ReflectionTestUtils.invokeMethod(service, "phoneVariants", "+84 912-345-678"));
+        assertEquals(Set.of("123"), ReflectionTestUtils.invokeMethod(service, "phoneVariants", "123"));
+    }
 }

@@ -98,8 +98,6 @@ public class Notification extends BaseEntity {
     @Column(name = "read_at")
     private LocalDateTime readAt;
 
-    @Column(name = "failure_reason", length = 500)
-    private String failureReason;
 }
 
 

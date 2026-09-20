@@ -9,27 +9,22 @@ import org.example.doansummer2026.enums.ShiftTimeSource;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
-import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.model.Appointment;
 import org.example.doansummer2026.model.ClinicScheduleException;
 import org.example.doansummer2026.model.MedicalService;
 import org.example.doansummer2026.model.ShiftConfig;
 import org.example.doansummer2026.model.ShiftVersion;
 import org.example.doansummer2026.model.StaffSchedule;
-import org.example.doansummer2026.repository.AccountRepository;
 import org.example.doansummer2026.repository.AppointmentRepository;
 import org.example.doansummer2026.repository.ClinicScheduleExceptionRepository;
 import org.example.doansummer2026.repository.ShiftConfigRepository;
 import org.example.doansummer2026.repository.ShiftVersionRepository;
 import org.example.doansummer2026.repository.StaffScheduleRepository;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -53,14 +48,8 @@ class ClinicScheduleManagementServiceTest {
     @Mock ClinicScheduleExceptionRepository exceptionRepository;
     @Mock StaffScheduleRepository scheduleRepository;
     @Mock AppointmentRepository appointmentRepository;
-    @Mock AccountRepository accountRepository;
     @Mock ShiftScheduleResolver resolver;
     @InjectMocks ClinicScheduleManagementService service;
-
-    @AfterEach
-    void clearSecurityContext() {
-        SecurityContextHolder.clearContext();
-    }
 
     @Test
     void ensureInitialVersionsCreatesOnlyMissingFixedVersions() {
@@ -139,15 +128,11 @@ class ClinicScheduleManagementServiceTest {
     }
 
     @Test
-    void createVersionClosesLatestNormalizesReasonAndRecordsActor() {
+    void createVersionClosesLatestAndNormalizesReason() {
         LocalDate effective = future(10);
         ShiftConfig morning = shift(ShiftConfigService.MORNING, "00:00", "08:00");
         ShiftVersion latest = version(morning, effective.minusDays(30), null,
                 LocalTime.MIDNIGHT, LocalTime.of(8, 0));
-        UUID accountId = UUID.randomUUID();
-        authenticate("manager", true);
-        when(accountRepository.findFirstByUsername("manager"))
-                .thenReturn(Optional.of(Account.builder().accountId(accountId).username("manager").build()));
         when(shiftRepository.findById(morning.getShiftId())).thenReturn(Optional.of(morning));
         when(versionRepository.findAllByShiftForUpdate(morning.getShiftId())).thenReturn(List.of(latest));
         when(versionRepository.findAll()).thenReturn(List.of());
@@ -163,7 +148,6 @@ class ClinicScheduleManagementServiceTest {
         assertAll(
                 () -> assertEquals(effective.minusDays(1), latest.getEffectiveTo()),
                 () -> assertEquals("Điều chỉnh mùa hè", response.changeReason()),
-                () -> assertEquals(accountId, response.createdBy()),
                 () -> assertEquals(LocalTime.of(0, 30), response.startTime()));
     }
 
@@ -353,13 +337,6 @@ class ClinicScheduleManagementServiceTest {
 
         verify(exceptionRepository).delete(future);
         verify(exceptionRepository, never()).delete(past);
-    }
-
-    private void authenticate(String username, boolean authenticated) {
-        var token = mock(UsernamePasswordAuthenticationToken.class);
-        when(token.isAuthenticated()).thenReturn(authenticated);
-        when(token.getName()).thenReturn(username);
-        SecurityContextHolder.getContext().setAuthentication(token);
     }
 
     private LocalDate future(int days) {

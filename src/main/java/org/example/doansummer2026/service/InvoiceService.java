@@ -56,7 +56,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -556,13 +558,8 @@ public class InvoiceService implements InvoiceServiceInterface {
         // lap rong va thanh toan da PAID nhung khong sinh TestRequest nao.
         var workflowItems = new ArrayList<>(itemRepo.findAllWithServiceByInvoiceId(loaded.getInvoiceId()));
         if (workflowItems.isEmpty()) {
-            if (visitId != null) {
-                throw new BadRequestException("Hóa đơn của lượt khám chưa có dịch vụ. Vui lòng thêm dịch vụ trước khi thanh toán");
-            }
-            return;
-        }
-        if (visitId == null) {
-            throw new BadRequestException("Hóa đơn có dịch vụ nhưng chưa gắn với lượt khám; không thể tạo hàng chờ");
+            // visitId is mandatory for this workflow and was validated above.
+            throw new BadRequestException("Hóa đơn của lượt khám chưa có dịch vụ. Vui lòng thêm dịch vụ trước khi thanh toán");
         }
         workflowItems.sort(java.util.Comparator
                 // Neu mot luot co ca kham benh va CLS, benh nhan phai vao phong
@@ -575,6 +572,10 @@ public class InvoiceService implements InvoiceServiceInterface {
                         java.util.Comparator.nullsLast(String::compareTo))
                 .thenComparing((InvoiceItem item) -> item.getService() != null && item.getService().getResultWaitMinutes() != null ? item.getService().getResultWaitMinutes() : 0, java.util.Comparator.reverseOrder()));
         int dispatchedItemCount = 0;
+        // Mot luot co the co nhieu dich vu kham cua cung mot chuyen khoa.
+        // Chon phong mot lan tai day de cac benh an sau co the tiep noi cung
+        // phong, thay vi moi dich vu lai can bang tai doc lap.
+        Map<UUID, Department> examinationRoomsBySpecialization = new HashMap<>();
         for (InvoiceItem item : workflowItems) {
             MedicalService service = item.getService();
             // Hoa don cu co the chi luu snapshot. Van phai dieu phoi sau thanh toan
@@ -591,7 +592,8 @@ public class InvoiceService implements InvoiceServiceInterface {
 
             DepartmentType departmentType = service.getDepartmentType();
             if (departmentType == DepartmentType.EXAMINATION) {
-                Department performingRoom = selectExaminationRoom(service);
+                Department performingRoom = selectExaminationRoomForVisit(
+                        service, examinationRoomsBySpecialization);
                 boolean examinationQueueAlreadyExists = queueTicketRepo
                         .findTopByVisit_VisitIdAndService_ServiceIdOrderByCreatedAtDesc(
                                 visitId, service.getServiceId())
@@ -635,9 +637,6 @@ public class InvoiceService implements InvoiceServiceInterface {
                         + "' chưa có nhóm điều phối hợp lệ");
             }
         }
-        if (dispatchedItemCount == 0) {
-            throw new BadRequestException("Không có dịch vụ nào được điều phối sau thanh toán");
-        }
         // Tao xong toan bo phiếu cua hoa don moi mo buoc ke tiep. Neu mo trong
         // luc dang tao tung dong, mot phong CLS co the bi mo som trong khi phong
         // khac cua cung dot van chua duoc gan vao chuoi dieu phoi.
@@ -655,10 +654,7 @@ public class InvoiceService implements InvoiceServiceInterface {
      * cho dữ liệu dịch vụ cũ còn gắn phòng trực tiếp.
      */
     private Department selectExaminationRoom(MedicalService service) {
-        if (service.getDepartment() != null
-                && service.getDepartment().getDepartmentType() == DepartmentType.EXAMINATION
-                && service.getDepartment().getStatus() != DepartmentStatus.MAINTENANCE
-                && hasDoctorMember(service.getDepartment())) {
+        if (hasConfiguredExaminationRoom(service)) {
             return service.getDepartment();
         }
 
@@ -677,6 +673,39 @@ public class InvoiceService implements InvoiceServiceInterface {
                 .orElseThrow(() -> new BadRequestException("Chưa có phòng khám sẵn sàng "
                         + "cho chuyen khoa '" + service.getRequiredSpecialization().getName()
                         + "' cua dich vu '" + service.getName() + "'"));
+    }
+
+    /**
+     * Giu phong da chon trong pham vi mot luot + mot chuyen khoa. Phong gan
+     * truc tiep tren dich vu cu van uu tien; neu hai dich vu cu gan hai phong
+     * khac nhau, moi dich vu van dung phong da cau hinh va khong bi ep doi.
+     */
+    private Department selectExaminationRoomForVisit(
+            MedicalService service, Map<UUID, Department> roomsBySpecialization) {
+        if (hasConfiguredExaminationRoom(service)) {
+            Department configuredRoom = service.getDepartment();
+            if (service.getRequiredSpecialization() != null) {
+                roomsBySpecialization.putIfAbsent(
+                        service.getRequiredSpecialization().getSpecializationId(), configuredRoom);
+            }
+            return configuredRoom;
+        }
+
+        if (service.getRequiredSpecialization() == null) {
+            throw new BadRequestException("Dịch vụ khám bệnh '" + service.getName()
+                    + "' chưa được cấu hình chuyên khoa phục vụ");
+        }
+
+        UUID specializationId = service.getRequiredSpecialization().getSpecializationId();
+        return roomsBySpecialization.computeIfAbsent(specializationId,
+                ignored -> selectExaminationRoom(service));
+    }
+
+    private boolean hasConfiguredExaminationRoom(MedicalService service) {
+        return service.getDepartment() != null
+                && service.getDepartment().getDepartmentType() == DepartmentType.EXAMINATION
+                && service.getDepartment().getStatus() != DepartmentStatus.MAINTENANCE
+                && hasDoctorMember(service.getDepartment());
     }
 
     private boolean hasDoctorMember(Department department) {

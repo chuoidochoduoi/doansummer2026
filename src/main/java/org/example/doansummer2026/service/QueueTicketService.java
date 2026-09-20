@@ -171,7 +171,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         if (q.getVisit() != null && q.getVisit().getCustomer() != null) {
             patientName = q.getVisit().getCustomer().getFullName();
         }
-        String roomName = q.getDepartment() != null ? q.getDepartment().getName() : "";
+        String roomName = q.getDepartment().getName();
         String content = String.format("Có bệnh nhân mới (Tên: %s) xếp hàng chờ khám tại phòng %s", patientName, roomName);
         
         for (StaffInfo staff : staffDutyService.findOnDutyStaff(q.getDepartment(), LocalDateTime.now(CLINIC_ZONE))) {
@@ -326,10 +326,9 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         boolean waitingForNewTestInvoicePayment = false;
         // Tao TestRequest neu co trong payload (gop voi API hoan thien de tranh goi 2 lan)
         if (hasTestRequests) {
-            UUID doctorId = record.getDoctor() != null ? record.getDoctor().getStaffId() : null;
-            if (doctorId == null) {
-                throw new BadRequestException("Không thể tạo yêu cầu cận lâm sàng: không xác định được bác sĩ");
-            }
+            // responsibleDoctorId was validated together with the authenticated
+            // doctor above, so re-checking the same null state here was dead code.
+            UUID doctorId = responsibleDoctorId;
             
             java.util.List<UUID> requestedServiceIds = req.testRequests().stream()
                     .map(org.example.doansummer2026.dto.medicalrecord.TestRequestInExaminationRequest::serviceId)
@@ -338,11 +337,8 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 throw new ConflictException("Dịch vụ này đang bị chọn trùng trong chỉ định.");
             }
             java.util.Map<UUID, org.example.doansummer2026.dto.medicalrecord.TestRequestInExaminationRequest>
-                    requestByServiceId = req.testRequests().stream().collect(java.util.stream.Collectors.toMap(
-                    org.example.doansummer2026.dto.medicalrecord.TestRequestInExaminationRequest::serviceId,
-                    java.util.function.Function.identity(),
-                    (first, ignored) -> first,
-                    java.util.LinkedHashMap::new));
+                    requestByServiceId = new java.util.LinkedHashMap<>();
+            req.testRequests().forEach(item -> requestByServiceId.put(item.serviceId(), item));
             java.util.List<org.example.doansummer2026.model.MedicalService> normalizedServices =
                     serviceSelectionPolicyService.normalizeOrThrow(requestByServiceId.keySet());
             serviceSelectionPolicyService.validateAgainstExisting(
@@ -427,8 +423,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
 
             record.setStatus(MedicalRecordStatus.COMPLETED);
             record.setCompletedAt(LocalDateTime.now());
-            StaffInfo confirmer = completingStaffId != null
-                    ? staffRepo.findById(completingStaffId).orElse(null) : null;
+            StaffInfo confirmer = staffRepo.findById(completingStaffId).orElse(null);
             record.setDoctorConfirmedBy(confirmer);
             record.setDoctorConfirmedAt(LocalDateTime.now());
             recordRepo.save(record);
@@ -446,11 +441,10 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         }
         repo.save(q);
         QueueTicket nextTicket = null;
-        if (q.getStatus() == QueueStatus.DONE && continueInSameRoom) {
+        if (!shouldWaitForTests && continueInSameRoom) {
             nextTicket = continueNextSameRoomExamination(q, completingStaffId);
         }
-        if (nextTicket == null && (q.getStatus() == QueueStatus.DONE
-                || (shouldWaitForTests && !waitingForNewTestInvoicePayment))) {
+        if (nextTicket == null && (!shouldWaitForTests || !waitingForNewTestInvoicePayment)) {
             patientJourneyService.activateNext(q.getVisit().getVisitId());
         }
         updatePatientQueueDepartments(q);
@@ -692,7 +686,10 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 "Không được hoàn thành trực tiếp hàng chờ; hãy dùng thao tác hoàn thành khám hoặc kết thúc dịch vụ cận lâm sàng");
     }
 
-    /** Chỉ đóng lượt gọi CLS sau khi mọi dịch vụ trong cùng phiếu đã hoàn tất. */
+    /**
+     * Kết thúc thời gian người bệnh hiện diện tại phòng CLS. Với dịch vụ lấy mẫu,
+     * kết quả có thể tiếp tục được xử lý sau khi mẫu hợp lệ đã được thu nhận.
+     */
     public QueueTicketResponse finishParaclinicalQueue(UUID id) {
         QueueTicket q = findByIdForUpdate(id);
         ensureCurrentStaffCanOperate(q);
@@ -700,18 +697,38 @@ public class QueueTicketService implements QueueTicketServiceInterface {
                 || !q.getDepartment().getDepartmentType().isParaclinical()) {
             throw new BadRequestException("Thao tác này chỉ áp dụng cho phòng cận lâm sàng");
         }
+        if (q.getStatus() == QueueStatus.DONE) {
+            return toResponse(q);
+        }
         if (q.getStatus() != QueueStatus.IN_PROGRESS) {
             throw new BadRequestException("Chỉ có thể kết thúc khi bệnh nhân đang được thực hiện tại phòng");
         }
-        long incompleteServices = testRequestRepository == null ? 0
-                : testRequestRepository.countByQueueTicket_TicketIdAndStatusIn(
-                    q.getTicketId(), List.of(
-                            org.example.doansummer2026.enums.TestRequestStatus.PENDING,
-                            org.example.doansummer2026.enums.TestRequestStatus.IN_PROGRESS,
-                            org.example.doansummer2026.enums.TestRequestStatus.BLOCKED));
-        if (incompleteServices > 0) {
-            throw new ConflictException("Còn " + incompleteServices
-                    + " dịch vụ trong cùng lượt gọi chưa hoàn tất kết quả");
+        List<org.example.doansummer2026.model.TestRequest> activeRequests =
+                testRequestRepository.findAllByQueueTicket_TicketId(q.getTicketId()).stream()
+                .filter(request -> request.getStatus()
+                        != org.example.doansummer2026.enums.TestRequestStatus.CANCELLED)
+                .toList();
+        for (org.example.doansummer2026.model.TestRequest request : activeRequests) {
+            boolean requiresSpecimen = request.getService() != null
+                    && Boolean.TRUE.equals(request.getService().getRequiresSpecimen());
+            if (!requiresSpecimen) {
+                if (request.getStatus() != org.example.doansummer2026.enums.TestRequestStatus.COMPLETED
+                        && request.getTestResult() == null) {
+                    throw new ConflictException(
+                            "Vui lòng lưu thông tin thực hiện hoặc kết quả nháp trước khi cho bệnh nhân rời phòng");
+                }
+                continue;
+            }
+            var result = request.getTestResult();
+            boolean collected = result != null && result.getCollectedAt() != null
+                    && result.getSampleId() != null && !result.getSampleId().isBlank()
+                    && result.getSampleType() != null;
+            if (!collected) {
+                throw new ConflictException("Vui lòng lưu thông tin lấy mẫu trước khi cho bệnh nhân rời phòng");
+            }
+            if (result.getSampleStatus() != org.example.doansummer2026.enums.SpecimenStatus.ACCEPTED) {
+                throw new ConflictException("Mẫu chưa đạt yêu cầu hoặc đang cần lấy lại");
+            }
         }
         q.setStatus(QueueStatus.DONE);
         q.setCompletedAt(LocalDateTime.now());
@@ -740,12 +757,6 @@ public class QueueTicketService implements QueueTicketServiceInterface {
     public QueueTicketResponse returnToQueue(UUID id) {
         QueueTicket q = findByIdForUpdate(id);
         ensureCurrentStaffCanOperate(q);
-        return restoreSkippedTicket(q);
-    }
-
-    /** Lễ tân đã đối chiếu người bệnh có mặt trực tiếp tại quầy. */
-    public QueueTicketResponse confirmReturnToQueue(UUID id) {
-        QueueTicket q = findByIdForUpdate(id);
         return restoreSkippedTicket(q);
     }
 
@@ -847,7 +858,7 @@ public class QueueTicketService implements QueueTicketServiceInterface {
         return toResponse(ticket, recordId, null, medicalRecord);
     }
 
-    /** Lay hang cho theo bo xep hang chung: giu dau FIFO, uu tien quay lai, roi xen ke lich hen/khach thuong. */
+    /** Lấy hàng chờ theo bộ xếp hạng chung: ưu tiên quay lại, giữ đầu FIFO, rồi nhóm lịch hẹn trước khách thường. */
     @Transactional(readOnly = true)
     public PageResponse<QueueTicketResponse> getWaitingByDepartment(UUID departmentId, LocalDate workDate, QueueStatus status, Pageable pageable) {
         LocalDate effectiveDate = workDate != null ? workDate : LocalDate.now(CLINIC_ZONE);

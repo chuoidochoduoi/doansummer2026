@@ -3,21 +3,17 @@ package org.example.doansummer2026.service;
 import lombok.RequiredArgsConstructor;
 import org.example.doansummer2026.dto.medicalhistory.SameDayParaclinicalResultResponse;
 import org.example.doansummer2026.dto.medicalhistory.TestResponse;
-import org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse;
 import org.example.doansummer2026.enums.TestRequestStatus;
-import org.example.doansummer2026.enums.TestResultRevisionStatus;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.MedicalRecord;
 import org.example.doansummer2026.model.Profile;
 import org.example.doansummer2026.model.TestRequest;
-import org.example.doansummer2026.model.TestResultRevision;
+import org.example.doansummer2026.model.TestResult;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.MedicalRecordRepository;
 import org.example.doansummer2026.repository.ProfileRepository;
 import org.example.doansummer2026.repository.TestRequestRepository;
-import org.example.doansummer2026.repository.TestResultAttachmentRepository;
-import org.example.doansummer2026.repository.TestResultRevisionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -42,8 +38,6 @@ public class SameDayParaclinicalResultService {
     private final CustomerVisitRepository visitRepository;
     private final ProfileRepository profileRepository;
     private final TestRequestRepository testRequestRepository;
-    private final TestResultRevisionRepository revisionRepository;
-    private final TestResultAttachmentRepository attachmentRepository;
 
     public List<SameDayParaclinicalResultResponse> findForRecord(UUID recordId) {
         MedicalRecord record = recordRepository.findById(recordId)
@@ -104,20 +98,13 @@ public class SameDayParaclinicalResultService {
 
     private java.util.Optional<SameDayParaclinicalResultResponse> toResponse(TestRequest request) {
         var result = request.getTestResult();
-        TestResultRevision signed = revisionRepository
-                .findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
-                        result.getResultId(), TestResultRevisionStatus.SIGNED)
-                .orElse(null);
-        if (signed == null || signed.getSignedAt() == null) return java.util.Optional.empty();
+        if (result == null || result.getVerifiedAt() == null) return java.util.Optional.empty();
 
         MedicalRecord sourceRecord = request.getMedicalRecord();
         CustomerVisit sourceVisit = sourceRecord.getVisit();
         var sourceQueue = sourceRecord.getQueueTicket();
         var sourceDoctor = sourceRecord.getDoctor();
-        var verifier = signed.getSignedBy();
-        List<TestResultAttachmentResponse> attachments = attachmentRepository
-                .findByRevision_RevisionIdOrderByDisplayOrder(signed.getRevisionId()).stream()
-                .map(TestResultAttachmentResponse::from).toList();
+        var verifier = result.getVerifiedBy();
 
         return java.util.Optional.of(new SameDayParaclinicalResultResponse(
                 request.getTestRequestId(), result.getResultId(), request.getService().getServiceId(),
@@ -125,8 +112,10 @@ public class SameDayParaclinicalResultService {
                 request.getService().getDepartmentType(),
                 request.getPerformingDepartment() == null ? null : request.getPerformingDepartment().getDepartmentId(),
                 request.getPerformingDepartment() == null ? null : request.getPerformingDepartment().getName(),
-                signed.getResultData(), structuredResults(signed), signed.getConclusion(), attachments,
-                signed.getSignedAt(), verifier == null ? null : verifier.getStaffId(),
+                result.getResultData(), structuredResults(result), result.getConclusion(),
+                result.getImageUrl() == null || result.getImageUrl().isBlank()
+                        ? null : "/api/v1/test-results/" + result.getResultId() + "/file",
+                result.getVerifiedAt(), verifier == null ? null : verifier.getStaffId(),
                 verifier == null || verifier.getProfile() == null ? null : verifier.getProfile().getFullName(),
                 sourceVisit.getVisitId(), visitCode(sourceVisit.getVisitId()), sourceRecord.getRecordId(),
                 sourceRecord.getRecordCode(),
@@ -136,29 +125,8 @@ public class SameDayParaclinicalResultService {
                 true));
     }
 
-    private List<TestResponse.TestResultResponse> structuredResults(TestResultRevision revision) {
-        JsonNode data = revision.getResultData();
-        var version = revision.getTemplateVersion();
-        if (data == null || version == null || version.getSchemaJson() == null) return List.of();
-        JsonNode schema = version.getSchemaJson();
-        List<JsonNode> fields = new ArrayList<>();
-        if (schema.path("fields").isArray()) schema.path("fields").forEach(fields::add);
-        if (schema.path("sections").isArray()) schema.path("sections").forEach(section -> {
-            if (section.path("fields").isArray()) section.path("fields").forEach(fields::add);
-        });
-        JsonNode flags = data.path("_meta").path("flags");
-        return fields.stream().filter(field -> data.hasNonNull(field.path("key").asText()))
-                .map(field -> {
-                    String key = field.path("key").asText();
-                    JsonNode flag = flags.path(key);
-                    JsonNode range = flag.path("referenceRange");
-                    String rangeText = range.isObject()
-                            ? (range.has("low") ? range.path("low").asText() : "") + " - "
-                            + (range.has("high") ? range.path("high").asText() : "") : null;
-                    return new TestResponse.TestResultResponse(field.path("label").asText(key),
-                            data.path(key).asText(), rangeText, field.path("unit").asText(null),
-                            flag.path("status").asText("NOT_EVALUATED"));
-                }).toList();
+    private List<TestResponse.TestResultResponse> structuredResults(TestResult result) {
+        return List.of();
     }
 
     private String visitCode(UUID visitId) {

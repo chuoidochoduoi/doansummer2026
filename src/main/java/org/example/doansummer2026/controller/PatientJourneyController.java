@@ -5,10 +5,6 @@ import org.example.doansummer2026.common.RestResponses;
 import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.dto.journey.PatientJourneyResponse;
 import org.example.doansummer2026.service.PatientJourneyService;
-import org.example.doansummer2026.service.QueueReturnRequestService;
-import org.example.doansummer2026.dto.journey.GuestQueueReturnRequest;
-import org.example.doansummer2026.dto.journey.QueueReturnRequestResponse;
-import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,7 +18,6 @@ public class PatientJourneyController {
     private final PatientJourneyService service;
     private final org.example.doansummer2026.service.AuthService authService;
     private final org.example.doansummer2026.service.FamilyAccessService familyAccessService;
-    private final QueueReturnRequestService queueReturnRequestService;
     @GetMapping("/api/v1/patient-journeys")
     @PreAuthorize("hasAnyAuthority('ROLE_RECEPTIONIST','ROLE_CLINIC_MANAGER','ROLE_ADMIN','ROLE_DOCTOR','ROLE_NURSE')")
     public ResponseEntity<PageResponse<PatientJourneyResponse>> list(@RequestParam(required=false) String search,
@@ -69,13 +64,6 @@ public class PatientJourneyController {
         return RestResponses.ok(service.queueForCustomer(visitId, readableIds));
     }
 
-    @PostMapping("/api/patient/my-journeys/{visitId}/return-request")
-    @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
-    public ResponseEntity<QueueReturnRequestResponse> requestReturn(@PathVariable UUID visitId) {
-        return RestResponses.ok(queueReturnRequestService.requestForCustomer(
-                authService.currentAccount().getAccountId(), visitId));
-    }
-
     @GetMapping("/api/public/patient-journeys/lookup")
     public ResponseEntity<PatientJourneyResponse> lookupGuest(@RequestParam String visitCode,
                                                                @RequestParam String phone) {
@@ -90,10 +78,4 @@ public class PatientJourneyController {
                 .body(service.lookupGuestQueue(visitCode, phone));
     }
 
-    @PostMapping("/api/public/patient-journeys/return-request")
-    public ResponseEntity<QueueReturnRequestResponse> requestGuestReturn(
-            @Valid @RequestBody GuestQueueReturnRequest request) {
-        return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
-                .body(queueReturnRequestService.requestForGuest(request.visitCode(), request.phone()));
-    }
 }

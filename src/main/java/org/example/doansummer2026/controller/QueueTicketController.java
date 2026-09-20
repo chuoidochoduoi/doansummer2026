@@ -126,7 +126,7 @@ public class QueueTicketController {
     }
 
     @PostMapping("/api/v1/queue-tickets/{id}/return")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_NURSE','ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "QueueTicket", idParamName = "id", description = "Đưa bệnh nhân vắng quay lại hàng chờ")
     public ResponseEntity<QueueTicketResponse> returnToQueue(@PathVariable UUID id) {
         return RestResponses.ok(service.returnToQueue(id));

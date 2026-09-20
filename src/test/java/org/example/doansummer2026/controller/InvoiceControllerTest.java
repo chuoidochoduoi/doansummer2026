@@ -35,6 +35,7 @@ class InvoiceControllerTest {
     @Mock AuthService authService;
     @Mock PayOSService payOSService;
     @Mock FamilyAccessService familyAccessService;
+    @Mock StaffDutyService staffDutyService;
     @InjectMocks InvoiceController controller;
 
     private UUID accountId;

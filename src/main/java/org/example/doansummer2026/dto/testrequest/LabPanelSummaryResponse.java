@@ -23,5 +23,8 @@ public record LabPanelSummaryResponse(
         int purchasedCount,
         int totalAnalyteCount,
         int completedCount,
-        boolean grouped
+        boolean grouped,
+        boolean requiresSpecimen,
+        boolean specimenReadyForRelease,
+        boolean serviceReadyForRelease
 ) {}

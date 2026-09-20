@@ -74,6 +74,16 @@ class SpecializationServiceTest {
     }
 
     @Test
+    void createAcceptsExplicitActiveAndNullDescription() {
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = service.create(new SpecializationCreateRequest("Nhi khoa", null, true));
+
+        assertTrue(response.active());
+        assertNull(response.description());
+    }
+
+    @Test
     void createRejectsDuplicateName() {
         when(repository.existsByNameIgnoreCase("Nội khoa")).thenReturn(true);
 

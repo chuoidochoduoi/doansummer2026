@@ -3038,4 +3038,60 @@ class ProfileServiceTest {
                 )
         );
     }
+
+    @Test
+    void validateUpdatedProfileCoversEveryRequiredIdentityBoundary() {
+        LocalDate validDob = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).minusYears(20);
+        Profile candidate = Profile.builder().fullName(null).dateOfBirth(validDob)
+                .gender(Gender.MALE).phone("0900000000").build();
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "validateUpdatedProfile", candidate));
+        candidate.setFullName(" ");
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "validateUpdatedProfile", candidate));
+        candidate.setFullName("A");
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "validateUpdatedProfile", candidate));
+        candidate.setFullName("Nguyễn 2 An");
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "validateUpdatedProfile", candidate));
+
+        candidate.setFullName("Nguyễn An");
+        candidate.setDateOfBirth(null);
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "validateUpdatedProfile", candidate));
+        candidate.setDateOfBirth(LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")));
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "validateUpdatedProfile", candidate));
+        candidate.setDateOfBirth(validDob);
+        candidate.setGender(null);
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "validateUpdatedProfile", candidate));
+        candidate.setGender(Gender.OTHER);
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "validateUpdatedProfile", candidate));
+
+        candidate.setGender(Gender.FEMALE);
+        candidate.setPhone(" ");
+        candidate.setEmail(null);
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "validateUpdatedProfile", candidate));
+        candidate.setEmail("patient@example.com");
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "validateUpdatedProfile", candidate));
+    }
+
+    @Test
+    void blankAndEmailNormalizationCoverNullBlankTrimAndCase() {
+        assertNull(org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "blankToNull", new Object[]{null}));
+        assertNull(org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "blankToNull", "  "));
+        assertEquals("value", org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "blankToNull", " value "));
+        assertNull(org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "normalizeEmail", "  "));
+        assertEquals("user@example.com", org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                profileService, "normalizeEmail", " USER@EXAMPLE.COM "));
+    }
 }

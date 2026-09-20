@@ -130,29 +130,17 @@ class TestRequestControllerTest {
     }
 
     @Test
-    void resultRevisionAndClinicalFormEndpointsDelegate() {
+    void resultAndClinicalFormEndpointsDelegate() {
         UUID id = UUID.randomUUID();
-        UUID revisionId = UUID.randomUUID();
         TestResultResponse result = mock(TestResultResponse.class);
         lenient().when(result.resultId()).thenReturn(UUID.randomUUID());
         ResolvedClinicalFormResponse form = mock(ResolvedClinicalFormResponse.class);
-        TestResultRevisionResponse revision = mock(TestResultRevisionResponse.class);
         when(service.getResult(id)).thenReturn(result);
         when(service.getClinicalForm(id)).thenReturn(form);
-        when(service.resultHistory(id)).thenReturn(List.of(revision));
         assertSame(result, controller.getResult(id).getBody());
         assertSame(form, controller.getClinicalForm(id).getBody());
-        assertEquals(1, controller.resultHistory(id).getBody().size());
 
-        TestResultAmendRequest amend = mock(TestResultAmendRequest.class);
         TestResultUpdateRequest update = mock(TestResultUpdateRequest.class);
-        when(service.amendResult(id, amend)).thenReturn(revision);
-        when(service.updateAmendment(id, revisionId, update)).thenReturn(revision);
-        when(service.signAmendment(id, revisionId)).thenReturn(revision);
-        assertSame(revision, controller.amendResult(id, amend).getBody());
-        assertSame(revision, controller.updateAmendment(id, revisionId, update).getBody());
-        assertSame(revision, controller.signAmendment(id, revisionId).getBody());
-
         TestResultCreateRequest create = mock(TestResultCreateRequest.class);
         when(service.createResult(id, create)).thenReturn(result);
         when(service.completeResult(id, create)).thenReturn(result);
@@ -163,20 +151,12 @@ class TestRequestControllerTest {
     }
 
     @Test
-    void uploadAndAttachmentEndpointsDelegate() throws Exception {
+    void uploadEndpointDelegates() throws Exception {
         UUID id = UUID.randomUUID();
-        UUID revisionId = UUID.randomUUID();
         MockMultipartFile file = new MockMultipartFile("file", "result.pdf", "application/pdf", new byte[]{1});
         when(service.uploadResultFile(id, file)).thenReturn("/test-results/result.pdf");
         var upload = controller.uploadResult(id, file).getBody();
         assertEquals("/test-results/result.pdf", upload.get("imageUrl"));
         assertEquals("result.pdf", upload.get("fileName"));
-
-        List<org.springframework.web.multipart.MultipartFile> files = List.of(file);
-        TestResultAttachmentResponse attachment = mock(TestResultAttachmentResponse.class);
-        when(service.uploadAttachments(id, revisionId, files)).thenReturn(List.of(attachment));
-        when(service.listAttachments(id, revisionId)).thenReturn(List.of(attachment));
-        assertEquals(1, controller.uploadAttachments(id, revisionId, files).getBody().size());
-        assertEquals(1, controller.listAttachments(id, revisionId).getBody().size());
     }
 }

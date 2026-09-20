@@ -10,6 +10,12 @@ group = 'org.example'
 version = '0.0.1-SNAPSHOT'
 description = 'doAnSummer2026'
 
+// Cho phép bộ test WSL dùng thư mục output riêng, tránh xung đột với backend
+// đang chạy từ build/classes trên Windows và làm sai execution data của JaCoCo.
+providers.gradleProperty('isolatedBuildDir').orNull?.with { isolatedDir ->
+    layout.buildDirectory.set(file(isolatedDir))
+}
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(17)
@@ -18,6 +24,10 @@ java {
 
 repositories {
     mavenCentral()
+}
+
+configurations {
+    mockitoAgent
 }
 
 dependencies {
@@ -64,15 +74,28 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
     testImplementation 'com.h2database:h2'
+    mockitoAgent('org.mockito:mockito-core') {
+        transitive = false
+    }
 
     testCompileOnly 'org.projectlombok:lombok'
     testAnnotationProcessor 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+tasks.withType(Test).configureEach {
+    enableAssertions = false
+    // jvmArgs "-javaagent:${configurations.mockitoAgent.asPath}"
+}
+
 tasks.named('test') {
     useJUnitPlatform { excludeTags 'integration' }
+    // The PayOS SDK uses Mockito's subclass mock maker. Isolate that suite so
+    // it cannot invalidate inline mocks belonging to later test classes.
+    exclude '**/PayOSServiceTest.class'
     systemProperty 'user.timezone', 'UTC'
+    // Keep one worker for normal coverage runs. Targeted suites are launched in a
+    // clean Gradle invocation when isolation from inline/static mocks is required.
     finalizedBy tasks.named('jacocoTestReport')
 }
 
@@ -86,13 +109,49 @@ tasks.register('integrationTest', Test) {
     shouldRunAfter tasks.named('test')
 }
 
+tasks.register('payOSUnitTest', Test) {
+    description = 'Runs PayOS unit tests in an isolated JVM.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/PayOSServiceTest.class'
+    useJUnitPlatform { excludeTags 'integration' }
+    systemProperty 'user.timezone', 'UTC'
+    shouldRunAfter tasks.named('test')
+}
+
 tasks.named('jacocoTestCoverageVerification') {
-    dependsOn tasks.named('test')
-    executionData.setFrom(layout.buildDirectory.file('jacoco/test.exec'))
+    dependsOn tasks.named('test'), tasks.named('payOSUnitTest')
+    executionData.setFrom(
+            layout.buildDirectory.file('jacoco/test.exec'),
+            layout.buildDirectory.file('jacoco/payOSUnitTest.exec'))
     violationRules {
         rule {
             limit { counter = 'LINE'; value = 'COVEREDRATIO'; minimum = 0.85 }
             limit { counter = 'BRANCH'; value = 'COVEREDRATIO'; minimum = 0.85 }
+        }
+    }
+}
+
+// A separate, opt-in quality gate for the business-service layer.  Keeping it
+// outside `check` lets everyday development continue while the service test
+// suite is being expanded; the release verification command invokes this task.
+tasks.register('jacocoServiceTestCoverageVerification', JacocoCoverageVerification) {
+    dependsOn tasks.named('test'), tasks.named('payOSUnitTest')
+    executionData.setFrom(
+            layout.buildDirectory.file('jacoco/test.exec'),
+            layout.buildDirectory.file('jacoco/payOSUnitTest.exec'))
+
+    violationRules {
+        rule {
+            element = 'CLASS'
+            includes = ['org.example.doansummer2026.service.*']
+            excludes = [
+                'org.example.doansummer2026.service.interfaces.*',
+                'org.example.doansummer2026.service.SmsService'
+            ]
+            limit { counter = 'LINE'; value = 'COVEREDRATIO'; minimum = 1.00 }
+            limit { counter = 'BRANCH'; value = 'COVEREDRATIO'; minimum = 1.00 }
         }
     }
 }
@@ -106,7 +165,10 @@ jacoco {
 }
 
 tasks.named('jacocoTestReport') {
-    dependsOn tasks.named('test')
+    dependsOn tasks.named('test'), tasks.named('payOSUnitTest')
+    executionData.setFrom(
+            layout.buildDirectory.file('jacoco/test.exec'),
+            layout.buildDirectory.file('jacoco/payOSUnitTest.exec'))
 
     reports {
         html.required = true

@@ -101,8 +101,17 @@ class GlobalExceptionHandlerTest {
     @Test
     void constraintViolationUsesFirstMessageOrFallback() {
         @SuppressWarnings("unchecked")
-        ConstraintViolation<Object> violation = mock(ConstraintViolation.class);
-        when(violation.getMessage()).thenReturn("Giá trị vượt giới hạn");
+        ConstraintViolation<Object> violation = (ConstraintViolation<Object>) java.lang.reflect.Proxy.newProxyInstance(
+                ConstraintViolation.class.getClassLoader(),
+                new Class<?>[]{ConstraintViolation.class},
+                (proxy, method, args) -> {
+                    String name = method.getName();
+                    if ("getMessage".equals(name)) return "Giá trị vượt giới hạn";
+                    if ("hashCode".equals(name)) return 0;
+                    if ("equals".equals(name)) return proxy == args[0];
+                    if ("toString".equals(name)) return "Proxy";
+                    return null;
+                });
         assertResponse(handler.handleConstraintViolation(
                         new ConstraintViolationException(Set.of(violation)), request, response),
                 400, "Giá trị vượt giới hạn");

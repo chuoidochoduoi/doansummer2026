@@ -66,6 +66,29 @@ class ReportServiceTest {
     @InjectMocks
     private ReportService reportService;
 
+    @Test
+    void reportBoundaryHelpersCoverNullBeforeInsideAndAfterPeriod() throws Exception {
+        LocalDate from = LocalDate.of(2026, 1, 10);
+        LocalDate to = LocalDate.of(2026, 1, 20);
+        var dates = ReportService.class.getDeclaredMethod("inPeriod",
+                LocalDate.class, LocalDate.class, LocalDate.class);
+        var times = ReportService.class.getDeclaredMethod("inPeriod",
+                LocalDateTime.class, LocalDate.class, LocalDate.class);
+        var money = ReportService.class.getDeclaredMethod("money", BigDecimal.class);
+        dates.setAccessible(true);
+        times.setAccessible(true);
+        money.setAccessible(true);
+        assertFalse((boolean) dates.invoke(null, null, from, to));
+        assertFalse((boolean) dates.invoke(null, from.minusDays(1), from, to));
+        assertTrue((boolean) dates.invoke(null, from, from, to));
+        assertTrue((boolean) dates.invoke(null, to, from, to));
+        assertFalse((boolean) dates.invoke(null, to.plusDays(1), from, to));
+        assertFalse((boolean) times.invoke(null, null, from, to));
+        assertTrue((boolean) times.invoke(null, from.atStartOfDay(), from, to));
+        assertEquals(BigDecimal.ZERO, money.invoke(null, new Object[]{null}));
+        assertEquals(BigDecimal.TEN, money.invoke(null, BigDecimal.TEN));
+    }
+
 
     // =========================================================
     // HELPERS

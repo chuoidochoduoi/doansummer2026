@@ -1,6 +1,5 @@
 package org.example.doansummer2026.dto;
 
-import org.example.doansummer2026.dto.contact.ContactRequestResponse;
 import org.example.doansummer2026.dto.customervisit.CustomerVisitResponse;
 import org.example.doansummer2026.dto.department.DepartmentResponse;
 import org.example.doansummer2026.dto.invoice.PaymentHistoryResponse;
@@ -140,16 +139,7 @@ class ResponseMappingCoverageTest {
     }
 
     @Test
-    void contactAndDepartmentMappingsCoverOptionalStaffAndCoverageStates() {
-        ContactRequest contact = ContactRequest.builder().contactRequestId(UUID.randomUUID()).fullName("Nguyễn An")
-                .assignedStaff(null).build();
-        assertNull(ContactRequestResponse.from(contact).assignedStaffName());
-        StaffInfo assigned = StaffInfo.builder().staffId(UUID.randomUUID()).profile(null).build();
-        contact.setAssignedStaff(assigned);
-        assertNull(ContactRequestResponse.from(contact).assignedStaffName());
-        assigned.setProfile(Profile.builder().fullName("Lễ tân A").build());
-        assertEquals("Lễ tân A", ContactRequestResponse.from(contact).assignedStaffName());
-
+    void departmentMappingCoversCoverageStates() {
         StaffInfo doctor = staff(SystemRole.DOCTOR, "Bác sĩ A");
         StaffInfo nurse = staff(SystemRole.NURSE, "Điều dưỡng A");
         Department department = Department.builder().departmentId(UUID.randomUUID()).name("Phòng Nội")

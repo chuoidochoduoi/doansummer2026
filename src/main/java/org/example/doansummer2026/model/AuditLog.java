@@ -16,8 +16,6 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.SQLDelete;
-import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -40,8 +38,6 @@ import org.example.doansummer2026.enums.AuditAction;
                 @jakarta.persistence.Index(name = "idx_audit_actor", columnList = "actor_account_id"),
                 @jakarta.persistence.Index(name = "idx_audit_created_at", columnList = "created_at")
         })
-@SQLDelete(sql = "UPDATE audit_log SET deleted = true WHERE audit_id = ?")
-@SQLRestriction("deleted = false")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -92,9 +88,6 @@ public class AuditLog {
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    @Column(name = "deleted", nullable = false)
-    @Builder.Default
-    private Boolean deleted = false;
 }
 
 

@@ -28,7 +28,7 @@ public class EmailService {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
-            helper.setFrom(fromEmail, "OTP Service");
+            helper.setFrom(fromEmail, "Phòng khám CareS");
             helper.setTo(toEmail);
             helper.setSubject("Mã xác thực OTP của bạn");
 

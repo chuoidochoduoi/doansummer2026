@@ -32,7 +32,7 @@ public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UU
               AND (m.managerResponse IS NULL OR TRIM(m.managerResponse) = '')
             """)
     long countUnansweredFeedbacks();
-    @Query("SELECT DISTINCT m FROM MedicalRecord m LEFT JOIN m.feedbackTargets ft WHERE m.ratingScore IS NOT NULL AND (m.doctor.staffId = :doctorId OR ft.staff.staffId = :doctorId)")
+    @Query("SELECT m FROM MedicalRecord m WHERE m.ratingScore IS NOT NULL AND m.doctor.staffId = :doctorId")
     Page<MedicalRecord> findFeedbacksForStaff(@Param("doctorId") UUID doctorId, Pageable pageable);
     Optional<MedicalRecord> findByQueueTicket_TicketId(UUID ticketId);
 

@@ -22,7 +22,6 @@ public class PatientJourneyService {
     private final TestRequestRepository testRepo;
     private final InvoiceRepository invoiceRepo;
     private final MedicalRecordRepository recordRepo;
-    private final NotificationRepository notificationRepo;
     private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
     private final QueuePriorityService queuePriorityService;
 
@@ -365,20 +364,12 @@ public class PatientJourneyService {
     private PatientQueueResponse skippedQueue(UUID visitId, QueueTicket ticket) {
         LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
         boolean expired = ticket.getWorkDate() == null || ticket.getWorkDate().isBefore(today);
-        var requests = notificationRepo
-                .findAllByRelatedEntityAndRelatedEntityIdAndStatusOrderByCreatedAtAsc(
-                        QueueReturnRequestService.RELATED_ENTITY, ticket.getTicketId(),
-                        org.example.doansummer2026.enums.NotificationStatus.PENDING);
-        LocalDateTime requestedAt = requests.stream()
-                .map(item -> item.getSentAt() != null ? item.getSentAt() : item.getCreatedAt())
-                .filter(Objects::nonNull).min(LocalDateTime::compareTo).orElse(null);
-        String requestStatus = expired ? "EXPIRED" : requests.isEmpty() ? "NONE" : "PENDING";
         return new PatientQueueResponse(visitId,
                 ticket.getDepartment() != null ? ticket.getDepartment().getName() : null,
                 ticket.getDepartment() != null ? ticket.getDepartment().getRoomCode() : null,
                 ticket.getWorkDate(), QueueStatus.SKIPPED.name(), null, null,
                 ticket.getQueueNumber(), null, null, null,
-                !expired && requests.isEmpty(), requestStatus, requestedAt, List.of(), List.of());
+                false, expired ? "EXPIRED" : "NONE", null, List.of(), List.of());
     }
 
     private PatientJourneyResponse.Step physicalCurrent(List<PatientJourneyResponse.Step> steps) {
@@ -510,8 +501,17 @@ public class PatientJourneyService {
                         .filter(test -> !includedTestIds.contains(test.getTestRequestId()))
                         .sorted(Comparator.comparing(TestRequest::getCreatedAt,
                                 Comparator.nullsLast(Comparator.naturalOrder())))
-                        .toList();
+                        .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+                // Du lieu da tao truoc ban sua co the moi chi gan mot dich vu
+                // tra truoc vao benh an. Neu cac dich vu con lai cung thuoc hoa
+                // don ban dau da thanh toan, hien chung trong cung dot CLS dau
+                // ma khong thay doi cac lien ket lich su trong database.
+                carriedPrebookedTestsForLegacyCycle(legacyTests, invoices, journeyTests)
+                        .forEach(test -> {
+                            if (!legacyTests.contains(test)) legacyTests.add(test);
+                        });
                 if (!legacyTests.isEmpty()) {
+                    legacyTests.forEach(test -> includedTestIds.add(test.getTestRequestId()));
                     cycleNumber++;
                     addLegacyParaclinicalSteps(steps, examination, cycleNumber,
                             legacyTests, addedQueueIds);
@@ -525,21 +525,15 @@ public class PatientJourneyService {
                         "PARACLINICAL", labQueue.getStatus().name()));
             }
         }
-        journeyTests.stream().filter(test -> test.getQueueTicket() == null)
+        Map<String, List<TestRequest>> standaloneTests = journeyTests.stream()
+                .filter(test -> test.getQueueTicket() == null)
                 .filter(test -> test.getMedicalRecord() == null
                         || test.getMedicalRecord().getQueueTicket() == null)
-                .forEach(test -> steps.add(new PatientJourneyResponse.Step(
-                "TEST:" + test.getTestRequestId(), "PARACLINICAL",
-                test.getService() != null ? test.getService().getName() : "Cận lâm sàng",
-                test.getPerformingDepartment().getName(), test.getPerformingDepartment().getRoomCode(), null,
-                test.getStatus().name(), test.getCreatedAt(), test.getCompletedAt(),
-                List.of(new PatientJourneyResponse.ServiceProgress(
-                        test.getService() != null ? test.getService().getServiceId() : null,
-                        test.getService() != null ? test.getService().getServiceCode() : null,
-                        test.getService() != null ? test.getService().getName() : "Cận lâm sàng",
-                        test.getStatus().name())), 1,
-                test.getStatus() == TestRequestStatus.COMPLETED ? 1 : 0,
-                "PARACLINICAL", null, null, invoiceIdOf(test).orElse(null))));
+                .collect(java.util.stream.Collectors.groupingBy(this::standaloneTestGroupKey,
+                        LinkedHashMap::new, java.util.stream.Collectors.toList()));
+        standaloneTests.forEach((key, group) -> steps.add(groupedQueueLessStep(
+                "TEST-GROUP:" + key, group, null, null,
+                invoiceIdOf(group.get(0)).orElse(null))));
 
         boolean waitingForResults = journeyTests.stream().anyMatch(test ->
                 test.getStatus() == TestRequestStatus.PENDING || test.getStatus() == TestRequestStatus.IN_PROGRESS)
@@ -696,6 +690,30 @@ public class PatientJourneyService {
                 .map(first -> Objects.equals(first.getInvoiceId(), candidate.getInvoiceId())).orElse(false);
     }
 
+    private List<TestRequest> carriedPrebookedTestsForLegacyCycle(List<TestRequest> linkedTests,
+                                                                  List<Invoice> invoices,
+                                                                  List<TestRequest> allTests) {
+        if (linkedTests.isEmpty()) return List.of();
+        Map<UUID, Invoice> invoiceById = invoices.stream()
+                .filter(invoice -> invoice.getInvoiceId() != null)
+                .collect(java.util.stream.Collectors.toMap(Invoice::getInvoiceId, invoice -> invoice));
+        Set<UUID> paidInitialInvoiceIds = linkedTests.stream().map(this::invoiceIdOf)
+                .flatMap(Optional::stream)
+                .filter(id -> {
+                    Invoice invoice = invoiceById.get(id);
+                    return invoice != null && invoice.getMedicalRecord() == null
+                            && invoice.getStatus() == org.example.doansummer2026.enums.InvoiceStatus.PAID;
+                }).collect(java.util.stream.Collectors.toSet());
+        if (paidInitialInvoiceIds.isEmpty()) return List.of();
+        return allTests.stream()
+                .filter(test -> test.getStatus() != TestRequestStatus.CANCELLED
+                        && test.getStatus() != TestRequestStatus.COMPLETED)
+                .filter(test -> test.getMedicalRecord() != null
+                        && test.getMedicalRecord().getQueueTicket() == null)
+                .filter(test -> invoiceIdOf(test).map(paidInitialInvoiceIds::contains).orElse(false))
+                .toList();
+    }
+
     /** True while a doctor must still wait for either ordered CLS or paid CLS
      * carried from the initial invoice into that first clinical cycle. */
     public boolean hasOutstandingTestsForExamination(UUID examinationTicketId) {
@@ -758,17 +776,13 @@ public class PatientJourneyService {
             }
         }
 
-        List<TestRequest> withoutQueue = tests.stream()
-                .filter(test -> test.getQueueTicket() == null).toList();
-        withoutQueue.forEach(test -> steps.add(new PatientJourneyResponse.Step(
-                "CYCLE:" + invoice.getInvoiceId() + ":TEST:" + test.getTestRequestId(),
-                "PARACLINICAL", test.getService() != null ? test.getService().getName() : "Cận lâm sàng",
-                test.getPerformingDepartment() != null ? test.getPerformingDepartment().getName() : null,
-                test.getPerformingDepartment() != null ? test.getPerformingDepartment().getRoomCode() : null,
-                null, test.getStatus().name(), test.getCreatedAt(), test.getCompletedAt(),
-                List.of(serviceProgress(test)), 1,
-                test.getStatus() == TestRequestStatus.COMPLETED ? 1 : 0,
-                "PARACLINICAL", cycleNumber, null, invoice.getInvoiceId())));
+        Map<String, List<TestRequest>> withoutQueue = tests.stream()
+                .filter(test -> test.getQueueTicket() == null)
+                .collect(java.util.stream.Collectors.groupingBy(this::performingDepartmentKey,
+                        LinkedHashMap::new, java.util.stream.Collectors.toList()));
+        withoutQueue.forEach((key, group) -> steps.add(groupedQueueLessStep(
+                "CYCLE:" + invoice.getInvoiceId() + ":LAB:" + key,
+                group, cycleNumber, "PARACLINICAL", invoice.getInvoiceId())));
 
         if (tests.isEmpty()) {
             Map<String, List<InvoiceItem>> plannedByRoom = Optional.ofNullable(invoice.getItems())
@@ -784,11 +798,7 @@ public class PatientJourneyService {
                 Department department = items.stream().map(InvoiceItem::getService)
                         .filter(Objects::nonNull).map(MedicalService::getDepartment)
                         .filter(Objects::nonNull).findFirst().orElse(null);
-                List<PatientJourneyResponse.ServiceProgress> progress = items.stream()
-                        .map(item -> new PatientJourneyResponse.ServiceProgress(
-                                item.getService() != null ? item.getService().getServiceId() : null,
-                                item.getServiceCodeSnapshot(), item.getServiceSnapshot(), "BLOCKED"))
-                        .toList();
+                List<PatientJourneyResponse.ServiceProgress> progress = groupedPlannedServiceProgress(items);
                 steps.add(new PatientJourneyResponse.Step(
                         "CYCLE:" + invoice.getInvoiceId() + ":LAB:" + entry.getKey(),
                         "PARACLINICAL", progress.size() > 1
@@ -817,31 +827,62 @@ public class PatientJourneyService {
                 steps.add(cycleQueueStep(queue, group, null, cycleNumber));
             }
         }
-        tests.stream().filter(test -> test.getQueueTicket() == null)
-                .forEach(test -> steps.add(new PatientJourneyResponse.Step(
-                        "LEGACY:" + examination.getTicketId() + ":TEST:" + test.getTestRequestId(),
-                        "PARACLINICAL", test.getService() != null ? test.getService().getName() : "Cận lâm sàng",
-                        test.getPerformingDepartment() != null ? test.getPerformingDepartment().getName() : null,
-                        test.getPerformingDepartment() != null ? test.getPerformingDepartment().getRoomCode() : null,
-                        null, test.getStatus().name(), test.getCreatedAt(), test.getCompletedAt(),
-                        List.of(serviceProgress(test)), 1,
-                        test.getStatus() == TestRequestStatus.COMPLETED ? 1 : 0,
-                        "PARACLINICAL", cycleNumber, null, null)));
+        Map<String, List<TestRequest>> withoutQueue = tests.stream()
+                .filter(test -> test.getQueueTicket() == null)
+                .collect(java.util.stream.Collectors.groupingBy(this::performingDepartmentKey,
+                        LinkedHashMap::new, java.util.stream.Collectors.toList()));
+        withoutQueue.forEach((key, group) -> steps.add(groupedQueueLessStep(
+                "LEGACY:" + examination.getTicketId() + ":LAB:" + key,
+                group, cycleNumber, "PARACLINICAL", null)));
+    }
+
+    private PatientJourneyResponse.Step groupedQueueLessStep(
+            String id, List<TestRequest> tests, Integer cycleNumber,
+            String phase, UUID invoiceId) {
+        List<TestRequest> ordered = tests.stream()
+                .sorted(Comparator.comparing(TestRequest::getCreatedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+        TestRequest first = ordered.get(0);
+        Department department = first.getPerformingDepartment();
+        List<PatientJourneyResponse.ServiceProgress> progress = groupedServiceProgress(ordered);
+        int completed = (int) progress.stream()
+                .filter(item -> TestRequestStatus.COMPLETED.name().equals(item.status())).count();
+        String name = journeyServiceName(progress);
+        String status = aggregateTestStatus(ordered);
+        LocalDateTime completedAt = completed == progress.size()
+                ? ordered.stream().map(TestRequest::getCompletedAt).filter(Objects::nonNull)
+                .max(Comparator.naturalOrder()).orElse(null) : null;
+        return new PatientJourneyResponse.Step(
+                id, "PARACLINICAL", name,
+                department != null ? department.getName() : null,
+                department != null ? department.getRoomCode() : null,
+                null, status, first.getCreatedAt(), completedAt,
+                progress, progress.size(), completed,
+                phase, cycleNumber, null, invoiceId);
+    }
+
+    private String standaloneTestGroupKey(TestRequest test) {
+        return invoiceIdOf(test).map(UUID::toString).orElse("NO_INVOICE")
+                + ":" + performingDepartmentKey(test);
+    }
+
+    private String performingDepartmentKey(TestRequest test) {
+        return test.getPerformingDepartment() != null
+                && test.getPerformingDepartment().getDepartmentId() != null
+                ? test.getPerformingDepartment().getDepartmentId().toString() : "UNASSIGNED";
     }
 
     private PatientJourneyResponse.Step cycleQueueStep(QueueTicket queue, List<TestRequest> tests,
                                                        Invoice invoice, int cycleNumber) {
-        List<PatientJourneyResponse.ServiceProgress> progress = tests.stream()
+        List<TestRequest> orderedTests = tests.stream()
                 .sorted(Comparator.comparing(TestRequest::getCreatedAt,
                         Comparator.nullsLast(Comparator.naturalOrder())))
-                .map(this::serviceProgress).toList();
+                .toList();
+        List<PatientJourneyResponse.ServiceProgress> progress = groupedServiceProgress(orderedTests);
         int completed = (int) progress.stream()
                 .filter(item -> "COMPLETED".equals(item.status()) || "DONE".equals(item.status())).count();
-        String name = progress.size() > 1
-                ? progress.size() + " dịch vụ: " + progress.stream()
-                .map(PatientJourneyResponse.ServiceProgress::serviceName).distinct()
-                .collect(java.util.stream.Collectors.joining(", "))
-                : progress.isEmpty() ? "Cận lâm sàng" : progress.get(0).serviceName();
+        String name = journeyServiceName(progress);
         String cycleKey = invoice != null ? invoice.getInvoiceId().toString()
                 : "LEGACY-" + queue.getTicketId();
         String roomKey = queue.getDepartment() != null
@@ -854,6 +895,113 @@ public class PatientJourneyService {
                 queue.getQueueNumber(), queue.getStatus().name(), queue.getCreatedAt(), queue.getCompletedAt(),
                 progress, progress.size(), completed, "PARACLINICAL", cycleNumber,
                 queue.getTicketId(), invoice != null ? invoice.getInvoiceId() : null);
+    }
+
+    /** Hanh trinh trinh bay mot goi xet nghiem nhu mot dich vu. Chi so le da
+     * chon trong goi van duoc tinh tien va thuc hien rieng trong Lab, nhung
+     * khong lam timeline bien thanh 20-30 "dich vu" kho doc. */
+    private List<PatientJourneyResponse.ServiceProgress> groupedServiceProgress(List<TestRequest> tests) {
+        Map<String, List<TestRequest>> groups = new LinkedHashMap<>();
+        for (TestRequest test : tests) {
+            String code = test.getService() != null ? test.getService().getServiceCode() : null;
+            LaboratoryAnalyteCatalog.Panel panel = LaboratoryAnalyteCatalog.panel(code)
+                    .or(() -> LaboratoryAnalyteCatalog.parentPanel(code)).orElse(null);
+            String key = panel != null ? "PANEL:" + panel.serviceCode()
+                    : "SERVICE:" + (test.getService() != null && test.getService().getServiceId() != null
+                    ? test.getService().getServiceId() : test.getTestRequestId());
+            groups.computeIfAbsent(key, ignored -> new ArrayList<>()).add(test);
+        }
+        return groups.values().stream().map(group -> {
+            TestRequest first = group.get(0);
+            String code = first.getService() != null ? first.getService().getServiceCode() : null;
+            LaboratoryAnalyteCatalog.Panel panel = LaboratoryAnalyteCatalog.panel(code)
+                    .or(() -> LaboratoryAnalyteCatalog.parentPanel(code)).orElse(null);
+            if (panel == null) return serviceProgress(first);
+
+            boolean selectedAsWholePanel = group.stream().anyMatch(test ->
+                    test.getService() != null
+                            && panel.serviceCode().equalsIgnoreCase(test.getService().getServiceCode()));
+            long selectedAnalytes = group.stream().map(TestRequest::getService)
+                    .filter(Objects::nonNull).map(MedicalService::getServiceCode)
+                    .filter(codeValue -> LaboratoryAnalyteCatalog.parentPanel(codeValue)
+                            .map(parent -> parent.serviceCode().equals(panel.serviceCode())).orElse(false))
+                    .distinct().count();
+            String name = selectedAsWholePanel || selectedAnalytes == panel.analytes().size()
+                    ? panel.name() : panel.name() + " (" + selectedAnalytes + " chỉ số)";
+            String status = aggregateTestStatus(group);
+            return new PatientJourneyResponse.ServiceProgress(
+                    first.getService() != null ? first.getService().getServiceId() : null,
+                    panel.serviceCode(), name, status);
+        }).toList();
+    }
+
+    /** Invoice items exist before TestRequest/QueueTicket creation. Apply the
+     * same panel grouping here so the planned journey never exposes a panel's
+     * billable analytes as many unrelated services. */
+    private List<PatientJourneyResponse.ServiceProgress> groupedPlannedServiceProgress(
+            List<InvoiceItem> items) {
+        Map<String, List<InvoiceItem>> groups = new LinkedHashMap<>();
+        for (InvoiceItem item : items) {
+            String code = item.getService() != null
+                    ? item.getService().getServiceCode() : item.getServiceCodeSnapshot();
+            LaboratoryAnalyteCatalog.Panel panel = LaboratoryAnalyteCatalog.panel(code)
+                    .or(() -> LaboratoryAnalyteCatalog.parentPanel(code)).orElse(null);
+            String key = panel != null ? "PANEL:" + panel.serviceCode()
+                    : "SERVICE:" + (item.getService() != null && item.getService().getServiceId() != null
+                    ? item.getService().getServiceId() : code);
+            groups.computeIfAbsent(key, ignored -> new ArrayList<>()).add(item);
+        }
+        return groups.values().stream().map(group -> {
+            InvoiceItem first = group.get(0);
+            String code = first.getService() != null
+                    ? first.getService().getServiceCode() : first.getServiceCodeSnapshot();
+            LaboratoryAnalyteCatalog.Panel panel = LaboratoryAnalyteCatalog.panel(code)
+                    .or(() -> LaboratoryAnalyteCatalog.parentPanel(code)).orElse(null);
+            if (panel == null) {
+                return new PatientJourneyResponse.ServiceProgress(
+                        first.getService() != null ? first.getService().getServiceId() : null,
+                        first.getServiceCodeSnapshot(), first.getServiceSnapshot(), "BLOCKED");
+            }
+            boolean selectedAsWholePanel = group.stream().anyMatch(item -> {
+                String itemCode = item.getService() != null
+                        ? item.getService().getServiceCode() : item.getServiceCodeSnapshot();
+                return panel.serviceCode().equalsIgnoreCase(itemCode);
+            });
+            long selectedAnalytes = group.stream().map(item -> item.getService() != null
+                            ? item.getService().getServiceCode() : item.getServiceCodeSnapshot())
+                    .filter(itemCode -> LaboratoryAnalyteCatalog.parentPanel(itemCode)
+                            .map(parent -> parent.serviceCode().equals(panel.serviceCode())).orElse(false))
+                    .distinct().count();
+            String name = selectedAsWholePanel || selectedAnalytes == panel.analytes().size()
+                    ? panel.name() : panel.name() + " (" + selectedAnalytes + " chỉ số)";
+            return new PatientJourneyResponse.ServiceProgress(
+                    first.getService() != null ? first.getService().getServiceId() : null,
+                    panel.serviceCode(), name, "BLOCKED");
+        }).toList();
+    }
+
+    private String journeyServiceName(List<PatientJourneyResponse.ServiceProgress> progress) {
+        return progress.size() > 1
+                ? progress.size() + " dịch vụ: " + progress.stream()
+                .map(PatientJourneyResponse.ServiceProgress::serviceName).distinct()
+                .collect(java.util.stream.Collectors.joining(", "))
+                : progress.isEmpty() ? "Cận lâm sàng" : progress.get(0).serviceName();
+    }
+
+    private String aggregateTestStatus(List<TestRequest> tests) {
+        if (tests.stream().allMatch(test -> test.getStatus() == TestRequestStatus.COMPLETED)) {
+            return TestRequestStatus.COMPLETED.name();
+        }
+        if (tests.stream().anyMatch(test -> test.getStatus() == TestRequestStatus.IN_PROGRESS)) {
+            return TestRequestStatus.IN_PROGRESS.name();
+        }
+        if (tests.stream().allMatch(test -> test.getStatus() == TestRequestStatus.BLOCKED)) {
+            return TestRequestStatus.BLOCKED.name();
+        }
+        if (tests.stream().anyMatch(test -> test.getStatus() == TestRequestStatus.PENDING)) {
+            return TestRequestStatus.PENDING.name();
+        }
+        return tests.get(0).getStatus().name();
     }
 
     private PatientJourneyResponse.ServiceProgress serviceProgress(TestRequest test) {
@@ -987,27 +1135,16 @@ public class PatientJourneyService {
             QueueTicket queue, java.util.List<TestRequest> queueTests,
             String type, String status) {
         java.util.List<PatientJourneyResponse.ServiceProgress> progress = queueTests != null && !queueTests.isEmpty()
-                ? queueTests.stream()
+                ? groupedServiceProgress(queueTests.stream()
                 .sorted(java.util.Comparator.comparing(TestRequest::getCreatedAt,
                         java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
-                .map(test -> new PatientJourneyResponse.ServiceProgress(
-                    test.getService() != null ? test.getService().getServiceId() : null,
-                    test.getService() != null ? test.getService().getServiceCode() : null,
-                    test.getService() != null ? test.getService().getName() : "Cận lâm sàng",
-                    test.getStatus().name())).toList()
+                .toList())
                 : queue.getService() == null ? List.of() : List.of(new PatientJourneyResponse.ServiceProgress(
                     queue.getService().getServiceId(), queue.getService().getServiceCode(),
                     queue.getService().getName(), status));
-        String joinedServiceNames = queueTests != null && !queueTests.isEmpty()
-                ? queueTests.stream()
-                .sorted(java.util.Comparator.comparing(TestRequest::getCreatedAt,
-                        java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
-                .map(test -> test.getService() != null ? test.getService().getName() : "Cận lâm sàng")
-                .distinct()
-                .collect(java.util.stream.Collectors.joining(", "))
-                : queue.getService() != null ? queue.getService().getName() : "Khám bệnh";
-        String serviceName = progress.size() > 1
-                ? progress.size() + " dịch vụ: " + joinedServiceNames : joinedServiceNames;
+        String serviceName = progress.isEmpty()
+                ? queue.getService() != null ? queue.getService().getName() : "Khám bệnh"
+                : journeyServiceName(progress);
         int completedServices = (int) progress.stream()
                 .filter(item -> "COMPLETED".equals(item.status()) || "DONE".equals(item.status())).count();
         return new PatientJourneyResponse.Step(

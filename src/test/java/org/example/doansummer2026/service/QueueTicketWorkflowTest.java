@@ -43,7 +43,7 @@ class QueueTicketWorkflowTest {
         verifyNoInteractions(testRequestService,patientJourneyService);
     }
 
-    @ParameterizedTest @EnumSource(value=QueueStatus.class,names="IN_PROGRESS",mode=EnumSource.Mode.EXCLUDE)
+    @ParameterizedTest @EnumSource(value=QueueStatus.class,names={"IN_PROGRESS","DONE"},mode=EnumSource.Mode.EXCLUDE)
     void finishLabOnlyAcceptsInProgressTickets(QueueStatus status) {
         var q=ticket(status); when(repo.findByIdForUpdate(q.getTicketId())).thenReturn(Optional.of(q));
         assertThrows(BadRequestException.class, () -> service.finishParaclinicalQueue(q.getTicketId()));
@@ -53,7 +53,11 @@ class QueueTicketWorkflowTest {
     @ParameterizedTest @ValueSource(longs={1,3})
     void labCannotFinishWhileAnyRequestsRemain(long remaining) {
         var q=ticket(QueueStatus.IN_PROGRESS); when(repo.findByIdForUpdate(q.getTicketId())).thenReturn(Optional.of(q));
-        when(testRequestRepository.countByQueueTicket_TicketIdAndStatusIn(q.getTicketId(),List.of(TestRequestStatus.PENDING,TestRequestStatus.IN_PROGRESS,TestRequestStatus.BLOCKED))).thenReturn(remaining);
+        var pendingService = MedicalService.builder().requiresSpecimen(false).build();
+        var pending = java.util.stream.LongStream.range(0, remaining)
+                .mapToObj(index -> TestRequest.builder().service(pendingService)
+                        .status(TestRequestStatus.PENDING).build()).toList();
+        when(testRequestRepository.findAllByQueueTicket_TicketId(q.getTicketId())).thenReturn(pending);
         assertThrows(ConflictException.class, () -> service.finishParaclinicalQueue(q.getTicketId()));
         assertEquals(QueueStatus.IN_PROGRESS,q.getStatus()); verify(repo,never()).save(any()); verifyNoInteractions(patientJourneyService);
     }
@@ -61,7 +65,7 @@ class QueueTicketWorkflowTest {
     @ParameterizedTest @EnumSource(value=QueueStatus.class,names="SKIPPED",mode=EnumSource.Mode.EXCLUDE)
     void returnRequiresSkippedTicket(QueueStatus status) {
         var q=ticket(status); when(repo.findByIdForUpdate(q.getTicketId())).thenReturn(Optional.of(q));
-        assertThrows(BadRequestException.class, () -> service.confirmReturnToQueue(q.getTicketId()));
+        assertThrows(BadRequestException.class, () -> service.returnToQueue(q.getTicketId()));
         verify(repo,never()).save(any()); verifyNoInteractions(testRequestService,patientJourneyService);
     }
 
@@ -71,7 +75,7 @@ class QueueTicketWorkflowTest {
         when(repo.findByIdForUpdate(q.getTicketId())).thenReturn(Optional.of(q));
         try(var dates=mockStatic(LocalDate.class,CALLS_REAL_METHODS)) {
             dates.when(() -> LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"))).thenReturn(today);
-            assertThrows(BadRequestException.class, () -> service.confirmReturnToQueue(q.getTicketId()));
+            assertThrows(BadRequestException.class, () -> service.returnToQueue(q.getTicketId()));
         }
         assertEquals(QueueStatus.SKIPPED,q.getStatus()); verify(repo,never()).save(any());
         verifyNoInteractions(testRequestService,patientJourneyService);

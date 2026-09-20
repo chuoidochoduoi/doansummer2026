@@ -534,13 +534,13 @@ public class CustomerVisitService implements CustomerVisitServiceInterface {
             throw new ConflictException("Lịch hẹn không còn ở trạng thái chờ tiếp nhận");
         }
         if (repo.findByAppointment_AppointmentId(appointment.getAppointmentId()).isPresent()) {
-            throw new ConflictException("Lịch hẹn đã được check-in trước đó");
+            throw new ConflictException("Lịch hẹn đã được tiếp nhận trước đó");
         }
         if (appointment.getScheduledAt() == null) {
             throw new BadRequestException("Lịch hẹn chưa có ngày khám hợp lệ");
         }
         if (appointment.getScheduledAt().toLocalDate().isBefore(clinicToday())) {
-            throw new BadRequestException("Không thể check-in lịch hẹn đã quá ngày. Lịch hẹn này vào ngày "
+            throw new BadRequestException("Không thể tiếp nhận lịch hẹn đã quá ngày. Lịch hẹn này vào ngày "
                     + appointment.getScheduledAt().toLocalDate());
         }
         if (appointment.getCustomer() != null

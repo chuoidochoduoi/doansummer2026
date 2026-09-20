@@ -13,9 +13,6 @@ import org.example.doansummer2026.dto.testrequest.*;
 import org.example.doansummer2026.dto.testresult.TestResultCreateRequest;
 import org.example.doansummer2026.dto.testresult.TestResultResponse;
 import org.example.doansummer2026.dto.testresult.TestResultUpdateRequest;
-import org.example.doansummer2026.dto.testresult.TestResultRevisionResponse;
-import org.example.doansummer2026.dto.testresult.TestResultAmendRequest;
-import org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
@@ -30,7 +27,6 @@ import org.example.doansummer2026.enums.MedicalRecordStatus;
 import org.example.doansummer2026.enums.DepartmentStatus;
 import org.example.doansummer2026.enums.QueueStatus;
 import org.example.doansummer2026.enums.TestRequestStatus;
-import org.example.doansummer2026.enums.TestResultRevisionStatus;
 import org.example.doansummer2026.model.TestResult;
 import org.example.doansummer2026.repository.MedicalRecordRepository;
 import org.example.doansummer2026.repository.MedicalServiceRepository;
@@ -63,8 +59,6 @@ public class TestRequestService implements TestRequestServiceInterface {
 
     private final TestRequestRepository repo;
     private final TestResultRepository resultRepo;
-    private final org.example.doansummer2026.repository.TestResultRevisionRepository revisionRepo;
-    private final org.example.doansummer2026.repository.TestResultAttachmentRepository attachmentRepo;
     private final MedicalRecordRepository recordRepo;
     private final org.example.doansummer2026.repository.CustomerVisitRepository visitRepo;
     private final MedicalServiceRepository serviceRepo;
@@ -77,7 +71,6 @@ public class TestRequestService implements TestRequestServiceInterface {
     private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
     private final NotificationService notificationService;
     private final AuthService authService;
-    private final ClinicalFormTemplateService clinicalFormTemplateService;
     private final ClinicalFormEngine clinicalFormEngine;
     private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
     private final StaffDutyService staffDutyService;
@@ -106,7 +99,10 @@ public class TestRequestService implements TestRequestServiceInterface {
                                                                LocalDate workDate, Pageable pageable) {
         departmentId = restrictSearchScope(recordId, departmentId);
         String normalizedSearch = search == null ? "" : search.trim().toLowerCase();
-        List<TestRequest> requests = repo.search(recordId, departmentId, status, normalizedSearch,
+        // Aggregate the complete panel first. Filtering individual analytes by
+        // status before grouping can make a partly completed panel look fully
+        // cancelled (or vice versa).
+        List<TestRequest> requests = repo.search(recordId, departmentId, null, normalizedSearch,
                         workDate, Pageable.unpaged())
                 .getContent();
         java.util.Map<String, List<TestRequest>> groups = requests.stream()
@@ -114,6 +110,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                         java.util.LinkedHashMap::new, java.util.stream.Collectors.toList()));
         List<LabPanelSummaryResponse> summaries = groups.values().stream()
                 .map(this::toPanelSummary)
+                .filter(summary -> status == null || summary.status() == status)
                 .sorted(java.util.Comparator.comparing(LabPanelSummaryResponse::createdAt,
                         java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
                 .toList();
@@ -140,18 +137,23 @@ public class TestRequestService implements TestRequestServiceInterface {
         java.util.LinkedHashSet<TestRequest> targets = new java.util.LinkedHashSet<>(context.purchasedByCode.values());
         if (targets.isEmpty()) throw new BadRequestException("Phiếu xét nghiệm chưa có chỉ số đã thanh toán");
         targets.forEach(this::ensureResultNotCancelled);
+        var expectedSampleType = defaultSpecimenType(context.anchor);
+        if (request.sampleType() != null && request.sampleType() != expectedSampleType) {
+            throw new BadRequestException("Loại mẫu bệnh phẩm phải phù hợp với dịch vụ xét nghiệm: "
+                    + expectedSampleType.name());
+        }
 
         for (TestRequest target : targets) {
             String code = target.getService() == null ? "" : target.getService().getServiceCode();
             tools.jackson.databind.JsonNode data = resultDataForRequest(request.resultData(), context.panel, code);
             TestResultCreateRequest item = new TestResultCreateRequest(target.getTestRequestId(), request.imageUrl(),
-                    request.conclusion(), request.sampleId(), request.sampleType(), request.sampleStatus(),
-                    request.formTemplateVersionId(), data, request.performedById());
+                    request.conclusion(), request.sampleId(), expectedSampleType, request.sampleStatus(),
+                    data, request.performedById());
             if (complete) completeResult(target.getTestRequestId(), item);
             else if (target.getTestResult() == null) createResult(target.getTestRequestId(), item);
             else updateResult(target.getTestRequestId(), new TestResultUpdateRequest(
-                    request.imageUrl(), request.conclusion(), request.sampleId(), request.sampleType(),
-                    request.sampleStatus(), request.formTemplateVersionId(), data, false));
+                    request.imageUrl(), request.conclusion(), request.sampleId(), expectedSampleType,
+                    request.sampleStatus(), data, false));
         }
         return getPanelWorkbench(representativeId);
     }
@@ -178,22 +180,65 @@ public class TestRequestService implements TestRequestServiceInterface {
         var panel = panelOf(representative).orElse(null);
         if (panel == null) {
             TestRequestResponse raw = TestRequestResponse.from(representative);
+            String serviceCode = representative.getService() == null
+                    ? null : representative.getService().getServiceCode();
             return new LabPanelSummaryResponse(representative.getTestRequestId(), raw.queueTicketId(), raw.queueNumber(),
-                    raw.queueStatus(), raw.performingDepartmentId(), null, raw.serviceName(), raw.patientCode(),
+                    raw.queueStatus(), raw.performingDepartmentId(), serviceCode, raw.serviceName(), raw.patientCode(),
                     raw.patientName(), raw.createdAt(), raw.status(), 1, 1,
-                    raw.status() == TestRequestStatus.COMPLETED ? 1 : 0, false);
+                    raw.status() == TestRequestStatus.COMPLETED ? 1 : 0, false,
+                    Boolean.TRUE.equals(raw.requiresSpecimen()), raw.specimenReadyForRelease(),
+                    raw.status() == TestRequestStatus.COMPLETED || raw.testResultId() != null);
         }
         java.util.Set<String> selectedCodes = purchasedCodes(panel, requests);
         int completed = completedAnalytes(panel, requests, selectedCodes);
-        TestRequestStatus aggregate = completed == selectedCodes.size() ? TestRequestStatus.COMPLETED
-                : requests.stream().anyMatch(item -> item.getStatus() == TestRequestStatus.IN_PROGRESS)
-                ? TestRequestStatus.IN_PROGRESS : TestRequestStatus.PENDING;
+        List<TestRequest> activeRequests = requests.stream()
+                .filter(item -> item.getStatus() != TestRequestStatus.CANCELLED)
+                .toList();
+        TestRequestStatus aggregate;
+        if (activeRequests.isEmpty()) {
+            aggregate = TestRequestStatus.CANCELLED;
+        } else if (activeRequests.stream().anyMatch(item -> item.getStatus() == TestRequestStatus.IN_PROGRESS)) {
+            aggregate = TestRequestStatus.IN_PROGRESS;
+        } else if (activeRequests.stream().anyMatch(item -> item.getStatus() == TestRequestStatus.PENDING
+                || item.getStatus() == TestRequestStatus.BLOCKED)) {
+            aggregate = TestRequestStatus.PENDING;
+        } else {
+            aggregate = TestRequestStatus.COMPLETED;
+        }
         TestRequestResponse raw = TestRequestResponse.from(representative);
+        boolean requiresSpecimen = activeRequests.stream().anyMatch(item -> item.getService() != null
+                && Boolean.TRUE.equals(item.getService().getRequiresSpecimen()));
+        boolean specimenReadyForRelease = requiresSpecimen && activeRequests.stream()
+                .filter(item -> item.getService() != null
+                        && Boolean.TRUE.equals(item.getService().getRequiresSpecimen()))
+                .allMatch(item -> {
+                    TestResult result = item.getTestResult();
+                    return result != null && result.getCollectedAt() != null
+                            && result.getSampleId() != null && !result.getSampleId().isBlank()
+                            && result.getSampleType() != null
+                            && result.getSampleStatus()
+                            == org.example.doansummer2026.enums.SpecimenStatus.ACCEPTED;
+                });
+        boolean serviceReadyForRelease = !activeRequests.isEmpty() && activeRequests.stream().allMatch(item -> {
+            if (item.getStatus() == TestRequestStatus.COMPLETED) return true;
+            if (item.getService() != null && Boolean.TRUE.equals(item.getService().getRequiresSpecimen())) {
+                TestResult result = item.getTestResult();
+                return result != null && result.getCollectedAt() != null
+                        && result.getSampleId() != null && !result.getSampleId().isBlank()
+                        && result.getSampleType() != null
+                        && result.getSampleStatus()
+                        == org.example.doansummer2026.enums.SpecimenStatus.ACCEPTED;
+            }
+            // Với chẩn đoán hình ảnh/CLS khác, bản nháp kết quả là bằng chứng
+            // kỹ thuật đã được thực hiện; việc ký chuyên môn có thể diễn ra sau.
+            return item.getTestResult() != null;
+        });
         return new LabPanelSummaryResponse(representative.getTestRequestId(), raw.queueTicketId(), raw.queueNumber(),
                 raw.queueStatus(), raw.performingDepartmentId(), panel.serviceCode(), panel.name(), raw.patientCode(),
                 raw.patientName(), requests.stream().map(TestRequest::getCreatedAt).filter(java.util.Objects::nonNull)
                 .min(LocalDateTime::compareTo).orElse(raw.createdAt()), aggregate, selectedCodes.size(),
-                panel.analytes().size(), completed, true);
+                panel.analytes().size(), completed, true, requiresSpecimen, specimenReadyForRelease,
+                serviceReadyForRelease);
     }
 
     private PanelContext resolvePanelContext(UUID representativeId) {
@@ -245,8 +290,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                 }));
         MedicalService panelService = serviceRepo.findByServiceCode(context.panel.serviceCode())
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cấu hình gói xét nghiệm"));
-        var version = clinicalFormTemplateService.resolveVersion(panelService.getServiceId(), null);
-        var form = clinicalFormTemplateService.resolvedResponse(version, values, context.panel.serviceCode());
+        org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse form = null;
         List<LabPanelWorkbenchResponse.AnalyteItem> analytes = context.panel.analytes().stream().map(analyte -> {
             TestRequest request = context.purchasedByCode.get(analyte.serviceCode());
             return new LabPanelWorkbenchResponse.AnalyteItem(analyte.serviceCode(), analyte.fieldKey(), analyte.name(),
@@ -258,9 +302,10 @@ public class TestRequestService implements TestRequestServiceInterface {
         return new LabPanelWorkbenchResponse(anchor.getTestRequestId(), raw.queueTicketId(), raw.queueNumber(),
                 raw.queueStatus(), raw.performingDepartmentId(), context.panel.serviceCode(), context.panel.name(), raw.patientCode(), raw.patientName(),
                 raw.createdAt(), sampleResult == null ? null : sampleResult.getSampleId(),
-                sampleResult == null || sampleResult.getSampleType() == null ? null : sampleResult.getSampleType().name(),
+                sampleResult == null || sampleResult.getSampleType() == null
+                        ? defaultSpecimenType(anchor).name() : sampleResult.getSampleType().name(),
                 sampleResult == null || sampleResult.getSampleStatus() == null ? null : sampleResult.getSampleStatus().name(),
-                sampleResult == null ? null : sampleResult.getConclusion(), values, version.getVersionId(), form,
+                sampleResult == null ? null : sampleResult.getConclusion(), values, null, form,
                 context.purchasedByCode.size(), context.panel.analytes().size(), completed, analytes);
     }
 
@@ -330,7 +375,8 @@ public class TestRequestService implements TestRequestServiceInterface {
             throw new BadRequestException("Hồ sơ khám không thuộc lượt khám hiện tại");
         }
 
-        TestRequest existing = repo.findAllByVisitIdWithDetails(visitId).stream()
+        List<TestRequest> visitRequests = repo.findAllByVisitIdWithDetails(visitId);
+        TestRequest existing = visitRequests.stream()
                 .filter(request -> request.getService() != null
                         && serviceId.equals(request.getService().getServiceId()))
                 .filter(request -> request.getStatus() != TestRequestStatus.CANCELLED)
@@ -350,10 +396,42 @@ public class TestRequestService implements TestRequestServiceInterface {
         }
         StaffInfo doctor = staffRepo.findById(doctorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bác sĩ chỉ định"));
-        existing.setMedicalRecord(targetRecord);
-        existing.setRequestedBy(doctor);
-        if (notes != null && !notes.isBlank()) existing.setDescription(notes.trim());
-        repo.save(existing);
+
+        /*
+         * Lan chi dinh CLS dau tien la moc gom toan bo CLS da thanh toan tu dau
+         * cua cung visit. Chung van giu nguyen InvoiceItem, QueueTicket va lich su
+         * thanh toan; chi gan ve benh an nguon de hanh trinh cho benh nhan lam
+         * het cac phong CLS roi quay lai dung bac si.
+         */
+        boolean firstClinicalAssignment = visitRequests.stream().noneMatch(request ->
+                request.getStatus() != TestRequestStatus.CANCELLED
+                        && request.getMedicalRecord() != null
+                        && request.getMedicalRecord().getQueueTicket() != null);
+        List<TestRequest> requestsToAttach = firstClinicalAssignment
+                ? visitRequests.stream()
+                .filter(request -> request.getStatus() != TestRequestStatus.CANCELLED
+                        && request.getStatus() != TestRequestStatus.COMPLETED)
+                .filter(request -> request.getMedicalRecord() != null
+                        && request.getMedicalRecord().getQueueTicket() == null)
+                .filter(request -> request.getInvoiceItem() != null
+                        && request.getInvoiceItem().getInvoice() != null
+                        && request.getInvoiceItem().getInvoice().getMedicalRecord() == null
+                        && request.getInvoiceItem().getInvoice().getStatus()
+                        == org.example.doansummer2026.enums.InvoiceStatus.PAID)
+                .toList()
+                : List.of(existing);
+        if (!requestsToAttach.contains(existing)) {
+            requestsToAttach = new java.util.ArrayList<>(requestsToAttach);
+            requestsToAttach.add(existing);
+        }
+        for (TestRequest request : requestsToAttach) {
+            request.setMedicalRecord(targetRecord);
+            request.setRequestedBy(doctor);
+            if (request == existing && notes != null && !notes.isBlank()) {
+                request.setDescription(notes.trim());
+            }
+            repo.save(request);
+        }
         return true;
     }
 
@@ -790,15 +868,12 @@ public class TestRequestService implements TestRequestServiceInterface {
         ensureCurrentStaffCanView(request);
         if (request.getService() == null) throw new ResourceNotFoundException("Yêu cầu chưa gắn dịch vụ");
         TestResult result = resultRepo.findByTestRequest_TestRequestId(testRequestId).orElse(null);
-        var version = result != null && result.getFormTemplateVersion() != null
-                ? result.getFormTemplateVersion()
-                : clinicalFormTemplateService.resolveVersion(request.getService().getServiceId(), null);
-        return clinicalFormTemplateService.resolvedResponse(version,
-                result == null ? null : result.getResultData(), request.getService().getServiceCode());
+        return null;
     }
 
     public TestResultResponse createResult(UUID testRequestId, TestResultCreateRequest req) {
-        TestRequest t = findById(testRequestId);
+        TestRequest t = repo.findByIdForUpdate(testRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
         ensureCurrentStaffCanOperate(t);
         ensureExecutionStarted(t);
         // Kiem tra neu da COMPLETED thi khong cho tao moi
@@ -817,10 +892,9 @@ public class TestRequestService implements TestRequestServiceInterface {
                 .performedBy(performedBy)
                 .performedAt(LocalDateTime.now())
                 .build();
-        applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData(), false);
+        applyStructuredResult(t, r, req.resultData(), false);
         applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         resultRepo.save(r);
-        saveDraftRevision(r, performedBy, null);
 
         if (t.getStatus() == TestRequestStatus.PENDING) {
             t.setStatus(TestRequestStatus.IN_PROGRESS);
@@ -831,7 +905,8 @@ public class TestRequestService implements TestRequestServiceInterface {
     }
 
     public TestResultResponse updateResult(UUID testRequestId, TestResultUpdateRequest req) {
-        TestRequest t = findById(testRequestId);
+        TestRequest t = repo.findByIdForUpdate(testRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
         ensureCurrentStaffCanOperate(t);
         ensureExecutionStarted(t);
 
@@ -849,7 +924,7 @@ public class TestRequestService implements TestRequestServiceInterface {
         updateResultFileUrl(r, req.imageUrl());
         if (req.conclusion() != null) r.setConclusion(req.conclusion());
         if (req.sampleId() != null) r.setSampleId(req.sampleId());
-        applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData(), false);
+        applyStructuredResult(t, r, req.resultData(), false);
         applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
 
         if (t.getStatus() == TestRequestStatus.PENDING) {
@@ -858,7 +933,6 @@ public class TestRequestService implements TestRequestServiceInterface {
         }
 
         TestResult saved = resultRepo.save(r);
-        saveDraftRevision(saved, saved.getPerformedBy(), null);
         return TestResultResponse.from(saved);
     }
 
@@ -890,7 +964,7 @@ public class TestRequestService implements TestRequestServiceInterface {
             updateResultFileUrl(r, req.imageUrl());
             if (req.conclusion() != null) r.setConclusion(req.conclusion());
             if (req.sampleId() != null) r.setSampleId(req.sampleId());
-            applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData(), true);
+            applyStructuredResult(t, r, req.resultData(), true);
             applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         } else {
             // Tao moi
@@ -903,7 +977,7 @@ public class TestRequestService implements TestRequestServiceInterface {
                     .performedBy(performedBy)
                     .performedAt(LocalDateTime.now())
                     .build();
-            applyStructuredResult(t, r, req.formTemplateVersionId(), req.resultData(), true);
+            applyStructuredResult(t, r, req.resultData(), true);
             applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
         }
 
@@ -914,17 +988,13 @@ public class TestRequestService implements TestRequestServiceInterface {
         if (r.getConclusion() == null || r.getConclusion().isBlank()) {
             throw new BadRequestException("Vui lòng nhập kết luận của bác sĩ");
         }
-        boolean hasRevisionAttachment = r.getResultId() != null && revisionRepo
-                .findFirstByTestResult_ResultIdOrderByRevisionNoDesc(r.getResultId())
-                .map(revision -> attachmentRepo.countByRevision_RevisionId(revision.getRevisionId()) > 0).orElse(false);
-        if (r.getResultData() == null && (r.getImageUrl() == null || r.getImageUrl().isBlank()) && !hasRevisionAttachment)
+        if (r.getResultData() == null && (r.getImageUrl() == null || r.getImageUrl().isBlank()))
             throw new BadRequestException("Vui lòng nhập kết quả có cấu trúc hoặc tải tệp kết quả");
 
         r.setVerifiedBy(verifier);
         r.setVerifiedAt(LocalDateTime.now());
 
         resultRepo.save(r);
-        signLatestRevision(r, verifier, null);
 
         // Chuyen status sang COMPLETED
         t.setStatus(TestRequestStatus.COMPLETED);
@@ -985,158 +1055,12 @@ public class TestRequestService implements TestRequestServiceInterface {
     }
 
     private void applyStructuredResult(TestRequest request, TestResult result,
-                                       UUID requestedVersionId, JsonNode input,
+                                       JsonNode input,
                                        boolean requireComplete) {
-        if (input == null && requestedVersionId == null && !requireComplete) return;
+        if (input == null && !requireComplete) return;
         if (request.getService() == null) throw new BadRequestException("Yêu cầu chưa gắn dịch vụ để xác định biểu mẫu");
         JsonNode effectiveInput = input != null ? input : result.getResultData();
-        UUID effectiveVersionId = requestedVersionId != null ? requestedVersionId
-                : result.getFormTemplateVersion() == null ? null : result.getFormTemplateVersion().getVersionId();
-        var version = clinicalFormTemplateService.resolveVersion(
-                request.getService().getServiceId(), effectiveVersionId);
-        var patient = request.getMedicalRecord() == null || request.getMedicalRecord().getVisit() == null
-                ? null : request.getMedicalRecord().getVisit().getCustomer();
-        JsonNode effectiveSchema = clinicalFormTemplateService.schemaForService(
-                request.getService().getServiceCode(), version);
-        JsonNode normalized = clinicalFormEngine.validateAndEnrich(effectiveSchema, effectiveInput,
-                patient == null ? null : patient.getDateOfBirth(),
-                patient == null ? null : patient.getGender(), LocalDate.now(CLINIC_ZONE), requireComplete);
-        result.setFormTemplateVersion(version);
-        result.setResultData(normalized);
-    }
-
-    private org.example.doansummer2026.model.TestResultRevision saveDraftRevision(
-            TestResult result, StaffInfo enteredBy, String amendmentReason) {
-        var current = revisionRepo.findFirstByTestResult_ResultIdOrderByRevisionNoDesc(result.getResultId()).orElse(null);
-        if (current != null && current.getStatus() == TestResultRevisionStatus.DRAFT) {
-            current.setResultData(result.getResultData());
-            current.setConclusion(result.getConclusion());
-            current.setTemplateVersion(result.getFormTemplateVersion());
-            if (amendmentReason != null) current.setAmendmentReason(amendmentReason);
-            return revisionRepo.save(current);
-        }
-        int nextNo = current == null ? 1 : current.getRevisionNo() + 1;
-        return revisionRepo.save(org.example.doansummer2026.model.TestResultRevision.builder()
-                .testResult(result).revisionNo(nextNo).status(TestResultRevisionStatus.DRAFT)
-                .resultData(result.getResultData()).conclusion(result.getConclusion())
-                .templateVersion(result.getFormTemplateVersion()).amendmentReason(amendmentReason)
-                .enteredBy(enteredBy).build());
-    }
-
-    private void signLatestRevision(TestResult result, StaffInfo signer, String amendmentReason) {
-        var draft = saveDraftRevision(result, result.getPerformedBy(), amendmentReason);
-        revisionRepo.findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
-                result.getResultId(), TestResultRevisionStatus.SIGNED).ifPresent(previous -> {
-            previous.setStatus(TestResultRevisionStatus.SUPERSEDED);
-            revisionRepo.save(previous);
-        });
-        draft.setResultData(result.getResultData());
-        draft.setConclusion(result.getConclusion());
-        draft.setTemplateVersion(result.getFormTemplateVersion());
-        draft.setStatus(TestResultRevisionStatus.SIGNED);
-        draft.setSignedBy(signer);
-        draft.setSignedAt(LocalDateTime.now());
-        revisionRepo.save(draft);
-    }
-
-    @Transactional(readOnly = true)
-    public List<TestResultRevisionResponse> resultHistory(UUID testRequestId) {
-        TestRequest request = findById(testRequestId);
-        ensureCurrentStaffCanView(request);
-        TestResult result = resultRepo.findByTestRequest_TestRequestId(testRequestId)
-                .orElseThrow(() -> new ResourceNotFoundException("Chưa có kết quả cho yêu cầu này"));
-        return revisionRepo.findByTestResult_ResultIdOrderByRevisionNoDesc(result.getResultId())
-                .stream().map(TestResultRevisionResponse::from).toList();
-    }
-
-    public TestResultRevisionResponse amendResult(UUID testRequestId, TestResultAmendRequest req) {
-        TestRequest request = repo.findByIdForUpdate(testRequestId)
-                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
-        requireResponsibleDoctorLocked(request);
-        if (request.getStatus() != TestRequestStatus.COMPLETED)
-            throw new ConflictException("Chỉ kết quả đã ký mới cần lập bản đính chính");
-        TestResult result = resultRepo.findByTestRequest_TestRequestId(testRequestId)
-                .orElseThrow(() -> new ResourceNotFoundException("Chưa có kết quả để đính chính"));
-        var latest = revisionRepo.findFirstByTestResult_ResultIdOrderByRevisionNoDesc(result.getResultId()).orElse(null);
-        if (latest != null && latest.getStatus() == TestResultRevisionStatus.DRAFT)
-            throw new ConflictException("Đã tồn tại một bản đính chính chưa ký");
-        StaffInfo actor = authService.currentStaffId() == null ? result.getPerformedBy()
-                : staffRepo.findById(authService.currentStaffId()).orElse(result.getPerformedBy());
-        return TestResultRevisionResponse.from(saveDraftRevision(result, actor, req.reason().trim()));
-    }
-
-    public TestResultRevisionResponse updateAmendment(UUID testRequestId, UUID revisionId,
-                                                       TestResultUpdateRequest req) {
-        TestRequest request = repo.findByIdForUpdate(testRequestId)
-                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
-        requireResponsibleDoctorLocked(request);
-        ensureResultNotCancelled(request);
-        var revision = findDraftRevision(request, revisionId);
-        if (req.conclusion() != null) revision.setConclusion(req.conclusion());
-        if (req.resultData() != null || req.formTemplateVersionId() != null) {
-            var version = clinicalFormTemplateService.resolveVersion(
-                    request.getService().getServiceId(), req.formTemplateVersionId());
-            var patient = request.getMedicalRecord() == null || request.getMedicalRecord().getVisit() == null
-                    ? null : request.getMedicalRecord().getVisit().getCustomer();
-            JsonNode effectiveSchema = clinicalFormTemplateService.schemaForService(
-                    request.getService().getServiceCode(), version);
-            revision.setResultData(clinicalFormEngine.validateAndEnrich(effectiveSchema, req.resultData(),
-                    patient == null ? null : patient.getDateOfBirth(), patient == null ? null : patient.getGender(),
-                    LocalDate.now(CLINIC_ZONE), false));
-            revision.setTemplateVersion(version);
-        }
-        return TestResultRevisionResponse.from(revisionRepo.save(revision));
-    }
-
-    public TestResultRevisionResponse signAmendment(UUID testRequestId, UUID revisionId) {
-        TestRequest request = repo.findByIdForUpdate(testRequestId)
-                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
-        StaffInfo signer = requireResponsibleDoctorLocked(request);
-        ensureResultNotCancelled(request);
-        var revision = findDraftRevision(request, revisionId);
-        if (revision.getConclusion() == null || revision.getConclusion().isBlank())
-            throw new BadRequestException("Vui lòng nhập kết luận đính chính");
-        TestResult result = revision.getTestResult();
-        var patient = request.getMedicalRecord() == null || request.getMedicalRecord().getVisit() == null
-                ? null : request.getMedicalRecord().getVisit().getCustomer();
-        JsonNode effectiveSchema = clinicalFormTemplateService.schemaForService(
-                request.getService().getServiceCode(), revision.getTemplateVersion());
-        revision.setResultData(clinicalFormEngine.validateAndEnrich(
-                effectiveSchema, revision.getResultData(),
-                patient == null ? null : patient.getDateOfBirth(),
-                patient == null ? null : patient.getGender(), LocalDate.now(CLINIC_ZONE), true));
-        revisionRepo.findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
-                result.getResultId(), TestResultRevisionStatus.SIGNED).ifPresent(previous -> {
-            previous.setStatus(TestResultRevisionStatus.SUPERSEDED);
-            revisionRepo.save(previous);
-        });
-        revision.setStatus(TestResultRevisionStatus.SIGNED);
-        revision.setSignedBy(signer);
-        revision.setSignedAt(LocalDateTime.now());
-        revisionRepo.save(revision);
-        result.setResultData(revision.getResultData());
-        result.setConclusion(revision.getConclusion());
-        result.setFormTemplateVersion(revision.getTemplateVersion());
-        result.setVerifiedBy(signer);
-        result.setVerifiedAt(LocalDateTime.now());
-        resultRepo.save(result);
-        return TestResultRevisionResponse.from(revision);
-    }
-
-    private org.example.doansummer2026.model.TestResultRevision findDraftRevision(
-            TestRequest request, UUID revisionId) {
-        if (request.getStatus() != TestRequestStatus.COMPLETED)
-            throw new ConflictException("Chỉ kết quả đã hoàn thành mới được sửa hoặc ký đính chính");
-        var revision = revisionRepo.findById(revisionId)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bản đính chính"));
-        if (revision.getTestResult() == null || revision.getTestResult().getTestRequest() == null
-                || !request.getTestRequestId().equals(revision.getTestResult().getTestRequest().getTestRequestId()))
-            throw new BadRequestException("Bản đính chính không thuộc yêu cầu này");
-        if (revision.getStatus() != TestResultRevisionStatus.DRAFT)
-            throw new ConflictException("Bản đính chính đã ký không thể sửa trực tiếp");
-        if (revision.getAmendmentReason() == null || revision.getAmendmentReason().isBlank())
-            throw new ConflictException("Bản nháp ban đầu phải được ký qua chức năng hoàn thành kết quả");
-        return revision;
+        result.setResultData(effectiveInput);
     }
 
     /**
@@ -1263,84 +1187,6 @@ public class TestRequestService implements TestRequestServiceInterface {
         return "/uploads/test-results/" + fileName;
     }
 
-    public List<TestResultAttachmentResponse> uploadAttachments(UUID testRequestId, UUID revisionId,
-                                                                 List<MultipartFile> files) throws IOException {
-        TestRequest request = findById(testRequestId);
-        ensureCurrentStaffCanOperate(request);
-        ensureExecutionStarted(request);
-        TestResult result = resultRepo.findByTestRequest_TestRequestId(testRequestId)
-                .orElseThrow(() -> new ResourceNotFoundException("Hãy lưu nháp kết quả trước khi tải tệp"));
-        var revision = revisionRepo.findById(revisionId)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phiên bản kết quả"));
-        if (!revision.getTestResult().getResultId().equals(result.getResultId()))
-            throw new BadRequestException("Phiên bản kết quả không thuộc yêu cầu này");
-        if (revision.getStatus() != TestResultRevisionStatus.DRAFT)
-            throw new ConflictException("Không thể thêm tệp vào kết quả đã ký");
-        if (files == null || files.isEmpty()) throw new BadRequestException("Vui lòng chọn ít nhất một tệp");
-        long existing = attachmentRepo.countByRevision_RevisionId(revisionId);
-        if (existing + files.size() > 10) throw new BadRequestException("Mỗi kết quả chỉ được tối đa 10 tệp");
-
-        Path uploadDir = Paths.get(uploadRoot, "test-results", "attachments").toAbsolutePath().normalize();
-        Files.createDirectories(uploadDir);
-        List<TestResultAttachmentResponse> saved = new java.util.ArrayList<>();
-        int order = (int) existing;
-        for (MultipartFile file : files) {
-            ValidatedUpload valid = validateAttachment(file);
-            String extension = switch (valid.contentType()) {
-                case "application/pdf" -> ".pdf";
-                case "image/jpeg" -> ".jpg";
-                case "image/png" -> ".png";
-                case "image/webp" -> ".webp";
-                default -> throw new BadRequestException("Định dạng tệp không hợp lệ");
-            };
-            String storedName = UUID.randomUUID() + extension;
-            Path target = uploadDir.resolve(storedName).normalize();
-            if (!target.startsWith(uploadDir)) throw new BadRequestException("Tên tệp không an toàn");
-            Files.copy(file.getInputStream(), target);
-            var attachment = attachmentRepo.save(org.example.doansummer2026.model.TestResultAttachment.builder()
-                    .revision(revision).storagePath(target.toString()).originalName(valid.originalName())
-                    .contentType(valid.contentType()).fileSize(file.getSize()).displayOrder(order++).build());
-            saved.add(TestResultAttachmentResponse.from(attachment));
-        }
-        return saved;
-    }
-
-    @Transactional(readOnly = true)
-    public List<TestResultAttachmentResponse> listAttachments(UUID testRequestId, UUID revisionId) {
-        TestRequest request = findById(testRequestId);
-        ensureCurrentStaffCanView(request);
-        var revision = revisionRepo.findById(revisionId)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phiên bản kết quả"));
-        if (revision.getTestResult() == null || revision.getTestResult().getTestRequest() == null
-                || !testRequestId.equals(revision.getTestResult().getTestRequest().getTestRequestId()))
-            throw new BadRequestException("Phiên bản kết quả không thuộc yêu cầu này");
-        return attachmentRepo.findByRevision_RevisionIdOrderByDisplayOrder(revisionId)
-                .stream().map(TestResultAttachmentResponse::from).toList();
-    }
-
-    private ValidatedUpload validateAttachment(MultipartFile file) throws IOException {
-        if (file == null || file.isEmpty()) throw new BadRequestException("Tệp không được để trống");
-        if (file.getSize() > 10L * 1024 * 1024) throw new BadRequestException("Mỗi tệp không được vượt quá 10 MB");
-        String original = Paths.get(file.getOriginalFilename() == null ? "result" : file.getOriginalFilename())
-                .getFileName().toString().replaceAll("[\\r\\n]", "_");
-        byte[] head = new byte[12];
-        int read;
-        try (var input = file.getInputStream()) { read = input.read(head); }
-        String detected;
-        if (read >= 5 && new String(head, 0, 5, java.nio.charset.StandardCharsets.US_ASCII).equals("%PDF-")) detected = "application/pdf";
-        else if (read >= 3 && (head[0] & 0xff) == 0xff && (head[1] & 0xff) == 0xd8 && (head[2] & 0xff) == 0xff) detected = "image/jpeg";
-        else if (read >= 8 && java.util.Arrays.equals(java.util.Arrays.copyOf(head, 8), new byte[]{(byte)137,80,78,71,13,10,26,10})) detected = "image/png";
-        else if (read >= 12 && new String(head, 0, 4, java.nio.charset.StandardCharsets.US_ASCII).equals("RIFF")
-                && new String(head, 8, 4, java.nio.charset.StandardCharsets.US_ASCII).equals("WEBP")) detected = "image/webp";
-        else throw new BadRequestException("Chỉ chấp nhận PDF, JPEG, PNG hoặc WebP hợp lệ");
-        if (file.getContentType() != null && !file.getContentType().equalsIgnoreCase(detected)
-                && !(detected.equals("image/jpeg") && file.getContentType().equalsIgnoreCase("image/jpg")))
-            throw new BadRequestException("Loại MIME không khớp với nội dung tệp");
-        return new ValidatedUpload(original, detected);
-    }
-
-    private record ValidatedUpload(String originalName, String contentType) {}
-
     /** Huy yeu cau chi dinh khi phong thuc hien chua bat dau xu ly. */
     public TestRequestResponse cancel(UUID id, TestRequestCancelRequest req) {
         TestRequest t = repo.findByIdForUpdate(id)
@@ -1429,10 +1275,8 @@ public class TestRequestService implements TestRequestServiceInterface {
         }
 
         InvoiceItem finalInvoiceItem = invoiceItem;
-        java.util.List<MedicalService> normalizedServices = serviceSelectionPolicyService != null
-                ? serviceSelectionPolicyService.normalizeOrThrow(req.serviceIds())
-                : req.serviceIds().stream().distinct().map(id -> serviceRepo.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + id))).toList();
+        java.util.List<MedicalService> normalizedServices =
+                serviceSelectionPolicyService.normalizeOrThrow(req.serviceIds());
         validateSelectionAgainstExistingRequests(record,
                 normalizedServices.stream().map(MedicalService::getServiceId).toList());
         java.util.List<TestRequest> toCreate = normalizedServices.stream()

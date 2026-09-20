@@ -38,6 +38,8 @@ public record TestRequestResponse(
         ,boolean linkedToExamination
         ,String priorityCategory
         ,String priorityLabel
+        ,boolean specimenCollected
+        ,boolean specimenReadyForRelease
 ) {
     public static TestRequestResponse from(TestRequest t) {
         UUID recordId = t.getMedicalRecord() != null ? t.getMedicalRecord().getRecordId() : null;
@@ -66,6 +68,12 @@ public record TestRequestResponse(
         boolean returnedAfterAbsence = t.getQueueTicket() != null
                 && t.getQueueTicket().getStatus() == org.example.doansummer2026.enums.QueueStatus.WAITING
                 && t.getQueueTicket().getCalledAt() != null;
+        var result = t.getTestResult();
+        boolean specimenCollected = result != null && result.getCollectedAt() != null
+                && result.getSampleId() != null && !result.getSampleId().isBlank()
+                && result.getSampleType() != null;
+        boolean specimenReadyForRelease = specimenCollected
+                && result.getSampleStatus() == org.example.doansummer2026.enums.SpecimenStatus.ACCEPTED;
         return new TestRequestResponse(t.getTestRequestId(), recordId, serviceId, serviceName,
                 serviceType, requiresSpecimen, deptId, deptName, t.getDescription(), t.getStatus(), reqById, reqByName,
                 t.getCompletedAt(), t.getCancelReason(), t.getCreatedAt(), resultId, invoiceItemId,
@@ -75,6 +83,7 @@ public record TestRequestResponse(
                 t.getQueueTicket() != null ? t.getQueueTicket().getStatus() : null,
                 t.getMedicalRecord() != null && t.getMedicalRecord().getQueueTicket() != null,
                 returnedAfterAbsence ? "RETURNED_AFTER_ABSENCE" : null,
-                returnedAfterAbsence ? "Đã quay lại" : null);
+                returnedAfterAbsence ? "Đã quay lại" : null,
+                specimenCollected, specimenReadyForRelease);
     }
 }

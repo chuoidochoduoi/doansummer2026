@@ -89,6 +89,26 @@ class ResponseMappingTest {
         assertEquals("cancelled", CustomerAppointmentDetailResponse.from(appointment).status());
         appointment.setStatus(AppointmentStatus.CHECKED_IN);
         assertEquals("checked_in", CustomerAppointmentDetailResponse.from(appointment).status());
+
+        appointment.setVisit(CustomerVisit.builder().status(VisitStatus.COMPLETED)
+                .queueTickets(List.of(QueueTicket.builder().queueNumber(7).build())).build());
+        assertEquals("completed", CustomerAppointmentDetailResponse.from(appointment).status());
+        assertEquals("7", CustomerAppointmentDetailResponse.from(appointment).queueNumber());
+        appointment.setStatus(null);
+        assertEquals("upcoming", CustomerAppointmentDetailResponse.from(appointment).status());
+
+        appointment.setCustomer(null);
+        appointment.setGuestFullName("Khách vãng lai");
+        var guest = CustomerAppointmentDetailResponse.from(appointment, UUID.randomUUID(), null);
+        assertEquals("Khách vãng lai", guest.patientName());
+        assertNull(guest.patientProfileId());
+        assertNull(guest.patientCode());
+        assertFalse(guest.isSelf());
+
+        appointment.setVisit(CustomerVisit.builder().queueTickets(null).build());
+        assertNull(CustomerAppointmentDetailResponse.from(appointment).queueNumber());
+        appointment.setVisit(null);
+        assertNull(CustomerAppointmentDetailResponse.from(appointment).queueNumber());
     }
 
     @Test

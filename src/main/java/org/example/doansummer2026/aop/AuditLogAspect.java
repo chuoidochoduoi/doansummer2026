@@ -146,16 +146,6 @@ public class AuditLogAspect {
         if (result == null) return null;
         try {
             Object value = result instanceof ResponseEntity<?> response ? response.getBody() : result;
-            if (value instanceof org.example.doansummer2026.dto.contact.ContactRequestResponse contact) {
-                value = java.util.Map.of(
-                        "contactRequestId", contact.contactRequestId(),
-                        "requestCode", contact.requestCode(),
-                        "status", contact.status(),
-                        "assignedStaffId", contact.assignedStaffId() == null ? "" : contact.assignedStaffId().toString(),
-                        "acceptedAt", contact.acceptedAt() == null ? "" : contact.acceptedAt().toString(),
-                        "completedAt", contact.completedAt() == null ? "" : contact.completedAt().toString()
-                );
-            }
             return value == null ? null : objectMapper.writeValueAsString(value);
         } catch (Exception ex) {
             log.warn("Could not serialize audit response: {}", ex.getMessage());
@@ -210,7 +200,6 @@ public class AuditLogAspect {
             case "Chat" -> "Hỗ trợ trực tuyến";
             case "ClinicalFormTemplate", "ClinicalFormTemplateBinding" -> "Biểu mẫu lâm sàng";
             case "ClinicSchedule", "ClinicScheduleException" -> "Lịch hoạt động phòng khám";
-            case "ContactRequest" -> "Yêu cầu liên hệ";
             case "CustomerVisit" -> "Lượt khám";
             case "DoctorExamination" -> "Khám bệnh";
             case "Icd10Code" -> "Danh mục ICD-10";
@@ -228,7 +217,7 @@ public class AuditLogAspect {
             case "ShiftConfig", "ShiftVersion" -> "Cấu hình ca";
             case "Specialization" -> "Chuyên khoa";
             case "StaffSchedule", "ScheduleTemplate", "StaffScheduleTemplate" -> "Lịch trực nhân sự";
-            case "TestRequest", "TestRequestCancel", "TestResult", "TestResultAttachment", "TestResultFile", "TestResultRevision" -> "Cận lâm sàng";
+            case "TestRequest", "TestRequestCancel", "TestResult", "TestResultFile" -> "Cận lâm sàng";
             default -> "Phân hệ khác";
         };
     }

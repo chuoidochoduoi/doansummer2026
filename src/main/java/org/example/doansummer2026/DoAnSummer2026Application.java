@@ -14,7 +14,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 public class DoAnSummer2026Application {
 
     public static void main(String[] args) {
-        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
         SpringApplication.run(DoAnSummer2026Application.class, args);
     }
 }

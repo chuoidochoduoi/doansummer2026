@@ -534,6 +534,21 @@ class AccountServiceTest {
                 .save(account);
     }
 
+    @Test
+    void update_AllowsExplicitUnchangedRoleAndActiveStatus() {
+        UUID accountId = UUID.randomUUID();
+        Account account = account("staff01", true);
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(accountRepository.save(account)).thenReturn(account);
+
+        Account result = accountService.update(accountId,
+                new AccountUpdateRequest(null, Role.STAFF, true));
+
+        assertSame(account, result);
+        assertEquals(Role.STAFF, result.getRole());
+        assertTrue(result.getIsActive());
+    }
+
 
     // =====================================================
     // UPDATE - ROLE CHANGE
@@ -1810,6 +1825,19 @@ class AccountServiceTest {
                 accountRepository,
                 never()
         ).save(account);
+    }
+
+    @Test
+    void lock_AllowsNonManagementStaffAccount() {
+        UUID accountId = UUID.randomUUID();
+        Account account = account("doctor01", true);
+        StaffInfo doctor = StaffInfo.builder().systemRole(SystemRole.DOCTOR).build();
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(staffInfoRepository.findFirstByProfile_Account_Username(account.getUsername()))
+                .thenReturn(Optional.of(doctor));
+        when(accountRepository.save(account)).thenReturn(account);
+
+        assertFalse(accountService.lock(accountId).getIsActive());
     }
 
 

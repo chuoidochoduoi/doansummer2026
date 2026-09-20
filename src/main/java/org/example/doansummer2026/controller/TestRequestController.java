@@ -12,9 +12,6 @@ import org.example.doansummer2026.dto.testrequest.TestRequestCancelRequest;
 import org.example.doansummer2026.dto.testresult.TestResultCreateRequest;
 import org.example.doansummer2026.dto.testresult.TestResultResponse;
 import org.example.doansummer2026.dto.testresult.TestResultUpdateRequest;
-import org.example.doansummer2026.dto.testresult.TestResultRevisionResponse;
-import org.example.doansummer2026.dto.testresult.TestResultAmendRequest;
-import org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse;
 import org.example.doansummer2026.enums.TestRequestStatus;
 import org.example.doansummer2026.service.TestRequestService;
 import org.springframework.data.domain.Pageable;
@@ -211,37 +208,6 @@ public class TestRequestController {
         return RestResponses.ok(service.getClinicalForm(id));
     }
 
-    @GetMapping("/{id}/result/history")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
-    public ResponseEntity<List<TestResultRevisionResponse>> resultHistory(@PathVariable UUID id) {
-        return RestResponses.ok(service.resultHistory(id));
-    }
-
-    @PostMapping("/{id}/result/amend")
-    @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
-    @Auditable(action = AuditAction.UPDATE, entityName = "TestResultRevision", idParamName = "id", description = "Lập bản đính chính kết quả")
-    public ResponseEntity<TestResultRevisionResponse> amendResult(@PathVariable UUID id,
-                                                                  @Valid @RequestBody TestResultAmendRequest req) {
-        return RestResponses.ok(service.amendResult(id, req));
-    }
-
-    @PutMapping("/{id}/result/amend/{revisionId}")
-    @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
-    @Auditable(action = AuditAction.UPDATE, entityName = "TestResultRevision", idParamName = "revisionId")
-    public ResponseEntity<TestResultRevisionResponse> updateAmendment(
-            @PathVariable UUID id, @PathVariable UUID revisionId,
-            @Valid @RequestBody TestResultUpdateRequest req) {
-        return RestResponses.ok(service.updateAmendment(id, revisionId, req));
-    }
-
-    @PostMapping("/{id}/result/amend/{revisionId}/sign")
-    @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
-    @Auditable(action = AuditAction.RESULT_SIGNED, entityName = "TestResultRevision", idParamName = "revisionId")
-    public ResponseEntity<TestResultRevisionResponse> signAmendment(
-            @PathVariable UUID id, @PathVariable UUID revisionId) {
-        return RestResponses.ok(service.signAmendment(id, revisionId));
-    }
-
     @PostMapping("/{id}/result")
     @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
     @Auditable(action = AuditAction.CREATE, entityName = "TestResult", idParamName = "id", description = "Tạo nháp kết quả cận lâm sàng")
@@ -288,20 +254,5 @@ public class TestRequestController {
         return RestResponses.ok(Map.of("imageUrl", imageUrl, "fileName", fileName));
     }
 
-    @PostMapping("/{id}/result/revisions/{revisionId}/attachments")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
-    @Auditable(action = AuditAction.RESULT_UPLOADED, entityName = "TestResultAttachment", idParamName = "id")
-    public ResponseEntity<List<TestResultAttachmentResponse>> uploadAttachments(
-            @PathVariable UUID id, @PathVariable UUID revisionId,
-            @RequestParam("files") List<MultipartFile> files) throws IOException {
-        return RestResponses.ok(service.uploadAttachments(id, revisionId, files));
-    }
-
-    @GetMapping("/{id}/result/revisions/{revisionId}/attachments")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
-    public ResponseEntity<List<TestResultAttachmentResponse>> listAttachments(
-            @PathVariable UUID id, @PathVariable UUID revisionId) {
-        return RestResponses.ok(service.listAttachments(id, revisionId));
-    }
 }
 

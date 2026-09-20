@@ -16,6 +16,8 @@ import org.example.doansummer2026.repository.ServiceCapabilityRepository;
 import org.example.doansummer2026.repository.ServiceCategoryRepository;
 import org.example.doansummer2026.repository.SpecializationRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -48,6 +50,59 @@ class MedicalServiceServiceTest {
 
     @Mock
     private ServiceCapabilityRepository capabilityRepo;
+
+    @ParameterizedTest(name = "active service rejects configuration field {0}")
+    @ValueSource(strings = {
+            "name", "description", "departmentType", "status", "isPointOfCare",
+            "durationMinutes", "workflowPriority", "requiresDoctorOrder",
+            "requiresReturnToDoctor", "requiresSpecimen", "resultWaitMinutes",
+            "allowCustomerBooking", "minimumAge", "maximumAge", "allowedGender",
+            "departmentId", "requiredSpecializationId", "requiredCapabilityId"
+    })
+    void updateActiveServiceRejectsEveryNonPriceConfigurationField(String field) {
+        UUID id = UUID.randomUUID();
+        MedicalService active = service(id, "Đang hoạt động", DepartmentType.EXAMINATION, ServiceStatus.ACTIVE);
+        MedicalServiceUpdateRequest request = mock(MedicalServiceUpdateRequest.class,
+                withSettings().lenient());
+        // Mockito returns false for boxed Boolean methods by default. The update DTO uses
+        // null to mean "not supplied", so make the mock match a real sparse request.
+        when(request.isPointOfCare()).thenReturn(null);
+        when(request.requiresDoctorOrder()).thenReturn(null);
+        when(request.requiresReturnToDoctor()).thenReturn(null);
+        when(request.requiresSpecimen()).thenReturn(null);
+        when(request.allowCustomerBooking()).thenReturn(null);
+        when(request.durationMinutes()).thenReturn(null);
+        when(request.workflowPriority()).thenReturn(null);
+        when(request.resultWaitMinutes()).thenReturn(null);
+        when(request.minimumAge()).thenReturn(null);
+        when(request.maximumAge()).thenReturn(null);
+        when(repo.findById(id)).thenReturn(Optional.of(active));
+
+        switch (field) {
+            case "name" -> when(request.name()).thenReturn("Tên mới");
+            case "description" -> when(request.description()).thenReturn("Mô tả mới");
+            case "departmentType" -> when(request.departmentType()).thenReturn(DepartmentType.PARACLINICAL);
+            case "status" -> when(request.status()).thenReturn(ServiceStatus.INACTIVE);
+            case "isPointOfCare" -> when(request.isPointOfCare()).thenReturn(true);
+            case "durationMinutes" -> when(request.durationMinutes()).thenReturn(30);
+            case "workflowPriority" -> when(request.workflowPriority()).thenReturn(2);
+            case "requiresDoctorOrder" -> when(request.requiresDoctorOrder()).thenReturn(true);
+            case "requiresReturnToDoctor" -> when(request.requiresReturnToDoctor()).thenReturn(true);
+            case "requiresSpecimen" -> when(request.requiresSpecimen()).thenReturn(true);
+            case "resultWaitMinutes" -> when(request.resultWaitMinutes()).thenReturn(15);
+            case "allowCustomerBooking" -> when(request.allowCustomerBooking()).thenReturn(false);
+            case "minimumAge" -> when(request.minimumAge()).thenReturn(18);
+            case "maximumAge" -> when(request.maximumAge()).thenReturn(65);
+            case "allowedGender" -> when(request.allowedGender()).thenReturn(Gender.FEMALE);
+            case "departmentId" -> when(request.departmentId()).thenReturn(UUID.randomUUID());
+            case "requiredSpecializationId" -> when(request.requiredSpecializationId()).thenReturn(UUID.randomUUID());
+            case "requiredCapabilityId" -> when(request.requiredCapabilityId()).thenReturn(UUID.randomUUID());
+            default -> fail("Trường kiểm thử chưa được hỗ trợ: " + field);
+        }
+
+        assertThrows(ConflictException.class, () -> medicalServiceService.update(id, request));
+        verify(repo, never()).save(any());
+    }
 
     @InjectMocks
     private MedicalServiceService medicalServiceService;

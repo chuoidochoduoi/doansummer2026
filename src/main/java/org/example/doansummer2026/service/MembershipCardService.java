@@ -74,6 +74,36 @@ public class MembershipCardService {
                 .orElseThrow(() -> new ResourceNotFoundException("Bạn chưa đăng ký thẻ trả trước CareS"));
     }
 
+    /**
+     * A forgotten PIN is replaced, never revealed.  Re-authenticating with the
+     * signed-in account password prevents a customer session alone from being
+     * enough to take over the card's payment PIN.
+     */
+    @Transactional
+    public MembershipCardResponse resetPin(UUID accountId, MembershipPinResetRequest request) {
+        if (!request.newPin().equals(request.confirmPin())) {
+            throw new BadRequestException("Xác nhận mã PIN mới không khớp");
+        }
+        Profile owner = familyAccessService.ownerProfile(accountId);
+        Account account = owner.getAccount();
+        if (account == null || !passwordEncoder.matches(request.currentPassword(), account.getPasswordHash())) {
+            throw new BadRequestException("Mật khẩu tài khoản không đúng");
+        }
+        MembershipCard existing = cardRepository.findByOwnerProfile_ProfileId(owner.getProfileId())
+                .orElseThrow(() -> new ResourceNotFoundException("Bạn chưa đăng ký thẻ trả trước CareS"));
+        MembershipCard card = cardRepository.findByIdForUpdate(existing.getCardId()).orElseThrow();
+        card.setPinHash(passwordEncoder.encode(request.newPin()));
+        MembershipCard saved = cardRepository.save(card);
+        try {
+            redisTemplate.delete("membership:pin-fail:" + saved.getCardId());
+        } catch (RuntimeException ex) {
+            // Resetting a PIN must not fail after its hash was safely persisted just because Redis is unavailable.
+            log.warn("Không thể xóa bộ đếm PIN sai sau khi đặt lại mã PIN");
+        }
+        publishCardUpdateAfterCommit(saved);
+        return MembershipCardResponse.from(saved);
+    }
+
     @Transactional
     public MembershipTopUpResponse topUp(String cardCode, MembershipTopUpRequest request, UUID staffId) {
         MembershipCard card = cardRepository.findByCodeForUpdate(cardCode)

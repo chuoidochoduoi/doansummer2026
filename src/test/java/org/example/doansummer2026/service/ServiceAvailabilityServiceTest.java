@@ -41,7 +41,7 @@ class ServiceAvailabilityServiceTest {
         Profile profile = Profile.builder().fullName("Doctor A").account(account).build();
         staff = StaffInfo.builder().staffId(UUID.randomUUID()).staffCode("STF-1")
                 .profile(profile).systemRole(SystemRole.DOCTOR).department(department).build();
-        when(shiftResolver.resolve(shift, date)).thenReturn(new ShiftScheduleResolver.ResolvedShift(
+        lenient().when(shiftResolver.resolve(shift, date)).thenReturn(new ShiftScheduleResolver.ResolvedShift(
                 shift, null, LocalTime.of(7, 30), LocalTime.of(11, 30), ShiftTimeSource.NORMAL, null));
     }
 
@@ -162,5 +162,86 @@ class ServiceAvailabilityServiceTest {
                 .thenReturn(List.of(StaffCapability.builder().staff(staff).capability(capability)
                         .status(StaffCapabilityStatus.ACTIVE).expiryDate(date).build()));
         assertTrue(service.evaluate(medicalService, date, shift, true).available());
+    }
+
+    @Test
+    void unassignedCapabilityUsesOnlyAvailableEligibleRoomsAndPermanentCapability() {
+        ServiceCapability capability = ServiceCapability.builder().capabilityId(UUID.randomUUID())
+                .name("Siêu âm").active(true).build();
+        Department unavailable = Department.builder().departmentId(UUID.randomUUID())
+                .status(DepartmentStatus.MAINTENANCE).build();
+        department.setDepartmentType(DepartmentType.PARACLINICAL);
+        department.getCapabilities().add(capability);
+        staff.setDepartment(department);
+        MedicalService medicalService = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("IMG-01").name("Siêu âm").status(ServiceStatus.ACTIVE)
+                .departmentType(DepartmentType.PARACLINICAL).requiredCapability(capability).build();
+        when(departmentRepository.findEligibleByCapability(capability.getCapabilityId()))
+                .thenReturn(List.of(unavailable, department));
+        when(scheduleRepository.findAllByWorkDateAndShift_ShiftIdAndStatus(
+                date, shift.getShiftId(), ScheduleStatus.SCHEDULED))
+                .thenReturn(List.of(StaffSchedule.builder().staff(staff).build()));
+        when(capabilityRepository.findAllByStaff_StaffIdAndStatus(
+                staff.getStaffId(), StaffCapabilityStatus.ACTIVE))
+                .thenReturn(List.of(StaffCapability.builder().capability(capability)
+                        .status(StaffCapabilityStatus.ACTIVE).expiryDate(null).build()));
+
+        var result = service.evaluate(medicalService, date, shift, false);
+
+        assertTrue(result.available());
+        assertEquals(List.of(staff), result.eligibleStaff());
+    }
+
+    @Test
+    void paraclinicalServiceWithoutCapabilityAcceptsAnyActiveScheduledStaff() {
+        MedicalService medicalService = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("OTHER-1").name("Dịch vụ khác").status(ServiceStatus.ACTIVE)
+                .departmentType(DepartmentType.PARACLINICAL).build();
+        when(scheduleRepository.findAllByWorkDateAndShift_ShiftIdAndStatus(
+                date, shift.getShiftId(), ScheduleStatus.SCHEDULED))
+                .thenReturn(List.of(StaffSchedule.builder().staff(staff).build()));
+
+        assertTrue(service.evaluate(medicalService, date, shift, false).available());
+        verifyNoInteractions(capabilityRepository);
+    }
+
+    @Test
+    void coverageReportsMissingShiftAndUsesStaffCodeWhenNameIsBlank() {
+        UUID missingShiftId = UUID.randomUUID();
+        MedicalService first = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("S-1").name("Một").status(ServiceStatus.ACTIVE).build();
+        MedicalService second = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("S-2").name("Hai").status(ServiceStatus.ACTIVE).build();
+        when(shiftRepository.findById(missingShiftId)).thenReturn(Optional.empty());
+        when(medicalServiceRepository.findAllByStatus(ServiceStatus.ACTIVE)).thenReturn(List.of(first, second));
+
+        var result = service.coverage(date, missingShiftId);
+
+        assertEquals(2, result.totalActiveServices());
+        assertEquals(0, result.coveredServices());
+        assertEquals(2, result.uncoveredServices());
+        assertTrue(result.services().stream().allMatch(item -> item.reason() == ShiftUnavailableReason.SHIFT_OFF));
+    }
+
+    @Test
+    void coverageUsesProfileNameOrStaffCodeForEligibleStaff() {
+        MedicalService medicalService = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("OTHER-2").name("Thủ thuật").status(ServiceStatus.ACTIVE)
+                .departmentType(DepartmentType.PARACLINICAL).build();
+        StaffInfo blankName = StaffInfo.builder().staffId(UUID.randomUUID()).staffCode("STF-FALLBACK")
+                .systemRole(SystemRole.DOCTOR)
+                .profile(Profile.builder().fullName(" ").account(Account.builder().isActive(true).build()).build())
+                .build();
+        when(shiftRepository.findById(shift.getShiftId())).thenReturn(Optional.of(shift));
+        when(medicalServiceRepository.findAllByStatus(ServiceStatus.ACTIVE)).thenReturn(List.of(medicalService));
+        when(scheduleRepository.findAllByWorkDateAndShift_ShiftIdAndStatus(
+                date, shift.getShiftId(), ScheduleStatus.SCHEDULED))
+                .thenReturn(List.of(StaffSchedule.builder().staff(staff).build(),
+                        StaffSchedule.builder().staff(blankName).build()));
+
+        var result = service.coverage(date, shift.getShiftId());
+
+        assertEquals(1, result.coveredServices());
+        assertEquals(List.of("Doctor A", "STF-FALLBACK"), result.services().get(0).eligibleStaffNames());
     }
 }

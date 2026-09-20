@@ -12,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDate;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -46,7 +47,7 @@ class StaffServiceTest {
     StaffCreateRequest createRequest(SystemRole role, UUID specializationId) {
         return new StaffCreateRequest(" staff.demo ", "password-123", "Nguyễn Minh An", " 0900000000 ",
                 " STAFF@EXAMPLE.TEST ", LocalDate.of(1990, 1, 1), "male", " Hà Nội ", " /avatar.png ",
-                specializationId, role, "123456789012", "123456", " Đại học ", " Y Hà Nội ", "LICENSE-1");
+                specializationId, role, "123456789012", " Đại học ", " Y Hà Nội ", "LICENSE-1");
     }
 
     @ParameterizedTest @EnumSource(SystemRole.class)
@@ -91,14 +92,13 @@ class StaffServiceTest {
         when(profileRepo.findFirstByEmailIgnoreCase("staff@example.test")).thenReturn(Optional.of(staff.getProfile()));
         service.update(staff.getStaffId(), new StaffUpdateRequest(" staff.demo ", " Nguyễn   Minh Anh ",
                 "0900000000", "STAFF@EXAMPLE.TEST", LocalDate.of(1991, 2, 3), "female", " Đà Nẵng ", " /new.png ",
-                staff.getSpecialization().getSpecializationId(), SystemRole.DOCTOR, "NEW-ID", "bank", " Thạc sĩ ", " Trường Y ", "NEW-LICENSE"));
+                staff.getSpecialization().getSpecializationId(), SystemRole.DOCTOR, "NEW-ID", " Thạc sĩ ", " Trường Y ", "NEW-LICENSE"));
         assertEquals("Nguyễn Minh Anh", staff.getProfile().getFullName());
         assertEquals(Gender.FEMALE, staff.getProfile().getGender());
         assertEquals("staff@example.test", staff.getProfile().getEmail());
         assertEquals("Đà Nẵng", staff.getProfile().getAddress());
         assertEquals("Thạc sĩ", staff.getHighestDegree());
         assertEquals("NEW-LICENSE", staff.getLicenseNumber());
-        assertEquals("bank", staff.getBankAccount());
         verify(staffRepo).save(staff);
     }
 
@@ -299,5 +299,21 @@ class StaffServiceTest {
         assertEquals(staff.getStaffId(), service.getByAccountId(accountId).staffId());
         assertThrows(ResourceNotFoundException.class, () -> service.get(UUID.randomUUID()));
         assertThrows(ResourceNotFoundException.class, () -> service.getByAccountId(UUID.randomUUID()));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"male,MALE", " FEMALE ,FEMALE"})
+    void parseGenderAcceptsSupportedValues(String raw, Gender expected) {
+        assertEquals(expected, ReflectionTestUtils.invokeMethod(service, "parseGender", raw));
+    }
+
+    @Test
+    void parseGenderHandlesMissingOtherAndUnknownValues() {
+        assertNull(ReflectionTestUtils.invokeMethod(service, "parseGender", (Object) null));
+        assertNull(ReflectionTestUtils.invokeMethod(service, "parseGender", " "));
+        assertThrows(ConflictException.class,
+                () -> ReflectionTestUtils.invokeMethod(service, "parseGender", "OTHER"));
+        assertThrows(ConflictException.class,
+                () -> ReflectionTestUtils.invokeMethod(service, "parseGender", "unknown"));
     }
 }

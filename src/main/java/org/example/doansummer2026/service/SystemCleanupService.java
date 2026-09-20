@@ -30,7 +30,6 @@ public class SystemCleanupService {
     private final QueueTicketRepository queueTicketRepo;
     private final CustomerVisitRepository customerVisitRepo;
     private final AuditLogService auditLogService;
-    private final QueueReturnRequestService queueReturnRequestService;
 
     /**
      * Chạy vào lúc 00:05 sáng mỗi ngày (Asia/Ho_Chi_Minh).
@@ -53,7 +52,7 @@ public class SystemCleanupService {
 
         for (Appointment a : pendingAppointments) {
             a.setStatus(AppointmentStatus.CANCELLED);
-            a.setCancelReason("Lịch hẹn đã quá ngày nhưng chưa được check-in");
+            a.setCancelReason("Lịch hẹn đã quá ngày nhưng chưa được tiếp nhận");
         }
         appointmentRepo.saveAll(pendingAppointments);
         pendingAppointments.forEach(appointment -> auditLogService.create(
@@ -66,7 +65,7 @@ public class SystemCleanupService {
                         "SystemCleanupService",
                         null,
                         null,
-                        "Hệ thống hủy lịch hẹn quá hạn chưa check-in"
+                        "Hệ thống hủy lịch hẹn quá hạn chưa được tiếp nhận"
                 )));
         log.info("Cancelled {} overdue appointments.", pendingAppointments.size());
 
@@ -137,9 +136,6 @@ public class SystemCleanupService {
                                 : "Hệ thống hủy lượt khám quá ngày chưa thực hiện dịch vụ"
                 )));
         log.info("Closed {} overdue visits without active clinical work.", visitsToClose.size());
-
-        int expiredReturnRequests = queueReturnRequestService.expireBefore(today);
-        log.info("Expired {} queue return requests.", expiredReturnRequests);
 
         log.info("End-of-Day Cleanup Job finished successfully.");
     }

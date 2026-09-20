@@ -11,7 +11,7 @@ public record AppointmentCreateRequest(
         @NotNull UUID customerId,
         @NotNull @FutureOrPresent(message = "Thời gian đặt lịch phải từ hiện tại trở đi") LocalDateTime scheduledAt,
         String cancelReason,
-        UUID shiftId,
+        @NotNull(message = "Vui lòng chọn ca khám") UUID shiftId,
         Set<UUID> serviceIds
 ) {}
 

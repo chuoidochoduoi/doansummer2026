@@ -8,7 +8,6 @@ import org.example.doansummer2026.model.*;
 import org.example.doansummer2026.repository.*;
 import org.springframework.context.event.EventListener;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,7 +28,6 @@ public class ClinicScheduleManagementService {
     private final ClinicScheduleExceptionRepository exceptionRepository;
     private final StaffScheduleRepository scheduleRepository;
     private final AppointmentRepository appointmentRepository;
-    private final AccountRepository accountRepository;
     private final ShiftScheduleResolver resolver;
 
     @EventListener(ApplicationReadyEvent.class)
@@ -77,7 +75,7 @@ public class ClinicScheduleManagementService {
 
         ShiftVersion saved = versionRepository.save(ShiftVersion.builder()
                 .shift(shift).startTime(request.startTime()).endTime(request.endTime())
-                .effectiveFrom(request.effectiveFrom()).changeReason(reason).createdBy(currentAccountId()).build());
+                .effectiveFrom(request.effectiveFrom()).changeReason(reason).build());
         return ShiftVersionResponse.from(saved);
     }
 
@@ -119,7 +117,7 @@ public class ClinicScheduleManagementService {
         ClinicScheduleException saved = exceptionRepository.save(ClinicScheduleException.builder()
                 .workDate(request.workDate()).shift(shift).type(request.type())
                 .specialStartTime(request.specialStartTime()).specialEndTime(request.specialEndTime())
-                .reason(normalizeReason(request.reason())).createdBy(currentAccountId()).build());
+                .reason(normalizeReason(request.reason())).build());
         return ClinicScheduleExceptionResponse.from(saved);
     }
 
@@ -236,9 +234,4 @@ public class ClinicScheduleManagementService {
         return shift;
     }
 
-    private UUID currentAccountId() {
-        var authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) return null;
-        return accountRepository.findFirstByUsername(authentication.getName()).map(Account::getAccountId).orElse(null);
-    }
 }

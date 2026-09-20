@@ -435,4 +435,90 @@ class ClinicalFormEngineTest {
                 null, null, null, false);
         assertTrue(incomplete.path("_meta").path("warnings").size() >= 1);
     }
+
+    @Test
+    void coversSchemaAndValueBoundaryBranches() throws Exception {
+        assertThrows(BadRequestException.class, () -> engine.validateSchema(mapper.readTree("null")));
+        assertThrows(BadRequestException.class, () -> engine.validateSchema(mapper.readTree("{}")));
+        for (String schema : new String[]{
+                "{\"fields\":[{\"key\":\"a\",\"label\":\"A\",\"type\":\"TEXT\"},{\"key\":\"a\",\"label\":\"B\",\"type\":\"TEXT\"}]}",
+                "{\"fields\":[{\"key\":\"Bad\",\"label\":\"A\",\"type\":\"TEXT\"}]}",
+                "{\"fields\":[{\"key\":\"aa\",\"type\":\"TEXT\"}]}",
+                "{\"fields\":[{\"key\":\"aa\",\"label\":\"A\",\"type\":\"UNKNOWN\"}]}",
+                "{\"fields\":[{\"key\":\"aa\",\"label\":\"A\",\"type\":\"TEXT\",\"visibleWhen\":{}}]}"
+        }) assertThrows(BadRequestException.class, () -> engine.validateSchema(mapper.readTree(schema)));
+
+        var schema = mapper.readTree("""
+          {"fields":[
+            {"key":"aa","label":"A","type":"TEXT"},
+            {"key":"bb","label":"B","type":"NUMBER","referenceRanges":[{"low":2}]},
+            {"key":"cc","label":"C","type":"NUMBER","referenceRanges":[{"high":8}]},
+            {"key":"dd","label":"D","type":"TEXT","referenceRanges":[{"normalValues":"NEGATIVE"}]}
+          ]}
+        """);
+        var result = engine.validateAndEnrich(schema,
+                mapper.readTree("{\"aa\":null,\"bb\":3,\"cc\":7,\"dd\":\"NEGATIVE\"}"), null, null, null);
+        assertEquals("NORMAL", result.path("_meta").path("flags").path("bb").path("status").asText());
+        assertEquals("NORMAL", result.path("_meta").path("flags").path("cc").path("status").asText());
+        assertEquals("NOT_EVALUATED", result.path("_meta").path("flags").path("dd").path("status").asText());
+    }
+
+    @Test
+    void coversCalculatorSexAgeAndMissingOperandBranches() throws Exception {
+        var schema = mapper.readTree("""
+          {"fields":[
+            {"key":"creatinine","label":"Creatinine","type":"NUMBER"},
+            {"key":"crl","label":"CRL","type":"NUMBER"},
+            {"key":"bpd","label":"BPD","type":"NUMBER"},{"key":"fl","label":"FL","type":"NUMBER"},
+            {"key":"hc","label":"HC","type":"NUMBER"},{"key":"ac","label":"AC","type":"NUMBER"},
+            {"key":"totalCholesterol","label":"TC","type":"NUMBER"},{"key":"hdlC","label":"HDL","type":"NUMBER"},
+            {"key":"egfr","label":"eGFR","type":"NUMBER","calculatorKey":"EGFR_CKD_EPI_2021_V1"},
+            {"key":"ga1","label":"GA1","type":"NUMBER","calculatorKey":"GA_CRL_ROBINSON_FLEMING_V1"},
+            {"key":"ga2","label":"GA2","type":"NUMBER","calculatorKey":"GA_HADLOCK_BPD_FL_V1"},
+            {"key":"efw","label":"EFW","type":"NUMBER","calculatorKey":"EFW_HADLOCK_HC_AC_FL_V1"},
+            {"key":"nonHdl","label":"NHDL","type":"NUMBER","calculatorKey":"NON_HDL_C_V1"}
+          ]}
+        """);
+        var female = engine.validateAndEnrich(schema, mapper.readTree(
+                "{\"creatinine\":70,\"crl\":10,\"bpd\":45,\"fl\":30,\"hc\":170,\"ac\":150,\"totalCholesterol\":5,\"hdlC\":1}"),
+                LocalDate.of(1990, 1, 1), Gender.FEMALE, LocalDate.of(2026, 1, 1));
+        assertTrue(female.has("egfr"));
+        assertTrue(female.has("ga1"));
+        assertFalse(female.has("ga2"));
+
+        var adolescent = engine.validateAndEnrich(schema, mapper.readTree(
+                "{\"creatinine\":70,\"bpd\":1,\"fl\":1,\"hc\":170,\"ac\":150,\"totalCholesterol\":5}"),
+                LocalDate.of(2012, 1, 1), Gender.FEMALE, LocalDate.of(2026, 1, 1));
+        assertFalse(adolescent.has("egfr"));
+        assertFalse(adolescent.has("ga2"));
+        assertFalse(adolescent.has("nonHdl"));
+
+        for (String data : new String[]{
+                "{\"bpd\":45,\"fl\":30,\"hc\":170,\"ac\":0}",
+                "{\"bpd\":45,\"fl\":30,\"hc\":0,\"ac\":150}",
+                "{\"bpd\":45,\"fl\":30,\"ac\":150}"
+        }) assertFalse(engine.validateAndEnrich(schema, mapper.readTree(data), null, null, null).has("efw"));
+    }
+
+    @Test
+    void coversRuleConditionsWithMissingValuesAndShortCircuiting() throws Exception {
+        var schema = mapper.readTree("""
+          {"fields":[
+            {"key":"total","label":"T","type":"NUMBER"},{"key":"pct","label":"P","type":"NUMBER"},
+            {"key":"absolute","label":"A","type":"NUMBER"},{"key":"flag","label":"F","type":"BOOLEAN"},
+            {"key":"confirm","label":"C","type":"BOOLEAN"},{"key":"choice","label":"V","type":"TEXT"}
+          ],"rules":[
+            {"type":"SUM_BETWEEN","keys":"invalid"},
+            {"type":"ABSOLUTE_FROM_PERCENT","total":"total","pairs":[{"percent":"pct","absolute":"absolute"}]},
+            {"type":"AT_LEAST_ONE_TRUE","keys":"invalid"},
+            {"type":"BOOLEAN_MUST_BE_TRUE_WHEN","field":"confirm","when":{"field":"flag","equals":true}},
+            {"type":"VALUE_NOT_ALLOWED_WHEN","field":"choice","value":"NO","when":{"field":"flag","equals":true}}
+          ]}
+        """);
+        var missing = engine.validateAndEnrich(schema, mapper.readTree("{}"), null, null, null, false);
+        assertEquals(0, missing.path("_meta").path("warnings").size());
+        var partial = engine.validateAndEnrich(schema,
+                mapper.readTree("{\"total\":100,\"pct\":50,\"flag\":true}"), null, null, null, false);
+        assertEquals(1, partial.path("_meta").path("warnings").size());
+    }
 }

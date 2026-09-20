@@ -29,7 +29,7 @@ flowchart LR
 
 - Giữ người đang được gọi/đang phục vụ.
 - Khách quay lại sau CLS và khách đã được xác nhận quay lại được xếp theo quy tắc ưu tiên hiện hành.
-- Khách có lịch hợp lệ và khách trực tiếp được xen kẽ; số phiếu không đồng nghĩa vị trí hiện tại.
+- Sau người đầu FIFO và các trường hợp quay lại có ưu tiên nghiệp vụ, khách có lịch đúng giờ được xếp liên tục trước khách trực tiếp; số phiếu không đồng nghĩa vị trí hiện tại.
 
 ## Xét nghiệm và thanh toán
 

@@ -30,6 +30,13 @@ public class MembershipCardController {
         return RestResponses.ok(service.register(authService.currentAccount().getAccountId(), request));
     }
 
+    @PostMapping("/my/reset-pin")
+    @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "MembershipCard", description = "Đặt lại mã PIN thẻ trả trước CareS")
+    public ResponseEntity<MembershipCardResponse> resetMyPin(@Valid @RequestBody MembershipPinResetRequest request) {
+        return RestResponses.ok(service.resetPin(authService.currentAccount().getAccountId(), request));
+    }
+
     @GetMapping("/my")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
     public ResponseEntity<MembershipCardResponse> myCard() {

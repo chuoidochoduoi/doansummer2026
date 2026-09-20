@@ -44,7 +44,7 @@ public record TestResultResponse(
                 ? "/api/v1/test-results/" + r.getResultId() + "/file"
                 : null;
         return new TestResultResponse(r.getResultId(), reqId, protectedFileUrl, fileName,
-                r.getConclusion(), r.getFormTemplateVersion() == null ? null : r.getFormTemplateVersion().getVersionId(),
+                r.getConclusion(), null,
                 r.getResultData(), r.getSampleId(), r.getSampleType(), r.getSampleStatus(), r.getCollectedAt(),
                 collectedById, collectedByName, performedById, performedByName, r.getPerformedAt(),
                 verifiedById, verifiedByName, r.getVerifiedAt());

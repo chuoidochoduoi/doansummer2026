@@ -3278,4 +3278,155 @@ class DepartmentServiceTest {
                                 .getMyDepartment()
         );
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void currentMemberIdsSeparatesDoctorsNursesAndIgnoresMissingRoles() {
+        UUID departmentId = UUID.randomUUID();
+        Department department = Department.builder().departmentId(departmentId).build();
+        StaffInfo doctor = StaffInfo.builder().staffId(UUID.randomUUID()).systemRole(SystemRole.DOCTOR).build();
+        StaffInfo nurse = StaffInfo.builder().staffId(UUID.randomUUID()).systemRole(SystemRole.NURSE).build();
+        StaffInfo unknown = StaffInfo.builder().staffId(UUID.randomUUID()).systemRole(null).build();
+        when(staffRepo.findByDepartment_DepartmentId(departmentId)).thenReturn(List.of(doctor, nurse, unknown));
+        java.util.Set<UUID> doctors = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "currentMemberIds", department, true);
+        java.util.Set<UUID> nurses = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "currentMemberIds", department, false);
+        assertEquals(java.util.Set.of(doctor.getStaffId()), doctors);
+        assertEquals(java.util.Set.of(nurse.getStaffId()), nurses);
+    }
+
+    @Test
+    void clinicalConfigurationCoversDefaultExaminationAndParaclinicalCapabilities() {
+        Department missingSpecialization = Department.builder().departmentType(null).build();
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateClinicalConfiguration", missingSpecialization));
+        Department examination = Department.builder().departmentType(DepartmentType.EXAMINATION)
+                .specialization(Specialization.builder().specializationId(UUID.randomUUID()).build()).build();
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateClinicalConfiguration", examination));
+        Department lab = Department.builder().departmentType(DepartmentType.LABORATORY)
+                .capabilities(new HashSet<>()).build();
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateClinicalConfiguration", lab));
+        lab.setCapabilities(new HashSet<>(List.of(ServiceCapability.builder()
+                .capabilityId(UUID.randomUUID()).build())));
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateClinicalConfiguration", lab));
+    }
+
+    @Test
+    void maintenanceTransitionChecksOpenWorkAndFutureSchedulesOnlyWhenEnteringMaintenance() {
+        UUID id = UUID.randomUUID();
+        Department department = Department.builder().departmentId(id).status(DepartmentStatus.AVAILABLE).build();
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateStatusTransition", department, DepartmentStatus.AVAILABLE));
+        department.setStatus(DepartmentStatus.MAINTENANCE);
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateStatusTransition", department, DepartmentStatus.MAINTENANCE));
+
+        department.setStatus(DepartmentStatus.AVAILABLE);
+        when(repo.countOpenQueueTickets(id)).thenReturn(1L);
+        when(repo.countOpenTestRequests(id)).thenReturn(0L);
+        assertThrows(ConflictException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateStatusTransition", department, DepartmentStatus.MAINTENANCE));
+
+        when(repo.countOpenQueueTickets(id)).thenReturn(0L);
+        when(repo.countOpenTestRequests(id)).thenReturn(1L);
+        assertThrows(ConflictException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateStatusTransition", department, DepartmentStatus.MAINTENANCE));
+
+        when(repo.countOpenTestRequests(id)).thenReturn(0L);
+        when(staffScheduleRepo.existsByStaff_Department_DepartmentIdAndWorkDateGreaterThanEqualAndStatus(
+                eq(id), any(java.time.LocalDate.class),
+                eq(org.example.doansummer2026.enums.ScheduleStatus.SCHEDULED))).thenReturn(true, false);
+        assertThrows(ConflictException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateStatusTransition", department, DepartmentStatus.MAINTENANCE));
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateStatusTransition", department, DepartmentStatus.MAINTENANCE));
+    }
+
+    @Test
+    void headDoctorValidationCoversRoleAndActiveAccountBranches() {
+        StaffInfo missingRole = StaffInfo.builder().staffId(UUID.randomUUID()).build();
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateHeadDoctorRole", missingRole));
+
+        StaffInfo nurse = staff(UUID.randomUUID(), "nurse", "Y tá", SystemRole.NURSE);
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateHeadDoctorRole", nurse));
+
+        StaffInfo doctorWithoutProfile = StaffInfo.builder().staffId(UUID.randomUUID())
+                .systemRole(SystemRole.DOCTOR).build();
+        assertThrows(ConflictException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateHeadDoctorRole", doctorWithoutProfile));
+
+        StaffInfo inactive = staff(UUID.randomUUID(), "inactive", "Bác sĩ nghỉ", SystemRole.DOCTOR);
+        inactive.getProfile().getAccount().setIsActive(false);
+        assertThrows(ConflictException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateHeadDoctorRole", inactive));
+
+        StaffInfo active = staff(UUID.randomUUID(), "active", "Bác sĩ trực", SystemRole.DOCTOR);
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateHeadDoctorRole", active));
+    }
+
+    @Test
+    void assignMemberRejectsInactiveAndOtherDepartmentAndAssignsEligibleMember() {
+        Department target = department(UUID.randomUUID(), "INT-1", "Nội", DepartmentType.EXAMINATION);
+        StaffInfo inactive = staff(UUID.randomUUID(), "inactive", "Bác sĩ nghỉ", SystemRole.DOCTOR);
+        inactive.getProfile().getAccount().setIsActive(false);
+        assertThrows(ConflictException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "assignMember", target, inactive, "Bác sĩ"));
+
+        StaffInfo assignedElsewhere = staff(UUID.randomUUID(), "busy", "Bác sĩ khác", SystemRole.DOCTOR);
+        assignedElsewhere.setDepartment(department(UUID.randomUUID(), "INT-2", "Nội 2", DepartmentType.EXAMINATION));
+        assertThrows(ConflictException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "assignMember", target, assignedElsewhere, "Bác sĩ"));
+
+        StaffInfo eligible = staff(UUID.randomUUID(), "eligible", "Bác sĩ phù hợp", SystemRole.DOCTOR);
+        eligible.setSpecialization(target.getSpecialization());
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "assignMember", target, eligible, "Bác sĩ"));
+        assertSame(target, eligible.getDepartment());
+        verify(staffRepo).save(eligible);
+    }
+
+    @Test
+    void detachValidationRejectsFutureDutyAndOpenRecordOtherwiseAllowsDetach() {
+        StaffInfo doctor = staff(UUID.randomUUID(), "doctor", "Bác sĩ", SystemRole.DOCTOR);
+        when(staffScheduleRepo.existsByStaff_StaffIdAndWorkDateGreaterThanEqualAndStatus(
+                eq(doctor.getStaffId()), any(java.time.LocalDate.class),
+                eq(org.example.doansummer2026.enums.ScheduleStatus.SCHEDULED))).thenReturn(true, false, false);
+        assertThrows(ConflictException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "ensureCanDetachFromDepartment", doctor));
+
+        when(medicalRecordRepo.existsByDoctor_StaffIdAndStatusIn(eq(doctor.getStaffId()), anyList()))
+                .thenReturn(true, false);
+        assertThrows(ConflictException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "ensureCanDetachFromDepartment", doctor));
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "ensureCanDetachFromDepartment", doctor));
+    }
+
+    @Test
+    void currentClinicalMemberValidationChecksOnlyDoctorsAndNurses() {
+        Department department = department(UUID.randomUUID(), "LAB-1", "Xét nghiệm", DepartmentType.LABORATORY);
+        StaffInfo missingRole = StaffInfo.builder().staffId(UUID.randomUUID()).build();
+        StaffInfo receptionist = staff(UUID.randomUUID(), "receptionist", "Lễ tân", SystemRole.RECEPTIONIST);
+        StaffInfo doctor = staff(UUID.randomUUID(), "doctor", "Bác sĩ", SystemRole.DOCTOR);
+        StaffInfo nurse = staff(UUID.randomUUID(), "nurse", "Điều dưỡng", SystemRole.NURSE);
+        when(staffRepo.findByDepartment_DepartmentId(department.getDepartmentId()))
+                .thenReturn(List.of(missingRole, receptionist, doctor, nurse));
+
+        assertThrows(BadRequestException.class, () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateCurrentClinicalMembers", department));
+        verify(staffCapabilityRepo).existsByStaff_StaffIdAndCapability_CapabilityIdAndStatus(
+                eq(doctor.getStaffId()), any(UUID.class), eq(StaffCapabilityStatus.ACTIVE));
+
+        when(staffCapabilityRepo.existsByStaff_StaffIdAndCapability_CapabilityIdAndStatus(
+                any(UUID.class), any(UUID.class), eq(StaffCapabilityStatus.ACTIVE))).thenReturn(true);
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                departmentService, "validateCurrentClinicalMembers", department));
+    }
 }

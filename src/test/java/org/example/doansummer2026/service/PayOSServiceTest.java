@@ -35,12 +35,17 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class PayOSServiceTest {
-    @Mock PayOS payOS;
-    @Mock InvoiceRepository invoiceRepository;
-    @Mock RedisTemplate<String, String> redisTemplate;
-    @Mock ValueOperations<String, String> values;
-    @Mock PaymentRequestsService paymentRequests;
-    @Mock WebhooksService webhooks;
+    // The PayOS SDK class is safe to mock by subclassing. Avoid Mockito inline
+    // instrumentation here: on Windows/Java 17 it can invalidate subsequent mocks
+    // in this test class.
+    @Mock(mockMaker = "mock-maker-subclass") PayOS payOS;
+    @Mock(mockMaker = "mock-maker-subclass") InvoiceRepository invoiceRepository;
+    @Mock(mockMaker = "mock-maker-subclass") RedisTemplate<String, String> redisTemplate;
+    @Mock(mockMaker = "mock-maker-subclass") ValueOperations<String, String> values;
+    // PayOS SDK declares this interface with bytecode that Java 17/Windows cannot
+    // retransformation-mock. A normal interface mock is sufficient for this unit test.
+    @Mock(mockMaker = "mock-maker-subclass") PaymentRequestsService paymentRequests;
+    @Mock(mockMaker = "mock-maker-subclass") WebhooksService webhooks;
     private PayOSService service;
     private UUID invoiceId;
     private Invoice invoice;

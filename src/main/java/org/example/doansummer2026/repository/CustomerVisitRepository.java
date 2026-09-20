@@ -46,10 +46,10 @@ public interface CustomerVisitRepository extends JpaRepository<CustomerVisit, UU
                     AND m.queueTicket IS NOT NULL
                     AND m.queueTicket.department.departmentType = org.example.doansummer2026.enums.DepartmentType.EXAMINATION
               ) OR EXISTS (
-                  SELECT revision.revisionId FROM TestResultRevision revision
-                  WHERE revision.testResult.testRequest.medicalRecord.visit = v
-                    AND revision.testResult.testRequest.status = org.example.doansummer2026.enums.TestRequestStatus.COMPLETED
-                    AND revision.status = org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED
+                  SELECT result.resultId FROM TestResult result
+                  WHERE result.testRequest.medicalRecord.visit = v
+                    AND result.testRequest.status = org.example.doansummer2026.enums.TestRequestStatus.COMPLETED
+                    AND result.verifiedAt IS NOT NULL
               ))
               AND (:search = '' OR EXISTS (
                   SELECT sm.recordId FROM MedicalRecord sm
@@ -61,11 +61,11 @@ public interface CustomerVisitRepository extends JpaRepository<CustomerVisit, UU
                          OR LOWER(COALESCE(sm.queueTicket.service.name, '')) LIKE LOWER(CONCAT('%', :search, '%'))
                          OR LOWER(COALESCE(sm.doctor.profile.fullName, '')) LIKE LOWER(CONCAT('%', :search, '%')))
               ) OR EXISTS (
-                  SELECT searchRevision.revisionId FROM TestResultRevision searchRevision
-                  WHERE searchRevision.testResult.testRequest.medicalRecord.visit = v
-                    AND searchRevision.testResult.testRequest.status = org.example.doansummer2026.enums.TestRequestStatus.COMPLETED
-                    AND searchRevision.status = org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED
-                    AND LOWER(COALESCE(searchRevision.testResult.testRequest.service.name, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                  SELECT result.resultId FROM TestResult result
+                  WHERE result.testRequest.medicalRecord.visit = v
+                    AND result.testRequest.status = org.example.doansummer2026.enums.TestRequestStatus.COMPLETED
+                    AND result.verifiedAt IS NOT NULL
+                    AND LOWER(COALESCE(result.testRequest.service.name, '')) LIKE LOWER(CONCAT('%', :search, '%'))
               ))
             """,
             countQuery = """
@@ -78,10 +78,10 @@ public interface CustomerVisitRepository extends JpaRepository<CustomerVisit, UU
                     AND m.queueTicket IS NOT NULL
                     AND m.queueTicket.department.departmentType = org.example.doansummer2026.enums.DepartmentType.EXAMINATION
               ) OR EXISTS (
-                  SELECT revision.revisionId FROM TestResultRevision revision
-                  WHERE revision.testResult.testRequest.medicalRecord.visit = v
-                    AND revision.testResult.testRequest.status = org.example.doansummer2026.enums.TestRequestStatus.COMPLETED
-                    AND revision.status = org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED
+                  SELECT result.resultId FROM TestResult result
+                  WHERE result.testRequest.medicalRecord.visit = v
+                    AND result.testRequest.status = org.example.doansummer2026.enums.TestRequestStatus.COMPLETED
+                    AND result.verifiedAt IS NOT NULL
               ))
               AND (:search = '' OR EXISTS (
                   SELECT sm.recordId FROM MedicalRecord sm
@@ -93,11 +93,11 @@ public interface CustomerVisitRepository extends JpaRepository<CustomerVisit, UU
                          OR LOWER(COALESCE(sm.queueTicket.service.name, '')) LIKE LOWER(CONCAT('%', :search, '%'))
                          OR LOWER(COALESCE(sm.doctor.profile.fullName, '')) LIKE LOWER(CONCAT('%', :search, '%')))
               ) OR EXISTS (
-                  SELECT searchRevision.revisionId FROM TestResultRevision searchRevision
-                  WHERE searchRevision.testResult.testRequest.medicalRecord.visit = v
-                    AND searchRevision.testResult.testRequest.status = org.example.doansummer2026.enums.TestRequestStatus.COMPLETED
-                    AND searchRevision.status = org.example.doansummer2026.enums.TestResultRevisionStatus.SIGNED
-                    AND LOWER(COALESCE(searchRevision.testResult.testRequest.service.name, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                  SELECT result.resultId FROM TestResult result
+                  WHERE result.testRequest.medicalRecord.visit = v
+                    AND result.testRequest.status = org.example.doansummer2026.enums.TestRequestStatus.COMPLETED
+                    AND result.verifiedAt IS NOT NULL
+                    AND LOWER(COALESCE(result.testRequest.service.name, '')) LIKE LOWER(CONCAT('%', :search, '%'))
               ))
             """)
     Page<CustomerVisit> findMedicalHistoryVisits(@Param("profileId") UUID profileId,

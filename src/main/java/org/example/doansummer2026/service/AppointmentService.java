@@ -152,17 +152,15 @@ public class AppointmentService implements AppointmentServiceInterface {
                     .orElseThrow(() -> new ResourceNotFoundException("Ca khám không tồn tại"))
                 : null;
         Set<MedicalService> services = new java.util.LinkedHashSet<>();
-        if (serviceIds != null && !serviceIds.isEmpty()) {
-            for (MedicalService service : normalizeServiceSelection(serviceIds)) {
-                if (onlineBooking && !Boolean.TRUE.equals(service.getAllowCustomerBooking())) {
-                    throw new BadRequestException("Chỉ số xét nghiệm lẻ chỉ được chọn tại quầy lễ tân hoặc bởi bác sĩ: "
-                            + service.getName());
-                }
-                Integer age = customer.getDateOfBirth() != null
-                        ? Period.between(customer.getDateOfBirth(), requestedAt.toLocalDate()).getYears() : null;
-                validateServiceEligibility(service, age, customer.getGender());
-                services.add(service);
+        for (MedicalService service : normalizeServiceSelection(serviceIds)) {
+            if (onlineBooking && !Boolean.TRUE.equals(service.getAllowCustomerBooking())) {
+                throw new BadRequestException("Chỉ số xét nghiệm lẻ chỉ được chọn tại quầy lễ tân hoặc bởi bác sĩ: "
+                        + service.getName());
             }
+            Integer age = customer.getDateOfBirth() != null
+                    ? Period.between(customer.getDateOfBirth(), requestedAt.toLocalDate()).getYears() : null;
+            validateServiceEligibility(service, age, customer.getGender());
+            services.add(service);
         }
         ShiftScheduleResolver.ResolvedShift resolved = resolveBookingShift(shift, requestedAt, services);
         LocalDateTime scheduledAt = resolved == null ? requestedAt
@@ -277,7 +275,7 @@ public class AppointmentService implements AppointmentServiceInterface {
         AppointmentStatus oldStatus = a.getStatus();
 
         if (oldStatus == AppointmentStatus.CANCELLED || oldStatus == AppointmentStatus.CHECKED_IN) {
-            throw new BadRequestException("Không thể sửa lịch hẹn đã Hủy hoặc đã Check-In");
+            throw new BadRequestException("Không thể sửa lịch hẹn đã hủy hoặc đã được tiếp nhận");
         }
 
         validateStaffStatusUpdate(oldStatus, req);
@@ -382,25 +380,25 @@ public class AppointmentService implements AppointmentServiceInterface {
 
         // Kiem tra da check-in chua
         if (a.getStatus() == AppointmentStatus.CHECKED_IN) {
-            throw new ConflictException("Lịch hẹn đã được nhân viên khác check-in");
+            throw new ConflictException("Lịch hẹn đã được nhân viên khác tiếp nhận");
         }
         if (!isAwaitingCheckIn(a.getStatus())) {
-            throw new BadRequestException("Chỉ có thể check-in lịch hẹn đang chờ tiếp nhận");
+            throw new BadRequestException("Chỉ có thể tiếp nhận lịch hẹn đang chờ");
         }
         
         if (a.getScheduledAt() == null) {
             throw new BadRequestException("Lịch hẹn chưa có ngày khám hợp lệ");
         }
         if (a.getScheduledAt().toLocalDate().isBefore(clinicToday())) {
-            throw new BadRequestException("Không thể check-in lịch hẹn đã quá ngày. Lịch hẹn này vào ngày "
+            throw new BadRequestException("Không thể tiếp nhận lịch hẹn đã quá ngày. Lịch hẹn này vào ngày "
                     + a.getScheduledAt().toLocalDate());
         }
 
         if (req.issuedById() == null) {
-            throw new BadRequestException("Không tìm thấy nhân viên lễ tân đang thực hiện check-in");
+            throw new BadRequestException("Không tìm thấy nhân viên lễ tân đang thực hiện tiếp nhận");
         }
         StaffInfo checkedInBy = staffRepo.findById(req.issuedById())
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên thực hiện check-in"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên thực hiện tiếp nhận"));
 
         String previousPhone = a.getCustomer() != null ? a.getCustomer().getPhone() : a.getGuestPhone();
         String previousEmail = a.getCustomer() != null ? a.getCustomer().getEmail() : a.getGuestEmail();
@@ -418,9 +416,9 @@ public class AppointmentService implements AppointmentServiceInterface {
             services = new java.util.LinkedHashSet<>();
             for (MedicalService service : normalizeServiceSelection(req.serviceIds())) {
                 Integer age = req.patientDateOfBirth() != null
-                        ? Period.between(req.patientDateOfBirth(), clinicToday()).getYears()
+                        ? (Integer) Period.between(req.patientDateOfBirth(), clinicToday()).getYears()
                         : (a.getCustomer() != null && a.getCustomer().getDateOfBirth() != null
-                        ? Period.between(a.getCustomer().getDateOfBirth(), clinicToday()).getYears()
+                        ? (Integer) Period.between(a.getCustomer().getDateOfBirth(), clinicToday()).getYears()
                         : req.patientAge());
                 Gender gender = req.patientGender() != null ? req.patientGender()
                         : (a.getCustomer() != null ? a.getCustomer().getGender() : a.getGuestGender());
@@ -452,7 +450,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                     : resolveExistingPatientProfile(a, a.getGuestPhone(), a.getGuestEmail());
             visitCustomer = existingGuest != null
                     ? existingGuest
-                    : profileRepo.save(Profile.builder()
+                    : profileRepo.saveAndFlush(Profile.builder()
                             .fullName(a.getGuestFullName()).phone(a.getGuestPhone())
                             .email(a.getGuestEmail()).address(a.getGuestAddress())
                             .dateOfBirth(req.patientDateOfBirth()).gender(a.getGuestGender()).build());
@@ -690,7 +688,7 @@ public class AppointmentService implements AppointmentServiceInterface {
      */
     public GuestCheckInResponse guestCheckIn(GuestCheckInRequest req) {
         if (req.issuedById() == null) {
-            throw new BadRequestException("Không tìm thấy nhân viên lễ tân đang thực hiện check-in");
+            throw new BadRequestException("Không tìm thấy nhân viên lễ tân đang thực hiện tiếp nhận");
         }
         if (req.serviceIds() == null || req.serviceIds().isEmpty()) {
             throw new BadRequestException("Vui lòng chọn ít nhất một dịch vụ");
@@ -708,7 +706,7 @@ public class AppointmentService implements AppointmentServiceInterface {
         }
 
         Profile guestProfile = profileRepo.findFirstByPhone(req.guestPhone()).orElseGet(() ->
-                profileRepo.save(Profile.builder()
+                profileRepo.saveAndFlush(Profile.builder()
                         .fullName(req.guestFullName().trim()).phone(req.guestPhone())
                         .address(normalizeOptional(req.guestAddress()))
                         .gender(req.guestGender()).build()));
@@ -720,7 +718,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                 guestProfile.getProfileId(), selectedServices.stream().map(MedicalService::getServiceId).toList());
         CustomerVisit visit = CustomerVisit.builder()
                 .customer(guestProfile)
-                .checkedInBy(req.issuedById()!=null?staffRepo.findById(req.issuedById()).orElse(null):null)
+                .checkedInBy(staffRepo.findById(req.issuedById()).orElse(null))
                 .checkInTime(LocalDateTime.now())
                 .status(VisitStatus.CHECKED_IN)
                 .build();
@@ -756,7 +754,7 @@ public class AppointmentService implements AppointmentServiceInterface {
                 null,
                 null,
                 req.issuedById(),
-                invoiceItems.isEmpty() ? null : invoiceItems
+                invoiceItems
         ));
 
         return GuestCheckInResponse.from(savedVisit, invoiceResponse.invoiceId(), req.guestFullName(), req.guestPhone());
@@ -807,7 +805,7 @@ public class AppointmentService implements AppointmentServiceInterface {
         Profile customer = familyAccessService.resolveActiveProfile(customerId, a.getCustomer().getProfileId());
 
         if (!isAwaitingCheckIn(a.getStatus())) {
-            throw new BadRequestException("Chỉ có thể cập nhật lịch hẹn khi chưa check-in");
+            throw new BadRequestException("Chỉ có thể cập nhật lịch hẹn khi chưa được tiếp nhận");
         }
 
         if (req.serviceIds() != null && !req.serviceIds().isEmpty()) {
@@ -983,7 +981,7 @@ public class AppointmentService implements AppointmentServiceInterface {
         familyAccessService.resolveActiveProfile(customerId, appointment.getCustomer().getProfileId());
 
         if (!isAwaitingCheckIn(appointment.getStatus())) {
-            throw new BadRequestException("Chỉ có thể hủy lịch hẹn đang chờ xác nhận hoặc chưa check-in");
+            throw new BadRequestException("Chỉ có thể hủy lịch hẹn đang chờ xác nhận hoặc chưa được tiếp nhận");
         }
 
         appointment.setStatus(AppointmentStatus.CANCELLED);
@@ -1012,7 +1010,7 @@ public class AppointmentService implements AppointmentServiceInterface {
         if (requestedStatus == null || requestedStatus == currentStatus) return;
 
         if (requestedStatus == AppointmentStatus.CHECKED_IN) {
-            throw new BadRequestException("Vui lòng dùng chức năng check-in để tiếp nhận bệnh nhân");
+            throw new BadRequestException("Vui lòng dùng chức năng tiếp nhận bệnh nhân");
         }
         if (requestedStatus == AppointmentStatus.PENDING) {
             throw new BadRequestException("Không thể đưa lịch hẹn về trạng thái chờ bằng chức năng cập nhật");

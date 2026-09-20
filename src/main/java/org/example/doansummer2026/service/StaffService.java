@@ -126,7 +126,6 @@ public class StaffService implements StaffServiceInterface {
                 .profile(profile)
                 .systemRole(systemRole)
                 .nationalId(blankToNull(req.nationalId()))
-                .bankAccount(req.bankAccount())
                 .highestDegree(blankToNull(req.highestDegree()))
                 .university(blankToNull(req.university()))
                 .licenseNumber(blankToNull(req.licenseNumber()))
@@ -229,7 +228,6 @@ public class StaffService implements StaffServiceInterface {
         if (req.systemRole() != null && req.systemRole().normalized() != s.getSystemRole().normalized()) {
             throw new ConflictException("Không được đổi vai trò của nhân sự sau khi đã tạo tài khoản");
         }
-        if (req.bankAccount() != null) s.setBankAccount(req.bankAccount());
         if (req.highestDegree() != null) s.setHighestDegree(blankToNull(req.highestDegree()));
         if (req.university() != null) s.setUniversity(blankToNull(req.university()));
         if (req.specializationId() != null) {

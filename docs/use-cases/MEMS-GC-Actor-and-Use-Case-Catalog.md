@@ -25,7 +25,7 @@ The inventory contains 70 registered page routes and 312 application endpoint ma
 | Guest | External human | Use public information, booking, verified guest journey and support. |
 | Registered User | Abstract parent | Model shared account functions; not an extra role or person. |
 | Customer | Primary human | Manage own and permitted family bookings, journeys, published history, feedback and CareS card. |
-| Receptionist | Primary staff | Receive patients, confirm return requests, coordinate visits and manage support and feedback. |
+| Receptionist | Primary staff | Receive patients, coordinate visits and manage support and feedback. |
 | Cashier | Primary staff | Collect eligible payments, apply insurance, accept and top up CareS cards, and issue receipts. |
 | Nurse | Clinical support staff | Operate assigned queue and preparation tasks and enter permitted diagnostic drafts; cannot sign diagnostic results or complete medical examinations. |
 | Doctor | Primary clinical | Perform examination and/or diagnostic work according to assigned room, specialization/capability, duty and record responsibility. |
@@ -42,14 +42,14 @@ There are eight concrete human actors including Guest, one abstract parent and f
 
 | Actor | Explicit associations | Use-case IDs |
 | --- | --- | --- |
-| Guest | 8 | G-01, G-02, G-03, G-05, G-06, G-07, G-08, G-09 |
+| Guest | 7 | G-01, G-02, G-03, G-05, G-06, G-08, G-09 |
 | Registered User | 6 | RU-01, RU-02, RU-03, RU-04, RU-05, RU-06 |
-| Customer | 20 | CU-01, CU-02, CU-03, CU-04, CU-06, CU-07, CU-08, CU-09, CU-11, CU-12, CU-13, CU-14, CU-15, CU-16, CU-17, CU-18, CU-19, CU-20, CU-21, CU-22 |
-| Receptionist | 15 | RU-07, RU-08, RC-01, RC-02, RC-03, RC-04, RC-05, RC-06, RC-07, RC-08, RC-10, RC-12, RC-14, RC-15, CM-06 |
+| Customer | 19 | CU-01, CU-02, CU-03, CU-04, CU-06, CU-07, CU-08, CU-09, CU-11, CU-12, CU-13, CU-14, CU-15, CU-16, CU-18, CU-19, CU-20, CU-21, CU-22 |
+| Receptionist | 14 | RU-07, RU-08, RC-01, RC-02, RC-03, RC-04, RC-05, RC-06, RC-07, RC-08, RC-12, RC-14, RC-15, CM-06 |
 | Cashier | 14 | RU-07, RU-08, CA-01, CA-02, CA-03, CA-04, CA-05, CA-06, CA-07, CA-08, CA-09, CA-10, CA-11, CA-12 |
-| Nurse | 21 | RU-07, RU-08, RC-15, NU-01, NU-02, NU-03, NU-04, NU-05, NU-06, NU-07, DR-15, DS-01, DS-02, DS-03, DS-04, DS-05, DS-06, DS-07, DS-08, DS-11, DS-13 |
-| Doctor | 36 | RU-07, RU-08, CU-20, RC-15, NU-04, NU-07, DR-01, DR-02, DR-03, DR-04, DR-05, DR-06, DR-07, DR-09, DR-10, DR-11, DR-12, DR-13, DR-14, DR-15, DR-16, DR-17, DS-01, DS-02, DS-03, DS-04, DS-05, DS-06, DS-07, DS-08, DS-09, DS-10, DS-11, DS-12, DS-13, DS-14 |
-| Clinic Manager | 47 | RU-07, RU-08, RC-01, RC-02, RC-03, RC-04, RC-05, RC-06, RC-07, RC-08, RC-10, RC-12, RC-13, RC-14, RC-15, CA-01, CA-02, CA-03, CA-04, CA-05, CA-06, CA-07, CA-08, CA-09, CA-10, CA-11, CA-12, CM-01, CM-02, CM-03, CM-04, CM-05, CM-06, CM-08, CM-09, CM-10, CM-11, CM-12, CM-13, AD-01, AD-02, AD-03, AD-06, AD-07, AD-09, AD-10, AD-11 |
+| Nurse | 20 | RU-07, RU-08, RC-15, NU-01, NU-02, NU-03, NU-04, NU-05, NU-06, DR-15, DS-01, DS-02, DS-03, DS-04, DS-05, DS-06, DS-07, DS-08, DS-11, DS-13 |
+| Doctor | 35 | RU-07, RU-08, CU-20, RC-15, NU-04, DR-01, DR-02, DR-03, DR-04, DR-05, DR-06, DR-07, DR-09, DR-10, DR-11, DR-12, DR-13, DR-14, DR-15, DR-16, DR-17, DS-01, DS-02, DS-03, DS-04, DS-05, DS-06, DS-07, DS-08, DS-09, DS-10, DS-11, DS-12, DS-13, DS-14 |
+| Clinic Manager | 46 | RU-07, RU-08, RC-01, RC-02, RC-03, RC-04, RC-05, RC-06, RC-07, RC-08, RC-12, RC-13, RC-14, RC-15, CA-01, CA-02, CA-03, CA-04, CA-05, CA-06, CA-07, CA-08, CA-09, CA-10, CA-11, CA-12, CM-01, CM-02, CM-03, CM-04, CM-05, CM-06, CM-08, CM-09, CM-10, CM-11, CM-12, CM-13, AD-01, AD-02, AD-03, AD-06, AD-07, AD-09, AD-10, AD-11 |
 | Administrator | 21 | RU-08, RC-13, RC-15, CM-02, CM-03, CM-04, CM-05, CM-08, CM-12, CM-13, AD-01, AD-02, AD-03, AD-05, AD-06, AD-07, AD-09, AD-10, AD-11, AD-12, AD-13 |
 | PayOS | 1 | EXT-01 |
 | Mock BHXH Service | 1 | EXT-02 |
@@ -69,7 +69,6 @@ RU-01 to RU-06 are inherited common functions. All other shared associations are
 | G-03 | Create Guest Appointment | Select publicly bookable services, an available date and shift, enter patient details and confirm a guest booking. The guest selector does not expose individually priced laboratory analytes. Actors: Guest. Delivery: UI + backend. |
 | G-05 | View Public Department Schedule | Review public department availability by date and shift before booking, without viewing named staff duty assignments. Actors: Guest. Delivery: UI + backend. |
 | G-06 | Look Up Guest Journey | Use the visit code and matching phone number to view the guest journey, current queue and service statuses. This lookup does not provide diagnoses, prescriptions or clinical result content. Actors: Guest. Delivery: UI + backend. |
-| G-07 | Request Same-day Return as Guest | Submit a return request for an eligible skipped ticket using the validated guest visit and phone number. Wait for reception confirmation; an expired ticket cannot be restored into a new day. Actors: Guest. Delivery: UI + backend. |
 | G-08 | Use Guest Support Chat | Start a guest conversation, read replies and continue it using the guest session credentials. Automated replies are an internal support feature, not a separate external actor. Actors: Guest. Delivery: UI + backend. |
 | G-09 | Submit Contact Enquiry | Send contact information and an enquiry through the public form for delivery to the configured clinic mailbox. This is separate from the live receptionist chat. Actors: Guest. Delivery: UI + backend. |
 
@@ -94,7 +93,7 @@ RU-01 to RU-06 are inherited common functions. All other shared associations are
 | CU-02 | View Appointment List and Details | Review appointment lists, selected services and status for the account or permitted family profile. Present the displayed booking information to reception when attending. Actors: Customer. Delivery: UI + backend. |
 | CU-03 | Cancel Appointment | Cancel an owned or manageable appointment when its state permits cancellation. Reception check-in is not a Customer confirmation action. Actors: Customer. Delivery: UI + backend. |
 | CU-04 | View Follow-up Information | Review follow-up advice in the published medical record and view an appointment once it has been scheduled. A medical follow-up recommendation is not itself a confirmed future appointment. Actors: Customer. Delivery: UI + backend. |
-| CU-06 | Track Examination Journey | Track the current step, queue position, return requests and completed or skipped services for an authorized visit. The interface distinguishes ticket number from current waiting position and offers a new booking after the day has ended. Actors: Customer. Delivery: UI + backend. |
+| CU-06 | Track Examination Journey | Track the current step, queue position and completed or skipped services for an authorized visit. A skipped patient contacts the room staff directly; the Customer interface has no queue-return action. Actors: Customer. Delivery: UI + backend. |
 | CU-07 | View Completed Medical Records | Browse visit-based history and separate completed examination records within each visit. A partially completed visit can retain published clinical history; unfinished medical-record content is not a Customer publication. Actors: Customer. Delivery: UI + backend. |
 | CU-08 | View Prescriptions and Published Diagnostic Results | Read the prescription belonging to each completed medical record and authorized signed diagnostic results. Laboratory analytes are presented by panel where supported; files remain authorized resources, and referenced same-day results are distinguished from newly performed services. Actors: Customer. Delivery: UI + backend. |
 | CU-09 | View Invoice and Payment History | Filter payment history by date, method and permitted patient profile, then inspect a receipt with invoice totals, insurance and CareS payment details where applicable. Actors: Customer. Delivery: UI + backend. |
@@ -104,7 +103,6 @@ RU-01 to RU-06 are inherited common functions. All other shared associations are
 | CU-14 | Manage Family Profiles | Create and update linked family profiles, stop managing a member or restore an eligible archived relationship. Reading historical family data and initiating new actions use different access checks. Actors: Customer. Delivery: UI + backend. |
 | CU-15 | Create Family Group Booking | Book for multiple manageable patient profiles through the family-booking flow. Each patient retains a separate appointment and later visit, rather than sharing one medical record. Actors: Customer. Delivery: UI + backend. |
 | CU-16 | Change Appointment Details | Reopen an eligible appointment in the booking flow and save permitted service, date or shift changes after availability validation. Actors: Customer. Delivery: UI + backend. |
-| CU-17 | Request Same-day Return | Request reception verification for an eligible skipped ticket of the account or actively managed family profile. The request alone does not place the patient back into the callable queue. Actors: Customer. Delivery: UI + backend. |
 | CU-18 | Register CareS Prepaid Card | Register the account CareS card using the card form and required PIN confirmation. Card registration does not itself top up the balance. Actors: Customer. Delivery: UI + backend. |
 | CU-19 | View CareS Card and Balance History | Review card status, benefit information, balance and the balance-ledger history exposed by the Customer card screen. Top-ups are handled at the counter. Actors: Customer. Delivery: UI + backend. |
 | CU-20 | Print an Individual Medical Record | Open and print the specific examination record selected by record ID. Customer printing reloads authorized completed data and supports a permitted family profile; clinical data from different examination services must remain separate. Actors: Customer, Doctor. Delivery: UI + backend. |
@@ -123,7 +121,6 @@ RU-01 to RU-06 are inherited common functions. All other shared associations are
 | RC-06 | Update Permitted Appointment Information | Save permitted patient or appointment changes, including the service selection, or cancel an eligible booking. The reception selector supports both full panels and individual laboratory analytes. Actors: Receptionist, Clinic Manager. Delivery: UI + backend. |
 | RC-07 | Review and Coordinate Patient Journey | Inspect the visit timeline, current department, payment gates, blocked steps and completed or skipped services to direct the patient. Viewing a later step does not make it callable. Actors: Receptionist, Clinic Manager. Delivery: UI + backend. |
 | RC-08 | Manage Support Conversations | View active or closed conversations, open messages, reply to Customer or Guest and close an eligible session. This interface is not available to doctors, nurses or cashiers. Actors: Receptionist, Clinic Manager. Delivery: UI + backend. |
-| RC-10 | Confirm Patient Return | Review pending same-day return requests and confirm the patient is present. The backend rechecks the ticket and restores WAITING or BLOCKED as the workflow permits; expired requests cannot be confirmed. Actors: Receptionist, Clinic Manager. Delivery: UI + backend. |
 | RC-12 | Review Patient Visit History | Open the patient, visits and record-detail screens through reception history. Access uses the staff endpoints and is distinct from Customer family-profile authorization. Actors: Receptionist, Clinic Manager. Delivery: UI + backend. |
 | RC-13 | Recover an Eligible Blocked Journey through API | Request recovery of an eligible blocked journey through the management API. The current staff journey screen is explicitly read-only and has no advance action. The backend checks dependencies; this is not an unrestricted override of clinical completion. Actors: Clinic Manager, Administrator. Delivery: Backend only. |
 | RC-14 | Open Queue Display Screens | Use the launcher to open the overall calling screen or a selected room display in an authenticated browser tab. The launcher itself is a staff function, not an external actor. Actors: Receptionist, Clinic Manager. Delivery: UI + backend. |
@@ -156,14 +153,13 @@ RU-01 to RU-06 are inherited common functions. All other shared associations are
 | NU-04 | Record Vital Signs | Record or update vital signs for the active examination. Later examination records in the same visit can receive independent copies of valid source measurements; editing one record does not edit every copy. Actors: Nurse, Doctor. Delivery: UI + backend. |
 | NU-05 | View Relevant Patient Information | Review patient details and relevant history available in the assigned clinical workflow. Customer and family authorization rules are separate from staff access rules. Actors: Nurse. Delivery: UI + backend. |
 | NU-06 | Save Nursing Preparation Notes | Save permitted complaint, clinical preparation notes and vital signs in a nursing draft. This does not authorize prescribing, final diagnosis, diagnostic ordering or medical-record completion. Actors: Nurse. Delivery: UI + backend. |
-| NU-07 | Restore Eligible Absent Patient at Room | Use the existing room return action for an eligible same-day absent ticket. This direct room action is separate from the Customer or Guest request that reception confirms. It cannot restore an expired old-day ticket. Actors: Nurse, Doctor. Delivery: UI + backend. |
 
 ### 4 7 Doctor examination services
 
 | ID | Use Case | Description |
 | --- | --- | --- |
 | DR-01 | View Examination Queue | Review assigned examination-room patients, service order and current work. Display position is calculated separately from the fixed ticket number. Actors: Doctor. Delivery: UI + backend. |
-| DR-02 | Call and Receive Patient | Call or recall the permitted patient, mark absence or begin the service with an eligible on-duty doctor. Room and visit checks prevent bypassing active work. Actors: Doctor. Delivery: UI + backend. |
+| DR-02 | Call and Receive Patient | Call or recall the permitted patient, mark absence, restore an eligible same-day skipped patient after direct confirmation, or begin service. Duty, room and visit checks prevent cross-room handling. Actors: Doctor. Delivery: UI + backend. |
 | DR-03 | View Medical Records and History | Read the current patient history, allergies and available previous examination records before making clinical decisions. Access and publication differ from the Customer view. Actors: Doctor. Delivery: UI + backend. |
 | DR-04 | Record Medical Examination | Record symptoms and clinical findings for the current examination service. Each service has its own medical record, rather than completing every service in the visit together. Actors: Doctor. Delivery: UI + backend. |
 | DR-05 | Record Diagnosis and Treatment Plan | Select ICD-10 reference codes and record diagnosis, conclusion, treatment direction and patient instructions in the responsible doctor medical record. Actors: Doctor. Delivery: UI + backend. |
@@ -193,7 +189,7 @@ RU-01 to RU-06 are inherited common functions. All other shared associations are
 | DS-08 | Save Diagnostic Draft | Persist unfinished result data and omission reasons for a request or purchased panel members. Draft saving does not publish the result to the Customer. Actors: Doctor, Nurse. Delivery: UI + backend. |
 | DS-09 | Sign and Publish Diagnostic Result | Confirm the diagnostic result in the performing room as an eligible on-duty doctor. A Nurse may prepare the draft but cannot sign it. Cancelled requests cannot receive a new signed result. Actors: Doctor. Delivery: UI + backend. |
 | DS-10 | Complete Diagnostic Request | Complete purchased diagnostic requests through the result-confirmation operation. Shared queue completion and return-to-doctor readiness depend on all relevant requests; this is an outcome of signing, not an additional independent completion button. Actors: Doctor. Delivery: UI + backend. |
-| DS-11 | Handle Diagnostic Absence and Return | Mark an eligible called patient absent or use the existing same-day room-return action. Old skipped tickets cannot be restored across days. Actors: Doctor, Nurse. Delivery: UI + backend. |
+| DS-11 | Handle Diagnostic Absence and Return | Doctor or Nurse may mark an eligible called patient absent; only the on-duty Doctor may restore the patient to that room's queue on the same day. Actors: Doctor, Nurse. Delivery: UI + backend. |
 | DS-12 | Cancel an Eligible Diagnostic Request | Cancel a request when the performing-room doctor, current duty and request state permit it. This is distinct from refunding a paid service. Actors: Doctor. Delivery: UI + backend. |
 | DS-13 | View Result Revision History | Read result revision history and authorized revision attachments in the diagnostic detail flow. Viewing an old revision does not edit a published result. Actors: Doctor, Nurse. Delivery: UI + backend. |
 | DS-14 | Amend a Signed Result through API | Create an amendment, update its draft and sign it under performing-room doctor checks. These endpoints exist, but the current LabDetailPage does not expose an amendment-authoring action. Actors: Doctor. Delivery: Backend only. |
@@ -267,7 +263,7 @@ Customer history exposes completed records and signed results, including partial
 
 ### Return and day closing
 
-Patient/Guest return requests await reception confirmation on the same day. Doctor/Nurse room screens also retain the direct eligible same-day return operation. These are distinct routes. Old unstarted tickets expire; carried-over clinical work is handled by the existing clinical workflow. The 00:05 cleanup is an internal scheduled responsibility, not an actor.
+A skipped patient contacts the doctor directly. Only the on-duty Doctor in the assigned room can restore an eligible ticket on the same day; Customer, Guest and Receptionist screens do not provide this action. Old unstarted tickets expire; carried-over clinical work is handled by the existing clinical workflow. The 00:05 cleanup is an internal scheduled responsibility, not an actor.
 
 ### Payment and card ownership
 

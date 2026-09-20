@@ -45,7 +45,6 @@ CREATE TABLE public.account (
 CREATE TABLE public.appointment (
     appointment_id uuid NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    deleted boolean NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     cancel_reason character varying(500),
     guest_address character varying(255),
@@ -180,24 +179,6 @@ CREATE TABLE public.department_capability (
 
 
 --
--- Name: feedback_target; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.feedback_target (
-    feedback_target_id uuid NOT NULL,
-    comment character varying(500),
-    rating integer NOT NULL,
-    source_record_id uuid,
-    staff_explanation character varying(1000),
-    target_key character varying(100) NOT NULL,
-    target_name character varying(200) NOT NULL,
-    target_type character varying(30) NOT NULL,
-    medical_record_id uuid NOT NULL,
-    staff_id uuid
-);
-
-
---
 -- Name: icd_10_codes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -321,15 +302,11 @@ CREATE TABLE public.medical_record (
     clinical_findings text,
     completed_at timestamp(6) without time zone,
     conclusion text,
-    contact_requested boolean,
     diagnosis text,
     doctor_confirmed_at timestamp(6) without time zone,
-    doctor_explanation character varying(1000),
-    doctor_rating integer,
     feedback_status character varying(20),
     follow_up_date date,
     follow_up_note text,
-    internal_note character varying(1000),
     manager_response character varying(1000),
     nursing_updated_at timestamp(6) without time zone,
     patient_instruction text,
@@ -339,10 +316,8 @@ CREATE TABLE public.medical_record (
     rating_score integer,
     record_code character varying(50),
     responded_at timestamp(6) without time zone,
-    staff_rating integer,
     status character varying(20) NOT NULL,
     record_version bigint DEFAULT 0 NOT NULL,
-    waiting_rating integer,
     doctor_id uuid NOT NULL,
     doctor_confirmed_by uuid,
     follow_up_appointment_id uuid,
@@ -350,7 +325,6 @@ CREATE TABLE public.medical_record (
     queue_ticket_id uuid,
     responded_by uuid,
     visit_id uuid NOT NULL,
-    vital_signs_id uuid,
     CONSTRAINT medical_record_status_check CHECK (((status)::text = ANY ((ARRAY['IN_PROGRESS'::character varying, 'DRAFT'::character varying, 'COMPLETED'::character varying])::text[])))
 );
 
@@ -418,7 +392,6 @@ CREATE TABLE public.notification (
     updated_at timestamp(6) without time zone NOT NULL,
     channel character varying(20) NOT NULL,
     content text NOT NULL,
-    failure_reason character varying(500),
     notification_type character varying(40) NOT NULL,
     read_at timestamp(6) without time zone,
     related_entity character varying(50),
@@ -442,8 +415,7 @@ CREATE TABLE public.public_announcement (
     content text NOT NULL,
     published boolean NOT NULL,
     starts_at timestamp(6) without time zone,
-    ends_at timestamp(6) without time zone,
-    created_by_account_id uuid
+    ends_at timestamp(6) without time zone
 );
 
 
@@ -626,7 +598,6 @@ CREATE TABLE public.staff_info (
     created_at timestamp(6) without time zone NOT NULL,
     deleted boolean NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    bank_account character varying(30),
     highest_degree character varying(100),
     license_number character varying(50),
     national_id character varying(20),
@@ -689,7 +660,6 @@ CREATE TABLE public.test_request (
     cancel_reason character varying(500),
     completed_at timestamp(6) without time zone,
     description text,
-    performed_at timestamp(6) without time zone,
     status character varying(20) NOT NULL,
     invoice_item_id uuid,
     medical_record_id uuid NOT NULL,
@@ -817,14 +787,6 @@ ALTER TABLE ONLY public.department_capability
 
 ALTER TABLE ONLY public.department
     ADD CONSTRAINT department_pkey PRIMARY KEY (department_id);
-
-
---
--- Name: feedback_target feedback_target_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.feedback_target
-    ADD CONSTRAINT feedback_target_pkey PRIMARY KEY (feedback_target_id);
 
 
 --
@@ -1087,14 +1049,6 @@ ALTER TABLE ONLY public.profile
 
 
 --
--- Name: feedback_target uk_feedback_target; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.feedback_target
-    ADD CONSTRAINT uk_feedback_target UNIQUE (medical_record_id, target_key);
-
-
---
 -- Name: queue_ticket uk_queue_dept_date_number; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1196,14 +1150,6 @@ ALTER TABLE ONLY public.customer_visit
 
 ALTER TABLE ONLY public.staff_info
     ADD CONSTRAINT ukirvcx58qtjy2xw4dc0g4mjeim UNIQUE (staff_code);
-
-
---
--- Name: medical_record ukjhu53ra6kq25m2g8esv1xo3fk; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.medical_record
-    ADD CONSTRAINT ukjhu53ra6kq25m2g8esv1xo3fk UNIQUE (vital_signs_id);
 
 
 --
@@ -1625,14 +1571,6 @@ ALTER TABLE ONLY public.staff_schedule_template
 
 
 --
--- Name: feedback_target fkk7w1td7a0migvu5ddtkqbxthc; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.feedback_target
-    ADD CONSTRAINT fkk7w1td7a0migvu5ddtkqbxthc FOREIGN KEY (staff_id) REFERENCES public.staff_info(staff_id);
-
-
---
 -- Name: appointment_services fkkv6gwfscv4td54g96ra0p0gn0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1657,27 +1595,11 @@ ALTER TABLE ONLY public.medical_record
 
 
 --
--- Name: medical_record fklatqa6paclst5rcgtkv2wfxey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.medical_record
-    ADD CONSTRAINT fklatqa6paclst5rcgtkv2wfxey FOREIGN KEY (vital_signs_id) REFERENCES public.vital_signs(vital_id);
-
-
---
 -- Name: profile fklc4oipegt3vyph78q31itt3pf; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.profile
     ADD CONSTRAINT fklc4oipegt3vyph78q31itt3pf FOREIGN KEY (account_id) REFERENCES public.account(account_id);
-
-
---
--- Name: feedback_target fkly49830wxcmp4xq1hkx7jhs6; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.feedback_target
-    ADD CONSTRAINT fkly49830wxcmp4xq1hkx7jhs6 FOREIGN KEY (medical_record_id) REFERENCES public.medical_record(record_id);
 
 
 --

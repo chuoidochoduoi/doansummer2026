@@ -1559,5 +1559,91 @@ class StaffScheduleServiceTest {
         assertThrows(org.example.doansummer2026.exception.ConflictException.class,
                 () -> service.assignStaff(unsupported));
     }
+
+    @Test
+    void validateDepartmentCoverageCoversAdministrativeUnassignedAndDuplicateDoctorBranches() {
+        LocalDate date = LocalDate.now().plusWeeks(2);
+        ShiftConfig workShift = shift(UUID.randomUUID(), "Ca sáng");
+        StaffInfo unknown = StaffInfo.builder().staffId(UUID.randomUUID()).build();
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                service, "validateDepartmentCoverage", unknown, date, workShift));
+
+        StaffInfo nurse = staff(UUID.randomUUID(), "Y tá chưa xếp phòng");
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                        service, "validateDepartmentCoverage", nurse, date, workShift));
+
+        var department = org.example.doansummer2026.model.Department.builder()
+                .departmentId(UUID.randomUUID()).build();
+        nurse.setDepartment(department);
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                service, "validateDepartmentCoverage", nurse, date, workShift));
+        verify(staffDutyService).requireEligibility(nurse, department);
+
+        StaffInfo doctor = staff(UUID.randomUUID(), "Bác sĩ chính");
+        doctor.setSystemRole(SystemRole.DOCTOR);
+        doctor.setDepartment(department);
+        StaffInfo otherDoctor = staff(UUID.randomUUID(), "Bác sĩ khác");
+        otherDoctor.setSystemRole(SystemRole.DOCTOR);
+        otherDoctor.setDepartment(department);
+        when(scheduleRepo.findAllByWorkDateAndShift_ShiftIdAndStatus(
+                date, workShift.getShiftId(), ScheduleStatus.SCHEDULED)).thenReturn(List.of(
+                StaffSchedule.builder().staff(null).build(),
+                StaffSchedule.builder().staff(StaffInfo.builder().systemRole(null).build()).build(),
+                StaffSchedule.builder().staff(otherDoctor).build()));
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                        service, "validateDepartmentCoverage", doctor, date, workShift));
+    }
+
+    @Test
+    void ensureCoverageCanBeRemovedCoversIgnoredLegacyAndUncoveredAppointment() {
+        StaffSchedule completed = StaffSchedule.builder().status(ScheduleStatus.COMPLETED).build();
+        StaffSchedule missingShift = StaffSchedule.builder().status(ScheduleStatus.SCHEDULED).build();
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                service, "ensureCoverageCanBeRemoved", completed));
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                service, "ensureCoverageCanBeRemoved", missingShift));
+
+        LocalDate date = LocalDate.now().plusWeeks(2);
+        ShiftConfig workShift = shift(UUID.randomUUID(), "Ca sáng");
+        StaffInfo assigned = staff(UUID.randomUUID(), "Bác sĩ cuối cùng");
+        StaffSchedule schedule = schedule(UUID.randomUUID(), assigned, date, workShift);
+        org.example.doansummer2026.model.MedicalService serviceItem =
+                org.example.doansummer2026.model.MedicalService.builder().name("Khám Nội").build();
+        org.example.doansummer2026.model.Appointment appointment =
+                org.example.doansummer2026.model.Appointment.builder().shiftName("Ca sáng")
+                        .services(new java.util.HashSet<>(List.of(serviceItem))).build();
+        when(appointmentRepository.findActiveBetween(any(), any(), anyList())).thenReturn(List.of(appointment));
+        when(serviceAvailabilityService.evaluate(serviceItem, date, workShift, false))
+                .thenReturn(new ServiceAvailabilityService.Evaluation(true, null, List.of()));
+        when(serviceAvailabilityService.evaluate(serviceItem, date, workShift, false, assigned.getStaffId()))
+                .thenReturn(new ServiceAvailabilityService.Evaluation(false, null, List.of()));
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                        service, "ensureCoverageCanBeRemoved", schedule));
+    }
+
+    @Test
+    void ensureScheduleHasNotStartedCoversPastFutureAndTodayTimeSources() {
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(service,
+                        "ensureScheduleHasNotStarted", StaffSchedule.builder().workDate(null).build()));
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(service,
+                        "ensureScheduleHasNotStarted", StaffSchedule.builder().workDate(today.minusDays(1)).build()));
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(service,
+                "ensureScheduleHasNotStarted", StaffSchedule.builder().workDate(today.plusDays(1)).build()));
+
+        StaffSchedule noStart = StaffSchedule.builder().workDate(today).build();
+        assertThrows(org.example.doansummer2026.exception.ConflictException.class,
+                () -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                        service, "ensureScheduleHasNotStarted", noStart));
+        StaffSchedule futureToday = StaffSchedule.builder().workDate(today)
+                .actualStartTime(java.time.LocalTime.MAX).build();
+        assertDoesNotThrow(() -> org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                service, "ensureScheduleHasNotStarted", futureToday));
+    }
 }
 

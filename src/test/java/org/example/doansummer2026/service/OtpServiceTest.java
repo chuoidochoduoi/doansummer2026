@@ -11,6 +11,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.concurrent.TimeUnit;
+import java.security.SecureRandom;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -149,6 +150,23 @@ class OtpServiceTest {
         verifyNoInteractions(
                 emailService
         );
+    }
+
+    @Test
+    void sendOtp_RegeneratesWhenRandomCodeMatchesPreviousCode() {
+        String phone = "0912345678";
+        SecureRandom random = mock(SecureRandom.class);
+        ReflectionTestUtils.setField(otpService, "random", random);
+        when(redisTemplate.hasKey("otp:cooldown:" + phone)).thenReturn(false);
+        when(valueOperations.increment("otp:send-count:" + phone)).thenReturn(1L);
+        when(valueOperations.get("otp:" + phone)).thenReturn("123456");
+        when(random.nextInt(900_000)).thenReturn(23_456, 554_321);
+
+        String result = otpService.sendOtp(phone);
+
+        assertEquals("654321", result);
+        verify(random, times(2)).nextInt(900_000);
+        verify(valueOperations).set("otp:" + phone, "654321", 5L, TimeUnit.MINUTES);
     }
 
 

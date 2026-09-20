@@ -47,7 +47,7 @@ public class PayOSWebhookController {
             return RestResponses.ok(Map.of("success", true, "message", "Webhook received"));
         } catch (Exception e) {
             log.error("Failed to process PayOS webhook: ", e);
-            return RestResponses.ok(Map.of("success", false, "message", e.getMessage() != null ? e.getMessage() : "Unknown error"));
+            return RestResponses.ok(Map.of("success", false, "message", e.getMessage() != null ? e.getMessage() : "Không xác định được lỗi"));
         }
     }
 }

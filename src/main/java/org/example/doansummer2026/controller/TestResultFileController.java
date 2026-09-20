@@ -34,7 +34,6 @@ import java.util.UUID;
 public class TestResultFileController {
 
     private final TestResultRepository resultRepository;
-    private final org.example.doansummer2026.repository.TestResultAttachmentRepository attachmentRepository;
     private final AuthService authService;
     private final org.example.doansummer2026.repository.StaffInfoRepository staffInfoRepository;
     private final org.example.doansummer2026.service.FamilyAccessService familyAccessService;
@@ -76,32 +75,6 @@ public class TestResultFileController {
                 .contentLength(content.length)
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
                 .body(content);
-    }
-
-    @GetMapping("/attachments/{attachmentId}/file")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<byte[]> viewAttachment(@PathVariable UUID attachmentId,
-                                                  @RequestParam(defaultValue = "inline") String disposition) {
-        var attachment = attachmentRepository.findById(attachmentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tệp đính kèm"));
-        TestResult result = attachment.getRevision().getTestResult();
-        verifyAccess(result, authService.currentAccount());
-        Path root = Paths.get(uploadRoot).toAbsolutePath().normalize();
-        Path attachmentDirectory = root.resolve("test-results").resolve("attachments").normalize();
-        Path stored = Paths.get(attachment.getStoragePath()).toAbsolutePath().normalize();
-        if (!stored.startsWith(attachmentDirectory) || !Files.isRegularFile(stored) || !Files.isReadable(stored))
-            throw new ResourceNotFoundException("Tệp đính kèm không tồn tại");
-        try {
-            byte[] content = Files.readAllBytes(stored);
-            ContentDisposition contentDisposition = "attachment".equalsIgnoreCase(disposition)
-                    ? ContentDisposition.attachment().filename(attachment.getOriginalName(), StandardCharsets.UTF_8).build()
-                    : ContentDisposition.inline().filename(attachment.getOriginalName(), StandardCharsets.UTF_8).build();
-            return ResponseEntity.ok().contentType(MediaType.parseMediaType(attachment.getContentType()))
-                    .contentLength(content.length)
-                    .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString()).body(content);
-        } catch (IOException ex) {
-            throw new BadRequestException("Không thể đọc tệp đính kèm");
-        }
     }
 
     private void verifyAccess(TestResult result, Account account) {

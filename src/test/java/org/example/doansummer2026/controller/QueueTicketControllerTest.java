@@ -15,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -91,6 +92,16 @@ class QueueTicketControllerTest {
         assertSame(chain, controller.sameRoomChain(id).getBody());
         assertEquals(204, controller.delete(id).getStatusCode().value());
         verify(service).delete(id);
+    }
+
+    @Test
+    void returnToQueue_IsRestrictedToDoctor() throws Exception {
+        PreAuthorize authorization = QueueTicketController.class
+                .getDeclaredMethod("returnToQueue", UUID.class)
+                .getAnnotation(PreAuthorize.class);
+
+        assertNotNull(authorization);
+        assertEquals("hasAuthority('ROLE_DOCTOR')", authorization.value());
     }
 
     @Test

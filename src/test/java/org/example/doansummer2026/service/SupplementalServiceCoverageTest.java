@@ -153,6 +153,22 @@ class SupplementalServiceCoverageTest {
                 service.checkBhytCard("F").message());
     }
 
+    @Test
+    void bhxhValidResponseTreatsNonStringIdentityFieldsAsAbsent() {
+        Insurance insurance = Insurance.builder().insuranceId(UUID.randomUUID()).code("BHYT")
+                .name("Bảo hiểm Y tế").build();
+        BhxhIntegrationService service = new BhxhIntegrationService(insurances, restTemplate, "http://mock/verify");
+        when(restTemplate.getForObject(anyString(), org.mockito.ArgumentMatchers.eq(Map.class)))
+                .thenReturn(Map.of("isValid", true, "fullName", 123, "dateOfBirth", true));
+        when(insurances.findByCode("BHYT")).thenReturn(Optional.of(insurance));
+
+        var result = service.checkBhytCard("REMOTE");
+
+        assertTrue(result.isValid());
+        assertNull(result.fullName());
+        assertNull(result.dateOfBirth());
+    }
+
     private ShiftConfig shift(String name) {
         return ShiftConfig.builder().shiftId(UUID.randomUUID()).name(name)
                 .startTime("00:00").endTime("08:00").isActive(true).build();

@@ -11,6 +11,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.*;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
 import java.util.*;
@@ -203,5 +204,65 @@ class FamilyMemberServiceTest {
         assertTrue(response.active());
         assertEquals(child.getProfileId(), response.patientProfileId());
         verifyNoInteractions(profiles);
+    }
+
+    @Test
+    void textNormalizationHelpersCoverNullBlankAndWhitespaceValues() {
+        assertEquals("", ReflectionTestUtils.invokeMethod(service, "normalize", (Object) null));
+        assertEquals("nguyễn minh an", ReflectionTestUtils.invokeMethod(service, "normalize", "  Nguyễn   Minh An "));
+        assertNull(ReflectionTestUtils.invokeMethod(service, "clean", (Object) null));
+        assertEquals("Hà Nội", ReflectionTestUtils.invokeMethod(service, "clean", " Hà   Nội "));
+        assertNull(ReflectionTestUtils.invokeMethod(service, "emptyToNull", (Object) null));
+        assertNull(ReflectionTestUtils.invokeMethod(service, "emptyToNull", "   "));
+        assertEquals("Hà Nội", ReflectionTestUtils.invokeMethod(service, "emptyToNull", " Hà   Nội "));
+    }
+
+    @Test
+    void duplicateValidationIgnoresEditedProfileButRejectsDuplicateAndOwnerIdentity() {
+        FamilyMemberRequest same = request(null, null);
+        when(members.findAllByOwnerProfile_ProfileIdOrderByCreatedAtAsc(owner.getProfileId()))
+                .thenReturn(List.of(relation));
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(service, "ensureNotDuplicate",
+                owner, child.getProfileId(), same));
+
+        assertThrows(ConflictException.class, () -> ReflectionTestUtils.invokeMethod(service,
+                "ensureNotDuplicate", owner, null, same));
+
+        FamilyMemberRequest self = new FamilyMemberRequest(" Nguyễn  Anh Đức ", owner.getDateOfBirth(),
+                Gender.MALE, FamilyRelationship.OTHER, null, null, null, null, true);
+        when(members.findAllByOwnerProfile_ProfileIdOrderByCreatedAtAsc(owner.getProfileId()))
+                .thenReturn(List.of());
+        assertThrows(ConflictException.class, () -> ReflectionTestUtils.invokeMethod(service,
+                "ensureNotDuplicate", owner, null, self));
+    }
+
+    @Test
+    void duplicateValidationEvaluatesEveryIdentityComponent() {
+        FamilyMemberRequest expected = request(null, null);
+        Profile differentName = Profile.builder().profileId(UUID.randomUUID()).fullName("Tên khác")
+                .dateOfBirth(child.getDateOfBirth()).gender(child.getGender()).build();
+        Profile differentBirthDate = Profile.builder().profileId(UUID.randomUUID()).fullName(child.getFullName())
+                .dateOfBirth(child.getDateOfBirth().minusDays(1)).gender(child.getGender()).build();
+        Profile differentGender = Profile.builder().profileId(UUID.randomUUID()).fullName(child.getFullName())
+                .dateOfBirth(child.getDateOfBirth()).gender(Gender.MALE).build();
+        when(members.findAllByOwnerProfile_ProfileIdOrderByCreatedAtAsc(owner.getProfileId()))
+                .thenReturn(List.of(differentName, differentBirthDate, differentGender).stream()
+                        .map(profile -> FamilyMember.builder().memberProfile(profile).build()).toList());
+
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(service,
+                "ensureNotDuplicate", owner, null, expected));
+
+        FamilyMemberRequest ownerNameDifferentBirth = new FamilyMemberRequest(owner.getFullName(),
+                owner.getDateOfBirth().minusDays(1), owner.getGender(), FamilyRelationship.OTHER,
+                null, null, null, null, true);
+        FamilyMemberRequest ownerNameBirthDifferentGender = new FamilyMemberRequest(owner.getFullName(),
+                owner.getDateOfBirth(), Gender.FEMALE, FamilyRelationship.OTHER,
+                null, null, null, null, true);
+        when(members.findAllByOwnerProfile_ProfileIdOrderByCreatedAtAsc(owner.getProfileId()))
+                .thenReturn(List.of());
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(service,
+                "ensureNotDuplicate", owner, null, ownerNameDifferentBirth));
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(service,
+                "ensureNotDuplicate", owner, null, ownerNameBirthDifferentGender));
     }
 }

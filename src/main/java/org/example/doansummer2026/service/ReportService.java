@@ -26,13 +26,11 @@ import java.util.stream.Collectors;
 import org.example.doansummer2026.repository.CustomerVisitRepository;
 import org.example.doansummer2026.repository.TransactionRepository;
 import org.example.doansummer2026.repository.MembershipCardLedgerRepository;
-import org.example.doansummer2026.repository.TestResultRevisionRepository;
 import org.example.doansummer2026.dto.report.ClinicOverviewResponse;
 import java.time.temporal.ChronoUnit;
 import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.enums.TransactionStatus;
 import org.example.doansummer2026.enums.PaymentMethod;
-import org.example.doansummer2026.enums.TestResultRevisionStatus;
 import org.example.doansummer2026.enums.MedicalRecordStatus;
 import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.enums.TestRequestStatus;
@@ -49,7 +47,6 @@ public class ReportService {
     private final CustomerVisitRepository visitRepo;
     private final TransactionRepository transactionRepo;
     private final MembershipCardLedgerRepository ledgerRepo;
-    private final TestResultRevisionRepository revisionRepo;
 
     /** Canonical report for the manager UI; old response contracts remain available. */
     public ClinicOverviewResponse getOverview(LocalDate from, LocalDate to) {
@@ -72,11 +69,10 @@ public class ReportService {
                 .filter(t -> t.getStatus() == TransactionStatus.SUCCESS)
                 .filter(t -> t.getPaymentMethod() != PaymentMethod.INSURANCE)
                 .filter(t -> inPeriod(t.getPaidAt(), start, end)).toList();
-        var signedTests = revisionRepo.findAll().stream()
-                .filter(r -> !Boolean.TRUE.equals(r.getDeleted()) && r.getSignedAt() != null && r.getSignedBy() != null)
-                .filter(r -> r.getStatus() == TestResultRevisionStatus.SIGNED)
-                .filter(r -> r.getTestResult() != null && r.getTestResult().getTestRequest() != null)
-                .map(r -> r.getTestResult().getTestRequest().getTestRequestId()).collect(Collectors.toSet());
+        var signedTests = tests.stream()
+                .filter(t -> t.getTestResult() != null && t.getTestResult().getVerifiedAt() != null
+                        && t.getTestResult().getVerifiedBy() != null)
+                .map(t -> t.getTestRequestId()).collect(Collectors.toSet());
         var completedRecords = records.stream()
                 .filter(r -> r.getStatus() == MedicalRecordStatus.COMPLETED)
                 .filter(r -> r.getQueueTicket() != null && r.getQueueTicket().getService() != null

@@ -56,8 +56,9 @@ public class VitalSignsService implements VitalSignsServiceInterface {
                 .recordedBy(recordedBy)
                 .build();
         VitalSigns saved = repo.save(v);
+        // Keep the inverse side in memory for the response; persistence is owned by
+        // vital_signs.medical_record_id, so MedicalRecord no longer needs a second FK.
         record.setVitalSigns(saved);
-        medicalRecordRepo.save(record);
         return VitalSignsResponse.from(saved);
     }
 

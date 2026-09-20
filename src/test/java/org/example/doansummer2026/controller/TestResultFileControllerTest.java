@@ -5,7 +5,6 @@ import org.example.doansummer2026.enums.SystemRole;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.*;
 import org.example.doansummer2026.repository.StaffInfoRepository;
-import org.example.doansummer2026.repository.TestResultAttachmentRepository;
 import org.example.doansummer2026.repository.TestResultRepository;
 import org.example.doansummer2026.service.AuthService;
 import org.example.doansummer2026.service.FamilyAccessService;
@@ -30,7 +29,6 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class TestResultFileControllerTest {
     @Mock TestResultRepository resultRepository;
-    @Mock TestResultAttachmentRepository attachmentRepository;
     @Mock AuthService authService;
     @Mock StaffInfoRepository staffInfoRepository;
     @Mock FamilyAccessService familyAccessService;
@@ -44,7 +42,7 @@ class TestResultFileControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new TestResultFileController(resultRepository, attachmentRepository, authService,
+        controller = new TestResultFileController(resultRepository, authService,
                 staffInfoRepository, familyAccessService);
         ReflectionTestUtils.setField(controller, "uploadRoot", temp.toString());
         resultId = UUID.randomUUID();
@@ -170,37 +168,6 @@ class TestResultFileControllerTest {
         when(authService.currentAccount()).thenReturn(customerAccount());
         result.setImageUrl("../../missing.pdf");
         assertThrows(ResourceNotFoundException.class, () -> controller.viewFile(resultId, "inline"));
-    }
-
-    @Test
-    void attachmentCanBeViewedOrDownloadedAndInvalidPathIsRejected() throws Exception {
-        Path dir = Files.createDirectories(temp.resolve("test-results").resolve("attachments"));
-        Path file = dir.resolve("report.txt");
-        Files.writeString(file, "signed result");
-        TestResultRevision revision = TestResultRevision.builder().testResult(result).build();
-        UUID attachmentId = UUID.randomUUID();
-        TestResultAttachment attachment = TestResultAttachment.builder().attachmentId(attachmentId)
-                .revision(revision).storagePath(file.toString()).originalName("kết quả.txt")
-                .contentType("text/plain").build();
-        when(attachmentRepository.findById(attachmentId)).thenReturn(Optional.of(attachment));
-        when(authService.currentAccount()).thenReturn(customerAccount());
-
-        var inline = controller.viewAttachment(attachmentId, "inline");
-        assertEquals("signed result", new String(inline.getBody()));
-        assertTrue(inline.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION).startsWith("inline"));
-        var download = controller.viewAttachment(attachmentId, "attachment");
-        assertTrue(download.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION).startsWith("attachment"));
-
-        attachment.setStoragePath(temp.resolve("outside.txt").toString());
-        assertThrows(ResourceNotFoundException.class,
-                () -> controller.viewAttachment(attachmentId, "inline"));
-    }
-
-    @Test
-    void missingAttachmentIsReported() {
-        UUID id = UUID.randomUUID();
-        when(attachmentRepository.findById(id)).thenReturn(Optional.empty());
-        assertThrows(ResourceNotFoundException.class, () -> controller.viewAttachment(id, "inline"));
     }
 
     private Account customerAccount() {

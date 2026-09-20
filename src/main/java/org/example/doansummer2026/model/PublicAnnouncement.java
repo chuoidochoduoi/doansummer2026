@@ -49,6 +49,4 @@ public class PublicAnnouncement extends BaseEntity {
     @Column(name = "ends_at")
     private LocalDateTime endsAt;
 
-    @Column(name = "created_by_account_id")
-    private UUID createdByAccountId;
 }

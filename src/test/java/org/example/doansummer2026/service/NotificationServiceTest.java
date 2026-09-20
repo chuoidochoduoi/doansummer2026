@@ -626,52 +626,6 @@ class NotificationServiceTest {
 
 
     // =========================================================
-    // UPDATE FAILURE REASON
-    // =========================================================
-
-    @Test
-    void update_ShouldUpdateFailureReason() {
-
-        UUID id =
-                UUID.randomUUID();
-
-        Notification n =
-                notification(
-                        id,
-                        profile(
-                                UUID.randomUUID(),
-                                null
-                        ),
-                        NotificationStatus.PENDING
-                );
-
-        NotificationUpdateRequest req =
-                mock(NotificationUpdateRequest.class);
-
-        when(req.failureReason())
-                .thenReturn(
-                        "Send failed"
-                );
-
-        when(repo.findById(id))
-                .thenReturn(Optional.of(n));
-
-        when(repo.save(n))
-                .thenReturn(n);
-
-        notificationService.update(
-                id,
-                req
-        );
-
-        assertEquals(
-                "Send failed",
-                n.getFailureReason()
-        );
-    }
-
-
-    // =========================================================
     // UPDATE EMPTY REQUEST
     // =========================================================
 
@@ -690,8 +644,6 @@ class NotificationServiceTest {
                         ),
                         NotificationStatus.PENDING
                 );
-
-        n.setFailureReason("Old reason");
 
         NotificationUpdateRequest req =
                 mock(NotificationUpdateRequest.class);
@@ -712,10 +664,6 @@ class NotificationServiceTest {
                 n.getStatus()
         );
 
-        assertEquals(
-                "Old reason",
-                n.getFailureReason()
-        );
     }
 
 
@@ -881,7 +829,7 @@ class NotificationServiceTest {
     // =========================================================
 
     @Test
-    void markFailed_ShouldSetStatusAndReason() {
+    void markFailed_ShouldSetFailedStatus() {
 
         UUID id =
                 UUID.randomUUID();
@@ -902,11 +850,7 @@ class NotificationServiceTest {
         when(repo.save(n))
                 .thenReturn(n);
 
-        var result =
-                notificationService.markFailed(
-                        id,
-                        "Gateway error"
-                );
+        var result = notificationService.markFailed(id);
 
         assertNotNull(result);
 
@@ -915,10 +859,6 @@ class NotificationServiceTest {
                 n.getStatus()
         );
 
-        assertEquals(
-                "Gateway error",
-                n.getFailureReason()
-        );
     }
 
 

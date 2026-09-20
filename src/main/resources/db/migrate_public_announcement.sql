@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS public_announcement (
     published BOOLEAN NOT NULL DEFAULT FALSE,
     starts_at TIMESTAMP(6) WITHOUT TIME ZONE,
     ends_at TIMESTAMP(6) WITHOUT TIME ZONE,
-    created_by_account_id UUID,
     CONSTRAINT public_announcement_period_check
         CHECK (ends_at IS NULL OR starts_at IS NULL OR ends_at > starts_at)
 );

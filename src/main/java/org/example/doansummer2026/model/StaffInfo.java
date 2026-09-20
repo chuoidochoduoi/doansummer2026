@@ -70,9 +70,6 @@ public class StaffInfo extends BaseEntity {
     @Column(name = "national_id", unique = true, length = 20)
     private String nationalId;
 
-    @Column(name = "bank_account", length = 30)
-    private String bankAccount;
-
     @Column(name = "highest_degree", length = 100)
     private String highestDegree;
 
@@ -107,7 +104,6 @@ public class StaffInfo extends BaseEntity {
         return sb.toString();
     }
 }
-
 
 
 

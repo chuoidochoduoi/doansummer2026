@@ -72,26 +72,22 @@ public record VisitDetailResponse(
     public record SkippedServiceResponse(UUID serviceId, String serviceName, String departmentName,
                                          String roomCode, String workDate, String reason) {}
 
-    public static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests,
-            java.util.Map<UUID, List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>> attachments) {
-        return from(records, testRequests, attachments, List.of(), List.of(), false);
+    public static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests) {
+        return from(records, testRequests, List.of(), List.of(), false);
     }
 
     public static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests,
-            java.util.Map<UUID, List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>> attachments,
             List<SameDayParaclinicalResultResponse> sameDayReferencedResults) {
-        return from(records, testRequests, attachments, sameDayReferencedResults, List.of(), false);
+        return from(records, testRequests, sameDayReferencedResults, List.of(), false);
     }
 
     public static VisitDetailResponse publishedHistory(List<MedicalRecord> records, List<TestRequest> testRequests,
-            java.util.Map<UUID, List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>> attachments,
             List<SameDayParaclinicalResultResponse> sameDayReferencedResults,
             List<QueueTicket> visitQueues) {
-        return from(records, testRequests, attachments, sameDayReferencedResults, visitQueues, true);
+        return from(records, testRequests, sameDayReferencedResults, visitQueues, true);
     }
 
     private static VisitDetailResponse from(List<MedicalRecord> records, List<TestRequest> testRequests,
-            java.util.Map<UUID, List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>> attachments,
             List<SameDayParaclinicalResultResponse> sameDayReferencedResults,
             List<QueueTicket> visitQueues, boolean publishedOnly) {
         if (records == null || records.isEmpty()) return null;
@@ -127,7 +123,7 @@ public record VisitDetailResponse(
                 .toList();
 
         List<TestResponse> tests = testRequests == null ? List.of()
-                : testRequests.stream().map(request -> testFrom(request, attachments)).toList();
+                : testRequests.stream().map(VisitDetailResponse::testFrom).toList();
         List<String> labDoctors = tests.stream()
                 .map(TestResponse::performedBy)
                 .filter(name -> name != null && !name.isBlank())
@@ -230,16 +226,10 @@ public record VisitDetailResponse(
 
     private static org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse clinicalFormFrom(
             MedicalRecord record) {
-        var version = record.getFormTemplateVersion();
-        if (version == null || version.getTemplate() == null) return null;
-        var template = version.getTemplate();
-        return new org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse(
-                template.getTemplateId(), version.getVersionId(), version.getVersionNo(), template.getCode(),
-                template.getName(), template.getContext(), version.getSchemaJson(), record.getSpecialtyData());
+        return null;
     }
 
-    private static TestResponse testFrom(TestRequest request,
-            java.util.Map<UUID, List<org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse>> attachments) {
+    private static TestResponse testFrom(TestRequest request) {
         TestResult result = request.getTestResult();
         String serviceCode = request.getService() != null ? request.getService().getServiceCode() : null;
         var panel = org.example.doansummer2026.service.LaboratoryAnalyteCatalog.panel(serviceCode)
@@ -262,7 +252,7 @@ public record VisitDetailResponse(
                 hasAbnormal(result), structuredResults(result), result != null ? result.getConclusion() : null,
                 result != null && result.getImageUrl() != null
                         ? "/api/v1/test-results/" + result.getResultId() + "/file" : null,
-                result == null ? List.of() : attachments.getOrDefault(result.getResultId(), List.of()), performedBy,
+                performedBy,
                 result != null && result.getPerformedBy() != null ? result.getPerformedBy().getStaffId() : null,
                 result != null && result.getPerformedAt() != null ? result.getPerformedAt().toString() : null,
                 result != null ? result.getSampleId() : null,
@@ -284,27 +274,18 @@ public record VisitDetailResponse(
     }
 
     private static List<TestResponse.TestResultResponse> structuredResults(TestResult result) {
-        if (result == null || result.getResultData() == null || result.getFormTemplateVersion() == null
-                || result.getFormTemplateVersion().getSchemaJson() == null) return List.of();
-        var schema = result.getFormTemplateVersion().getSchemaJson();
-        java.util.List<tools.jackson.databind.JsonNode> fields = new java.util.ArrayList<>();
-        if (schema.path("fields").isArray()) schema.path("fields").forEach(fields::add);
-        if (schema.path("sections").isArray()) schema.path("sections").forEach(section -> {
-            if (section.path("fields").isArray()) section.path("fields").forEach(fields::add);
-        });
-        var flags = result.getResultData().path("_meta").path("flags");
-        return fields.stream().filter(field -> result.getResultData().hasNonNull(field.path("key").asText()))
-                .map(field -> {
-                    String key = field.path("key").asText();
-                    var flag = flags.path(key);
-                    var range = flag.path("referenceRange");
-                    String rangeText = range.isObject()
-                            ? (range.has("low") ? range.path("low").asText() : "") + " - "
-                            + (range.has("high") ? range.path("high").asText() : "") : null;
-                    return new TestResponse.TestResultResponse(field.path("label").asText(key),
-                            result.getResultData().path(key).asText(), rangeText,
-                            field.path("unit").asText(null), flag.path("status").asText("NOT_EVALUATED"));
-                }).toList();
+        return java.util.List.of();
+    }
+
+    private static String omissionText(tools.jackson.databind.JsonNode omission) {
+        String reason = switch (omission.path("reasonCode").asText("")) {
+            case "INSUFFICIENT_SAMPLE" -> "Không thực hiện – không đủ mẫu";
+            case "UNACCEPTABLE_SAMPLE" -> "Không thực hiện – mẫu không đạt";
+            case "EQUIPMENT_ERROR" -> "Không thực hiện – lỗi thiết bị";
+            default -> "Không thực hiện";
+        };
+        String detail = omission.path("reasonDetail").asText("").trim();
+        return detail.isEmpty() ? reason : reason + ": " + detail;
     }
 
     private static boolean hasAbnormal(TestResult result) {

@@ -68,10 +68,6 @@ public class TestResult extends BaseEntity {
     @Column(name = "result_data", columnDefinition = "jsonb")
     private JsonNode resultData;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "form_template_version_id")
-    private ClinicalFormTemplateVersion formTemplateVersion;
-
     /** Ma mau vat (tu may quet hoac thiet bi y te). */
     @Column(name = "sample_id", length = 100)
     private String sampleId;

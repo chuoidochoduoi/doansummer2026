@@ -59,6 +59,15 @@ class ServiceCapabilityServiceTest {
     }
 
     @Test
+    void createAcceptsExplicitActiveValue() {
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.create(new ServiceCapabilityRequest("img", "Chẩn đoán hình ảnh", null, true));
+
+        assertTrue(result.active());
+    }
+
+    @Test
     void createRejectsDuplicateCodeBeforeCheckingName() {
         when(repository.existsByCodeIgnoreCase("dup")).thenReturn(true);
 
@@ -150,7 +159,9 @@ class ServiceCapabilityServiceTest {
                 new ServiceCapabilityRequest("LAB", "Lab", null, false)).active());
         assertFalse(service.update(id,
                 new ServiceCapabilityRequest("LAB", "Lab", null, null)).active());
-        verify(repository, times(2)).save(value);
+        assertFalse(service.update(id,
+                new ServiceCapabilityRequest("LAB", "Lab", null, false)).active());
+        verify(repository, times(3)).save(value);
     }
 
     @Test
@@ -168,6 +179,24 @@ class ServiceCapabilityServiceTest {
 
         verify(repository).delete(unused);
         verify(repository, never()).delete(used);
+    }
+
+    @Test
+    void deleteRejectsDepartmentAndStaffReferencesIndependently() {
+        UUID departmentUsedId = UUID.randomUUID();
+        UUID staffUsedId = UUID.randomUUID();
+        ServiceCapability departmentUsed = capability(departmentUsedId, "D", "Department", true);
+        ServiceCapability staffUsed = capability(staffUsedId, "S", "Staff", true);
+        when(repository.findById(departmentUsedId)).thenReturn(Optional.of(departmentUsed));
+        when(repository.findById(staffUsedId)).thenReturn(Optional.of(staffUsed));
+        when(departmentRepository.countReferencesToCapability(any(UUID.class)))
+                .thenAnswer(invocation -> departmentUsedId.equals(invocation.getArgument(0)) ? 1L : 0L);
+        when(staffCapabilityRepository.countActiveReferencesToCapability(any(UUID.class)))
+                .thenAnswer(invocation -> staffUsedId.equals(invocation.getArgument(0)) ? 1L : 0L);
+
+        assertThrows(ConflictException.class, () -> service.delete(departmentUsedId));
+        assertThrows(ConflictException.class, () -> service.delete(staffUsedId));
+        verify(repository, never()).delete(any());
     }
 
     @Test

@@ -95,6 +95,17 @@ class VitalSignsServiceTest {
     }
 
     @Test
+    void createRejectsMissingCurrentRecorderIdentity() {
+        UUID recordId = UUID.randomUUID();
+        when(medicalRecordRepository.findById(recordId))
+                .thenReturn(Optional.of(editableRecord(UUID.randomUUID(), null)));
+        when(authService.currentStaffId()).thenReturn(null);
+
+        assertThrows(BadRequestException.class, () -> service.create(createRequest(recordId)));
+        verifyNoInteractions(staffRepository);
+    }
+
+    @Test
     void updateChangesOnlyProvidedFields() {
         UUID id = UUID.randomUUID();
         UUID staffId = UUID.randomUUID();
@@ -188,6 +199,47 @@ class VitalSignsServiceTest {
         assertThrows(ConflictException.class, () -> service.update(id1, emptyUpdate()));
         assertThrows(BadRequestException.class, () -> service.update(id2, emptyUpdate()));
         assertThrows(BadRequestException.class, () -> service.update(id3, emptyUpdate()));
+    }
+
+    @Test
+    void updateRejectsVitalsWithoutMedicalRecord() {
+        UUID id = UUID.randomUUID();
+        when(repository.findById(id)).thenReturn(Optional.of(VitalSigns.builder().vitalId(id).build()));
+
+        assertThrows(BadRequestException.class, () -> service.update(id, emptyUpdate()));
+        verifyNoInteractions(authService);
+    }
+
+    @Test
+    void queueWithoutDepartmentFallsBackToTreatingDoctorCheck() {
+        UUID id = UUID.randomUUID();
+        UUID doctorId = UUID.randomUUID();
+        MedicalRecord record = editableRecord(doctorId, null);
+        record.setQueueTicket(QueueTicket.builder().department(null).build());
+        VitalSigns value = vitals(id, record);
+        when(repository.findById(id)).thenReturn(Optional.of(value));
+        when(authService.currentStaffId()).thenReturn(doctorId);
+        when(repository.save(value)).thenReturn(value);
+
+        assertDoesNotThrow(() -> service.update(id, emptyUpdate()));
+        verifyNoInteractions(staffRepository, staffDutyService);
+    }
+
+    @Test
+    void departmentRecordWithoutTreatingDoctorRejectsNonNurse() {
+        UUID id = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+        Department department = Department.builder().departmentId(UUID.randomUUID()).build();
+        MedicalRecord record = MedicalRecord.builder().recordId(UUID.randomUUID())
+                .status(MedicalRecordStatus.IN_PROGRESS)
+                .queueTicket(QueueTicket.builder().department(department).build())
+                .doctor(null).build();
+        when(repository.findById(id)).thenReturn(Optional.of(vitals(id, record)));
+        when(authService.currentStaffId()).thenReturn(actorId);
+        when(staffRepository.findById(actorId))
+                .thenReturn(Optional.of(staff(actorId, SystemRole.RECEPTIONIST)));
+
+        assertThrows(BadRequestException.class, () -> service.update(id, emptyUpdate()));
     }
 
     @Test

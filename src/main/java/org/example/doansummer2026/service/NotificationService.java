@@ -86,7 +86,6 @@ public class NotificationService implements NotificationServiceInterface {
                 n.setSentAt(LocalDateTime.now());
             }
         }
-        if (req.failureReason() != null) n.setFailureReason(req.failureReason());
         return NotificationResponse.from(repo.save(n));
     }
 
@@ -107,10 +106,9 @@ public class NotificationService implements NotificationServiceInterface {
         return NotificationResponse.from(repo.save(n));
     }
 
-    public NotificationResponse markFailed(UUID id, String reason) {
+    public NotificationResponse markFailed(UUID id) {
         Notification n = findById(id);
         n.setStatus(NotificationStatus.FAILED);
-        n.setFailureReason(reason);
         return NotificationResponse.from(repo.save(n));
     }
 

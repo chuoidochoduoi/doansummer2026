@@ -20,7 +20,7 @@ public interface NotificationServiceInterface {
     UnreadCountResponse unreadCount(UUID recipientId);
     NotificationResponse send(UUID id);
     NotificationResponse markRead(UUID id);
-    NotificationResponse markFailed(UUID id, String reason);
+    NotificationResponse markFailed(UUID id);
 }
 
 

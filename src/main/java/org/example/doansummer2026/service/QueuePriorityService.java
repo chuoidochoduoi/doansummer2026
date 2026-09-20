@@ -100,15 +100,10 @@ public class QueuePriorityService {
         List<QueueTicket> regular = callable.stream()
                 .filter(ticket -> !metadata.get(ticket.getTicketId()).activeAppointmentPriority())
                 .sorted(FIFO).toList();
-        for (int appointmentIndex = 0, regularIndex = 0;
-             appointmentIndex < appointments.size() || regularIndex < regular.size();) {
-            if (appointmentIndex < appointments.size()) {
-                orderedWaiting.add(appointments.get(appointmentIndex++));
-            }
-            if (regularIndex < regular.size()) {
-                orderedWaiting.add(regular.get(regularIndex++));
-            }
-        }
+        // Lịch hẹn đúng giờ được xếp thành một nhóm liên tục ngay sau các
+        // ưu tiên nghiệp vụ. Không xen kẽ khách trực tiếp giữa hai lịch hẹn.
+        orderedWaiting.addAll(appointments);
+        orderedWaiting.addAll(regular);
 
         boolean roomBusy = !inProgress.isEmpty();
         UUID callableId = !called.isEmpty() ? called.get(0).getTicketId()

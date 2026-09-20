@@ -30,9 +30,8 @@ class StaleJourneyDiagnosticTest {
     private final TestRequestRepository tests = mock(TestRequestRepository.class);
     private final InvoiceRepository invoices = mock(InvoiceRepository.class);
     private final MedicalRecordRepository records = mock(MedicalRecordRepository.class);
-    private final NotificationRepository notifications = mock(NotificationRepository.class);
     private final PatientJourneyService journeys = new PatientJourneyService(
-            visits, queues, tests, invoices, records, notifications, mock(SimpMessagingTemplate.class),
+            visits, queues, tests, invoices, records, mock(SimpMessagingTemplate.class),
             mock(QueuePriorityService.class));
 
     private CustomerVisit oldVisit(QueueStatus status) {
@@ -87,8 +86,7 @@ class StaleJourneyDiagnosticTest {
     void overnightCleanupSkipsWaitingButExcludesInProgressAndTestDone() {
         var appointmentRepo = mock(AppointmentRepository.class);
         var cleanup = new SystemCleanupService(appointmentRepo, queues,
-                mock(CustomerVisitRepository.class), mock(AuditLogService.class),
-                mock(QueueReturnRequestService.class));
+                mock(CustomerVisitRepository.class), mock(AuditLogService.class));
         var yesterday = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(1);
         var waiting = QueueTicket.builder().ticketId(UUID.randomUUID()).status(QueueStatus.WAITING).workDate(yesterday).build();
         var examining = QueueTicket.builder().ticketId(UUID.randomUUID()).status(QueueStatus.IN_PROGRESS).workDate(yesterday).build();
@@ -116,7 +114,7 @@ class StaleJourneyDiagnosticTest {
         var appointmentRepo = mock(AppointmentRepository.class);
         var visitRepo = mock(CustomerVisitRepository.class);
         var cleanup = new SystemCleanupService(appointmentRepo, queues, visitRepo,
-                mock(AuditLogService.class), mock(QueueReturnRequestService.class));
+                mock(AuditLogService.class));
         var yesterday = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(1);
         var visit = CustomerVisit.builder().visitId(UUID.randomUUID()).status(VisitStatus.CHECKED_IN)
                 .checkInTime(yesterday.atTime(8, 0)).build();
@@ -138,7 +136,7 @@ class StaleJourneyDiagnosticTest {
         var appointmentRepo = mock(AppointmentRepository.class);
         var visitRepo = mock(CustomerVisitRepository.class);
         var cleanup = new SystemCleanupService(appointmentRepo, queues, visitRepo,
-                mock(AuditLogService.class), mock(QueueReturnRequestService.class));
+                mock(AuditLogService.class));
         var yesterday = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(1);
         var visit = CustomerVisit.builder().visitId(UUID.randomUUID()).status(VisitStatus.IN_PROGRESS)
                 .checkInTime(yesterday.atTime(8, 0)).build();
@@ -161,7 +159,7 @@ class StaleJourneyDiagnosticTest {
         var appointmentRepo = mock(AppointmentRepository.class);
         var visitRepo = mock(CustomerVisitRepository.class);
         var cleanup = new SystemCleanupService(appointmentRepo, queues, visitRepo,
-                mock(AuditLogService.class), mock(QueueReturnRequestService.class));
+                mock(AuditLogService.class));
         var yesterday = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(1);
         var visit = CustomerVisit.builder().visitId(UUID.randomUUID()).status(VisitStatus.CHECKED_IN)
                 .checkInTime(yesterday.atTime(8, 0)).build();

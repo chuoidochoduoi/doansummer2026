@@ -6,7 +6,6 @@ import org.example.doansummer2026.aop.Auditable;
 import org.example.doansummer2026.dto.announcement.PublicAnnouncementRequest;
 import org.example.doansummer2026.dto.announcement.PublicAnnouncementResponse;
 import org.example.doansummer2026.enums.AuditAction;
-import org.example.doansummer2026.service.AuthService;
 import org.example.doansummer2026.service.PublicAnnouncementService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,7 +18,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PublicAnnouncementController {
     private final PublicAnnouncementService service;
-    private final AuthService authService;
 
     @GetMapping("/api/public/announcements")
     public List<PublicAnnouncementResponse> visible() {
@@ -36,7 +34,7 @@ public class PublicAnnouncementController {
     @PreAuthorize("hasAnyRole('ADMIN','CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "PublicAnnouncement", description = "Tạo thông báo công khai")
     public PublicAnnouncementResponse create(@Valid @RequestBody PublicAnnouncementRequest request) {
-        return service.create(request, authService.currentAccount().getAccountId());
+        return service.create(request);
     }
 
     @PutMapping("/api/v1/public-announcements/{id}")

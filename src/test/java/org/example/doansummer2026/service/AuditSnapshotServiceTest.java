@@ -25,14 +25,13 @@ class AuditSnapshotServiceTest {
     @Mock QueueTicketRepository queueTicketRepository;
     @Mock MedicalRecordRepository medicalRecordRepository;
     @Mock TestRequestRepository testRequestRepository;
-    @Mock ContactRequestRepository contactRequestRepository;
     @Mock ClinicInformationRepository clinicInformationRepository;
     private AuditSnapshotService service;
 
     @BeforeEach
     void setUp() {
         service = new AuditSnapshotService(invoiceRepository, queueTicketRepository, medicalRecordRepository,
-                testRequestRepository, contactRequestRepository, clinicInformationRepository, new ObjectMapper());
+                testRequestRepository, clinicInformationRepository, new ObjectMapper());
     }
 
     @Test
@@ -94,23 +93,6 @@ class AuditSnapshotServiceTest {
     }
 
     @Test
-    void snapshotsContactRequestWithAndWithoutAssignee() {
-        UUID id = UUID.randomUUID();
-        ContactRequest value = mock(ContactRequest.class);
-        StaffInfo staff = StaffInfo.builder().staffId(UUID.randomUUID()).build();
-        when(value.getContactRequestId()).thenReturn(id);
-        when(value.getRequestCode()).thenReturn("CR-001");
-        when(value.getAssignedStaff()).thenReturn(staff);
-        when(contactRequestRepository.findById(id)).thenReturn(Optional.of(value));
-        String assigned = service.snapshot("ContactRequest", id.toString());
-        assertTrue(assigned.contains(staff.getStaffId().toString()));
-
-        when(value.getAssignedStaff()).thenReturn(null);
-        String unassigned = service.snapshot("ContactRequest", id.toString());
-        assertTrue(unassigned.contains("assignedStaffId"));
-    }
-
-    @Test
     void clinicInformationUsesSingletonIdAndSerializesFields() {
         UUID id = ClinicInformationService.SINGLETON_ID;
         ClinicInformation value = mock(ClinicInformation.class);
@@ -127,7 +109,7 @@ class AuditSnapshotServiceTest {
     void serializationFailureReturnsNull() {
         ObjectMapper mapper = mock(ObjectMapper.class);
         service = new AuditSnapshotService(invoiceRepository, queueTicketRepository, medicalRecordRepository,
-                testRequestRepository, contactRequestRepository, clinicInformationRepository, mapper);
+                testRequestRepository, clinicInformationRepository, mapper);
         UUID id = UUID.randomUUID();
         when(invoiceRepository.findById(id)).thenReturn(Optional.of(Invoice.builder().invoiceId(id).build()));
         when(mapper.writeValueAsString(any())).thenThrow(new IllegalStateException("json unavailable"));

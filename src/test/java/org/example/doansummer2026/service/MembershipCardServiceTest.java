@@ -106,6 +106,41 @@ class MembershipCardServiceTest {
     }
 
     @Test
+    void resetPinRequiresMatchingConfirmationAndCurrentAccountPassword() {
+        assertThrows(BadRequestException.class, () -> service.resetPin(accountId,
+                new MembershipPinResetRequest("password", "123456", "654321")));
+        verifyNoInteractions(familyAccessService);
+
+        when(familyAccessService.ownerProfile(accountId)).thenReturn(owner);
+        owner.getAccount().setPasswordHash("stored-password");
+        when(passwordEncoder.matches("wrong-password", "stored-password")).thenReturn(false);
+
+        assertThrows(BadRequestException.class, () -> service.resetPin(accountId,
+                new MembershipPinResetRequest("wrong-password", "123456", "123456")));
+        verify(cardRepository, never()).save(any());
+        verify(redisTemplate, never()).delete(anyString());
+    }
+
+    @Test
+    void resetPinReplacesHashAndClearsFailedPinCounter() {
+        MembershipCard card = card(MembershipCardStatus.ACTIVE);
+        owner.getAccount().setPasswordHash("stored-password");
+        when(familyAccessService.ownerProfile(accountId)).thenReturn(owner);
+        when(passwordEncoder.matches("current-password", "stored-password")).thenReturn(true);
+        when(cardRepository.findByOwnerProfile_ProfileId(owner.getProfileId())).thenReturn(Optional.of(card));
+        when(cardRepository.findByIdForUpdate(card.getCardId())).thenReturn(Optional.of(card));
+        when(passwordEncoder.encode("654321")).thenReturn("new-pin-hash");
+        when(cardRepository.save(card)).thenReturn(card);
+
+        MembershipCardResponse response = service.resetPin(accountId,
+                new MembershipPinResetRequest("current-password", "654321", "654321"));
+
+        assertEquals(card.getCardCode(), response.cardCode());
+        assertEquals("new-pin-hash", card.getPinHash());
+        verify(redisTemplate).delete("membership:pin-fail:" + card.getCardId());
+    }
+
+    @Test
     void topUpIsIdempotentOnlyForSameCard() {
         MembershipCard card = card(MembershipCardStatus.ACTIVE);
         MembershipCardLedger duplicate = ledger(card, MembershipLedgerType.TOP_UP, new BigDecimal("300000"));
@@ -349,8 +384,8 @@ class MembershipCardServiceTest {
         oldInvoice.invoice.setIssueDate(oldInvoice.card.getBenefitStartsAt().toLocalDate().minusDays(1));
         oldInvoice.request = paymentRequest(oldInvoice.invoice.getInvoiceId(), oldInvoice.patient.getProfileId(), true,
                 null, "old-invoice");
-        when(transactionRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(ledgerRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        doAnswer(invocation -> invocation.getArgument(0)).when(transactionRepository).save(any());
+        doAnswer(invocation -> invocation.getArgument(0)).when(ledgerRepository).save(any());
         when(invoiceService.get(oldInvoice.invoice.getInvoiceId())).thenReturn(mock(InvoiceResponse.class));
         service.pay(accountId, oldInvoice.request);
         assertEquals(BigDecimal.ZERO, oldInvoice.invoice.getDiscount());

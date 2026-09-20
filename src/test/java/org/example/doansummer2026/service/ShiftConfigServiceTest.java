@@ -82,4 +82,30 @@ class ShiftConfigServiceTest {
         assertFalse(ShiftConfigService.isFixedShift(null)); assertFalse(ShiftConfigService.isFixedShift(unrelated));
         assertEquals(Integer.MAX_VALUE,ShiftConfigService.fixedOrder(unrelated)); assertEquals(Integer.MAX_VALUE,ShiftConfigService.fixedOrder(null));
     }
+
+    @Test void initializationCorrectsOnlyMismatchedEndTimeAndVersionsIt() {
+        ShiftConfig morning = ShiftConfig.builder().shiftId(UUID.randomUUID()).name("Ca Sáng")
+                .startTime("00:00").endTime("07:00").isActive(true).build();
+        ShiftConfig afternoon = shift("Ca Chiều"), evening = shift("Ca Tối");
+        when(shiftConfigRepository.findFirstByNameIgnoreCase("Ca Sáng")).thenReturn(Optional.of(morning));
+        when(shiftConfigRepository.findFirstByNameIgnoreCase("Ca Chiều")).thenReturn(Optional.of(afternoon));
+        when(shiftConfigRepository.findFirstByNameIgnoreCase("Ca Tối")).thenReturn(Optional.of(evening));
+        ShiftVersion baseline = ShiftVersion.builder().shift(morning).startTime(LocalTime.MIDNIGHT)
+                .endTime(LocalTime.of(7,0)).effectiveFrom(today.minusYears(1)).build();
+        when(shiftVersionRepository.findAllByShift_ShiftIdOrderByEffectiveFromDesc(morning.getShiftId()))
+                .thenReturn(List.of(baseline));
+        when(shiftVersionRepository.findAllByShift_ShiftIdOrderByEffectiveFromDesc(afternoon.getShiftId()))
+                .thenReturn(List.of(new ShiftVersion(), new ShiftVersion()));
+        when(shiftVersionRepository.findAllByShift_ShiftIdOrderByEffectiveFromDesc(evening.getShiftId()))
+                .thenReturn(List.of(new ShiftVersion(), new ShiftVersion()));
+
+        try(var dates = mockStatic(LocalDate.class,CALLS_REAL_METHODS)) {
+            dates.when(() -> LocalDate.now(zone)).thenReturn(today);
+            service.initDefaultShifts();
+        }
+
+        assertEquals("08:00", morning.getEndTime());
+        assertEquals(today.minusDays(1), baseline.getEffectiveTo());
+        verify(shiftVersionRepository, times(2)).save(any());
+    }
 }

@@ -32,7 +32,7 @@ public class PublicAnnouncementService {
                 .map(PublicAnnouncementResponse::from).toList();
     }
 
-    public PublicAnnouncementResponse create(PublicAnnouncementRequest request, UUID actorAccountId) {
+    public PublicAnnouncementResponse create(PublicAnnouncementRequest request) {
         validatePeriod(request.startsAt(), request.endsAt());
         PublicAnnouncement value = PublicAnnouncement.builder()
                 .title(normalize(request.title()))
@@ -40,7 +40,6 @@ public class PublicAnnouncementService {
                 .published(Boolean.TRUE.equals(request.published()))
                 .startsAt(request.startsAt())
                 .endsAt(request.endsAt())
-                .createdByAccountId(actorAccountId)
                 .build();
         return PublicAnnouncementResponse.from(repository.save(value));
     }

@@ -105,9 +105,8 @@ public class NotificationController {
 
     @PostMapping("/{id}/mark-failed")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<NotificationResponse> markFailed(@PathVariable UUID id,
-                                                             @RequestParam(required = false) String reason) {
-        return RestResponses.ok(service.markFailed(id, reason));
+    public ResponseEntity<NotificationResponse> markFailed(@PathVariable UUID id) {
+        return RestResponses.ok(service.markFailed(id));
     }
 
     @DeleteMapping("/{id}")
@@ -125,5 +124,4 @@ public class NotificationController {
         }
     }
 }
-
 

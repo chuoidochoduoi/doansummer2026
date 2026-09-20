@@ -48,6 +48,4 @@ public class ClinicScheduleException extends BaseEntity {
     @Column(name = "reason", nullable = false, length = 500)
     private String reason;
 
-    @Column(name = "created_by")
-    private UUID createdBy;
 }

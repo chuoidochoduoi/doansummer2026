@@ -12,7 +12,6 @@ public record PublicAnnouncementResponse(
         Boolean published,
         LocalDateTime startsAt,
         LocalDateTime endsAt,
-        UUID createdByAccountId,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         boolean currentlyVisible
@@ -25,7 +24,7 @@ public record PublicAnnouncementResponse(
         return new PublicAnnouncementResponse(
                 value.getAnnouncementId(), value.getTitle(), value.getContent(),
                 value.getPublished(), value.getStartsAt(), value.getEndsAt(),
-                value.getCreatedByAccountId(), value.getCreatedAt(), value.getUpdatedAt(), visible
+                value.getCreatedAt(), value.getUpdatedAt(), visible
         );
     }
 }

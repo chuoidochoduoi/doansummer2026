@@ -31,7 +31,6 @@ public record MedicalRecordUpdateRequest(
         List<TestRequestInExaminationRequest> testRequests,
         // Yeu cau tai kham (follow-up)
         FollowUpRequest followUp,
-        UUID formTemplateVersionId,
         JsonNode specialtyData,
         Long version
 ) {}

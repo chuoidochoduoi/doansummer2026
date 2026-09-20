@@ -39,7 +39,7 @@ public class GlobalExceptionHandler {
         ApiError body = new ApiError(
                 Instant.now(),
                 HttpStatus.BAD_REQUEST.value(),
-                "Bad Request",
+                "Yêu cầu không hợp lệ",
                 message,
                 req.getRequestURI(),
                 errors);
@@ -136,7 +136,7 @@ public class GlobalExceptionHandler {
         ApiError body = new ApiError(
                 Instant.now(),
                 status.value(),
-                status.getReasonPhrase(),
+                vietnameseErrorLabel(status),
                 message,
                 req.getRequestURI(),
                 errors);
@@ -154,12 +154,25 @@ public class GlobalExceptionHandler {
         }
     }
 
+    private String vietnameseErrorLabel(HttpStatus status) {
+        return switch (status) {
+            case BAD_REQUEST -> "Yêu cầu không hợp lệ";
+            case UNAUTHORIZED -> "Chưa xác thực";
+            case FORBIDDEN -> "Không có quyền truy cập";
+            case NOT_FOUND -> "Không tìm thấy dữ liệu";
+            case CONFLICT -> "Xung đột dữ liệu";
+            case SERVICE_UNAVAILABLE -> "Dịch vụ tạm thời không khả dụng";
+            case INTERNAL_SERVER_ERROR -> "Lỗi hệ thống";
+            default -> "Không thể xử lý yêu cầu";
+        };
+    }
+
     private byte[] toJsonBytes(ApiError body) {
         try {
             return objectMapper.writeValueAsString(body).getBytes(StandardCharsets.UTF_8);
         } catch (Exception serializationError) {
             log.error("Cannot serialize API error response", serializationError);
-            return "{\"status\":500,\"error\":\"Internal Server Error\",\"message\":\"Lỗi hệ thống\"}"
+            return "{\"status\":500,\"error\":\"Lỗi hệ thống\",\"message\":\"Lỗi hệ thống\"}"
                     .getBytes(StandardCharsets.UTF_8);
         }
     }

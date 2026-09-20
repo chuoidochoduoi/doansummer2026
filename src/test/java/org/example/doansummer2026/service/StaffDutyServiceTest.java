@@ -197,4 +197,44 @@ class StaffDutyServiceTest {
         assertEquals(List.of(doctor), service.findOnDutyStaff(room, date.atTime(9, 0)));
         assertTrue(service.findOnDutyStaff(null, date.atTime(9, 0)).isEmpty());
     }
+
+    @Test
+    void currentDoctorOnDutyMayOperateInOwnRoom() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        LocalTime now = LocalTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        StaffSchedule current = StaffSchedule.builder().staff(doctor).status(ScheduleStatus.SCHEDULED)
+                .workDate(today).actualStartTime(now.minusMinutes(5)).actualEndTime(now.plusMinutes(5)).build();
+        when(auth.currentStaffId()).thenReturn(doctor.getStaffId());
+        when(staffRepository.findById(doctor.getStaffId())).thenReturn(Optional.of(doctor));
+        when(schedules.findAllByStaff_StaffIdAndWorkDate(doctor.getStaffId(), today)).thenReturn(List.of(current));
+        when(schedules.findAllByStaff_StaffIdAndWorkDate(doctor.getStaffId(), today.minusDays(1))).thenReturn(List.of());
+
+        assertSame(doctor, service.requireCurrentStaffOnDuty(room, true));
+    }
+
+    @Test
+    void currentNonDoctorMayOperateWhenDoctorIsNotRequired() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        LocalTime now = LocalTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        doctor.setSystemRole(SystemRole.NURSE);
+        StaffSchedule current = StaffSchedule.builder().staff(doctor).status(ScheduleStatus.SCHEDULED)
+                .workDate(today).actualStartTime(now.minusMinutes(5)).actualEndTime(now.plusMinutes(5)).build();
+        when(auth.currentStaffId()).thenReturn(doctor.getStaffId());
+        when(staffRepository.findById(doctor.getStaffId())).thenReturn(Optional.of(doctor));
+        when(schedules.findAllByStaff_StaffIdAndWorkDate(doctor.getStaffId(), today)).thenReturn(List.of(current));
+        when(schedules.findAllByStaff_StaffIdAndWorkDate(doctor.getStaffId(), today.minusDays(1))).thenReturn(List.of());
+
+        assertSame(doctor, service.requireCurrentStaffOnDuty(room, false));
+    }
+
+    @Test
+    void doctorWithoutCurrentScheduleIsRejectedAfterIdentityValidation() {
+        when(auth.currentStaffId()).thenReturn(doctor.getStaffId());
+        when(staffRepository.findById(doctor.getStaffId())).thenReturn(Optional.of(doctor));
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        when(schedules.findAllByStaff_StaffIdAndWorkDate(doctor.getStaffId(), today)).thenReturn(List.of());
+        when(schedules.findAllByStaff_StaffIdAndWorkDate(doctor.getStaffId(), today.minusDays(1))).thenReturn(List.of());
+
+        assertThrows(BadRequestException.class, () -> service.requireCurrentStaffOnDuty(room, false));
+    }
 }

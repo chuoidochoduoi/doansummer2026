@@ -1,6 +1,5 @@
 package org.example.doansummer2026.dto.medicalhistory;
 
-import org.example.doansummer2026.dto.testresult.TestResultAttachmentResponse;
 import org.example.doansummer2026.enums.DepartmentType;
 import tools.jackson.databind.JsonNode;
 
@@ -21,7 +20,7 @@ public record SameDayParaclinicalResultResponse(
         JsonNode resultData,
         List<TestResponse.TestResultResponse> results,
         String conclusion,
-        List<TestResultAttachmentResponse> attachments,
+        String pdfUrl,
         LocalDateTime verifiedAt,
         UUID verifiedById,
         String verifiedByName,

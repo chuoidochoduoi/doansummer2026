@@ -46,6 +46,4 @@ public class ShiftVersion extends BaseEntity {
     @Column(name = "change_reason", nullable = false, length = 500)
     private String changeReason;
 
-    @Column(name = "created_by")
-    private UUID createdBy;
 }

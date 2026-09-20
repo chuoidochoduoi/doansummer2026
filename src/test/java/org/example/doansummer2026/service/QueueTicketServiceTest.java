@@ -23,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -2518,6 +2519,52 @@ class QueueTicketServiceTest {
     }
 
     @Test
+    void completeAndReturnRecord_ShouldReusePrepaidParaclinicalSelectionWithoutInvoice() {
+        CompletionFixture fixture = completionFixture();
+        UUID serviceId = UUID.randomUUID();
+        TestRequestInExaminationRequest selection = mock(TestRequestInExaminationRequest.class);
+        when(selection.serviceId()).thenReturn(serviceId);
+        MedicalRecordUpdateRequest update = mock(MedicalRecordUpdateRequest.class);
+        when(update.testRequests()).thenReturn(List.of(selection));
+        MedicalService service = MedicalService.builder().serviceId(serviceId)
+                .departmentType(DepartmentType.PARACLINICAL).build();
+        when(serviceSelectionPolicyService.normalizeOrThrow(anyCollection())).thenReturn(List.of(service));
+        when(testRequestRepository.findDistinctActiveServiceIdsByVisit(
+                fixture.visitId(), TestRequestStatus.CANCELLED)).thenReturn(List.of());
+        when(testRequestService.attachPrepaidRequestToExamination(
+                eq(fixture.visitId()), eq(fixture.record().getRecordId()), eq(serviceId),
+                eq(fixture.doctorId()), any())).thenReturn(true);
+        when(testRequestService.hasIncompleteRequestsForRecord(fixture.record().getRecordId())).thenReturn(true);
+
+        queueTicketService.completeAndReturnRecord(fixture.ticketId(), update);
+
+        verify(invoiceService, never()).create(any());
+        verify(testRequestService, never()).ensureServiceNotAlreadyRequested(any(), any());
+        assertEquals(QueueStatus.WAITING_FOR_TEST, fixture.ticket().getStatus());
+    }
+
+    @Test
+    void completeAndReturnRecord_ShouldRejectNonParaclinicalSelection() {
+        CompletionFixture fixture = completionFixture();
+        UUID serviceId = UUID.randomUUID();
+        TestRequestInExaminationRequest selection = mock(TestRequestInExaminationRequest.class);
+        when(selection.serviceId()).thenReturn(serviceId);
+        MedicalRecordUpdateRequest update = mock(MedicalRecordUpdateRequest.class);
+        when(update.testRequests()).thenReturn(List.of(selection));
+        MedicalService service = MedicalService.builder().serviceId(serviceId)
+                .name("Khám Nội").departmentType(DepartmentType.EXAMINATION).build();
+        when(serviceSelectionPolicyService.normalizeOrThrow(anyCollection())).thenReturn(List.of(service));
+        when(testRequestRepository.findDistinctActiveServiceIdsByVisit(
+                fixture.visitId(), TestRequestStatus.CANCELLED)).thenReturn(List.of());
+        when(testRequestService.attachPrepaidRequestToExamination(any(), any(), any(), any(), any()))
+                .thenReturn(false);
+
+        assertThrows(BadRequestException.class,
+                () -> queueTicketService.completeAndReturnRecord(fixture.ticketId(), update));
+        verify(invoiceService, never()).create(any());
+    }
+
+    @Test
     void completeAndReturnRecord_ShouldMapAllEditableFieldsAndCreateVitalSigns() {
         CompletionFixture fixture = completionFixture();
         MedicalRecordUpdateRequest update = mock(MedicalRecordUpdateRequest.class);
@@ -2729,6 +2776,84 @@ class QueueTicketServiceTest {
     }
 
     @Test
+    void ensureCallableToday_ShouldAllowOnlyTodayOrValidReturnAfterCompletedTests() {
+        java.time.ZoneId clinicZone = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+        LocalDate today = LocalDate.now(clinicZone);
+        QueueTicket current = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .workDate(today).status(QueueStatus.WAITING)
+                .department(Department.builder().status(DepartmentStatus.AVAILABLE).build()).build();
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "ensureCallableToday", current));
+
+        QueueTicket missingDate = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .status(QueueStatus.WAITING).build();
+        missingDate.setWorkDate(null);
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "ensureCallableToday", missingDate));
+
+        QueueTicket expired = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .workDate(today.minusDays(1)).status(QueueStatus.WAITING).build();
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "ensureCallableToday", expired));
+
+        QueueTicket resultReturn = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .workDate(today.minusDays(1)).status(QueueStatus.TEST_DONE).build();
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "ensureCallableToday", resultReturn));
+
+        QueueTicket recalledToday = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .workDate(today.minusDays(1)).status(QueueStatus.CALLED)
+                .calledAt(today.atTime(8, 0)).build();
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "ensureCallableToday", recalledToday));
+        recalledToday.setCalledAt(today.minusDays(1).atTime(8, 0));
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "ensureCallableToday", recalledToday));
+
+        current.getDepartment().setStatus(DepartmentStatus.MAINTENANCE);
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "ensureCallableToday", current));
+    }
+
+    @Test
+    void ensurePatientNotBusy_ShouldLockProfileAndReportTheConflictingRoom() {
+        QueueTicket noVisit = QueueTicket.builder().ticketId(UUID.randomUUID()).build();
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "ensurePatientNotBusy", noVisit));
+        QueueTicket noCustomer = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .visit(CustomerVisit.builder().visitId(UUID.randomUUID()).build()).build();
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "ensurePatientNotBusy", noCustomer));
+
+        UUID patientId = UUID.randomUUID();
+        Profile patient = Profile.builder().profileId(patientId).build();
+        QueueTicket target = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .visit(CustomerVisit.builder().visitId(UUID.randomUUID()).customer(patient).build())
+                .workDate(LocalDate.now()).build();
+        when(profileRepo.findByIdForUpdate(patientId)).thenReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "ensurePatientNotBusy", target));
+
+        when(profileRepo.findByIdForUpdate(patientId)).thenReturn(Optional.of(patient));
+        when(repo.findPatientBusyTickets(eq(patientId), eq(target.getWorkDate()),
+                eq(target.getTicketId()), anyList())).thenReturn(List.of());
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "ensurePatientNotBusy", target));
+
+        QueueTicket busyWithoutRoom = QueueTicket.builder().ticketId(UUID.randomUUID()).build();
+        when(repo.findPatientBusyTickets(eq(patientId), eq(target.getWorkDate()),
+                eq(target.getTicketId()), anyList())).thenReturn(List.of(busyWithoutRoom));
+        ConflictException generic = assertThrows(ConflictException.class,
+                () -> ReflectionTestUtils.invokeMethod(queueTicketService, "ensurePatientNotBusy", target));
+        assertTrue(generic.getMessage().contains("phòng khác"));
+
+        busyWithoutRoom.setDepartment(Department.builder().name("Phòng siêu âm").build());
+        ConflictException named = assertThrows(ConflictException.class,
+                () -> ReflectionTestUtils.invokeMethod(queueTicketService, "ensurePatientNotBusy", target));
+        assertTrue(named.getMessage().contains("Phòng siêu âm"));
+    }
+
+    @Test
     void skipAndReturn_ShouldPreserveAbsenceMarkerAndRespectActiveJourney() {
         QueueTicket ticket = operationalLabTicket(QueueStatus.CALLED);
         ticket.setCalledAt(LocalDateTime.now().minusMinutes(5));
@@ -2746,13 +2871,13 @@ class QueueTicketServiceTest {
 
         ticket.setStatus(QueueStatus.SKIPPED);
         when(patientJourneyService.hasActiveStep(ticket.getVisit().getVisitId())).thenReturn(true);
-        queueTicketService.confirmReturnToQueue(ticket.getTicketId());
+        queueTicketService.returnToQueue(ticket.getTicketId());
         assertEquals(QueueStatus.BLOCKED, ticket.getStatus());
         verify(testRequestService).restoreRequestsForQueue(ticket.getTicketId(), true);
     }
 
     @Test
-    void finishParaclinicalQueue_ShouldValidateTypeStateAndIncompleteServicesThenComplete() {
+    void finishParaclinicalQueue_ShouldValidateTypeStateAndSpecimenThenComplete() {
         QueueTicket wrongType = operationalLabTicket(QueueStatus.IN_PROGRESS);
         wrongType.getDepartment().setDepartmentType(DepartmentType.EXAMINATION);
         stubOperationalTicket(wrongType);
@@ -2766,19 +2891,95 @@ class QueueTicketServiceTest {
 
         QueueTicket incomplete = operationalLabTicket(QueueStatus.IN_PROGRESS);
         stubOperationalTicket(incomplete);
-        when(testRequestRepository.countByQueueTicket_TicketIdAndStatusIn(eq(incomplete.getTicketId()), anyList()))
-                .thenReturn(2L);
+        TestRequest missingSample = mock(TestRequest.class);
+        MedicalService specimenService = MedicalService.builder().requiresSpecimen(true).build();
+        when(missingSample.getStatus()).thenReturn(TestRequestStatus.IN_PROGRESS);
+        when(missingSample.getService()).thenReturn(specimenService);
+        when(testRequestRepository.findAllByQueueTicket_TicketId(incomplete.getTicketId()))
+                .thenReturn(List.of(missingSample));
         assertThrows(ConflictException.class,
                 () -> queueTicketService.finishParaclinicalQueue(incomplete.getTicketId()));
 
         QueueTicket complete = operationalLabTicket(QueueStatus.IN_PROGRESS);
         stubOperationalTicket(complete);
-        when(testRequestRepository.countByQueueTicket_TicketIdAndStatusIn(eq(complete.getTicketId()), anyList()))
-                .thenReturn(0L);
+        TestRequest collectedRequest = mock(TestRequest.class);
+        TestResult acceptedSample = TestResult.builder()
+                .sampleId("SMP-001").sampleType(SpecimenType.BLOOD)
+                .sampleStatus(SpecimenStatus.ACCEPTED).collectedAt(LocalDateTime.now()).build();
+        when(collectedRequest.getStatus()).thenReturn(TestRequestStatus.IN_PROGRESS);
+        when(collectedRequest.getService()).thenReturn(specimenService);
+        when(collectedRequest.getTestResult()).thenReturn(acceptedSample);
+        when(testRequestRepository.findAllByQueueTicket_TicketId(complete.getTicketId()))
+                .thenReturn(List.of(collectedRequest));
         var response = queueTicketService.finishParaclinicalQueue(complete.getTicketId());
         assertEquals(QueueStatus.DONE, response.status());
         assertNotNull(complete.getCompletedAt());
         verify(patientJourneyService).activateNext(complete.getVisit().getVisitId());
+
+        var repeated = queueTicketService.finishParaclinicalQueue(complete.getTicketId());
+        assertEquals(QueueStatus.DONE, repeated.status());
+        verify(patientJourneyService, times(1)).activateNext(complete.getVisit().getVisitId());
+    }
+
+    @Test
+    void finishParaclinicalQueue_ShouldAllowImagingPatientToLeaveAfterDraftIsSaved() {
+        QueueTicket ticket = operationalLabTicket(QueueStatus.IN_PROGRESS);
+        stubOperationalTicket(ticket);
+        MedicalService imagingService = MedicalService.builder()
+                .serviceCode("IMG-001").requiresSpecimen(false).build();
+        TestRequest imaging = mock(TestRequest.class);
+        when(imaging.getStatus()).thenReturn(TestRequestStatus.IN_PROGRESS);
+        when(imaging.getService()).thenReturn(imagingService);
+        when(imaging.getTestResult()).thenReturn(TestResult.builder()
+                .performedAt(LocalDateTime.now()).build());
+        when(testRequestRepository.findAllByQueueTicket_TicketId(ticket.getTicketId()))
+                .thenReturn(List.of(imaging));
+
+        var response = queueTicketService.finishParaclinicalQueue(ticket.getTicketId());
+
+        assertEquals(QueueStatus.DONE, response.status());
+        assertEquals(TestRequestStatus.IN_PROGRESS, imaging.getStatus());
+        verify(patientJourneyService).activateNext(ticket.getVisit().getVisitId());
+    }
+
+    @Test
+    void finishParaclinicalQueue_ShouldRejectImagingWithoutExecutionDraft() {
+        QueueTicket ticket = operationalLabTicket(QueueStatus.IN_PROGRESS);
+        stubOperationalTicket(ticket);
+        TestRequest imaging = mock(TestRequest.class);
+        when(imaging.getStatus()).thenReturn(TestRequestStatus.IN_PROGRESS);
+        when(imaging.getService()).thenReturn(MedicalService.builder()
+                .serviceCode("IMG-001").requiresSpecimen(false).build());
+        when(testRequestRepository.findAllByQueueTicket_TicketId(ticket.getTicketId()))
+                .thenReturn(List.of(imaging));
+
+        assertThrows(ConflictException.class,
+                () -> queueTicketService.finishParaclinicalQueue(ticket.getTicketId()));
+        assertEquals(QueueStatus.IN_PROGRESS, ticket.getStatus());
+        verify(patientJourneyService, never()).activateNext(any());
+    }
+
+    @Test
+    void hasVitalSignsUpdateCoversEachFieldAndEmptyRequest() {
+        MedicalRecordUpdateRequest empty = mock(MedicalRecordUpdateRequest.class, invocation -> null);
+        assertFalse(Boolean.TRUE.equals(ReflectionTestUtils.invokeMethod(
+                queueTicketService, "hasVitalSignsUpdate", empty)));
+
+        MedicalRecordUpdateRequest bloodPressure = mock(MedicalRecordUpdateRequest.class, invocation -> null);
+        when(bloodPressure.bloodPressure()).thenReturn("120/80");
+        MedicalRecordUpdateRequest heartRate = mock(MedicalRecordUpdateRequest.class, invocation -> null);
+        when(heartRate.heartRate()).thenReturn(80);
+        MedicalRecordUpdateRequest temperature = mock(MedicalRecordUpdateRequest.class, invocation -> null);
+        when(temperature.temperature()).thenReturn(new BigDecimal("36.8"));
+        MedicalRecordUpdateRequest weight = mock(MedicalRecordUpdateRequest.class, invocation -> null);
+        when(weight.weight()).thenReturn(new BigDecimal("60"));
+        MedicalRecordUpdateRequest height = mock(MedicalRecordUpdateRequest.class, invocation -> null);
+        when(height.height()).thenReturn(new BigDecimal("165"));
+        for (MedicalRecordUpdateRequest request : List.of(
+                bloodPressure, heartRate, temperature, weight, height)) {
+            assertTrue(Boolean.TRUE.equals(ReflectionTestUtils.invokeMethod(
+                    queueTicketService, "hasVitalSignsUpdate", request)));
+        }
     }
 
     @Test
@@ -4313,6 +4514,411 @@ class QueueTicketServiceTest {
                 90,
                 vitalSigns.getHeartRate()
         );
+    }
+
+    @Test
+    void notifyDoctorsUsesRegisteredOrGuestNameAndFiltersIneligibleDutyStaff() {
+        Department department = Department.builder().departmentId(UUID.randomUUID()).name("Phòng Nội").build();
+        Profile patient = Profile.builder().profileId(UUID.randomUUID()).fullName("Nguyễn Văn An").build();
+        QueueTicket ticket = QueueTicket.builder().ticketId(UUID.randomUUID()).department(department)
+                .visit(CustomerVisit.builder().customer(patient).build()).build();
+        StaffInfo missingRole = StaffInfo.builder().profile(Profile.builder().profileId(UUID.randomUUID()).build()).build();
+        StaffInfo missingProfile = StaffInfo.builder().systemRole(SystemRole.DOCTOR).build();
+        Profile doctorProfile = Profile.builder().profileId(UUID.randomUUID()).build();
+        StaffInfo doctor = StaffInfo.builder().systemRole(SystemRole.DOCTOR).profile(doctorProfile).build();
+        Profile nurseProfile = Profile.builder().profileId(UUID.randomUUID()).build();
+        StaffInfo nurse = StaffInfo.builder().systemRole(SystemRole.NURSE).profile(nurseProfile).build();
+        when(staffDutyService.findOnDutyStaff(eq(department), any(LocalDateTime.class)))
+                .thenReturn(List.of(missingRole, missingProfile, doctor, nurse));
+        doThrow(new RuntimeException("notification unavailable")).when(notificationService)
+                .create(argThat(request -> doctorProfile.getProfileId().equals(request.recipientId())));
+
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(queueTicketService, "notifyDoctors", ticket));
+        verify(notificationService, times(2)).create(any());
+
+        clearInvocations(notificationService);
+        ticket.getVisit().setCustomer(null);
+        ticket.getVisit().setAppointment(Appointment.builder().guestFullName("Khách Trần An").build());
+        when(staffDutyService.findOnDutyStaff(eq(department), any(LocalDateTime.class)))
+                .thenReturn(List.of(nurse));
+        ReflectionTestUtils.invokeMethod(queueTicketService, "notifyDoctors", ticket);
+        verify(notificationService).create(argThat(request -> request.content().contains("Khách Trần An")));
+
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(queueTicketService,
+                "notifyDoctors", QueueTicket.builder().build()));
+    }
+
+    @Test
+    void updatePatientQueueDepartmentsRefreshesOwnAndPublishesOnlyOtherRooms() {
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(queueTicketService,
+                "updatePatientQueueDepartments", new Object[]{null}));
+        QueueTicket missingDepartment = QueueTicket.builder().build();
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(queueTicketService,
+                "updatePatientQueueDepartments", missingDepartment));
+
+        UUID ownDepartmentId = UUID.randomUUID();
+        Department own = Department.builder().departmentId(ownDepartmentId).build();
+        QueueTicket noVisit = QueueTicket.builder().department(own).build();
+        when(departmentRepo.findById(ownDepartmentId)).thenReturn(Optional.empty());
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(queueTicketService,
+                "updatePatientQueueDepartments", noVisit));
+
+        UUID patientId = UUID.randomUUID();
+        UUID otherDepartmentId = UUID.randomUUID();
+        LocalDate date = LocalDate.now();
+        QueueTicket complete = QueueTicket.builder().department(own).workDate(date)
+                .visit(CustomerVisit.builder().customer(Profile.builder().profileId(patientId).build()).build()).build();
+        when(repo.findPatientQueueDepartmentIds(patientId, date))
+                .thenReturn(List.of(ownDepartmentId, otherDepartmentId));
+        ReflectionTestUtils.invokeMethod(queueTicketService, "updatePatientQueueDepartments", complete);
+        verify(messagingTemplate).convertAndSend(
+                eq("/topic/department-" + otherDepartmentId + "-queue"), any(Object.class));
+        verify(messagingTemplate, never()).convertAndSend(
+                eq("/topic/department-" + ownDepartmentId + "-queue"), any(Object.class));
+    }
+
+    @Test
+    void getMedicalRecordOrCreate_ShouldCoverNoVisitMissingDoctorExistingAndNewRecord() {
+        QueueTicket detached = QueueTicket.builder().ticketId(UUID.randomUUID()).build();
+        assertNull(ReflectionTestUtils.invokeMethod(queueTicketService,
+                "getMedicalRecordOrCreate", detached, UUID.randomUUID()));
+
+        UUID doctorId = UUID.randomUUID();
+        QueueTicket queue = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .visit(CustomerVisit.builder().visitId(UUID.randomUUID()).build()).build();
+        when(recordRepo.findByQueueTicket_TicketId(queue.getTicketId())).thenReturn(Optional.empty());
+        when(staffRepo.findById(doctorId)).thenReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "getMedicalRecordOrCreate", queue, doctorId));
+
+        StaffInfo doctor = StaffInfo.builder().staffId(doctorId)
+                .profile(Profile.builder().fullName("Bác sĩ A").build()).build();
+        MedicalRecord existing = MedicalRecord.builder().recordId(UUID.randomUUID())
+                .visit(queue.getVisit()).queueTicket(queue).doctor(doctor)
+                .status(MedicalRecordStatus.IN_PROGRESS).build();
+        when(recordRepo.findByQueueTicket_TicketId(queue.getTicketId())).thenReturn(Optional.of(existing));
+        when(medicalRecordService.inheritFirstVisitVitalSigns(existing)).thenReturn(existing);
+        assertNotNull(ReflectionTestUtils.invokeMethod(queueTicketService,
+                "getMedicalRecordOrCreate", queue, doctorId));
+
+        when(recordRepo.findByQueueTicket_TicketId(queue.getTicketId())).thenReturn(Optional.empty());
+        when(staffRepo.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(recordRepo.save(any(MedicalRecord.class))).thenAnswer(invocation -> {
+            MedicalRecord saved = invocation.getArgument(0);
+            saved.setRecordId(UUID.randomUUID());
+            return saved;
+        });
+        when(medicalRecordService.inheritFirstVisitVitalSigns(any(MedicalRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        assertNotNull(ReflectionTestUtils.invokeMethod(queueTicketService,
+                "getMedicalRecordOrCreate", queue, doctorId));
+        verify(recordRepo).save(argThat(saved -> saved.getQueueTicket() == queue
+                && saved.getDoctor() == doctor && saved.getStatus() == MedicalRecordStatus.IN_PROGRESS));
+    }
+
+    @Test
+    void waitingCountAndBusyTicket_ShouldCoverMissingDepartmentPatientAndBusyResult() {
+        QueueTicket empty = QueueTicket.builder().build();
+        assertNull(ReflectionTestUtils.invokeMethod(queueTicketService, "getWaitingCount", empty));
+        assertNull(ReflectionTestUtils.invokeMethod(queueTicketService, "findBusyTicket", empty));
+
+        UUID departmentId = UUID.randomUUID();
+        UUID profileId = UUID.randomUUID();
+        QueueTicket ticket = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .department(Department.builder().departmentId(departmentId).build())
+                .visit(CustomerVisit.builder().customer(Profile.builder().profileId(profileId).build()).build())
+                .workDate(LocalDate.now()).build();
+        when(repo.countWaitingByDepartment(departmentId)).thenReturn(4L);
+        Integer waitingCount = ReflectionTestUtils.invokeMethod(
+                queueTicketService, "getWaitingCount", ticket);
+        assertEquals(4, waitingCount.intValue());
+        when(repo.findPatientBusyTickets(eq(profileId), eq(ticket.getWorkDate()),
+                eq(ticket.getTicketId()), anyList())).thenReturn(List.of());
+        assertNull(ReflectionTestUtils.invokeMethod(queueTicketService, "findBusyTicket", ticket));
+        QueueTicket busy = QueueTicket.builder().ticketId(UUID.randomUUID()).build();
+        when(repo.findPatientBusyTickets(eq(profileId), eq(ticket.getWorkDate()),
+                eq(ticket.getTicketId()), anyList())).thenReturn(List.of(busy));
+        assertSame(busy, ReflectionTestUtils.invokeMethod(queueTicketService, "findBusyTicket", ticket));
+    }
+
+    @Test
+    void busyTicketAndDepartmentRefresh_ShouldCoverEachShortCircuitOperand() {
+        QueueTicket nullId = QueueTicket.builder().workDate(LocalDate.now())
+                .visit(CustomerVisit.builder().customer(Profile.builder().profileId(UUID.randomUUID()).build()).build())
+                .build();
+        QueueTicket nullDate = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .visit(CustomerVisit.builder().customer(Profile.builder().profileId(UUID.randomUUID()).build()).build())
+                .build();
+        QueueTicket nullVisit = QueueTicket.builder().ticketId(UUID.randomUUID()).workDate(LocalDate.now()).build();
+        QueueTicket nullCustomer = QueueTicket.builder().ticketId(UUID.randomUUID()).workDate(LocalDate.now())
+                .visit(CustomerVisit.builder().build()).build();
+        for (QueueTicket candidate : List.of(nullId, nullDate, nullVisit, nullCustomer)) {
+            assertNull(ReflectionTestUtils.invokeMethod(queueTicketService, "findBusyTicket", candidate));
+        }
+
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(queueTicketService,
+                "updatePatientQueueDepartments", (Object) null));
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(queueTicketService,
+                "updatePatientQueueDepartments", QueueTicket.builder().build()));
+        QueueTicket noVisit = QueueTicket.builder()
+                .department(Department.builder().departmentId(UUID.randomUUID()).build()).build();
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(queueTicketService,
+                "updatePatientQueueDepartments", noVisit));
+        QueueTicket noCustomer = QueueTicket.builder()
+                .department(Department.builder().departmentId(UUID.randomUUID()).build())
+                .visit(CustomerVisit.builder().build()).workDate(LocalDate.now()).build();
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(queueTicketService,
+                "updatePatientQueueDepartments", noCustomer));
+        QueueTicket noDate = QueueTicket.builder()
+                .department(Department.builder().departmentId(UUID.randomUUID()).build())
+                .visit(CustomerVisit.builder().customer(Profile.builder().profileId(UUID.randomUUID()).build()).build())
+                .build();
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(queueTicketService,
+                "updatePatientQueueDepartments", noDate));
+    }
+
+    @Test
+    void notifyDoctors_ShouldCoverNullDepartmentGuestNullNameRoleProfileAndFailureBranches() {
+        QueueTicket noDepartment = QueueTicket.builder().build();
+        ReflectionTestUtils.invokeMethod(queueTicketService, "notifyDoctors", noDepartment);
+        verifyNoInteractions(staffDutyService, notificationService);
+
+        Department department = Department.builder().departmentId(UUID.randomUUID()).name(null).build();
+        Appointment guest = Appointment.builder().isGuest(true).guestFullName(null).build();
+        QueueTicket ticket = QueueTicket.builder().ticketId(UUID.randomUUID()).department(department)
+                .visit(CustomerVisit.builder().appointment(guest).build()).build();
+        StaffInfo noRole = StaffInfo.builder().build();
+        StaffInfo otherRole = StaffInfo.builder().systemRole(SystemRole.CASHIER).build();
+        StaffInfo noProfile = StaffInfo.builder().systemRole(SystemRole.DOCTOR).build();
+        StaffInfo nurse = StaffInfo.builder().systemRole(SystemRole.NURSE)
+                .profile(Profile.builder().profileId(UUID.randomUUID()).build()).build();
+        when(staffDutyService.findOnDutyStaff(eq(department), any(LocalDateTime.class)))
+                .thenReturn(List.of(noRole, otherRole, noProfile, nurse));
+        doThrow(new RuntimeException("notification unavailable")).when(notificationService).create(any());
+
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "notifyDoctors", ticket));
+        verify(notificationService).create(any());
+    }
+
+    @Test
+    void getMedicalRecordHelpers_ShouldCoverNullMissingAndMappedBranches() {
+        assertNull(ReflectionTestUtils.invokeMethod(queueTicketService, "getMedicalRecord", (Object) null));
+        UUID visitId = UUID.randomUUID();
+        when(recordRepo.findFirstByVisit_VisitIdOrderByCreatedAtDesc(visitId)).thenReturn(Optional.empty());
+        assertNull(ReflectionTestUtils.invokeMethod(queueTicketService, "getMedicalRecord", visitId));
+        assertNull(ReflectionTestUtils.invokeMethod(queueTicketService,
+                "getMedicalRecordByQueueTicket", (Object) null));
+        UUID ticketId = UUID.randomUUID();
+        when(recordRepo.findByQueueTicket_TicketId(ticketId)).thenReturn(Optional.empty());
+        assertNull(ReflectionTestUtils.invokeMethod(queueTicketService,
+                "getMedicalRecordByQueueTicket", ticketId));
+
+        MedicalRecord record = MedicalRecord.builder().recordId(UUID.randomUUID())
+                .visit(CustomerVisit.builder().visitId(visitId).build())
+                .status(MedicalRecordStatus.IN_PROGRESS).build();
+        when(recordRepo.findFirstByVisit_VisitIdOrderByCreatedAtDesc(visitId))
+                .thenReturn(Optional.of(record));
+        when(recordRepo.findByQueueTicket_TicketId(ticketId)).thenReturn(Optional.of(record));
+        assertNotNull(ReflectionTestUtils.invokeMethod(queueTicketService, "getMedicalRecord", visitId));
+        assertNotNull(ReflectionTestUtils.invokeMethod(
+                queueTicketService, "getMedicalRecordByQueueTicket", ticketId));
+    }
+
+    @Test
+    void updateDepartmentStatus_ShouldCoverNullMissingMaintenanceBusyAndAvailable() {
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "updateDepartmentStatus", (Object) null));
+        UUID id = UUID.randomUUID();
+        when(departmentRepo.findById(id)).thenReturn(Optional.empty());
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(queueTicketService, "updateDepartmentStatus", id));
+
+        Department department = Department.builder().departmentId(id)
+                .status(DepartmentStatus.MAINTENANCE).build();
+        when(departmentRepo.findById(id)).thenReturn(Optional.of(department));
+        ReflectionTestUtils.invokeMethod(queueTicketService, "updateDepartmentStatus", id);
+        verify(departmentRepo, never()).save(department);
+
+        department.setStatus(DepartmentStatus.AVAILABLE);
+        when(repo.countActiveTicketsByDepartment(id)).thenReturn(2L);
+        ReflectionTestUtils.invokeMethod(queueTicketService, "updateDepartmentStatus", id);
+        assertEquals(DepartmentStatus.IN_SESSION, department.getStatus());
+
+        when(repo.countActiveTicketsByDepartment(id)).thenReturn(0L);
+        ReflectionTestUtils.invokeMethod(queueTicketService, "updateDepartmentStatus", id);
+        assertEquals(DepartmentStatus.AVAILABLE, department.getStatus());
+        verify(departmentRepo, times(2)).save(department);
+    }
+
+    @Test
+    void directMutationEndpoints_ShouldRejectExistingTicketWithoutChangingHistory() {
+        UUID id = UUID.randomUUID();
+        QueueTicket ticket = QueueTicket.builder().ticketId(id).status(QueueStatus.WAITING).build();
+        when(repo.findByIdForUpdate(id)).thenReturn(Optional.of(ticket));
+        when(repo.findById(id)).thenReturn(Optional.of(ticket));
+
+        assertThrows(ConflictException.class, () -> queueTicketService.update(
+                id, mock(org.example.doansummer2026.dto.queueticket.QueueTicketUpdateRequest.class)));
+        assertThrows(ConflictException.class, () -> queueTicketService.complete(id));
+        assertThrows(ConflictException.class, () -> queueTicketService.delete(id));
+
+        verify(repo, never()).save(any());
+        verify(repo, never()).delete(any(QueueTicket.class));
+    }
+
+    @Test
+    void startExam_ShouldCoverExaminationRecordCreationAndExistingRecordBranches() {
+        QueueTicket createdQueue = operationalLabTicket(QueueStatus.CALLED);
+        createdQueue.getDepartment().setDepartmentType(DepartmentType.EXAMINATION);
+        createdQueue.setService(MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("EX-NEW").name("Khám Nội")
+                .departmentType(DepartmentType.EXAMINATION).build());
+        stubOperationalTicket(createdQueue);
+        when(repo.countInprogressByDepartment(createdQueue.getDepartment().getDepartmentId())).thenReturn(0L);
+        UUID doctorId = UUID.randomUUID();
+        StaffInfo doctor = StaffInfo.builder().staffId(doctorId)
+                .profile(Profile.builder().fullName("Bác sĩ Minh").build()).build();
+        when(staffDutyService.requireCurrentStaffOnDuty(createdQueue.getDepartment(), true)).thenReturn(doctor);
+        when(recordRepo.findByQueueTicket_TicketId(createdQueue.getTicketId())).thenReturn(Optional.empty());
+        when(staffRepo.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(recordRepo.save(any(MedicalRecord.class))).thenAnswer(invocation -> {
+            MedicalRecord value = invocation.getArgument(0);
+            value.setRecordId(UUID.randomUUID());
+            return value;
+        });
+        when(medicalRecordService.inheritFirstVisitVitalSigns(any(MedicalRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var created = queueTicketService.startExam(createdQueue.getTicketId());
+        assertEquals(QueueStatus.IN_PROGRESS, created.status());
+        assertNotNull(created.recordId());
+        verify(recordRepo).save(argThat(record -> record.getDoctor() == doctor
+                && record.getQueueTicket() == createdQueue));
+
+        QueueTicket existingQueue = operationalLabTicket(QueueStatus.TEST_DONE);
+        existingQueue.getDepartment().setDepartmentType(DepartmentType.EXAMINATION);
+        existingQueue.setService(MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("EX-OLD").name("Khám Tim mạch")
+                .departmentType(DepartmentType.EXAMINATION).build());
+        stubOperationalTicket(existingQueue);
+        when(repo.countInprogressByDepartment(existingQueue.getDepartment().getDepartmentId())).thenReturn(0L);
+        when(staffDutyService.requireCurrentStaffOnDuty(existingQueue.getDepartment(), true)).thenReturn(doctor);
+        MedicalRecord existingRecord = MedicalRecord.builder().recordId(UUID.randomUUID())
+                .queueTicket(existingQueue).visit(existingQueue.getVisit()).doctor(doctor)
+                .status(MedicalRecordStatus.IN_PROGRESS).build();
+        when(recordRepo.findByQueueTicket_TicketId(existingQueue.getTicketId()))
+                .thenReturn(Optional.of(existingRecord));
+        when(medicalRecordService.inheritFirstVisitVitalSigns(existingRecord)).thenReturn(existingRecord);
+
+        var existing = queueTicketService.startExam(existingQueue.getTicketId());
+        assertEquals(existingRecord.getRecordId(), existing.recordId());
+        assertEquals(QueueStatus.IN_PROGRESS, existingQueue.getStatus());
+    }
+
+    @Test
+    void lockedQueueCommands_ShouldCoverMissingTicketAndDepartmentLocks() {
+        UUID missingId = UUID.randomUUID();
+        when(repo.findByIdForUpdate(missingId)).thenReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> queueTicketService.call(missingId));
+
+        QueueTicket call = operationalLabTicket(QueueStatus.WAITING);
+        stubOperationalTicket(call);
+        when(departmentRepo.findById(call.getDepartment().getDepartmentId())).thenReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> queueTicketService.call(call.getTicketId()));
+
+        QueueTicket start = operationalLabTicket(QueueStatus.CALLED);
+        stubOperationalTicket(start);
+        when(departmentRepo.findById(start.getDepartment().getDepartmentId())).thenReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> queueTicketService.startExam(start.getTicketId()));
+    }
+
+    @Test
+    void finishAndSkip_ShouldRejectRejectedSpecimenAndUncalledTicket() {
+        QueueTicket specimenTicket = operationalLabTicket(QueueStatus.IN_PROGRESS);
+        stubOperationalTicket(specimenTicket);
+        TestRequest request = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .status(TestRequestStatus.IN_PROGRESS)
+                .service(MedicalService.builder().requiresSpecimen(true).build())
+                .testResult(TestResult.builder().sampleId("SMP-X").sampleType(SpecimenType.BLOOD)
+                        .sampleStatus(SpecimenStatus.REJECTED).collectedAt(LocalDateTime.now()).build())
+                .build();
+        when(testRequestRepository.findAllByQueueTicket_TicketId(specimenTicket.getTicketId()))
+                .thenReturn(List.of(request));
+        assertThrows(ConflictException.class,
+                () -> queueTicketService.finishParaclinicalQueue(specimenTicket.getTicketId()));
+
+        QueueTicket waiting = operationalLabTicket(QueueStatus.WAITING);
+        stubOperationalTicket(waiting);
+        assertThrows(BadRequestException.class, () -> queueTicketService.skip(waiting.getTicketId()));
+    }
+
+    @Test
+    void rankingAndSearch_ShouldCoverNullKeysEmptyRankingAndMappedRanking() {
+        Pageable pageable = PageRequest.of(0, 10);
+        when(repo.search(isNull(), isNull(), isNull(), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+        assertTrue(queueTicketService.search(null, null, null, pageable).content().isEmpty());
+
+        UUID departmentId = UUID.randomUUID();
+        LocalDate workDate = LocalDate.now();
+        QueueTicket ticket = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .department(Department.builder().departmentId(departmentId).build())
+                .workDate(workDate).status(QueueStatus.WAITING).build();
+        when(repo.findWaitingPrioritized(eq(departmentId), eq(workDate), anyList(), eq(Pageable.unpaged())))
+                .thenReturn(new PageImpl<>(List.of(ticket)));
+        QueuePriorityService.PriorityInfo priority = new QueuePriorityService.PriorityInfo(
+                QueuePriorityService.REGULAR, "Khách trực tiếp", null, false);
+        QueuePriorityService.RankedTicket ranked = new QueuePriorityService.RankedTicket(
+                ticket, 1, true, priority);
+        when(queuePriorityService.rank(anyList())).thenReturn(List.of(ranked));
+        @SuppressWarnings("unchecked")
+        Map<UUID, QueuePriorityService.RankedTicket> ranking = ReflectionTestUtils.invokeMethod(
+                queueTicketService, "rankingByTicket", departmentId, workDate);
+        assertSame(ranked, ranking.get(ticket.getTicketId()));
+    }
+
+    @Test
+    void publishDepartmentQueueUpdate_ShouldCoverNullImmediateFailureAndAfterCommit() {
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "publishDepartmentQueueUpdate", new Object[]{null}));
+
+        UUID immediate = UUID.randomUUID();
+        doThrow(new RuntimeException("socket closed")).when(messagingTemplate)
+                .convertAndSend(anyString(), any(Object.class));
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                queueTicketService, "publishDepartmentQueueUpdate", immediate));
+
+        reset(messagingTemplate);
+        UUID deferred = UUID.randomUUID();
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            ReflectionTestUtils.invokeMethod(queueTicketService,
+                    "publishDepartmentQueueUpdate", deferred);
+            verifyNoInteractions(messagingTemplate);
+            var synchronizations = org.springframework.transaction.support.TransactionSynchronizationManager
+                    .getSynchronizations();
+            assertEquals(1, synchronizations.size());
+            synchronizations.forEach(
+                    org.springframework.transaction.support.TransactionSynchronization::afterCommit);
+            verify(messagingTemplate).convertAndSend(
+                    "/topic/department-" + deferred + "-queue", "QUEUE_UPDATED");
+            verify(messagingTemplate).convertAndSend("/topic/queue-display", "QUEUE_UPDATED");
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void completeExamination_ShouldResolveTicketAndDelegateToCompletion() {
+        UUID id = UUID.randomUUID();
+        MedicalRecordUpdateRequest request = mock(MedicalRecordUpdateRequest.class);
+        MedicalRecordResponse expected = mock(MedicalRecordResponse.class);
+        QueueTicketService spy = spy(queueTicketService);
+        when(repo.existsById(id)).thenReturn(true);
+        doReturn(expected).when(spy).completeAndReturnRecord(id, request);
+
+        assertSame(expected, spy.completeExamination(id, request));
+        verify(spy).completeAndReturnRecord(id, request);
     }
 }
 

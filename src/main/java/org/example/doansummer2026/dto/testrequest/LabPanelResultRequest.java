@@ -14,7 +14,6 @@ public record LabPanelResultRequest(
         String sampleId,
         SpecimenType sampleType,
         SpecimenStatus sampleStatus,
-        UUID formTemplateVersionId,
         JsonNode resultData,
         @NotNull UUID performedById
 ) {}

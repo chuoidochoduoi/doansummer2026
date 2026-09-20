@@ -4,6 +4,8 @@ import org.example.doansummer2026.dto.customervisit.CustomerVisitCreateRequest;
 import org.example.doansummer2026.dto.customervisit.CustomerVisitUpdateRequest;
 import org.example.doansummer2026.dto.invoice.InvoiceResponse;
 import org.example.doansummer2026.enums.AppointmentStatus;
+import org.example.doansummer2026.enums.AllergyStatus;
+import org.example.doansummer2026.enums.BloodType;
 import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.enums.Gender;
 import org.example.doansummer2026.enums.ServiceStatus;
@@ -12,6 +14,7 @@ import org.example.doansummer2026.exception.BadRequestException;
 import org.example.doansummer2026.exception.ConflictException;
 import org.example.doansummer2026.exception.ResourceNotFoundException;
 import org.example.doansummer2026.model.Appointment;
+import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.model.CustomerVisit;
 import org.example.doansummer2026.model.Invoice;
 import org.example.doansummer2026.model.MedicalService;
@@ -26,6 +29,9 @@ import org.example.doansummer2026.repository.ProfileRepository;
 import org.example.doansummer2026.repository.StaffInfoRepository;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import org.mockito.InjectMocks;
@@ -89,6 +95,7 @@ class CustomerVisitServiceTest {
     @Mock private org.example.doansummer2026.repository.ShiftConfigRepository shiftConfigRepository;
     @Mock private ShiftScheduleResolver shiftScheduleResolver;
     @Mock private ServiceAvailabilityService serviceAvailabilityService;
+    @Mock private AuditLogService auditLogService;
 
     @InjectMocks
     private CustomerVisitService customerVisitService;
@@ -110,6 +117,206 @@ class CustomerVisitServiceTest {
 
     private LocalDate clinicToday() {
         return LocalDate.now(CLINIC_ZONE);
+    }
+
+    private CustomerVisitCreateRequest intakeRequest(String name, String phone, String email,
+                                                     LocalDate dateOfBirth, Gender gender,
+                                                     String address, AllergyStatus allergyStatus,
+                                                     List<String> allergies) {
+        return new CustomerVisitCreateRequest(null, null, List.of(), null, name, phone, address,
+                dateOfBirth, gender, email, BloodType.O_POSITIVE, allergyStatus, allergies, true, null);
+    }
+
+    private void applyIntake(Profile profile, CustomerVisitCreateRequest request) {
+        ReflectionTestUtils.invokeMethod(customerVisitService, "applyPatientIntake", profile, request);
+    }
+
+    @Test
+    void guestInformationValidationCoversIdentityContactAndGenderBranches() {
+        CustomerVisitCreateRequest valid = intakeRequest("Nguyễn Thị Ánh", null, "anh@example.com",
+                null, Gender.FEMALE, null, AllergyStatus.NONE_REPORTED, List.of());
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateGuestInformation", valid, null));
+
+        for (CustomerVisitCreateRequest invalid : List.of(
+                intakeRequest("A", "0909123456", null, null, Gender.FEMALE, null, null, List.of()),
+                intakeRequest("Tên 123", "0909123456", null, null, Gender.FEMALE, null, null, List.of()),
+                intakeRequest("Nguyễn An", null, null, null, Gender.FEMALE, null, null, List.of()),
+                intakeRequest("Nguyễn An", "0909123456", null, null, null, null, null, List.of()),
+                intakeRequest("Nguyễn An", "0909123456", null, null, Gender.OTHER, null, null, List.of())
+        )) assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateGuestInformation", invalid, invalid.guestPhone()));
+
+        CustomerVisitCreateRequest badPhone = intakeRequest("Nguyễn An", "123", null,
+                null, Gender.MALE, null, null, List.of());
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateGuestInformation", badPhone, "123"));
+        CustomerVisitCreateRequest birthDateFallback = intakeRequest("Nguyễn An", null, null,
+                clinicToday().minusYears(30), Gender.MALE, null, null, List.of());
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateGuestInformation", birthDateFallback, " "));
+    }
+
+    @Test
+    void appointmentCheckInValidationCoversStatusDuplicateDateOwnershipAndGuestPhone() {
+        UUID appointmentId = UUID.randomUUID();
+        Profile selected = profile(UUID.randomUUID());
+        selected.setPhone("0909123456");
+        Appointment appointment = Appointment.builder().appointmentId(appointmentId)
+                .status(AppointmentStatus.CANCELLED).scheduledAt(clinicToday().atTime(8, 0)).build();
+        assertThrows(ConflictException.class, () -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateAppointmentForCheckIn", appointment, selected));
+
+        appointment.setStatus(AppointmentStatus.PENDING);
+        when(repo.findByAppointment_AppointmentId(appointmentId))
+                .thenReturn(Optional.of(CustomerVisit.builder().build()), Optional.empty());
+        assertThrows(ConflictException.class, () -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateAppointmentForCheckIn", appointment, selected));
+
+        appointment.setScheduledAt(null);
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateAppointmentForCheckIn", appointment, selected));
+        appointment.setScheduledAt(clinicToday().minusDays(1).atTime(8, 0));
+        assertThrows(BadRequestException.class, () -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateAppointmentForCheckIn", appointment, selected));
+
+        appointment.setScheduledAt(clinicToday().atTime(8, 0));
+        appointment.setCustomer(profile(UUID.randomUUID()));
+        assertThrows(ConflictException.class, () -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateAppointmentForCheckIn", appointment, selected));
+        appointment.setCustomer(selected);
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateAppointmentForCheckIn", appointment, selected));
+
+        appointment.setCustomer(null);
+        appointment.setGuestPhone("0911111111");
+        assertThrows(ConflictException.class, () -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateAppointmentForCheckIn", appointment, selected));
+        appointment.setGuestPhone("+84 909 123 456");
+        appointment.setStatus(AppointmentStatus.RESCHEDULED);
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateAppointmentForCheckIn", appointment, selected));
+        appointment.setGuestPhone(null);
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(
+                customerVisitService, "validateAppointmentForCheckIn", appointment, selected));
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"A", "Tên 123"})
+    void patientIntakeRejectsInvalidNames(String name) {
+        Profile patient = profile(UUID.randomUUID());
+        CustomerVisitCreateRequest request = intakeRequest(name, "0909123456", "patient@example.com",
+                clinicToday().minusYears(20), Gender.FEMALE, "Hà Nội", AllergyStatus.NONE_REPORTED, List.of());
+        assertThrows(BadRequestException.class, () -> applyIntake(patient, request));
+        verify(profileRepo, never()).save(any());
+    }
+
+    @Test
+    void patientIntakeRejectsNameOverOneHundredCharacters() {
+        Profile patient = profile(UUID.randomUUID());
+        CustomerVisitCreateRequest request = intakeRequest("A".repeat(101), "0909123456", null,
+                clinicToday().minusYears(20), Gender.MALE, null, AllergyStatus.NONE_REPORTED, List.of());
+        assertThrows(BadRequestException.class, () -> applyIntake(patient, request));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"123", "84909123456", "+8412", "0909ABCDEF"})
+    void patientIntakeRejectsInvalidPhoneNumbers(String phone) {
+        Profile patient = profile(UUID.randomUUID());
+        CustomerVisitCreateRequest request = intakeRequest("Nguyễn Thị Ánh", phone, null,
+                clinicToday().minusYears(20), Gender.FEMALE, null, AllergyStatus.NONE_REPORTED, List.of());
+        assertThrows(BadRequestException.class, () -> applyIntake(patient, request));
+    }
+
+    @Test
+    void patientIntakeRejectsPhoneOwnedByAnotherProfileButAcceptsOwnPhone() {
+        Profile patient = profile(UUID.randomUUID());
+        Profile other = profile(UUID.randomUUID());
+        CustomerVisitCreateRequest request = intakeRequest("Nguyễn Thị Ánh", "+84 909.123.456", null,
+                clinicToday().minusYears(20), Gender.FEMALE, null, AllergyStatus.NONE_REPORTED, List.of());
+        when(profileRepo.findFirstByPhoneIn(List.of("0909123456", "+84909123456")))
+                .thenReturn(Optional.of(other));
+        assertThrows(ConflictException.class, () -> applyIntake(patient, request));
+
+        when(profileRepo.findFirstByPhoneIn(List.of("0909123456", "+84909123456")))
+                .thenReturn(Optional.of(patient));
+        applyIntake(patient, request);
+        assertEquals("0909123456", patient.getPhone());
+    }
+
+    @Test
+    void patientIntakeRequiresContactForAccountProfileAndRejectsDuplicateEmail() {
+        Profile patient = profile(UUID.randomUUID());
+        patient.setAccount(Account.builder().accountId(UUID.randomUUID()).build());
+        CustomerVisitCreateRequest noContact = intakeRequest("Nguyễn Thị Ánh", " ", " ",
+                clinicToday().minusYears(20), Gender.FEMALE, null, AllergyStatus.NONE_REPORTED, List.of());
+        assertThrows(BadRequestException.class, () -> applyIntake(patient, noContact));
+
+        CustomerVisitCreateRequest duplicateEmail = intakeRequest("Nguyễn Thị Ánh", null, " USED@EXAMPLE.COM ",
+                clinicToday().minusYears(20), Gender.FEMALE, null, AllergyStatus.NONE_REPORTED, List.of());
+        when(profileRepo.findFirstByEmailIgnoreCase("used@example.com"))
+                .thenReturn(Optional.of(profile(UUID.randomUUID())));
+        assertThrows(ConflictException.class, () -> applyIntake(patient, duplicateEmail));
+    }
+
+    @Test
+    void patientIntakeAcceptsOwnEmailAndNormalizesOptionalValues() {
+        Profile patient = profile(UUID.randomUUID());
+        CustomerVisitCreateRequest request = intakeRequest("  Nguyễn   Thị Ánh  ", " ", " ANH@EXAMPLE.COM ",
+                clinicToday().minusYears(20), Gender.FEMALE, "  Hà Nội  ", AllergyStatus.REPORTED,
+                List.of(" Penicillin ", "penicillin", "Hải sản"));
+        when(profileRepo.findFirstByEmailIgnoreCase("anh@example.com")).thenReturn(Optional.of(patient));
+        applyIntake(patient, request);
+        assertEquals("Nguyễn Thị Ánh", patient.getFullName());
+        assertNull(patient.getPhone());
+        assertEquals("anh@example.com", patient.getEmail());
+        assertEquals("Hà Nội", patient.getAddress());
+        assertEquals("Penicillin\nHải sản", patient.getAllergies());
+        verify(profileRepo).save(patient);
+    }
+
+    @Test
+    void patientIntakeValidatesBirthDateGenderAndContactFallback() {
+        Profile patient = profile(UUID.randomUUID());
+        assertThrows(BadRequestException.class, () -> applyIntake(patient,
+                intakeRequest("Nguyễn Thị Ánh", null, null, clinicToday(), Gender.FEMALE,
+                        null, AllergyStatus.NONE_REPORTED, List.of())));
+        assertThrows(BadRequestException.class, () -> applyIntake(patient,
+                intakeRequest("Nguyễn Thị Ánh", null, null, null, Gender.FEMALE,
+                        null, AllergyStatus.NONE_REPORTED, List.of())));
+        assertThrows(BadRequestException.class, () -> applyIntake(patient,
+                intakeRequest("Nguyễn Thị Ánh", "0909123456", null, clinicToday().minusYears(20), null,
+                        null, AllergyStatus.NONE_REPORTED, List.of())));
+        assertThrows(BadRequestException.class, () -> applyIntake(patient,
+                intakeRequest("Nguyễn Thị Ánh", "0909123456", null, clinicToday().minusYears(20), Gender.OTHER,
+                        null, AllergyStatus.NONE_REPORTED, List.of())));
+    }
+
+    @Test
+    void patientIntakeValidatesAllergyCollectionAndStoresEveryStatus() {
+        Profile patient = profile(UUID.randomUUID());
+        List<String> tooMany = java.util.stream.IntStream.range(0, 21).mapToObj(i -> "Dị ứng " + i).toList();
+        assertThrows(BadRequestException.class, () -> applyIntake(patient,
+                intakeRequest("Nguyễn Thị Ánh", "0909123456", null, clinicToday().minusYears(20), Gender.FEMALE,
+                        null, AllergyStatus.REPORTED, tooMany)));
+        assertThrows(BadRequestException.class, () -> applyIntake(patient,
+                intakeRequest("Nguyễn Thị Ánh", "0909123456", null, clinicToday().minusYears(20), Gender.FEMALE,
+                        null, AllergyStatus.REPORTED, List.of("A".repeat(101)))));
+        assertThrows(BadRequestException.class, () -> applyIntake(patient,
+                intakeRequest("Nguyễn Thị Ánh", "0909123456", null, clinicToday().minusYears(20), Gender.FEMALE,
+                        null, AllergyStatus.REPORTED, List.of())));
+
+        applyIntake(patient, intakeRequest("Nguyễn Thị Ánh", "0909123456", null,
+                clinicToday().minusYears(20), Gender.FEMALE, " ", AllergyStatus.UNVERIFIED, List.of()));
+        assertNull(patient.getAllergies());
+        assertNull(patient.getAddress());
+        applyIntake(patient, intakeRequest("Nguyễn Thị Ánh", "0909123456", null,
+                clinicToday().minusYears(20), Gender.FEMALE, null, AllergyStatus.NONE_REPORTED, List.of()));
+        assertEquals("", patient.getAllergies());
+        applyIntake(patient, intakeRequest("Nguyễn Thị Ánh", "0909123456", null,
+                clinicToday().minusYears(20), Gender.FEMALE, null, null, List.of()));
+        assertEquals("", patient.getAllergies());
     }
 
 
@@ -2534,5 +2741,131 @@ class CustomerVisitServiceTest {
         service.setMaximumAge(null);
         assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(customerVisitService,
                 "validateServiceEligibility", service, noDob));
+    }
+
+    @Test
+    void scheduleProfileAuditWritesImmediatelyAndCarriesActorAccountWhenAvailable() {
+        UUID profileId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        StaffInfo actor = StaffInfo.builder().staffId(UUID.randomUUID()).profile(Profile.builder()
+                .account(Account.builder().accountId(accountId).build()).build()).build();
+
+        ReflectionTestUtils.invokeMethod(customerVisitService, "scheduleProfileAudit",
+                profileId, actor, "old", "new");
+        var captor = org.mockito.ArgumentCaptor.forClass(
+                org.example.doansummer2026.dto.auditlog.AuditLogCreateRequest.class);
+        verify(auditLogService).create(captor.capture());
+        assertEquals(profileId.toString(), captor.getValue().entityId());
+        assertEquals(accountId, captor.getValue().actorAccountId());
+
+        clearInvocations(auditLogService);
+        ReflectionTestUtils.invokeMethod(customerVisitService, "scheduleProfileAudit",
+                profileId, null, null, null);
+        verify(auditLogService).create(any());
+    }
+
+    @Test
+    void scheduleProfileAuditDefersWriteUntilTransactionCommit() {
+        UUID profileId = UUID.randomUUID();
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            ReflectionTestUtils.invokeMethod(customerVisitService, "scheduleProfileAudit",
+                    profileId, StaffInfo.builder().build(), "before", "after");
+            verifyNoInteractions(auditLogService);
+            var synchronizations = org.springframework.transaction.support.TransactionSynchronizationManager
+                    .getSynchronizations();
+            assertEquals(1, synchronizations.size());
+            synchronizations.get(0).afterCommit();
+            verify(auditLogService).create(any());
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void sameDayExaminationServicesCombineInvoicesAndQueuesWithoutDuplicatingService() {
+        UUID customerId = UUID.randomUUID();
+        UUID serviceId = UUID.randomUUID();
+        UUID visitId = UUID.randomUUID();
+        MedicalService service = MedicalService.builder().serviceId(serviceId).serviceCode("EX-1")
+                .name("Khám Nội").departmentType(DepartmentType.EXAMINATION).build();
+        CustomerVisit visit = CustomerVisit.builder().visitId(visitId).status(VisitStatus.IN_PROGRESS)
+                .checkInTime(LocalDateTime.now()).build();
+        Invoice pending = Invoice.builder().invoiceId(UUID.randomUUID()).visit(visit)
+                .status(org.example.doansummer2026.enums.InvoiceStatus.PENDING).build();
+        var item = org.example.doansummer2026.model.InvoiceItem.builder()
+                .invoice(pending).service(service).build();
+        when(profileRepo.existsById(customerId)).thenReturn(true);
+        when(invoiceItemRepo.findSameDayExaminationRegistrations(eq(customerId), any(), any(), isNull()))
+                .thenReturn(List.of(item, item));
+        when(queueTicketRepo.findTopByVisit_VisitIdAndService_ServiceIdOrderByCreatedAtDesc(visitId, serviceId))
+                .thenReturn(Optional.empty());
+
+        var invoiceOnly = customerVisitService.getSameDayExaminationServices(customerId);
+        assertEquals(1, invoiceOnly.size());
+        assertTrue(invoiceOnly.get(0).reason().contains("Chờ thanh toán"));
+
+        var queue = org.example.doansummer2026.model.QueueTicket.builder().ticketId(UUID.randomUUID())
+                .visit(visit).service(service).status(org.example.doansummer2026.enums.QueueStatus.CALLED).build();
+        when(queueTicketRepo.findTopByVisit_VisitIdAndService_ServiceIdOrderByCreatedAtDesc(visitId, serviceId))
+                .thenReturn(Optional.of(queue));
+        assertTrue(customerVisitService.getSameDayExaminationServices(customerId).get(0).reason()
+                .contains("Đã gọi"));
+    }
+
+    @Test
+    void sameDayExaminationServicesRejectUnknownCustomerAndIncludeQueueFallback() {
+        UUID customerId = UUID.randomUUID();
+        when(profileRepo.existsById(customerId)).thenReturn(false, true);
+        assertThrows(ResourceNotFoundException.class,
+                () -> customerVisitService.getSameDayExaminationServices(customerId));
+
+        UUID serviceId = UUID.randomUUID();
+        CustomerVisit visit = CustomerVisit.builder().visitId(UUID.randomUUID())
+                .status(VisitStatus.CHECKED_IN).checkInTime(LocalDateTime.now()).build();
+        MedicalService service = MedicalService.builder().serviceId(serviceId).serviceCode("EX-2")
+                .name("Khám Ngoại").departmentType(DepartmentType.EXAMINATION).build();
+        var queue = org.example.doansummer2026.model.QueueTicket.builder().ticketId(UUID.randomUUID())
+                .visit(visit).service(service).status(org.example.doansummer2026.enums.QueueStatus.WAITING).build();
+        when(invoiceItemRepo.findSameDayExaminationRegistrations(eq(customerId), any(), any(), isNull()))
+                .thenReturn(List.of());
+        when(queueTicketRepo.findSameDayPatientExaminationTickets(eq(customerId), any())).thenReturn(List.of(queue));
+        when(invoiceItemRepo.findDistinctExaminationServiceIdsByVisit(visit.getVisitId(), null))
+                .thenReturn(List.of(serviceId));
+
+        var result = customerVisitService.getSameDayExaminationServices(customerId);
+        assertEquals(1, result.size());
+        assertEquals(org.example.doansummer2026.enums.QueueStatus.WAITING, result.get(0).queueStatus());
+        assertTrue(result.get(0).reason().contains("Đang chờ gọi"));
+    }
+
+    @Test
+    void noSameDayRegistrationIgnoresParaclinicalButRejectsQueueDuplicate() {
+        UUID customerId = UUID.randomUUID();
+        UUID labId = UUID.randomUUID();
+        MedicalService lab = MedicalService.builder().serviceId(labId).name("Đường huyết")
+                .departmentType(DepartmentType.LABORATORY).build();
+        when(serviceRepo.findById(labId)).thenReturn(Optional.of(lab));
+        assertDoesNotThrow(() -> customerVisitService.validateNoSameDayExaminationRegistration(
+                customerId, List.of(labId, labId)));
+
+        UUID examinationId = UUID.randomUUID();
+        MedicalService examination = MedicalService.builder().serviceId(examinationId).name("Khám Nội")
+                .departmentType(DepartmentType.EXAMINATION).build();
+        CustomerVisit visit = CustomerVisit.builder().visitId(UUID.randomUUID()).build();
+        var queue = org.example.doansummer2026.model.QueueTicket.builder().ticketId(UUID.randomUUID())
+                .visit(visit).service(examination)
+                .status(org.example.doansummer2026.enums.QueueStatus.WAITING).build();
+        when(serviceRepo.findById(examinationId)).thenReturn(Optional.of(examination));
+        when(invoiceItemRepo.findSameDayExaminationRegistrations(eq(customerId), any(), any(), isNull()))
+                .thenReturn(List.of());
+        when(queueTicketRepo.findSameDayPatientExaminationTickets(eq(customerId), any()))
+                .thenReturn(List.of(org.example.doansummer2026.model.QueueTicket.builder().build(), queue));
+        when(invoiceItemRepo.findDistinctExaminationServiceIdsByVisit(visit.getVisitId(), null))
+                .thenReturn(List.of(examinationId));
+        ConflictException error = assertThrows(ConflictException.class,
+                () -> customerVisitService.validateNoSameDayExaminationRegistration(
+                        customerId, List.of(examinationId)));
+        assertTrue(error.getMessage().contains("VIS-"));
     }
 }

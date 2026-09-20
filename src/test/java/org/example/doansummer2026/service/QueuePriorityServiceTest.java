@@ -37,7 +37,8 @@ class QueuePriorityServiceTest {
     void returnCandidateAsFirstExaminationOfItsVisit() {
         when(repository.findAllByVisit_VisitId(any())).thenAnswer(invocation -> {
             UUID visitId = invocation.getArgument(0);
-            return candidates.stream().filter(ticket -> visitId.equals(ticket.getVisit().getVisitId())).toList();
+            return candidates.stream().filter(java.util.Objects::nonNull)
+                    .filter(ticket -> visitId.equals(ticket.getVisit().getVisitId())).toList();
         });
     }
 
@@ -57,7 +58,7 @@ class QueuePriorityServiceTest {
     }
 
     @Test
-    void protectsFifoHeadThenReturnsFromTestThenAlternatesAppointmentAndRegular() {
+    void protectsFifoHeadThenReturnsFromTestThenPrioritizesAppointmentGroup() {
         QueueTicket protectedHead = ticket(1, QueueStatus.WAITING, shiftStart, false);
         QueueTicket appointment = ticket(4, QueueStatus.WAITING, shiftStart.plusMinutes(10), true);
         QueueTicket regular = ticket(2, QueueStatus.WAITING, shiftStart, false);
@@ -73,6 +74,25 @@ class QueuePriorityServiceTest {
                 ranked.stream().map(QueuePriorityService.RankedTicket::waitingPosition).toList());
         assertEquals(QueuePriorityService.RETURNING_FROM_TEST, ranked.get(1).priority().category());
         assertEquals(QueuePriorityService.APPOINTMENT_ON_TIME, ranked.get(2).priority().category());
+    }
+
+    @Test
+    void placesAllOnTimeAppointmentsBeforeRemainingRegularPatients() {
+        QueueTicket protectedHead = ticket(1, QueueStatus.WAITING, shiftStart, false);
+        QueueTicket regularSecond = ticket(2, QueueStatus.WAITING, shiftStart, false);
+        QueueTicket appointmentFirst = ticket(3, QueueStatus.WAITING, shiftStart.plusMinutes(5), true);
+        QueueTicket regularThird = ticket(4, QueueStatus.WAITING, shiftStart, false);
+        QueueTicket appointmentSecond = ticket(5, QueueStatus.WAITING, shiftStart.plusMinutes(10), true);
+        candidates = List.of(protectedHead, regularSecond, appointmentFirst, regularThird, appointmentSecond);
+
+        List<QueuePriorityService.RankedTicket> ranked = service.rank(candidates, shiftStart.plusMinutes(20));
+
+        assertEquals(List.of(protectedHead, appointmentFirst, appointmentSecond, regularSecond, regularThird),
+                ranked.stream().map(QueuePriorityService.RankedTicket::ticket).toList());
+        assertEquals(List.of(1, 2, 3, 4, 5),
+                ranked.stream().map(QueuePriorityService.RankedTicket::waitingPosition).toList());
+        assertTrue(ranked.get(0).canCall());
+        assertFalse(ranked.get(1).canCall());
     }
 
     @Test
@@ -120,5 +140,54 @@ class QueuePriorityServiceTest {
         ranked = service.rank(candidates, shiftStart.plusMinutes(20));
         assertTrue(ranked.stream().filter(item -> item.ticket() == called).findFirst().orElseThrow().canCall());
         assertFalse(ranked.stream().filter(item -> item.ticket() == returned).findFirst().orElseThrow().canCall());
+    }
+
+    @Test
+    void inProgressPatientKeepsRoomBusyAndNullCandidatesAreIgnored() {
+        QueueTicket inProgress = ticket(2, QueueStatus.IN_PROGRESS, shiftStart, false);
+        QueueTicket waiting = ticket(1, QueueStatus.WAITING, shiftStart, false);
+        QueueTicket blocked = ticket(3, QueueStatus.BLOCKED, shiftStart, false);
+        candidates = java.util.Arrays.asList(null, waiting, blocked, inProgress);
+
+        List<QueuePriorityService.RankedTicket> ranked = service.rank(candidates, shiftStart.plusMinutes(5));
+
+        assertEquals(inProgress, ranked.get(0).ticket());
+        assertFalse(ranked.stream().anyMatch(QueuePriorityService.RankedTicket::canCall));
+        assertEquals(1, ranked.stream().filter(item -> item.ticket() == waiting)
+                .findFirst().orElseThrow().waitingPosition());
+        assertEquals(null, ranked.stream().filter(item -> item.ticket() == blocked)
+                .findFirst().orElseThrow().waitingPosition());
+        assertTrue(service.rank(null, shiftStart).isEmpty());
+    }
+
+    @Test
+    void appointmentPriorityAppliesOnlyToFirstExaminationOnMatchingWorkDate() {
+        QueueTicket first = ticket(1, QueueStatus.WAITING, shiftStart, true);
+        QueueTicket second = ticket(2, QueueStatus.WAITING, shiftStart, false);
+        second.getVisit().setAppointment(first.getVisit().getAppointment());
+        second.setVisit(first.getVisit());
+        QueueTicket wrongDate = ticket(3, QueueStatus.WAITING, shiftStart, true);
+        wrongDate.setWorkDate(date.plusDays(1));
+        QueueTicket noScheduledTime = ticket(4, QueueStatus.WAITING, shiftStart, true);
+        noScheduledTime.getVisit().getAppointment().setScheduledAt(null);
+        QueueTicket noCheckIn = ticket(5, QueueStatus.WAITING, null, true);
+        QueueTicket departmentFallback = ticket(6, QueueStatus.WAITING, shiftStart, true);
+        departmentFallback.setService(null);
+        candidates = List.of(first, second, wrongDate, noScheduledTime, noCheckIn, departmentFallback);
+
+        List<QueuePriorityService.RankedTicket> ranked = service.rank(candidates, shiftStart.plusMinutes(1));
+
+        assertEquals(QueuePriorityService.APPOINTMENT_ON_TIME, priority(ranked, first).category());
+        assertEquals(QueuePriorityService.REGULAR, priority(ranked, second).category());
+        assertEquals(QueuePriorityService.REGULAR, priority(ranked, wrongDate).category());
+        assertEquals(QueuePriorityService.REGULAR, priority(ranked, noScheduledTime).category());
+        assertEquals(QueuePriorityService.APPOINTMENT_LATE, priority(ranked, noCheckIn).category());
+        assertEquals(QueuePriorityService.APPOINTMENT_ON_TIME, priority(ranked, departmentFallback).category());
+    }
+
+    private QueuePriorityService.PriorityInfo priority(
+            List<QueuePriorityService.RankedTicket> ranked, QueueTicket ticket) {
+        return ranked.stream().filter(item -> item.ticket() == ticket)
+                .findFirst().orElseThrow().priority();
     }
 }

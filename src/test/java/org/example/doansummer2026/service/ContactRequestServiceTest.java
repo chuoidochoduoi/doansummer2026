@@ -14,6 +14,8 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.concurrent.TimeUnit;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -95,6 +97,20 @@ class ContactRequestServiceTest {
                 () -> service.send(validRequest()));
         assertFalse(error.getMessage().contains("password"));
         assertTrue(error.getMessage().contains("Vui lòng thử lại sau"));
+    }
+
+    @Test
+    void unavailableSha256ProviderIsReportedAsIllegalState() throws Exception {
+        try (var digest = mockStatic(MessageDigest.class)) {
+            digest.when(() -> MessageDigest.getInstance("SHA-256"))
+                    .thenThrow(new NoSuchAlgorithmException("disabled for test"));
+
+            IllegalStateException error = assertThrows(IllegalStateException.class,
+                    () -> service.send(validRequest()));
+
+            assertTrue(error.getMessage().contains("SHA-256"));
+            verifyNoInteractions(emailService);
+        }
     }
 
     private void configure(String recipient, String username, String password) {

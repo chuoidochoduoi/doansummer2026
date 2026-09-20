@@ -2,6 +2,7 @@ package org.example.doansummer2026.service;
 
 import org.example.doansummer2026.common.PageResponse;
 import org.example.doansummer2026.dto.journey.PatientJourneyResponse;
+import org.example.doansummer2026.dto.journey.PatientQueueResponse;
 import org.example.doansummer2026.enums.DepartmentType;
 import org.example.doansummer2026.enums.InvoiceStatus;
 import org.example.doansummer2026.enums.QueueStatus;
@@ -32,9 +33,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Method;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -1359,39 +1362,6 @@ class PatientJourneyServiceTest {
                 never()
         ).save(
                 any()
-        );
-    }
-
-
-    @Test
-    void activateNext_ShouldThrow_WhenVisitDoesNotExistEvenIfJourneyFinished() {
-
-        UUID visitId =
-                UUID.randomUUID();
-
-        when(
-                visitRepo.findByIdForUpdate(
-                        visitId
-                )
-        ).thenReturn(
-                Optional.empty()
-        );
-
-        assertThrows(
-                ResourceNotFoundException.class,
-                () ->
-                        patientJourneyService
-                                .activateNext(
-                                        visitId
-                                )
-        );
-
-        verifyNoInteractions(
-                queueRepo
-        );
-
-        verifyNoInteractions(
-                testRepo
         );
     }
 
@@ -3202,6 +3172,151 @@ class PatientJourneyServiceTest {
     }
 
     @Test
+    void activateNext_ShouldPauseWhileAnyTicketIsMarkedAbsent() {
+        UUID visitId = UUID.randomUUID();
+        CustomerVisit visit = visit(visitId);
+        QueueTicket skipped = queue(QueueStatus.SKIPPED, LocalDateTime.now());
+        QueueTicket blocked = queue(QueueStatus.BLOCKED, LocalDateTime.now().plusMinutes(1));
+        when(visitRepo.findByIdForUpdate(visitId)).thenReturn(Optional.of(visit));
+        when(queueRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of(skipped, blocked));
+        when(testRepo.findAllByMedicalRecord_Visit_VisitId(visitId)).thenReturn(List.of());
+
+        patientJourneyService.activateNext(visitId);
+
+        assertEquals(QueueStatus.BLOCKED, blocked.getStatus());
+        verify(queueRepo, never()).save(any());
+        verify(visitRepo, never()).save(any());
+    }
+
+    @Test
+    void activateNext_ShouldOpenLinkedParaclinicalRoomBeforeOtherBlockedSteps() {
+        UUID visitId = UUID.randomUUID();
+        CustomerVisit visit = visit(visitId);
+        Department examinationDepartment = department("Phòng khám Nội", "INT-103");
+        examinationDepartment.setDepartmentType(DepartmentType.EXAMINATION);
+        QueueTicket suspended = queue(QueueStatus.WAITING_FOR_TEST, LocalDateTime.now().minusMinutes(20));
+        suspended.setDepartment(examinationDepartment);
+        QueueTicket nextExamination = queue(QueueStatus.BLOCKED, LocalDateTime.now().minusMinutes(15));
+        nextExamination.setDepartment(examinationDepartment);
+        QueueTicket unrelatedLab = paraclinicalQueue(QueueStatus.BLOCKED, LocalDateTime.now().minusMinutes(10));
+        QueueTicket linkedLab = paraclinicalQueue(QueueStatus.BLOCKED, LocalDateTime.now());
+        MedicalRecord sourceRecord = MedicalRecord.builder().recordId(UUID.randomUUID())
+                .queueTicket(suspended).visit(visit).build();
+        TestRequest linkedRequest = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .medicalRecord(sourceRecord).queueTicket(linkedLab)
+                .status(TestRequestStatus.BLOCKED).build();
+        linkedRequest.setCreatedAt(LocalDateTime.now());
+        List<QueueTicket> queues = List.of(suspended, nextExamination, unrelatedLab, linkedLab);
+        when(visitRepo.findByIdForUpdate(visitId)).thenReturn(Optional.of(visit));
+        when(queueRepo.findAllByVisit_VisitId(visitId)).thenReturn(queues);
+        when(testRepo.findAllByMedicalRecord_Visit_VisitId(visitId)).thenReturn(List.of(linkedRequest));
+        when(testRepo.findAllByQueueTicket_TicketId(linkedLab.getTicketId()))
+                .thenReturn(List.of(linkedRequest));
+
+        patientJourneyService.activateNext(visitId);
+
+        assertEquals(QueueStatus.WAITING, linkedLab.getStatus());
+        assertEquals(TestRequestStatus.PENDING, linkedRequest.getStatus());
+        assertEquals(QueueStatus.BLOCKED, unrelatedLab.getStatus());
+        assertEquals(QueueStatus.BLOCKED, nextExamination.getStatus());
+        verify(queueRepo).save(linkedLab);
+        verify(testRepo).save(linkedRequest);
+    }
+
+    @Test
+    void activateNext_ShouldKeepLaterExaminationBlockedWhileSourceWaitsForResults() {
+        UUID visitId = UUID.randomUUID();
+        CustomerVisit visit = visit(visitId);
+        Department examinationDepartment = department("Phòng khám Nội", "INT-103");
+        examinationDepartment.setDepartmentType(DepartmentType.EXAMINATION);
+        QueueTicket suspended = queue(QueueStatus.WAITING_FOR_TEST, LocalDateTime.now().minusMinutes(10));
+        suspended.setDepartment(examinationDepartment);
+        QueueTicket laterExamination = queue(QueueStatus.BLOCKED, LocalDateTime.now());
+        laterExamination.setDepartment(examinationDepartment);
+        when(visitRepo.findByIdForUpdate(visitId)).thenReturn(Optional.of(visit));
+        when(queueRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of(suspended, laterExamination));
+        when(testRepo.findAllByMedicalRecord_Visit_VisitId(visitId)).thenReturn(List.of());
+
+        patientJourneyService.activateNext(visitId);
+
+        assertEquals(QueueStatus.BLOCKED, laterExamination.getStatus());
+        verify(queueRepo, never()).save(any());
+        verify(visitRepo, never()).save(any());
+    }
+
+    @Test
+    void refreshWaitingExaminations_ShouldReleaseOnlyRecordWhoseTestsFinished() {
+        UUID visitId = UUID.randomUUID();
+        CustomerVisit visit = visit(visitId);
+        Department examinationDepartment = department("Phòng khám", "INT-103");
+        examinationDepartment.setDepartmentType(DepartmentType.EXAMINATION);
+        QueueTicket finishedSource = queue(QueueStatus.WAITING_FOR_TEST, LocalDateTime.now().minusHours(1));
+        finishedSource.setDepartment(examinationDepartment);
+        QueueTicket pendingSource = queue(QueueStatus.WAITING_FOR_TEST, LocalDateTime.now().minusMinutes(30));
+        pendingSource.setDepartment(examinationDepartment);
+        MedicalRecord finishedRecord = MedicalRecord.builder().recordId(UUID.randomUUID())
+                .visit(visit).queueTicket(finishedSource).build();
+        MedicalRecord pendingRecord = MedicalRecord.builder().recordId(UUID.randomUUID())
+                .visit(visit).queueTicket(pendingSource).build();
+        TestRequest completed = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .medicalRecord(finishedRecord).status(TestRequestStatus.COMPLETED).build();
+        TestRequest pending = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .medicalRecord(pendingRecord).status(TestRequestStatus.PENDING).build();
+        when(queueRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of(finishedSource, pendingSource));
+        when(recordRepo.findByQueueTicket_TicketId(finishedSource.getTicketId()))
+                .thenReturn(Optional.of(finishedRecord));
+        when(recordRepo.findByQueueTicket_TicketId(pendingSource.getTicketId()))
+                .thenReturn(Optional.of(pendingRecord));
+        when(invoiceRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of());
+        when(testRepo.findAllByMedicalRecord_Visit_VisitId(visitId))
+                .thenReturn(List.of(completed, pending));
+
+        patientJourneyService.refreshWaitingExaminationsAfterTestCompletion(visitId);
+
+        assertEquals(QueueStatus.TEST_DONE, finishedSource.getStatus());
+        assertEquals(QueueStatus.WAITING_FOR_TEST, pendingSource.getStatus());
+        verify(queueRepo).save(finishedSource);
+        verify(queueRepo, never()).save(pendingSource);
+    }
+
+    @Test
+    void publishQueueActivated_ShouldNotifyLabChannelsWithoutBreakingWorkflowOnRealtimeFailure() {
+        assertDoesNotThrow(() -> invokePublishQueueActivated(null));
+        QueueTicket noDepartment = QueueTicket.builder().ticketId(UUID.randomUUID()).build();
+        assertDoesNotThrow(() -> invokePublishQueueActivated(noDepartment));
+
+        Department laboratory = paraclinicalDepartment("Xét nghiệm", "LAB-201");
+        QueueTicket queue = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .department(laboratory).build();
+        invokePublishQueueActivated(queue);
+        verify(messagingTemplate).convertAndSend(
+                "/topic/department-" + laboratory.getDepartmentId() + "-queue", "QUEUE_UPDATED");
+        verify(messagingTemplate).convertAndSend("/topic/queue-display", "QUEUE_UPDATED");
+        verify(messagingTemplate).convertAndSend(
+                "/topic/department-" + laboratory.getDepartmentId() + "-lab-queue", "LAB_UPDATED");
+
+        reset(messagingTemplate);
+        doThrow(new IllegalStateException("realtime unavailable")).when(messagingTemplate)
+                .convertAndSend(anyString(), anyString());
+        assertDoesNotThrow(() -> invokePublishQueueActivated(queue));
+    }
+
+    private void invokePublishQueueActivated(QueueTicket queue) {
+        try {
+            Method method = PatientJourneyService.class
+                    .getDeclaredMethod("publishQueueActivated", QueueTicket.class);
+            method.setAccessible(true);
+            method.invoke(patientJourneyService, queue);
+        } catch (java.lang.reflect.InvocationTargetException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof RuntimeException runtimeException) throw runtimeException;
+            throw new RuntimeException(cause);
+        } catch (ReflectiveOperationException exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
+    @Test
     void list_ShouldSeparateTodayAndUnfinishedOverdueJourneys() {
         CustomerVisit today = visit(UUID.randomUUID());
         CustomerVisit overdue = visit(UUID.randomUUID());
@@ -3510,7 +3625,7 @@ class PatientJourneyServiceTest {
     }
 
     @Test
-    void skippedQueue_ShouldExposeSameDayPendingAndExpiredVariants() throws Exception {
+    void skippedQueue_ShouldHideCustomerReturnActionAndExposeExpiredVariant() throws Exception {
         Method method = PatientJourneyService.class.getDeclaredMethod("skippedQueue", UUID.class, QueueTicket.class);
         method.setAccessible(true);
         UUID visitId = UUID.randomUUID();
@@ -3521,27 +3636,12 @@ class PatientJourneyServiceTest {
 
         var none = (org.example.doansummer2026.dto.journey.PatientQueueResponse) method.invoke(
                 patientJourneyService, visitId, ticket);
-        assertTrue(none.canRequestReturn());
+        assertFalse(none.canRequestReturn());
         assertEquals("NONE", none.returnRequestStatus());
         assertEquals("Phòng Nội", none.roomName());
         assertEquals("INT-101", none.roomCode());
 
-        var createdOnly = org.example.doansummer2026.model.Notification.builder()
-                .status(org.example.doansummer2026.enums.NotificationStatus.PENDING).build();
-        LocalDateTime createdAt = LocalDateTime.now().minusMinutes(5);
-        createdOnly.setCreatedAt(createdAt);
-        var sent = org.example.doansummer2026.model.Notification.builder()
-                .status(org.example.doansummer2026.enums.NotificationStatus.PENDING)
-                .sentAt(createdAt.minusMinutes(1)).build();
-        when(notificationRepo.findAllByRelatedEntityAndRelatedEntityIdAndStatusOrderByCreatedAtAsc(
-                eq(QueueReturnRequestService.RELATED_ENTITY), eq(ticket.getTicketId()),
-                eq(org.example.doansummer2026.enums.NotificationStatus.PENDING)))
-                .thenReturn(List.of(createdOnly, sent));
-        var pending = (org.example.doansummer2026.dto.journey.PatientQueueResponse) method.invoke(
-                patientJourneyService, visitId, ticket);
-        assertFalse(pending.canRequestReturn());
-        assertEquals("PENDING", pending.returnRequestStatus());
-        assertEquals(sent.getSentAt(), pending.returnRequestedAt());
+        assertNull(none.returnRequestedAt());
 
         ticket.setWorkDate(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(1));
         ticket.setDepartment(null);
@@ -3631,6 +3731,25 @@ class PatientJourneyServiceTest {
         when(testRepo.findAllByMedicalRecord_Visit_VisitId(visit.getVisitId()))
                 .thenReturn(List.of(completed, pending));
         assertTrue(patientJourneyService.hasOutstandingTestsForExamination(ticketId));
+
+        Invoice initialPaid = Invoice.builder().invoiceId(UUID.randomUUID()).visit(visit)
+                .status(InvoiceStatus.PAID).build();
+        initialPaid.setCreatedAt(LocalDateTime.now().minusHours(2));
+        Invoice clinicalPaid = Invoice.builder().invoiceId(UUID.randomUUID()).visit(visit)
+                .medicalRecord(record).status(InvoiceStatus.PAID).build();
+        clinicalPaid.setCreatedAt(LocalDateTime.now().minusHours(1));
+        MedicalRecord standalone = MedicalRecord.builder().recordId(UUID.randomUUID()).visit(visit).build();
+        TestRequest carried = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .medicalRecord(standalone)
+                .invoiceItem(InvoiceItem.builder().itemId(UUID.randomUUID()).invoice(initialPaid).build())
+                .status(TestRequestStatus.PENDING).build();
+        carried.setCreatedAt(LocalDateTime.now().minusMinutes(90));
+        when(invoiceRepo.findAllByVisit_VisitId(visit.getVisitId()))
+                .thenReturn(List.of(initialPaid, clinicalPaid));
+        when(testRepo.findAllByMedicalRecord_Visit_VisitId(visit.getVisitId()))
+                .thenReturn(List.of(carried));
+
+        assertTrue(patientJourneyService.hasOutstandingTestsForExamination(ticketId));
     }
 
     @Test
@@ -3699,6 +3818,51 @@ class PatientJourneyServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void carriedPrebookedTestsForLegacyCycleFiltersInvoiceAndRequestStates() throws Exception {
+        Method method = PatientJourneyService.class.getDeclaredMethod("carriedPrebookedTestsForLegacyCycle",
+                List.class, List.class, List.class);
+        method.setAccessible(true);
+        assertEquals(List.of(), method.invoke(patientJourneyService, List.of(), List.of(), List.of()));
+
+        Invoice paidInitial = Invoice.builder().invoiceId(UUID.randomUUID()).status(InvoiceStatus.PAID).build();
+        Invoice unpaid = Invoice.builder().invoiceId(UUID.randomUUID()).status(InvoiceStatus.PENDING).build();
+        Invoice clinical = Invoice.builder().invoiceId(UUID.randomUUID()).status(InvoiceStatus.PAID)
+                .medicalRecord(MedicalRecord.builder().recordId(UUID.randomUUID()).build()).build();
+        Invoice withoutId = Invoice.builder().status(InvoiceStatus.PAID).build();
+        java.util.function.BiFunction<Invoice, TestRequestStatus, TestRequest> standalone = (invoice, status) ->
+                TestRequest.builder().testRequestId(UUID.randomUUID()).status(status)
+                        .medicalRecord(MedicalRecord.builder().recordId(UUID.randomUUID()).build())
+                        .invoiceItem(invoice == null ? null : InvoiceItem.builder().invoice(invoice).build()).build();
+
+        TestRequest linkedUnknown = standalone.apply(
+                Invoice.builder().invoiceId(UUID.randomUUID()).status(InvoiceStatus.PAID).build(),
+                TestRequestStatus.PENDING);
+        TestRequest linkedUnpaid = standalone.apply(unpaid, TestRequestStatus.PENDING);
+        TestRequest linkedClinical = standalone.apply(clinical, TestRequestStatus.PENDING);
+        assertEquals(List.of(), method.invoke(patientJourneyService,
+                List.of(linkedUnknown, linkedUnpaid, linkedClinical),
+                List.of(withoutId, unpaid, clinical), List.of()));
+
+        TestRequest linkedPaid = standalone.apply(paidInitial, TestRequestStatus.PENDING);
+        TestRequest eligible = standalone.apply(paidInitial, TestRequestStatus.IN_PROGRESS);
+        TestRequest cancelled = standalone.apply(paidInitial, TestRequestStatus.CANCELLED);
+        TestRequest completed = standalone.apply(paidInitial, TestRequestStatus.COMPLETED);
+        TestRequest noRecord = standalone.apply(paidInitial, TestRequestStatus.PENDING);
+        noRecord.setMedicalRecord(null);
+        TestRequest examinationOwned = standalone.apply(paidInitial, TestRequestStatus.PENDING);
+        examinationOwned.getMedicalRecord().setQueueTicket(QueueTicket.builder().ticketId(UUID.randomUUID()).build());
+        TestRequest anotherInvoice = standalone.apply(unpaid, TestRequestStatus.PENDING);
+        TestRequest noInvoice = standalone.apply(null, TestRequestStatus.PENDING);
+
+        List<TestRequest> result = (List<TestRequest>) method.invoke(patientJourneyService,
+                List.of(linkedPaid), List.of(withoutId, paidInitial, unpaid, clinical),
+                List.of(eligible, cancelled, completed, noRecord, examinationOwned, anotherInvoice, noInvoice));
+
+        assertEquals(List.of(eligible), result);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void addCycleParaclinicalSteps_ShouldCoverQueuedUnqueuedAndPlannedFallbacks() throws Exception {
         Method method = PatientJourneyService.class.getDeclaredMethod("addCycleParaclinicalSteps",
                 List.class, Invoice.class, QueueTicket.class, int.class, List.class, java.util.Set.class);
@@ -3724,6 +3888,21 @@ class PatientJourneyServiceTest {
         assertEquals("Cận lâm sàng", steps.get(1).serviceName());
         assertNull(steps.get(1).roomName());
 
+        MedicalService rbc = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("AN-CBC-RBC").name("Số lượng hồng cầu (RBC)").department(lab).build();
+        MedicalService hgb = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("AN-CBC-HGB").name("Huyết sắc tố (HGB)").department(lab).build();
+        TestRequest unqueuedRbc = TestRequest.builder().testRequestId(UUID.randomUUID()).service(rbc)
+                .performingDepartment(lab).status(TestRequestStatus.PENDING).build();
+        TestRequest unqueuedHgb = TestRequest.builder().testRequestId(UUID.randomUUID()).service(hgb)
+                .performingDepartment(lab).status(TestRequestStatus.PENDING).build();
+        List<PatientJourneyResponse.Step> groupedUnqueued = new java.util.ArrayList<>();
+        method.invoke(patientJourneyService, groupedUnqueued, invoice, exam, 1,
+                List.of(unqueuedRbc, unqueuedHgb), new java.util.HashSet<UUID>());
+        assertEquals(1, groupedUnqueued.size());
+        assertEquals("Công thức máu (2 chỉ số)", groupedUnqueued.get(0).serviceName());
+        assertEquals(1, groupedUnqueued.get(0).services().size());
+
         List<PatientJourneyResponse.Step> duplicateSteps = new java.util.ArrayList<>();
         method.invoke(patientJourneyService, duplicateSteps, invoice, exam, 1,
                 List.of(queued), new java.util.HashSet<>(List.of(labQueue.getTicketId())));
@@ -3740,9 +3919,763 @@ class PatientJourneyServiceTest {
         assertTrue(planned.stream().anyMatch(step -> "Phân phòng sau thanh toán".equals(step.roomName())));
         assertTrue(planned.stream().anyMatch(step -> "Sinh hóa".equals(step.roomName())));
 
+        InvoiceItem plannedRbc = InvoiceItem.builder().service(rbc).serviceCodeSnapshot("AN-CBC-RBC")
+                .serviceSnapshot("Số lượng hồng cầu (RBC)").build();
+        InvoiceItem plannedHgb = InvoiceItem.builder().service(hgb).serviceCodeSnapshot("AN-CBC-HGB")
+                .serviceSnapshot("Huyết sắc tố (HGB)").build();
+        invoice.setItems(List.of(plannedRbc, plannedHgb));
+        List<PatientJourneyResponse.Step> groupedPlanned = new java.util.ArrayList<>();
+        method.invoke(patientJourneyService, groupedPlanned, invoice, exam, 2,
+                List.of(), new java.util.HashSet<UUID>());
+        assertEquals(1, groupedPlanned.size());
+        assertEquals("Công thức máu (2 chỉ số)", groupedPlanned.get(0).serviceName());
+        assertEquals(1, groupedPlanned.get(0).services().size());
+
         invoice.setItems(null);
         List<PatientJourneyResponse.Step> noItems = new java.util.ArrayList<>();
         method.invoke(patientJourneyService, noItems, invoice, exam, 3, List.of(), new java.util.HashSet<UUID>());
         assertTrue(noItems.isEmpty());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void groupedServiceProgress_ShouldPresentAnalytesAsOnePanel() throws Exception {
+        Method method = PatientJourneyService.class.getDeclaredMethod("groupedServiceProgress", List.class);
+        method.setAccessible(true);
+        MedicalService rbc = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("AN-CBC-RBC").name("Số lượng hồng cầu (RBC)").build();
+        MedicalService hgb = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("AN-CBC-HGB").name("Huyết sắc tố (HGB)").build();
+        TestRequest first = TestRequest.builder().testRequestId(UUID.randomUUID()).service(rbc)
+                .status(TestRequestStatus.COMPLETED).build();
+        TestRequest second = TestRequest.builder().testRequestId(UUID.randomUUID()).service(hgb)
+                .status(TestRequestStatus.PENDING).build();
+
+        List<PatientJourneyResponse.ServiceProgress> progress =
+                (List<PatientJourneyResponse.ServiceProgress>) method.invoke(patientJourneyService,
+                        List.of(first, second));
+
+        assertEquals(1, progress.size());
+        assertEquals("LAB-001", progress.get(0).serviceCode());
+        assertEquals("Công thức máu (2 chỉ số)", progress.get(0).serviceName());
+        assertEquals("PENDING", progress.get(0).status());
+
+        second.setStatus(TestRequestStatus.COMPLETED);
+        progress = (List<PatientJourneyResponse.ServiceProgress>) method.invoke(patientJourneyService,
+                List.of(first, second));
+        assertEquals("COMPLETED", progress.get(0).status());
+    }
+
+    @Test
+    void queueStep_ShouldPresentAnalytesInTheSameQueueAsOnePanel() throws Exception {
+        Method method = PatientJourneyService.class.getDeclaredMethod("queueStep",
+                QueueTicket.class, List.class, String.class, String.class);
+        method.setAccessible(true);
+        Department lab = Department.builder().departmentId(UUID.randomUUID())
+                .name("Xét nghiệm huyết học").roomCode("LAB-201").build();
+        QueueTicket queue = QueueTicket.builder().ticketId(UUID.randomUUID()).department(lab)
+                .status(QueueStatus.WAITING).queueNumber(5).build();
+        MedicalService rbc = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("AN-CBC-RBC").name("Số lượng hồng cầu (RBC)").department(lab).build();
+        MedicalService hgb = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("AN-CBC-HGB").name("Huyết sắc tố (HGB)").department(lab).build();
+        TestRequest first = TestRequest.builder().testRequestId(UUID.randomUUID()).queueTicket(queue)
+                .service(rbc).status(TestRequestStatus.PENDING).build();
+        TestRequest second = TestRequest.builder().testRequestId(UUID.randomUUID()).queueTicket(queue)
+                .service(hgb).status(TestRequestStatus.PENDING).build();
+
+        PatientJourneyResponse.Step step = (PatientJourneyResponse.Step) method.invoke(
+                patientJourneyService, queue, List.of(first, second),
+                "PARACLINICAL", QueueStatus.WAITING.name());
+
+        assertEquals("Công thức máu (2 chỉ số)", step.serviceName());
+        assertEquals(1, step.services().size());
+        assertEquals("LAB-001", step.services().get(0).serviceCode());
+        assertEquals(1, step.totalServices());
+    }
+
+    @Test
+    void scopeFilteringCoversNullTodayOverdueTerminalAndMissingCheckIn() throws Exception {
+        Method normalize = PatientJourneyService.class.getDeclaredMethod("normalizeScope", String.class);
+        normalize.setAccessible(true);
+        assertEquals("ALL", normalize.invoke(patientJourneyService, new Object[]{null}));
+        assertEquals("ALL", normalize.invoke(patientJourneyService, "  "));
+        assertEquals("TODAY", normalize.invoke(patientJourneyService, " today "));
+        assertThrows(java.lang.reflect.InvocationTargetException.class,
+                () -> normalize.invoke(patientJourneyService, "future"));
+
+        Method matches = PatientJourneyService.class.getDeclaredMethod(
+                "matchesScope", PatientJourneyResponse.class, String.class);
+        matches.setAccessible(true);
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+        PatientJourneyResponse current = journeyAt(today.atTime(8, 0), "WAITING");
+        PatientJourneyResponse overdue = journeyAt(today.minusDays(2).atTime(8, 0), "WAITING");
+        PatientJourneyResponse completed = journeyAt(today.minusDays(2).atTime(8, 0), "COMPLETED");
+        PatientJourneyResponse undatedActive = journeyAt(null, "WAITING");
+        PatientJourneyResponse undatedTerminal = journeyAt(null, "CANCELLED");
+        assertTrue((boolean) matches.invoke(patientJourneyService, current, "ALL"));
+        assertTrue((boolean) matches.invoke(patientJourneyService, current, "TODAY"));
+        assertFalse((boolean) matches.invoke(patientJourneyService, current, "OVERDUE"));
+        assertTrue((boolean) matches.invoke(patientJourneyService, overdue, "OVERDUE"));
+        assertFalse((boolean) matches.invoke(patientJourneyService, completed, "OVERDUE"));
+        assertTrue((boolean) matches.invoke(patientJourneyService, undatedActive, "OVERDUE"));
+        assertFalse((boolean) matches.invoke(patientJourneyService, undatedTerminal, "OVERDUE"));
+        assertFalse((boolean) matches.invoke(patientJourneyService, undatedActive, "TODAY"));
+    }
+
+    @Test
+    void rankCurrentTicketCoversMissingInputsUnavailableRankingAndMatchingTicket() throws Exception {
+        Method method = PatientJourneyService.class.getDeclaredMethod("rankCurrentTicket", QueueTicket.class);
+        method.setAccessible(true);
+        assertNull(method.invoke(patientJourneyService, new Object[]{null}));
+
+        QueueTicket ticket = QueueTicket.builder().ticketId(UUID.randomUUID()).build();
+        assertNull(method.invoke(patientJourneyService, ticket));
+        ticket.setDepartment(Department.builder().departmentId(UUID.randomUUID()).build());
+        assertNull(method.invoke(patientJourneyService, ticket));
+        ticket.setWorkDate(LocalDate.now());
+
+        when(queueRepo.findWaitingPrioritized(eq(ticket.getDepartment().getDepartmentId()), eq(ticket.getWorkDate()),
+                anyList(), any())).thenReturn(null);
+        assertNull(method.invoke(patientJourneyService, ticket));
+
+        when(queueRepo.findWaitingPrioritized(eq(ticket.getDepartment().getDepartmentId()), eq(ticket.getWorkDate()),
+                anyList(), any())).thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(ticket)));
+        when(queuePriorityService.rank(anyList())).thenReturn(null);
+        assertNull(method.invoke(patientJourneyService, ticket));
+
+        QueueTicket other = QueueTicket.builder().ticketId(UUID.randomUUID()).build();
+        QueuePriorityService.PriorityInfo priority = new QueuePriorityService.PriorityInfo(
+                QueuePriorityService.REGULAR, "Khách trực tiếp", null, false);
+        when(queuePriorityService.rank(anyList())).thenReturn(List.of(
+                new QueuePriorityService.RankedTicket(other, 1, true, priority)));
+        assertNull(method.invoke(patientJourneyService, ticket));
+
+        QueuePriorityService.RankedTicket expected = new QueuePriorityService.RankedTicket(ticket, 2, true, priority);
+        when(queuePriorityService.rank(anyList())).thenReturn(List.of(expected));
+        assertSame(expected, method.invoke(patientJourneyService, ticket));
+    }
+
+    @Test
+    void physicalCurrentPrefersProgressThenCalledThenOldestWaitingAndHandlesEmpty() throws Exception {
+        Method method = PatientJourneyService.class.getDeclaredMethod("physicalCurrent", List.class);
+        method.setAccessible(true);
+        assertNull(method.invoke(patientJourneyService, List.of()));
+        PatientJourneyResponse.Step done = journeyStepWithStatus("DONE", null, QueueStatus.DONE.name());
+        assertNull(method.invoke(patientJourneyService, List.of(done)));
+
+        LocalDateTime now = LocalDateTime.now();
+        PatientJourneyResponse.Step waitingLate = journeyStepWithStatus("W2", now, QueueStatus.WAITING.name());
+        PatientJourneyResponse.Step waitingEarly = journeyStepWithStatus("W1", now.minusMinutes(5), QueueStatus.WAITING.name());
+        assertSame(waitingEarly, method.invoke(patientJourneyService, List.of(waitingLate, waitingEarly)));
+
+        PatientJourneyResponse.Step called = journeyStepWithStatus("C", null, QueueStatus.CALLED.name());
+        assertSame(called, method.invoke(patientJourneyService, List.of(waitingEarly, called)));
+        PatientJourneyResponse.Step progress = journeyStepWithStatus("P", now.plusMinutes(5), QueueStatus.IN_PROGRESS.name());
+        assertSame(progress, method.invoke(patientJourneyService, List.of(called, progress, waitingEarly)));
+    }
+
+    @Test
+    void emptyAndSkippedPatientQueuesCoverMissingRoomTodayAndExpiredTicket() throws Exception {
+        Method empty = PatientJourneyService.class.getDeclaredMethod("emptyQueue", UUID.class, String.class);
+        Method skipped = PatientJourneyService.class.getDeclaredMethod("skippedQueue", UUID.class, QueueTicket.class);
+        empty.setAccessible(true);
+        skipped.setAccessible(true);
+        UUID visitId = UUID.randomUUID();
+        var emptyResponse = (org.example.doansummer2026.dto.journey.PatientQueueResponse)
+                empty.invoke(patientJourneyService, visitId, "COMPLETED");
+        assertEquals("COMPLETED", emptyResponse.currentStatus());
+        assertTrue(emptyResponse.waiting().isEmpty());
+
+        QueueTicket expired = QueueTicket.builder().ticketId(UUID.randomUUID()).status(QueueStatus.SKIPPED)
+                .queueNumber(12).workDate(null).build();
+        var expiredResponse = (org.example.doansummer2026.dto.journey.PatientQueueResponse)
+                skipped.invoke(patientJourneyService, visitId, expired);
+        assertEquals("EXPIRED", expiredResponse.returnRequestStatus());
+        assertNull(expiredResponse.roomName());
+
+        Department room = Department.builder().departmentId(UUID.randomUUID()).name("Phòng Nội")
+                .roomCode("INT-103").build();
+        expired.setDepartment(room);
+        expired.setWorkDate(LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")));
+        var todayResponse = (org.example.doansummer2026.dto.journey.PatientQueueResponse)
+                skipped.invoke(patientJourneyService, visitId, expired);
+        assertEquals("NONE", todayResponse.returnRequestStatus());
+        assertEquals("Phòng Nội", todayResponse.roomName());
+        assertEquals("INT-103", todayResponse.roomCode());
+    }
+
+    private PatientJourneyResponse.Step journeyStepWithStatus(
+            String id, LocalDateTime startedAt, String status) {
+        return new PatientJourneyResponse.Step(id, "EXAMINATION", "Khám", null, null, null,
+                status, startedAt, null, List.of(), 0, 0,
+                "EXAMINATION", null, null, null);
+    }
+
+    private PatientJourneyResponse journeyAt(LocalDateTime checkedIn, String status) {
+        return new PatientJourneyResponse(UUID.randomUUID(), "VIS", "Bệnh nhân", "0900000000", false,
+                "Bước", "Phòng", status, "-", null, null, checkedIn, 0, false, List.of(),
+                null, null, null, null, null, null);
+    }
+
+    @Test
+    void queueForCustomer_ShouldRejectMissingVisitBeforeReadingJourney() {
+        UUID visitId = UUID.randomUUID();
+        when(visitRepo.findById(visitId)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> patientJourneyService.queueForCustomer(visitId, List.of(UUID.randomUUID())));
+        verifyNoInteractions(queueRepo, testRepo, invoiceRepo, recordRepo, queuePriorityService);
+    }
+
+    @Test
+    void queueForCustomer_ShouldRejectVisitWithoutRegisteredCustomer() {
+        UUID visitId = UUID.randomUUID();
+        when(visitRepo.findById(visitId)).thenReturn(Optional.of(
+                CustomerVisit.builder().visitId(visitId).build()));
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> patientJourneyService.queueForCustomer(visitId, List.of(UUID.randomUUID())));
+        verifyNoInteractions(queueRepo, testRepo, invoiceRepo, recordRepo, queuePriorityService);
+    }
+
+    @Test
+    void aggregateTestStatus_ShouldCoverAllTerminalAndMixedBranches() {
+        java.util.function.Function<TestRequestStatus, TestRequest> request = status ->
+                TestRequest.builder().status(status).build();
+        assertEquals("COMPLETED", ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "aggregateTestStatus", List.of(request.apply(TestRequestStatus.COMPLETED))));
+        assertEquals("IN_PROGRESS", ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "aggregateTestStatus", List.of(request.apply(TestRequestStatus.CANCELLED),
+                        request.apply(TestRequestStatus.IN_PROGRESS))));
+        assertEquals("BLOCKED", ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "aggregateTestStatus", List.of(request.apply(TestRequestStatus.BLOCKED),
+                        request.apply(TestRequestStatus.BLOCKED))));
+        assertEquals("PENDING", ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "aggregateTestStatus", List.of(request.apply(TestRequestStatus.CANCELLED),
+                        request.apply(TestRequestStatus.PENDING))));
+        assertEquals("CANCELLED", ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "aggregateTestStatus", List.of(request.apply(TestRequestStatus.CANCELLED))));
+    }
+
+    @Test
+    void returnStep_ShouldCoverInvoiceTestCycleAndExaminationStatusMatrix() {
+        QueueTicket examination = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .status(QueueStatus.WAITING).queueNumber(3).build();
+        Invoice pending = Invoice.builder().invoiceId(UUID.randomUUID()).status(InvoiceStatus.PENDING).build();
+        Invoice cancelled = Invoice.builder().invoiceId(UUID.randomUUID()).status(InvoiceStatus.CANCELLED).build();
+        TestRequest pendingTest = TestRequest.builder().status(TestRequestStatus.PENDING).build();
+        TestRequest completed = TestRequest.builder().status(TestRequestStatus.COMPLETED).build();
+
+        PatientJourneyResponse.Step step = ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "returnStep", examination, pending, 1, List.of(), true);
+        assertEquals("BLOCKED", step.status());
+        step = ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "returnStep", examination, cancelled, 1, List.of(completed), true);
+        assertEquals("CANCELLED", step.status());
+        step = ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "returnStep", examination, null, 1, List.of(pendingTest), true);
+        assertEquals("BLOCKED", step.status());
+        step = ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "returnStep", examination, null, 2, List.of(completed), false);
+        assertEquals("DONE", step.status());
+        examination.setStatus(QueueStatus.CALLED);
+        step = ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "returnStep", examination, null, 2, List.of(completed), true);
+        assertEquals("CALLED", step.status());
+        examination.setStatus(QueueStatus.WAITING);
+        step = ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "returnStep", examination, null, 2, List.of(completed), true);
+        assertEquals("TEST_DONE", step.status());
+    }
+
+    @Test
+    void examinationGroupStep_ShouldCoverGroupingFallbacksAndParaclinicalHandoff() {
+        QueueTicket missingService = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .status(QueueStatus.DONE).queueNumber(5).build();
+        QueueTicket waiting = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .status(QueueStatus.WAITING_FOR_TEST).queueNumber(2)
+                .service(MedicalService.builder().serviceId(UUID.randomUUID())
+                        .serviceCode("EX-01").name("Khám Nội").build())
+                .department(Department.builder().name("Nội").roomCode("INT-1").build()).build();
+        LocalDateTime completedAt = LocalDateTime.now().minusMinutes(1);
+        missingService.setCompletedAt(completedAt);
+
+        PatientJourneyResponse.Step grouped = ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "examinationGroupStep", List.of(missingService, waiting), waiting, false);
+        assertEquals("DONE", grouped.status());
+        assertEquals(2, grouped.totalServices());
+        assertEquals(2, grouped.completedServices());
+        assertTrue(grouped.serviceName().startsWith("2 dịch vụ:"));
+        assertEquals(2, grouped.queueNumber());
+
+        waiting.setStatus(QueueStatus.WAITING);
+        PatientJourneyResponse.Step active = ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "examinationGroupStep", List.of(waiting), waiting, false);
+        assertEquals("WAITING", active.status());
+        assertEquals(0, active.completedServices());
+        assertNull(active.completedAt());
+
+        PatientJourneyResponse.Step forced = ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "examinationGroupStep", List.of(waiting), waiting, true);
+        assertEquals("DONE", forced.status());
+        assertEquals(1, forced.completedServices());
+    }
+
+    @Test
+    void journeyServiceNameAndServiceProgress_ShouldCoverEmptySingleDistinctAndMissingService() {
+        assertEquals("Cận lâm sàng", ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "journeyServiceName", List.of()));
+        PatientJourneyResponse.ServiceProgress one = new PatientJourneyResponse.ServiceProgress(
+                UUID.randomUUID(), "LAB-1", "Xét nghiệm máu", "PENDING");
+        assertEquals("Xét nghiệm máu", ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "journeyServiceName", List.of(one)));
+        PatientJourneyResponse.ServiceProgress duplicate = new PatientJourneyResponse.ServiceProgress(
+                UUID.randomUUID(), "LAB-2", "Xét nghiệm máu", "COMPLETED");
+        assertEquals("2 dịch vụ: Xét nghiệm máu", ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "journeyServiceName", List.of(one, duplicate)));
+
+        TestRequest missing = TestRequest.builder().status(TestRequestStatus.CANCELLED).build();
+        PatientJourneyResponse.ServiceProgress fallback = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "serviceProgress", missing);
+        assertNull(fallback.serviceId());
+        assertEquals("Cận lâm sàng", fallback.serviceName());
+        TestRequest configured = TestRequest.builder().status(TestRequestStatus.COMPLETED)
+                .service(MedicalService.builder().serviceId(UUID.randomUUID())
+                        .serviceCode("LAB-X").name("Sinh hóa").build()).build();
+        PatientJourneyResponse.ServiceProgress mapped = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "serviceProgress", configured);
+        assertEquals("LAB-X", mapped.serviceCode());
+        assertEquals("COMPLETED", mapped.status());
+    }
+
+    @Test
+    void standaloneGroupingKeys_ShouldCoverInvoiceDepartmentAndFallbackCombinations() {
+        UUID invoiceId = UUID.randomUUID();
+        UUID departmentId = UUID.randomUUID();
+        TestRequest fullyLinked = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .invoiceItem(InvoiceItem.builder().invoice(Invoice.builder().invoiceId(invoiceId).build()).build())
+                .performingDepartment(Department.builder().departmentId(departmentId).build()).build();
+        assertEquals(invoiceId + ":" + departmentId, ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "standaloneTestGroupKey", fullyLinked));
+
+        TestRequest noInvoice = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .performingDepartment(Department.builder().build()).build();
+        assertEquals("NO_INVOICE:UNASSIGNED", ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "standaloneTestGroupKey", noInvoice));
+        assertEquals("UNASSIGNED", ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "performingDepartmentKey", TestRequest.builder().build()));
+        assertEquals("UNASSIGNED", ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "performingDepartmentKey", noInvoice));
+    }
+
+    @Test
+    void queueStep_ShouldCoverNullEmptyServiceDepartmentAndCompletedProgressBranches() {
+        UUID ticketId = UUID.randomUUID();
+        QueueTicket empty = QueueTicket.builder().ticketId(ticketId).queueNumber(9)
+                .status(QueueStatus.WAITING).build();
+        empty.setCreatedAt(LocalDateTime.now());
+        PatientJourneyResponse.Step fallback = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "queueStep", empty, null, "EXAMINATION", "WAITING");
+        assertEquals("Khám bệnh", fallback.serviceName());
+        assertTrue(fallback.services().isEmpty());
+        assertNull(fallback.roomName());
+
+        Department room = Department.builder().departmentId(UUID.randomUUID())
+                .name("Phòng Nội").roomCode("INT-101").build();
+        MedicalService service = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("EX-01").name("Khám Nội").build();
+        QueueTicket configured = QueueTicket.builder().ticketId(UUID.randomUUID()).queueNumber(10)
+                .status(QueueStatus.DONE).department(room).service(service)
+                .completedAt(LocalDateTime.now()).build();
+        configured.setCreatedAt(LocalDateTime.now());
+        PatientJourneyResponse.Step single = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "queueStep", configured, List.of(), "EXAMINATION", "DONE");
+        assertEquals("Khám Nội", single.serviceName());
+        assertEquals(1, single.completedServices());
+        assertEquals("Phòng Nội", single.roomName());
+
+        TestRequest completed = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .service(MedicalService.builder().serviceId(UUID.randomUUID())
+                        .serviceCode("LAB-X").name("Xét nghiệm X").build())
+                .status(TestRequestStatus.COMPLETED).build();
+        completed.setCreatedAt(LocalDateTime.now());
+        PatientJourneyResponse.Step withRequest = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "queueStep", configured, List.of(completed),
+                "PARACLINICAL", "DONE");
+        assertEquals(1, withRequest.completedServices());
+        assertEquals("Phòng Nội", withRequest.roomName());
+    }
+
+    @Test
+    void buildPatientQueue_ShouldCoverSkippedCancelledAndCompletedEarlyExitPaths() {
+        UUID visitId = UUID.randomUUID();
+        CustomerVisit visit = CustomerVisit.builder().visitId(visitId)
+                .status(org.example.doansummer2026.enums.VisitStatus.CHECKED_IN).build();
+        QueueTicket lateSkipped = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .status(QueueStatus.SKIPPED).build();
+        lateSkipped.setCreatedAt(LocalDateTime.now());
+        QueueTicket earlySkipped = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .status(QueueStatus.SKIPPED).build();
+        earlySkipped.setCreatedAt(LocalDateTime.now().minusMinutes(5));
+        when(queueRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of(lateSkipped, earlySkipped));
+        PatientQueueResponse skipped = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "buildPatientQueue", visit);
+        assertEquals("SKIPPED", skipped.currentStatus());
+
+        when(queueRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of());
+        visit.setStatus(org.example.doansummer2026.enums.VisitStatus.CANCELLED);
+        PatientQueueResponse cancelled = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "buildPatientQueue", visit);
+        assertEquals("CANCELLED", cancelled.currentStatus());
+
+        visit.setStatus(org.example.doansummer2026.enums.VisitStatus.COMPLETED);
+        PatientQueueResponse completed = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "buildPatientQueue", visit);
+        assertEquals("COMPLETED", completed.currentStatus());
+    }
+
+    @Test
+    void buildPatientQueue_ShouldHandleNoActiveStepTicketAndMissingOwnedTicket() {
+        UUID visitId = UUID.randomUUID();
+        CustomerVisit visit = visit(visitId);
+        visit.setStatus(VisitStatus.CHECKED_IN);
+
+        when(queueRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of());
+        PatientQueueResponse noActive = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "buildPatientQueue", visit);
+        assertNotNull(noActive);
+
+        reset(queueRepo);
+        Department clinic = Department.builder().departmentId(UUID.randomUUID())
+                .departmentType(DepartmentType.EXAMINATION).name("Phòng Nội").build();
+        Department lab = paraclinicalDepartment("Phòng xét nghiệm", "LAB-1");
+        QueueTicket withoutId = QueueTicket.builder().visit(visit).department(lab)
+                .service(medicalService("Đường huyết")).workDate(LocalDate.now())
+                .queueNumber(1).status(QueueStatus.TEST_DONE).build();
+        when(queueRepo.findAllByVisit_VisitId(visitId))
+                .thenReturn(List.of(), List.of(withoutId));
+        PatientQueueResponse noTicketId = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "buildPatientQueue", visit);
+        assertEquals("TEST_DONE", noTicketId.currentStatus());
+
+        reset(queueRepo);
+        QueueTicket ticket = QueueTicket.builder().ticketId(UUID.randomUUID()).visit(visit)
+                .department(lab).service(medicalService("Đường huyết"))
+                .workDate(LocalDate.now()).queueNumber(2).status(QueueStatus.TEST_DONE).build();
+        when(queueRepo.findAllByVisit_VisitId(visitId))
+                .thenReturn(List.of(), List.of(ticket), List.of());
+        PatientQueueResponse missingOwned = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "buildPatientQueue", visit);
+        assertEquals("TEST_DONE", missingOwned.currentStatus());
+    }
+
+    @Test
+    void get_ShouldBuildCompleteClinicalCycleWithCancelledSharedPrebookedAndLegacyTests() {
+        UUID visitId = UUID.randomUUID();
+        CustomerVisit visit = visit(visitId);
+        visit.setStatus(VisitStatus.CHECKED_IN);
+
+        Department clinic = Department.builder().departmentId(UUID.randomUUID())
+                .departmentType(DepartmentType.EXAMINATION).name("Phòng Nội").roomCode("INT-1").build();
+        Department lab = paraclinicalDepartment("Xét nghiệm", "LAB-1");
+        QueueTicket exam = QueueTicket.builder().ticketId(UUID.randomUUID()).visit(visit)
+                .department(clinic).service(medicalService("Khám Nội"))
+                .workDate(LocalDate.now()).queueNumber(1).status(QueueStatus.DONE).build();
+        exam.setCreatedAt(LocalDateTime.now().minusHours(2));
+        MedicalRecord record = MedicalRecord.builder().recordId(UUID.randomUUID())
+                .visit(visit).queueTicket(exam).build();
+
+        Invoice initial = Invoice.builder().invoiceId(UUID.randomUUID()).visit(visit)
+                .status(InvoiceStatus.PAID).build();
+        initial.setCreatedAt(LocalDateTime.now().minusHours(3));
+        Invoice clinical = Invoice.builder().invoiceId(UUID.randomUUID()).visit(visit)
+                .medicalRecord(record).status(InvoiceStatus.PAID).build();
+        clinical.setCreatedAt(LocalDateTime.now().minusHours(1));
+        Invoice cancelled = Invoice.builder().invoiceId(UUID.randomUUID()).visit(visit)
+                .medicalRecord(record).status(InvoiceStatus.CANCELLED).build();
+        cancelled.setCreatedAt(LocalDateTime.now().minusMinutes(30));
+
+        QueueTicket labQueue = QueueTicket.builder().ticketId(UUID.randomUUID()).visit(visit)
+                .department(lab).service(medicalService("Công thức máu"))
+                .workDate(LocalDate.now()).queueNumber(2).status(QueueStatus.WAITING).build();
+        labQueue.setCreatedAt(LocalDateTime.now().minusMinutes(45));
+
+        java.util.function.BiFunction<Invoice, MedicalRecord, InvoiceItem> item = (invoice, owner) ->
+                InvoiceItem.builder().itemId(UUID.randomUUID()).invoice(invoice).build();
+        TestRequest direct = TestRequest.builder().testRequestId(UUID.randomUUID()).medicalRecord(record)
+                .invoiceItem(item.apply(clinical, record)).queueTicket(labQueue)
+                .performingDepartment(lab).service(medicalService("RBC"))
+                .status(TestRequestStatus.PENDING).build();
+        direct.setCreatedAt(LocalDateTime.now().minusMinutes(50));
+
+        MedicalRecord otherRecord = MedicalRecord.builder().recordId(UUID.randomUUID()).visit(visit).build();
+        TestRequest shared = TestRequest.builder().testRequestId(UUID.randomUUID()).medicalRecord(otherRecord)
+                .invoiceItem(item.apply(initial, otherRecord)).queueTicket(labQueue)
+                .performingDepartment(lab).service(medicalService("HGB"))
+                .status(TestRequestStatus.PENDING).build();
+        shared.setCreatedAt(LocalDateTime.now().minusMinutes(49));
+
+        TestRequest prebooked = TestRequest.builder().testRequestId(UUID.randomUUID()).medicalRecord(otherRecord)
+                .invoiceItem(item.apply(initial, otherRecord)).performingDepartment(lab)
+                .service(medicalService("Đường huyết")).status(TestRequestStatus.IN_PROGRESS).build();
+        prebooked.setCreatedAt(LocalDateTime.now().minusHours(2));
+
+        TestRequest legacy = TestRequest.builder().testRequestId(UUID.randomUUID()).medicalRecord(record)
+                .invoiceItem(item.apply(initial, record)).performingDepartment(lab)
+                .service(medicalService("AST")).status(TestRequestStatus.PENDING).build();
+        legacy.setCreatedAt(LocalDateTime.now().minusMinutes(40));
+        TestRequest legacyCompanion = TestRequest.builder().testRequestId(UUID.randomUUID()).medicalRecord(otherRecord)
+                .invoiceItem(item.apply(initial, otherRecord)).performingDepartment(lab)
+                .service(medicalService("ALT")).status(TestRequestStatus.PENDING).build();
+        legacyCompanion.setCreatedAt(LocalDateTime.now().minusMinutes(39));
+
+        when(visitRepo.findById(visitId)).thenReturn(Optional.of(visit));
+        when(invoiceRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of(initial, clinical, cancelled));
+        when(testRepo.findAllByMedicalRecord_Visit_VisitId(visitId))
+                .thenReturn(List.of(direct, shared, prebooked, legacy, legacyCompanion));
+        when(queueRepo.findAllByVisit_VisitId(visitId)).thenReturn(List.of(exam, labQueue));
+
+        PatientJourneyResponse result = patientJourneyService.get(visitId);
+
+        assertFalse(result.steps().isEmpty());
+        assertTrue(result.steps().stream().anyMatch(step -> "CANCELLED".equals(step.status())));
+        assertTrue(result.steps().stream().anyMatch(step -> "PARACLINICAL".equals(step.kind())));
+    }
+
+    @Test
+    void groupingHelpers_ShouldCoverWholePanelAnalyteSnapshotAndMissingServiceBranches() {
+        MedicalService wholePanel = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("LAB-001").name("Công thức máu").build();
+        MedicalService analyte = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("AN-CBC-RBC").name("RBC").build();
+        MedicalService ordinary = MedicalService.builder().serviceId(UUID.randomUUID())
+                .serviceCode("IMG-X").name("Chụp X").build();
+        TestRequest panelRequest = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .service(wholePanel).status(TestRequestStatus.COMPLETED).build();
+        TestRequest analyteRequest = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .service(analyte).status(TestRequestStatus.PENDING).build();
+        TestRequest ordinaryRequest = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .service(ordinary).status(TestRequestStatus.BLOCKED).build();
+        TestRequest missingService = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .status(TestRequestStatus.CANCELLED).build();
+
+        @SuppressWarnings("unchecked")
+        List<PatientJourneyResponse.ServiceProgress> actual = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "groupedServiceProgress",
+                List.of(panelRequest, analyteRequest, ordinaryRequest, missingService));
+        assertEquals(3, actual.size());
+        assertTrue(actual.stream().anyMatch(item -> "LAB-001".equals(item.serviceCode())
+                && "Công thức máu".equals(item.serviceName())));
+        assertTrue(actual.stream().anyMatch(item -> "IMG-X".equals(item.serviceCode())));
+
+        InvoiceItem panelItem = InvoiceItem.builder().itemId(UUID.randomUUID()).service(wholePanel)
+                .serviceCodeSnapshot("LAB-001").serviceSnapshot("Công thức máu").build();
+        InvoiceItem analyteSnapshot = InvoiceItem.builder().itemId(UUID.randomUUID())
+                .serviceCodeSnapshot("AN-CBC-RBC").serviceSnapshot("RBC").build();
+        InvoiceItem ordinarySnapshot = InvoiceItem.builder().itemId(UUID.randomUUID())
+                .serviceCodeSnapshot("IMG-X").serviceSnapshot("Chụp X").build();
+        @SuppressWarnings("unchecked")
+        List<PatientJourneyResponse.ServiceProgress> planned = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "groupedPlannedServiceProgress",
+                List.of(panelItem, analyteSnapshot, ordinarySnapshot));
+        assertEquals(2, planned.size());
+        assertTrue(planned.stream().allMatch(item -> "BLOCKED".equals(item.status())));
+        assertTrue(planned.stream().anyMatch(item -> "LAB-001".equals(item.serviceCode())
+                && "Công thức máu".equals(item.serviceName())));
+    }
+
+    @Test
+    void groupingHelpers_ShouldCoverCompleteAnalytePanelAndNullIdentifiers() {
+        var panel = LaboratoryAnalyteCatalog.panel("LAB-001").orElseThrow();
+        List<TestRequest> requests = new java.util.ArrayList<>();
+        List<InvoiceItem> items = new java.util.ArrayList<>();
+        for (LaboratoryAnalyteCatalog.Analyte analyte : panel.analytes()) {
+            String analyteCode = analyte.serviceCode();
+            MedicalService service = MedicalService.builder().serviceId(UUID.randomUUID())
+                    .serviceCode(analyteCode).name(analyteCode).build();
+            requests.add(TestRequest.builder().testRequestId(UUID.randomUUID()).service(service)
+                    .status(TestRequestStatus.COMPLETED).build());
+            items.add(InvoiceItem.builder().itemId(UUID.randomUUID()).service(service)
+                    .serviceCodeSnapshot(analyteCode).serviceSnapshot(analyteCode).build());
+        }
+        @SuppressWarnings("unchecked")
+        List<PatientJourneyResponse.ServiceProgress> grouped = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "groupedServiceProgress", requests);
+        @SuppressWarnings("unchecked")
+        List<PatientJourneyResponse.ServiceProgress> planned = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "groupedPlannedServiceProgress", items);
+        assertEquals(panel.name(), grouped.get(0).serviceName());
+        assertEquals(panel.name(), planned.get(0).serviceName());
+
+        MedicalService noId = MedicalService.builder().serviceCode("CUSTOM").name("Tùy chỉnh").build();
+        TestRequest requestWithoutId = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .service(noId).status(TestRequestStatus.CANCELLED).build();
+        InvoiceItem itemWithoutId = InvoiceItem.builder().itemId(UUID.randomUUID()).service(noId)
+                .serviceCodeSnapshot("CUSTOM").serviceSnapshot("Tùy chỉnh").build();
+        assertEquals(1, ((List<?>) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "groupedServiceProgress", List.of(requestWithoutId))).size());
+        assertEquals(1, ((List<?>) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "groupedPlannedServiceProgress", List.of(itemWithoutId))).size());
+    }
+
+    @Test
+    void cycleAndReturnSteps_ShouldCoverLegacyInvoiceRoomAndFallbackMetadata() {
+        UUID ticketId = UUID.randomUUID();
+        QueueTicket queue = QueueTicket.builder().ticketId(ticketId).queueNumber(7)
+                .status(QueueStatus.DONE).build();
+        TestRequest done = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .status(TestRequestStatus.COMPLETED).build();
+        done.setCreatedAt(LocalDateTime.now());
+        PatientJourneyResponse.Step legacy = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "cycleQueueStep", queue, List.of(done), null, 3);
+        assertTrue(legacy.id().contains("LEGACY-" + ticketId));
+        assertNull(legacy.roomName());
+        assertEquals(1, legacy.completedServices());
+        assertNull(legacy.invoiceId());
+
+        Department room = Department.builder().departmentId(UUID.randomUUID())
+                .name("Phòng xét nghiệm").roomCode("LAB-1").build();
+        queue.setDepartment(room);
+        Invoice invoice = Invoice.builder().invoiceId(UUID.randomUUID()).build();
+        TestRequest pending = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .status(TestRequestStatus.PENDING).build();
+        pending.setCreatedAt(LocalDateTime.now().plusSeconds(1));
+        PatientJourneyResponse.Step linked = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "cycleQueueStep", queue, List.of(done, pending), invoice, 4);
+        assertEquals("Phòng xét nghiệm", linked.roomName());
+        assertEquals(invoice.getInvoiceId(), linked.invoiceId());
+        assertEquals(1, linked.completedServices());
+
+        queue.setService(null);
+        PatientJourneyResponse.Step returned = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "returnStep", queue, invoice, 4, List.of(done), true);
+        assertTrue(returned.serviceName().endsWith("· bác sĩ"));
+        assertEquals("Phòng xét nghiệm", returned.roomName());
+    }
+
+    @Test
+    void workflowOrder_ShouldCoverMissingRoomServicePriorityCodeAndCreatedDate() {
+        @SuppressWarnings("unchecked")
+        java.util.Comparator<QueueTicket> comparator = ReflectionTestUtils.invokeMethod(
+                patientJourneyService, "workflowOrder");
+        Department examination = Department.builder().departmentType(DepartmentType.EXAMINATION).build();
+        Department lab = Department.builder().departmentType(DepartmentType.LABORATORY).build();
+        MedicalService high = MedicalService.builder().serviceCode("B").workflowPriority(10).build();
+        MedicalService low = MedicalService.builder().serviceCode("A").workflowPriority(null).build();
+        QueueTicket exam = QueueTicket.builder().department(examination).service(low).build();
+        QueueTicket para = QueueTicket.builder().department(lab).service(high).build();
+        QueueTicket missing = QueueTicket.builder().build();
+        exam.setCreatedAt(LocalDateTime.now());
+        para.setCreatedAt(LocalDateTime.now().minusMinutes(1));
+        assertTrue(comparator.compare(exam, para) < 0);
+        assertTrue(comparator.compare(para, missing) < 0);
+        assertNotEquals(0, comparator.compare(exam, missing));
+        assertEquals(0, comparator.compare(missing, QueueTicket.builder().build()));
+    }
+
+    @Test
+    void addLegacyParaclinicalSteps_ShouldGroupQueuedAndQueueLessRequestsWithoutDuplicates() {
+        QueueTicket examination = QueueTicket.builder().ticketId(UUID.randomUUID()).build();
+        Department lab = Department.builder().departmentId(UUID.randomUUID())
+                .name("Xét nghiệm").roomCode("LAB-1").build();
+        QueueTicket labQueue = QueueTicket.builder().ticketId(UUID.randomUUID())
+                .department(lab).status(QueueStatus.WAITING).queueNumber(8).build();
+        TestRequest queued = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .queueTicket(labQueue).performingDepartment(lab)
+                .status(TestRequestStatus.PENDING).build();
+        TestRequest withoutQueue = TestRequest.builder().testRequestId(UUID.randomUUID())
+                .performingDepartment(lab).status(TestRequestStatus.COMPLETED).build();
+        queued.setCreatedAt(LocalDateTime.now());
+        withoutQueue.setCreatedAt(LocalDateTime.now());
+        List<PatientJourneyResponse.Step> steps = new java.util.ArrayList<>();
+        java.util.Set<UUID> added = new java.util.HashSet<>();
+
+        ReflectionTestUtils.invokeMethod(patientJourneyService, "addLegacyParaclinicalSteps",
+                steps, examination, 2, List.of(queued, withoutQueue), added);
+        assertEquals(2, steps.size());
+        assertTrue(added.contains(labQueue.getTicketId()));
+        assertTrue(steps.stream().anyMatch(step -> step.id().startsWith("LEGACY:")));
+
+        List<PatientJourneyResponse.Step> duplicate = new java.util.ArrayList<>();
+        ReflectionTestUtils.invokeMethod(patientJourneyService, "addLegacyParaclinicalSteps",
+                duplicate, examination, 3, List.of(queued), added);
+        assertTrue(duplicate.isEmpty());
+    }
+
+    @Test
+    void paymentStep_ShouldCoverPaidCancelledAndPendingPresentation() {
+        for (InvoiceStatus status : InvoiceStatus.values()) {
+            Invoice invoice = Invoice.builder().invoiceId(UUID.randomUUID()).status(status).build();
+            invoice.setCreatedAt(LocalDateTime.now().minusMinutes(2));
+            invoice.setUpdatedAt(LocalDateTime.now());
+            PatientJourneyResponse.Step step = ReflectionTestUtils.invokeMethod(
+                    patientJourneyService, "paymentStep", invoice, "Thanh toán", "PAYMENT", 1);
+            if (status == InvoiceStatus.PAID) {
+                assertEquals("DONE", step.status());
+                assertEquals(1, step.completedServices());
+                assertNotNull(step.completedAt());
+            } else if (status == InvoiceStatus.CANCELLED) {
+                assertEquals("CANCELLED", step.status());
+                assertNotNull(step.completedAt());
+            } else {
+                assertEquals("PAYMENT_PENDING", step.status());
+                assertNull(step.completedAt());
+            }
+        }
+    }
+
+    @Test
+    void relationshipPredicates_ShouldCoverEachMissingLinkAndMatchingLink() {
+        UUID ticketId = UUID.randomUUID();
+        QueueTicket examination = QueueTicket.builder().ticketId(ticketId).build();
+        QueueTicket other = QueueTicket.builder().ticketId(UUID.randomUUID()).build();
+
+        Invoice invoice = Invoice.builder().build();
+        assertFalse((Boolean) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "belongsToExamination", invoice, examination));
+        invoice.setMedicalRecord(MedicalRecord.builder().build());
+        assertFalse((Boolean) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "belongsToExamination", invoice, examination));
+        invoice.getMedicalRecord().setQueueTicket(other);
+        assertFalse((Boolean) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "belongsToExamination", invoice, examination));
+        invoice.getMedicalRecord().setQueueTicket(examination);
+        assertTrue((Boolean) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "belongsToExamination", invoice, examination));
+
+        TestRequest test = TestRequest.builder().build();
+        assertFalse((Boolean) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "belongsToExamination", test, examination));
+        test.setMedicalRecord(MedicalRecord.builder().build());
+        assertFalse((Boolean) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "belongsToExamination", test, examination));
+        test.getMedicalRecord().setQueueTicket(other);
+        assertFalse((Boolean) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "belongsToExamination", test, examination));
+        test.getMedicalRecord().setQueueTicket(examination);
+        assertTrue((Boolean) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "belongsToExamination", test, examination));
+
+        assertTrue(((Optional<?>) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "invoiceIdOf", (Object) null)).isEmpty());
+        assertTrue(((Optional<?>) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "invoiceIdOf", TestRequest.builder().build())).isEmpty());
+        assertTrue(((Optional<?>) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "invoiceIdOf", TestRequest.builder().invoiceItem(InvoiceItem.builder().build()).build())).isEmpty());
+        UUID invoiceId = UUID.randomUUID();
+        TestRequest linked = TestRequest.builder().invoiceItem(InvoiceItem.builder()
+                .invoice(Invoice.builder().invoiceId(invoiceId).build()).build()).build();
+        assertEquals(invoiceId, ((Optional<?>) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "invoiceIdOf", linked)).orElseThrow());
+
+        assertFalse((Boolean) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "isExaminationQueue", QueueTicket.builder().build()));
+        assertFalse((Boolean) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "isExaminationQueue", QueueTicket.builder().department(
+                        Department.builder().departmentType(DepartmentType.LABORATORY).build()).build()));
+        assertTrue((Boolean) ReflectionTestUtils.invokeMethod(patientJourneyService,
+                "isExaminationQueue", QueueTicket.builder().department(
+                        Department.builder().departmentType(DepartmentType.EXAMINATION).build()).build()));
     }
 }

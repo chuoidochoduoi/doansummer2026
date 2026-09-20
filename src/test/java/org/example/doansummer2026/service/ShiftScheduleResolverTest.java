@@ -77,4 +77,64 @@ class ShiftScheduleResolverTest {
         assertEquals(LocalTime.of(9, 0), result.startTime());
         assertEquals(LocalTime.of(10, 30), result.endTime());
     }
+
+    @Test
+    void nullAndInactiveShiftsAreUnavailableWithoutRepositoryAccess() {
+        assertEquals(ShiftUnavailableReason.SHIFT_OFF, resolver.resolve(null, date).unavailableReason());
+        shift.setIsActive(false);
+        assertEquals(ShiftUnavailableReason.SHIFT_OFF, resolver.resolve(shift, date).unavailableReason());
+        verifyNoInteractions(exceptionRepository, versionRepository);
+    }
+
+    @Test
+    void legacyTimesAreUsedWhenNoVersionExists() {
+        when(exceptionRepository.findAllByWorkDate(date)).thenReturn(List.of());
+        when(versionRepository.findEffective(shift.getShiftId(), date)).thenReturn(List.of());
+
+        var result = resolver.resolve(shift, date);
+
+        assertTrue(result.available());
+        assertEquals(LocalTime.of(7, 30), result.startTime());
+        assertEquals(LocalTime.of(11, 30), result.endTime());
+        assertNull(result.version());
+    }
+
+    @Test
+    void invalidOrMissingLegacyTimeMakesShiftUnavailable() {
+        when(exceptionRepository.findAllByWorkDate(date)).thenReturn(List.of());
+        when(versionRepository.findEffective(shift.getShiftId(), date)).thenReturn(List.of());
+        shift.setStartTime("invalid");
+
+        var invalid = resolver.resolve(shift, date);
+        assertEquals(ShiftUnavailableReason.NO_ACTIVE_SHIFT_VERSION, invalid.unavailableReason());
+
+        shift.setStartTime("07:30");
+        shift.setEndTime(null);
+        var missing = resolver.resolve(shift, date);
+        assertEquals(ShiftUnavailableReason.NO_ACTIVE_SHIFT_VERSION, missing.unavailableReason());
+    }
+
+    @Test
+    void exceptionForAnotherShiftDoesNotAffectResolution() {
+        ShiftConfig another = ShiftConfig.builder().shiftId(UUID.randomUUID()).isActive(true).build();
+        var unrelated = ClinicScheduleException.builder().workDate(date).shift(another)
+                .type(ClinicScheduleExceptionType.SHIFT_OFF).build();
+        when(exceptionRepository.findAllByWorkDate(date)).thenReturn(List.of(unrelated));
+        when(versionRepository.findEffective(shift.getShiftId(), date)).thenReturn(List.of(version));
+
+        assertTrue(resolver.resolve(shift, date).available());
+    }
+
+    @Test
+    void nullShiftExceptionAndUnknownSameShiftExceptionDoNotOverrideNormalHours() {
+        var withoutShift = ClinicScheduleException.builder().workDate(date).type(null).build();
+        var sameShiftWithoutType = ClinicScheduleException.builder().workDate(date)
+                .shift(shift).type(null).build();
+        when(exceptionRepository.findAllByWorkDate(date))
+                .thenReturn(List.of(withoutShift), List.of(sameShiftWithoutType));
+        when(versionRepository.findEffective(shift.getShiftId(), date)).thenReturn(List.of(version));
+
+        assertEquals(ShiftTimeSource.NORMAL, resolver.resolve(shift, date).source());
+        assertEquals(ShiftTimeSource.NORMAL, resolver.resolve(shift, date).source());
+    }
 }

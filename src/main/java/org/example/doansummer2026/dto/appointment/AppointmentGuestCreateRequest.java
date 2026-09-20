@@ -27,7 +27,7 @@ public record AppointmentGuestCreateRequest(
         @Positive(message = "Tuổi không hợp lệ") Integer guestAge,
         Gender guestGender,
         @NotNull @FutureOrPresent(message = "Thời gian đặt lịch phải từ hiện tại trở đi") LocalDateTime scheduledAt,
-        UUID shiftId,
+        @NotNull(message = "Vui lòng chọn ca khám") UUID shiftId,
         Set<UUID> serviceIds
 ) {}
 
