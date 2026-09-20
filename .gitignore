@@ -46,3 +46,11 @@ out/
 
 ### VS Code ###
 .vscode/
+
+ .codex-tmp/
+.gradle-*/
+.tmp-*/
+build-wsl-*/
+diff.txt
+query.sql
+*.pyc 

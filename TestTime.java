@@ -1,0 +1,1 @@
+import java.time.LocalDate; import java.time.DayOfWeek; public class TestTime { public static void main(String[] args) { System.out.println(LocalDate.parse(\" "2026-09-14\).with(DayOfWeek.SUNDAY)); } }  
