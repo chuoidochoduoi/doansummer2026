@@ -30,26 +30,10 @@ public final class LaboratoryAnalyteCatalog {
                     a("AN-CBC-HGB", "hgb", "Huyết sắc tố (HGB)", 5000),
                     a("AN-CBC-HCT", "hct", "Hematocrit (HCT)", 5000),
                     a("AN-CBC-MCV", "mcv", "MCV", 5000),
-                    a("AN-CBC-MCH", "mch", "MCH", 5000),
-                    a("AN-CBC-MCHC", "mchc", "MCHC", 5000),
-                    a("AN-CBC-RDWCV", "rdwCv", "RDW-CV", 5000),
-                    a("AN-CBC-RDWSD", "rdwSd", "RDW-SD", 5000),
                     a("AN-CBC-WBC", "wbc", "Số lượng bạch cầu (WBC)", 10000),
                     a("AN-CBC-NEUTP", "neutPercent", "Bạch cầu trung tính (%)", 5000),
-                    a("AN-CBC-NEUTA", "neutAbsolute", "Bạch cầu trung tính tuyệt đối", 5000),
                     a("AN-CBC-LYMP", "lymphPercent", "Bạch cầu lympho (%)", 5000),
-                    a("AN-CBC-LYMA", "lymphAbsolute", "Bạch cầu lympho tuyệt đối", 5000),
-                    a("AN-CBC-MONOP", "monoPercent", "Bạch cầu mono (%)", 5000),
-                    a("AN-CBC-MONOA", "monoAbsolute", "Bạch cầu mono tuyệt đối", 5000),
-                    a("AN-CBC-EOSP", "eosPercent", "Bạch cầu ái toan (%)", 5000),
-                    a("AN-CBC-EOSA", "eosAbsolute", "Bạch cầu ái toan tuyệt đối", 5000),
-                    a("AN-CBC-BASOP", "basoPercent", "Bạch cầu ái kiềm (%)", 5000),
-                    a("AN-CBC-BASOA", "basoAbsolute", "Bạch cầu ái kiềm tuyệt đối", 5000),
-                    a("AN-CBC-PLT", "plt", "Số lượng tiểu cầu (PLT)", 10000),
-                    a("AN-CBC-MPV", "mpv", "MPV", 5000),
-                    a("AN-CBC-PDW", "pdw", "PDW", 5000),
-                    a("AN-CBC-PCT", "pct", "Plateletcrit (PCT)", 5000),
-                    a("AN-CBC-PLCR", "pLcr", "P-LCR", 5000)
+                    a("AN-CBC-PLT", "plt", "Số lượng tiểu cầu (PLT)", 10000)
             )),
             new Panel("LAB-003", "Sinh hóa máu cơ bản", List.of(
                     a("AN-BIO-HBA1C", "hba1c", "Hemoglobin A1c", 30000),
@@ -75,9 +59,7 @@ public final class LaboratoryAnalyteCatalog {
                     a("AN-REN-NA", "sodium", "Sodium", 20000),
                     a("AN-REN-K", "potassium", "Potassium", 20000),
                     a("AN-REN-CL", "chloride", "Chloride", 20000),
-                    a("AN-REN-HCO3", "bicarbonate", "Bicarbonate / Total CO2", 20000),
-                    a("AN-REN-CA", "calcium", "Calcium toàn phần", 20000),
-                    a("AN-REN-PO4", "phosphate", "Phosphate", 20000)
+                    a("AN-REN-CA", "calcium", "Calcium toàn phần", 20000)
             )),
             new Panel("LAB-006", "Tổng phân tích nước tiểu", List.of(
                     a("AN-URI-SG", "specificGravity", "Tỷ trọng nước tiểu", 10000),
@@ -87,9 +69,10 @@ public final class LaboratoryAnalyteCatalog {
                     a("AN-URI-PRO", "protein", "Protein nước tiểu", 10000),
                     a("AN-URI-GLU", "urineGlucose", "Glucose nước tiểu", 10000),
                     a("AN-URI-KET", "ketone", "Ketone", 10000),
-                    a("AN-URI-URO", "urobilinogen", "Urobilinogen", 10000),
-                    a("AN-URI-BIL", "urineBilirubin", "Bilirubin nước tiểu", 10000),
                     a("AN-URI-BLD", "blood", "Máu/Hemoglobin nước tiểu", 10000)
+            )),
+            new Panel("LAB-007", "Xét nghiệm CRP", List.of(
+                    a("AN-CRP", "crp", "CRP định lượng", 100000)
             ))
     );
 

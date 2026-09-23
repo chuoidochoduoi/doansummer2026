@@ -57,7 +57,7 @@ public class MembershipCardController {
     }
 
     @PostMapping("/{cardCode}/top-up")
-    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "MembershipCard", idParamName = "cardCode", description = "Nạp tiền thẻ trả trước CareS")
     public ResponseEntity<MembershipTopUpResponse> topUp(@PathVariable String cardCode,
             @Valid @RequestBody MembershipTopUpRequest request) {
@@ -66,7 +66,7 @@ public class MembershipCardController {
     }
 
     @PostMapping("/pay-at-counter")
-    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.PAYMENT_CONFIRMED, entityName = "MembershipCard", description = "Thanh toán hóa đơn bằng thẻ trả trước tại quầy")
     public ResponseEntity<?> payAtCounter(@Valid @RequestBody MembershipCounterPaymentRequest request) {
         staffDutyService.requireCurrentStaffOnDuty(SystemRole.CASHIER);
@@ -74,24 +74,24 @@ public class MembershipCardController {
     }
 
     @GetMapping("/policy")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER','ROLE_CASHIER','ROLE_CUSTOMER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER','ROLE_CASHIER','ROLE_CUSTOMER')")
     public ResponseEntity<MembershipPolicy> policy() { return RestResponses.ok(service.getPolicy()); }
 
     @PutMapping("/policy")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.UPDATE, entityName = "MembershipPolicy", description = "Cập nhật chính sách thẻ trả trước CareS")
     public ResponseEntity<MembershipPolicy> updatePolicy(@Valid @RequestBody MembershipPolicyRequest request) {
         return RestResponses.ok(service.updatePolicy(request));
     }
 
     @GetMapping("/ledger")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER')")
     public ResponseEntity<?> allLedger(Pageable pageable) {
         return RestResponses.ok(service.allHistory(pageable));
     }
 
     @GetMapping("/top-ups")
-    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CASHIER','ROLE_CLINIC_MANAGER')")
     public ResponseEntity<?> topUpHistory(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -100,10 +100,11 @@ public class MembershipCardController {
     }
 
     @PostMapping("/ledger/{ledgerId}/reverse")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "MembershipCard", idParamName = "ledgerId", description = "Hoàn tác thanh toán thẻ trả trước CareS")
     public ResponseEntity<MembershipLedgerResponse> reverse(@PathVariable java.util.UUID ledgerId,
             @Valid @RequestBody MembershipReversalRequest request) {
         return RestResponses.ok(service.reverse(ledgerId, request, authService.currentStaffId()));
     }
 }
+

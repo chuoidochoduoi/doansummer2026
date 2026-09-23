@@ -56,7 +56,18 @@ public interface MedicalServiceRepository extends JpaRepository<MedicalService, 
     default Page<MedicalService> search(String keyword, DepartmentType departmentType,
                                          ServiceStatus status, UUID specializationId,
                                          Pageable pageable) {
+        return search(keyword, departmentType, status, specializationId, false, pageable);
+    }
+
+    default Page<MedicalService> search(String keyword, DepartmentType departmentType,
+                                         ServiceStatus status, UUID specializationId,
+                                         boolean primaryOnly, Pageable pageable) {
         Specification<MedicalService> spec = (root, query, cb) -> cb.conjunction();
+
+        if (primaryOnly) {
+            spec = spec.and((root, query, cb) ->
+                    cb.notLike(cb.upper(root.get("serviceCode")), "AN-%"));
+        }
 
         if (keyword != null && !keyword.isEmpty()) {
             spec = spec.and((root, query, cb) ->

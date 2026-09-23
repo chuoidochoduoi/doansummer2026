@@ -46,8 +46,10 @@ public class MedicalServiceController {
             @RequestParam(required = false) DepartmentType departmentType,
             @RequestParam(required = false) ServiceStatus status,
             @RequestParam(required = false) UUID specializationId,
+            @RequestParam(defaultValue = "false") boolean primaryOnly,
             Pageable pageable) {
-        return RestResponses.ok(service.search(keyword, departmentType, status, specializationId, pageable));
+        return RestResponses.ok(service.search(
+                keyword, departmentType, status, specializationId, primaryOnly, pageable));
     }
 
     /**
@@ -77,8 +79,9 @@ public class MedicalServiceController {
 
     @GetMapping("/stats")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR')")
-    public ResponseEntity<Map<String, Long>> getStats() {
-        return RestResponses.ok(service.getStats());
+    public ResponseEntity<Map<String, Long>> getStats(
+            @RequestParam(defaultValue = "false") boolean primaryOnly) {
+        return RestResponses.ok(service.getStats(primaryOnly));
     }
 
     @PostMapping

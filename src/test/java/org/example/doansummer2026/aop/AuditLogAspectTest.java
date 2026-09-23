@@ -3,9 +3,7 @@ package org.example.doansummer2026.aop;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.example.doansummer2026.dto.auditlog.AuditLogCreateRequest;
-import org.example.doansummer2026.dto.contact.ContactRequestResponse;
 import org.example.doansummer2026.enums.AuditAction;
-import org.example.doansummer2026.enums.ContactRequestStatus;
 import org.example.doansummer2026.model.Account;
 import org.example.doansummer2026.service.AuditLogService;
 import org.example.doansummer2026.service.AuditSnapshotService;
@@ -24,7 +22,6 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import tools.jackson.databind.ObjectMapper;
 
-import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -206,7 +203,6 @@ class AuditLogAspectTest {
         entities.put("ClinicalFormTemplateBinding", "Biểu mẫu lâm sàng");
         entities.put("ClinicSchedule", "Lịch hoạt động phòng khám");
         entities.put("ClinicScheduleException", "Lịch hoạt động phòng khám");
-        entities.put("ContactRequest", "Yêu cầu liên hệ");
         entities.put("CustomerVisit", "Lượt khám");
         entities.put("DoctorExamination", "Khám bệnh");
         entities.put("Icd10Code", "Danh mục ICD-10");
@@ -235,9 +231,7 @@ class AuditLogAspectTest {
         entities.put("TestRequest", "Cận lâm sàng");
         entities.put("TestRequestCancel", "Cận lâm sàng");
         entities.put("TestResult", "Cận lâm sàng");
-        entities.put("TestResultAttachment", "Cận lâm sàng");
         entities.put("TestResultFile", "Cận lâm sàng");
-        entities.put("TestResultRevision", "Cận lâm sàng");
         entities.put("UnknownModule", "Phân hệ khác");
         entities.forEach((name, expected) -> assertEquals(expected,
                 invoke("getVietnameseEntity", name), String.valueOf(name)));
@@ -260,33 +254,6 @@ class AuditLogAspectTest {
                 invoke("resolveFallbackDescription", AuditAction.UPDATE, "Account", path), path));
         assertEquals("Cập nhật trong phân hệ Tài khoản",
                 invoke("resolveFallbackDescription", AuditAction.UPDATE, "Account", "/api/accounts/1"));
-    }
-
-    @Test
-    void contactResponseSerializationExcludesPersonalMessageAndHandlesNulls() {
-        UUID id = UUID.randomUUID();
-        UUID staffId = UUID.randomUUID();
-        LocalDateTime accepted = LocalDateTime.of(2026, 9, 5, 8, 0);
-        ContactRequestResponse contact = new ContactRequestResponse(id, "CR-001", "Tên riêng",
-                "0900000000", "mail@example.test", "Chủ đề", "Tin nhắn nhạy cảm",
-                ContactRequestStatus.PROCESSING, staffId, "Nhân viên", "Nội bộ",
-                accepted, accepted.plusHours(1), accepted.minusHours(1), accepted);
-
-        String json = invoke("serializeResponse", ResponseEntity.ok(contact));
-
-        assertAll(
-                () -> assertTrue(json.contains("CR-001")),
-                () -> assertTrue(json.contains(staffId.toString())),
-                () -> assertFalse(json.contains("Tin nhắn nhạy cảm")),
-                () -> assertFalse(json.contains("0900000000")));
-
-        ContactRequestResponse minimal = new ContactRequestResponse(id, "CR-002", null,
-                null, null, null, null, ContactRequestStatus.NEW, null, null, null,
-                null, null, null, null);
-        String minimalJson = invoke("serializeResponse", minimal);
-        assertTrue(minimalJson.contains("CR-002"));
-        assertNull(invoke("serializeResponse", (Object) null));
-        assertNull(invoke("serializeResponse", ResponseEntity.ok().build()));
     }
 
     @Test

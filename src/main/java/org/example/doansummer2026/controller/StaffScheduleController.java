@@ -49,7 +49,7 @@ public class StaffScheduleController {
     // --- MAIN ENDPOINTS ---
 
     @GetMapping("/api/v1/schedules")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
+    @PreAuthorize("hasRole() or hasRole('STAFF')")
     public ResponseEntity<PageResponse<ScheduleResponse>> search(
             @RequestParam(required = false) UUID staffId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
@@ -67,7 +67,7 @@ public class StaffScheduleController {
     }
 
     @GetMapping("/api/v1/schedules/{id}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('STAFF')")
+    @PreAuthorize("hasRole() or hasRole('STAFF')")
     public ResponseEntity<ScheduleResponse> get(@PathVariable UUID id) {
         if (authService.getCurrentSystemRole() == org.example.doansummer2026.enums.SystemRole.ADMIN) {
             return RestResponses.ok(service.get(id));
@@ -81,7 +81,7 @@ public class StaffScheduleController {
     }
 
     @PostMapping("/api/v1/schedules")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule", description = "Tạo lịch trực nhân sự")
     public ResponseEntity<ScheduleResponse> create(@Valid @RequestBody ScheduleCreateRequest req) {
         ScheduleResponse created = service.create(req);
@@ -89,7 +89,7 @@ public class StaffScheduleController {
     }
 
     @PutMapping("/api/v1/schedules/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.UPDATE, entityName = "StaffSchedule", idParamName = "id", description = "Cập nhật lịch trực nhân sự")
     public ResponseEntity<ScheduleResponse> update(@PathVariable UUID id,
                                                    @RequestBody ScheduleUpdateRequest req) {
@@ -97,7 +97,7 @@ public class StaffScheduleController {
     }
 
     @DeleteMapping("/api/v1/schedules/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.DELETE, entityName = "StaffSchedule", idParamName = "id", description = "Gỡ lịch trực nhân sự")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
@@ -106,7 +106,7 @@ public class StaffScheduleController {
 
     /** POST tac vu batch - sinh nhieu lich, khong co Location don le -> 200 OK. */
     @PostMapping("/api/v1/schedules/generate")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule", description = "Sinh lịch trực theo mẫu tuần")
     public ResponseEntity<List<ScheduleResponse>> generate(@RequestBody ScheduleGenerateRequest req) {
         return RestResponses.ok(service.generateFromTemplates(
@@ -120,7 +120,7 @@ public class StaffScheduleController {
      * - week: ngay bat ky trong tuan (thu 2 - chu nhat).
      */
     @GetMapping("/api/v1/clinic-manager/schedules")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
     public ResponseEntity<ClinicManagerScheduleResponse> getSchedules(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate week,
             @RequestParam(required = false) UUID departmentId,
@@ -167,7 +167,7 @@ public class StaffScheduleController {
      * - action: add hoặc remove
      */
     @PostMapping("/api/v1/clinic-manager/schedules/assign")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.UPDATE, entityName = "StaffSchedule", description = "Thay đổi phân công lịch trực")
     public ResponseEntity<Void> assign(@Valid @RequestBody ScheduleAssignRequest req) {
         service.assignStaff(req);
@@ -178,7 +178,7 @@ public class StaffScheduleController {
      * Sao chep lich sang tuan moi.
      */
     @PostMapping("/api/v1/clinic-manager/schedules/copy")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule", description = "Sao chép lịch trực tuần trước")
     public ResponseEntity<ClinicManagerScheduleResponse> copy(@Valid @RequestBody ScheduleCopyRequest req) {
         LocalDate weekStart = req.week().with(DayOfWeek.MONDAY);
@@ -195,10 +195,13 @@ public class StaffScheduleController {
      * Luu ca truc (shift template).
      */
     @PutMapping("/api/v1/clinic-manager/schedules/shifts")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
     public ResponseEntity<Void> updateShifts(@Valid @RequestBody ScheduleShiftUpdateRequest req) {
         // Hien tai chi co 3 shift co ban, khong cho sua
         // Neu can them shift moi, sua logic o day
         return RestResponses.noContent();
     }
 }
+
+
+

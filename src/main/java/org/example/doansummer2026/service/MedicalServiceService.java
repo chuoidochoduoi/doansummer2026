@@ -22,6 +22,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.example.doansummer2026.service.interfaces.MedicalServiceServiceInterface;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -44,6 +45,15 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
                                                         Pageable pageable) {
         Page<MedicalService> page = repo.search(keyword, departmentType, status, specializationId, pageable);
         return PageResponse.from(page, s -> MedicalServiceResponse.from(s));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<MedicalServiceResponse> search(String keyword, DepartmentType departmentType,
+                                                        ServiceStatus status, UUID specializationId,
+                                                        boolean primaryOnly, Pageable pageable) {
+        Page<MedicalService> page = repo.search(
+                keyword, departmentType, status, specializationId, primaryOnly, pageable);
+        return PageResponse.from(page, MedicalServiceResponse::from);
     }
 
     /**
@@ -72,6 +82,23 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
         return stats;
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Long> getStats(boolean primaryOnly) {
+        if (!primaryOnly) return getStats();
+
+        Specification<MedicalService> primary = (root, query, cb) ->
+                cb.notLike(cb.upper(root.get("serviceCode")), "AN-%");
+        Map<String, Long> stats = new HashMap<>();
+        stats.put("total", repo.count(primary));
+        stats.put("active", repo.count(primary.and((root, query, cb) ->
+                cb.equal(root.get("status"), ServiceStatus.ACTIVE))));
+        stats.put("suspended", repo.count(primary.and((root, query, cb) ->
+                cb.equal(root.get("status"), ServiceStatus.INACTIVE))));
+        stats.put("draft", repo.count(primary.and((root, query, cb) ->
+                cb.equal(root.get("status"), ServiceStatus.DRAFT))));
+        return stats;
+    }
+
     /**
      * Tao dich vu moi - mac dinh la DRAFT.
      */
@@ -79,6 +106,12 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
         validateDemographicRules(req.minimumAge(), req.maximumAge());
         if (req.allowedGender() == org.example.doansummer2026.enums.Gender.OTHER) {
             throw new BadRequestException("Hệ thống chỉ hỗ trợ giới tính Nam hoặc Nữ");
+        }
+        DepartmentType departmentType = req.departmentType() == null
+                ? null : req.departmentType().normalized();
+        if (departmentType != DepartmentType.EXAMINATION) {
+            throw new BadRequestException(
+                    "Dịch vụ cận lâm sàng được cấu hình cố định và không thể tạo thủ công");
         }
         String normalizedName = normalizeName(req.name());
         if (repo.existsByNameIgnoreCase(normalizedName)) {
@@ -88,7 +121,6 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
             throw new ConflictException("Mã dịch vụ đã tồn tại: " + req.serviceCode());
         }
 
-        DepartmentType departmentType = req.departmentType().normalized();
         if (departmentType == DepartmentType.EXAMINATION && req.requiredSpecializationId() == null) {
             throw new BadRequestException("Dịch vụ khám bệnh bắt buộc chọn chuyên khoa phục vụ");
         }
@@ -143,6 +175,17 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
             if (req.price() != null) {
                 s.setPrice(req.price());
             }
+            return MedicalServiceResponse.from(repo.save(s));
+        }
+        if (s.getDepartmentType().normalized() != DepartmentType.EXAMINATION) {
+            if (s.getStatus() == ServiceStatus.DRAFT) {
+                throw new ConflictException(
+                        "Dịch vụ cận lâm sàng được cấu hình cố định và không thể chỉnh sửa thủ công");
+            }
+            ensureFixedParaclinicalOperationalOnly(req);
+            validateStatusTransition(s.getStatus(), req.status());
+            if (req.price() != null) s.setPrice(req.price());
+            if (req.status() != null) s.setStatus(req.status());
             return MedicalServiceResponse.from(repo.save(s));
         }
 
@@ -242,11 +285,39 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
         }
     }
 
+    private void ensureFixedParaclinicalOperationalOnly(MedicalServiceUpdateRequest req) {
+        boolean changesFixedConfiguration = req.name() != null
+                || req.description() != null
+                || req.departmentType() != null
+                || req.isPointOfCare() != null
+                || req.durationMinutes() != null
+                || req.workflowPriority() != null
+                || req.requiresDoctorOrder() != null
+                || req.requiresReturnToDoctor() != null
+                || req.requiresSpecimen() != null
+                || req.resultWaitMinutes() != null
+                || req.allowCustomerBooking() != null
+                || req.minimumAge() != null
+                || req.maximumAge() != null
+                || req.allowedGender() != null
+                || req.departmentId() != null
+                || req.requiredSpecializationId() != null
+                || req.requiredCapabilityId() != null;
+        if (changesFixedConfiguration) {
+            throw new ConflictException(
+                    "Dịch vụ cận lâm sàng cố định chỉ được cập nhật giá và trạng thái hoạt động");
+        }
+    }
+
     /**
      * Xoa dich vu - chi cho phep xoa khi status = DRAFT.
      */
     public void delete(UUID id) {
         MedicalService s = findById(id);
+        if (s.getDepartmentType().normalized() != DepartmentType.EXAMINATION) {
+            throw new ConflictException(
+                    "Dịch vụ cận lâm sàng được cấu hình cố định và không thể xóa thủ công");
+        }
         if (s.getStatus() != ServiceStatus.DRAFT) {
             throw new ConflictException("Chỉ được xóa dịch vụ ở trạng thái bản nháp");
         }
@@ -278,6 +349,10 @@ public class MedicalServiceService implements MedicalServiceServiceInterface {
         MedicalService s = findById(id);
         if (s.getStatus() != ServiceStatus.DRAFT) {
             throw new ConflictException("Chỉ được phát hành dịch vụ ở trạng thái bản nháp");
+        }
+        if (s.getDepartmentType().normalized() != DepartmentType.EXAMINATION) {
+            throw new ConflictException(
+                    "Dịch vụ cận lâm sàng được cấu hình cố định và không thể phát hành thủ công");
         }
         if (s.getDepartmentType() == DepartmentType.EXAMINATION && s.getRequiredSpecialization() == null) {
             throw new BadRequestException("Không thể phát hành dịch vụ khám bệnh chưa có chuyên khoa phục vụ");

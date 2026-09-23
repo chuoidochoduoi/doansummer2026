@@ -1,2 +1,0 @@
--- All demo data has been unified into data.sql.
--- Please run data.sql instead.

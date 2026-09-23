@@ -72,6 +72,7 @@ public class TestRequestService implements TestRequestServiceInterface {
     private final NotificationService notificationService;
     private final AuthService authService;
     private final ClinicalFormEngine clinicalFormEngine;
+    private final FixedClinicalFormService fixedClinicalFormService;
     private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
     private final StaffDutyService staffDutyService;
     private final MedicalServiceSelectionPolicyService serviceSelectionPolicyService;
@@ -290,7 +291,8 @@ public class TestRequestService implements TestRequestServiceInterface {
                 }));
         MedicalService panelService = serviceRepo.findByServiceCode(context.panel.serviceCode())
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cấu hình gói xét nghiệm"));
-        org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse form = null;
+        org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse form =
+                fixedClinicalFormService.resolveForService(panelService.getServiceId(), values);
         List<LabPanelWorkbenchResponse.AnalyteItem> analytes = context.panel.analytes().stream().map(analyte -> {
             TestRequest request = context.purchasedByCode.get(analyte.serviceCode());
             return new LabPanelWorkbenchResponse.AnalyteItem(analyte.serviceCode(), analyte.fieldKey(), analyte.name(),
@@ -868,7 +870,8 @@ public class TestRequestService implements TestRequestServiceInterface {
         ensureCurrentStaffCanView(request);
         if (request.getService() == null) throw new ResourceNotFoundException("Yêu cầu chưa gắn dịch vụ");
         TestResult result = resultRepo.findByTestRequest_TestRequestId(testRequestId).orElse(null);
-        return null;
+        return fixedClinicalFormService.resolveForService(request.getService().getServiceId(),
+                result == null ? null : result.getResultData());
     }
 
     public TestResultResponse createResult(UUID testRequestId, TestResultCreateRequest req) {
@@ -1154,23 +1157,34 @@ public class TestRequestService implements TestRequestServiceInterface {
         ensureExecutionStarted(request);
 
         if (file == null || file.isEmpty()) {
-            throw new BadRequestException("Tệp PDF không được để trống");
+            throw new BadRequestException("Tệp kết quả không được để trống");
         }
-        String originalName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "result.pdf";
-        boolean pdfExtension = originalName.toLowerCase().endsWith(".pdf");
-        boolean pdfContentType = "application/pdf".equalsIgnoreCase(file.getContentType());
-        if (!pdfExtension || !pdfContentType) {
-            throw new BadRequestException("Chỉ chấp nhận phiếu kết quả định dạng PDF");
+        String originalName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "result";
+        String lowerName = originalName.toLowerCase(java.util.Locale.ROOT);
+        String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase(java.util.Locale.ROOT);
+        boolean pdf = lowerName.endsWith(".pdf") && "application/pdf".equals(contentType);
+        boolean jpeg = (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) && "image/jpeg".equals(contentType);
+        boolean png = lowerName.endsWith(".png") && "image/png".equals(contentType);
+        boolean webp = lowerName.endsWith(".webp") && "image/webp".equals(contentType);
+        if (!pdf && !jpeg && !png && !webp) {
+            throw new BadRequestException("Chỉ chấp nhận tệp PDF hoặc ảnh JPG, PNG, WEBP");
         }
         if (file.getSize() > 10L * 1024 * 1024) {
-            throw new BadRequestException("Tệp PDF không được vượt quá 10 MB");
+            throw new BadRequestException("Tệp kết quả không được vượt quá 10 MB");
         }
-        byte[] signature = new byte[5];
+        byte[] signature = new byte[12];
+        int signatureLength;
         try (var input = file.getInputStream()) {
-            if (input.read(signature) != signature.length
-                    || !java.util.Arrays.equals(signature, "%PDF-".getBytes(java.nio.charset.StandardCharsets.US_ASCII))) {
-                throw new BadRequestException("Nội dung tệp không phải định dạng PDF hợp lệ");
-            }
+            signatureLength = input.read(signature);
+        }
+        boolean validSignature = pdf && startsWith(signature, signatureLength, "%PDF-".getBytes(java.nio.charset.StandardCharsets.US_ASCII))
+                || jpeg && signatureLength >= 3 && (signature[0] & 0xff) == 0xff && (signature[1] & 0xff) == 0xd8 && (signature[2] & 0xff) == 0xff
+                || png && startsWith(signature, signatureLength, new byte[]{(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a})
+                || webp && signatureLength >= 12
+                && startsWith(signature, signatureLength, "RIFF".getBytes(java.nio.charset.StandardCharsets.US_ASCII))
+                && signature[8] == 'W' && signature[9] == 'E' && signature[10] == 'B' && signature[11] == 'P';
+        if (!validSignature) {
+            throw new BadRequestException("Nội dung tệp không khớp định dạng PDF hoặc ảnh đã chọn");
         }
 
         // Tao thu muc luu tru neu chua co
@@ -1185,6 +1199,14 @@ public class TestRequestService implements TestRequestServiceInterface {
 
         // Tra ve URL (trong moi truong dev)
         return "/uploads/test-results/" + fileName;
+    }
+
+    private boolean startsWith(byte[] content, int contentLength, byte[] prefix) {
+        if (contentLength < prefix.length) return false;
+        for (int i = 0; i < prefix.length; i++) {
+            if (content[i] != prefix[i]) return false;
+        }
+        return true;
     }
 
     /** Huy yeu cau chi dinh khi phong thuc hien chua bat dau xu ly. */

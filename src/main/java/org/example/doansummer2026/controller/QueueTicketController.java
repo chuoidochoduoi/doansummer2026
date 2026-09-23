@@ -59,7 +59,7 @@ public class QueueTicketController {
 
     @PostMapping("/api/v1/queue-tickets")
     @Auditable(action = AuditAction.CREATE, entityName = "QueueTicket")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_RECEPTIONIST')")
     public ResponseEntity<QueueTicketResponse> create(@Valid @RequestBody QueueTicketCreateRequest req) {
         QueueTicketResponse created = service.create(req);
         return RestResponses.created("/api/v1/queue-tickets/{id}", created.ticketId(), created);
@@ -134,7 +134,7 @@ public class QueueTicketController {
 
     @DeleteMapping("/api/v1/queue-tickets/{id}")
     @Auditable(action = AuditAction.UPDATE, entityName = "QueueTicketSkip", idParamName = "id")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_RECEPTIONIST')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return RestResponses.noContent();
@@ -251,6 +251,7 @@ public class QueueTicketController {
         return RestResponses.ok(service.update(id, req));
     }
 }
+
 
 
 

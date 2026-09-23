@@ -55,9 +55,6 @@ class MedicalRecordServiceTest {
     @Mock private AuthService authService;
     @Mock private StaffDutyService staffDutyService;
     @Mock private ShiftScheduleResolver shiftScheduleResolver;
-    @Mock private ClinicalFormTemplateService clinicalFormTemplateService;
-    @Mock private TestResultRevisionRepository testResultRevisionRepository;
-    @Mock private TestResultAttachmentRepository testResultAttachmentRepository;
     @Mock private SameDayParaclinicalResultService sameDayParaclinicalResultService;
 
     @InjectMocks
@@ -194,6 +191,7 @@ class MedicalRecordServiceTest {
         UUID visitId = UUID.randomUUID();
         MedicalRecordCreateRequest req = mock(MedicalRecordCreateRequest.class);
         when(req.visitId()).thenReturn(visitId);
+        when(req.doctorId()).thenReturn(UUID.randomUUID());
         when(customerVisitRepository.findById(visitId)).thenReturn(Optional.empty());
         assertThrows(ResourceNotFoundException.class, () -> medicalRecordService.create(req));
     }
@@ -203,6 +201,7 @@ class MedicalRecordServiceTest {
         UUID visitId = UUID.randomUUID();
         MedicalRecordCreateRequest req = mock(MedicalRecordCreateRequest.class);
         when(req.visitId()).thenReturn(visitId);
+        when(req.doctorId()).thenReturn(UUID.randomUUID());
         when(customerVisitRepository.findById(visitId)).thenReturn(Optional.of(mock(CustomerVisit.class)));
         when(medicalRecordRepository.findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId))
                 .thenReturn(Optional.of(mock(MedicalRecord.class)));
@@ -667,8 +666,6 @@ class MedicalRecordServiceTest {
         MedicalRecord completed = record(UUID.randomUUID());
         completed.setVisit(visit);
         completed.setStatus(MedicalRecordStatus.COMPLETED);
-        completed.getFeedbackTargets().add(FeedbackTarget.builder().targetKey("old").targetType("STAFF")
-                .targetName("Old").rating(1).build());
         when(medicalRecordRepository.findById(completed.getRecordId())).thenReturn(Optional.of(completed));
         when(medicalRecordRepository.save(completed)).thenReturn(completed);
 
@@ -681,8 +678,6 @@ class MedicalRecordServiceTest {
         assertEquals(5, response.overallRating());
         assertEquals("NEW", response.status());
         assertEquals("Bác sĩ giải thích rõ ràng", response.comment());
-        assertTrue(response.targets().isEmpty());
-        assertFalse(completed.getContactRequested());
     }
 
     @Test
@@ -701,7 +696,6 @@ class MedicalRecordServiceTest {
     @Test
     void feedbackListingCountingAndResponseCoverBothModes() {
         MedicalRecord rated = record(UUID.randomUUID());
-        rated.setFeedbackTargets(new LinkedHashSet<>());
         rated.setRatingScore(4);
         var page = new PageImpl<>(List.of(rated));
         PageRequest pageable = PageRequest.of(0, 10);
@@ -722,28 +716,6 @@ class MedicalRecordServiceTest {
         assertEquals("RESPONDED", responded.status());
         assertEquals("Quản lý", responded.respondedByName());
         assertEquals("IN_REVIEW", medicalRecordService.respondFeedback(rated.getRecordId(), null, null).status());
-    }
-
-    @Test
-    void explainFeedbackAcceptsDoctorOrTargetAndRejectsUnrelatedStaff() {
-        StaffInfo doctor = doctor(UUID.randomUUID());
-        MedicalRecord rated = record(UUID.randomUUID());
-        rated.setDoctor(doctor);
-        rated.setFeedbackTargets(new LinkedHashSet<>());
-        when(medicalRecordRepository.findById(rated.getRecordId())).thenReturn(Optional.of(rated));
-        when(medicalRecordRepository.save(rated)).thenReturn(rated);
-
-        assertEquals("WAITING_INTERNAL", medicalRecordService.explainFeedback(
-                rated.getRecordId(), doctor.getStaffId(), "Đã giải thích").status());
-        assertThrows(ResourceNotFoundException.class, () -> medicalRecordService.explainFeedback(
-                rated.getRecordId(), UUID.randomUUID(), "Không liên quan"));
-
-        StaffInfo nurse = StaffInfo.builder().staffId(UUID.randomUUID()).build();
-        rated.setDoctor(null);
-        rated.getFeedbackTargets().add(FeedbackTarget.builder().staff(nurse).targetKey("nurse")
-                .targetType("STAFF").targetName("Y tá").rating(5).build());
-        assertDoesNotThrow(() -> medicalRecordService.explainFeedback(
-                rated.getRecordId(), nurse.getStaffId(), "Cảm ơn"));
     }
 
     @Test
@@ -791,9 +763,6 @@ class MedicalRecordServiceTest {
         when(customerVisitRepository.findById(visitId)).thenReturn(Optional.of(visit));
         when(medicalRecordRepository.findAllByVisit_VisitIdOrderByCreatedAtAsc(visitId)).thenReturn(List.of(draft));
         when(testRequestRepository.findAllByVisitIdWithDetails(visitId)).thenReturn(List.of(unsignedRequest));
-        when(testResultRevisionRepository.findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
-                unsignedResult.getResultId(), TestResultRevisionStatus.SIGNED)).thenReturn(Optional.empty());
-
         assertThrows(ResourceNotFoundException.class,
                 () -> medicalRecordService.getPatientVisitDetail(visitId, owner.getProfileId()));
     }
@@ -859,11 +828,11 @@ class MedicalRecordServiceTest {
 
         MedicalService testService = MedicalService.builder().serviceId(UUID.randomUUID())
                 .name("Đường huyết").build();
-        TestResult testResult = TestResult.builder().resultId(UUID.randomUUID()).build();
+        TestResult testResult = TestResult.builder().resultId(UUID.randomUUID())
+                .verifiedAt(LocalDateTime.of(2026, 9, 5, 10, 0))
+                .verifiedBy(doctor).build();
         TestRequest signedRequest = TestRequest.builder().testRequestId(UUID.randomUUID())
                 .service(testService).status(TestRequestStatus.COMPLETED).testResult(testResult).build();
-        TestResultRevision signedRevision = TestResultRevision.builder().revisionId(UUID.randomUUID())
-                .status(TestResultRevisionStatus.SIGNED).testResult(testResult).build();
 
         MedicalService skippedService = MedicalService.builder().serviceId(UUID.randomUUID())
                 .name("Khám Tim mạch cơ bản").build();
@@ -877,8 +846,6 @@ class MedicalRecordServiceTest {
         when(medicalRecordRepository.findAllByVisit_VisitIdOrderByCreatedAtAsc(visitId))
                 .thenReturn(List.of(examinationRecord));
         when(testRequestRepository.findAllByVisitIdWithDetails(visitId)).thenReturn(List.of(signedRequest));
-        when(testResultRevisionRepository.findFirstByTestResult_ResultIdAndStatusOrderByRevisionNoDesc(
-                testResult.getResultId(), TestResultRevisionStatus.SIGNED)).thenReturn(Optional.of(signedRevision));
         when(queueTicketRepository.findAllByVisit_VisitId(visitId))
                 .thenReturn(List.of(examinationQueue, skippedQueue));
 
@@ -1229,25 +1196,14 @@ class MedicalRecordServiceTest {
     }
 
     @Test
-    void clinicalFormAccess_ShouldCoverMissingLinksStoredLatestAndPatientOwnership() {
+    void clinicalFormAccess_ShouldCoverMissingLinksAndPatientOwnership() {
         UUID recordId = UUID.randomUUID();
         MedicalRecord record = record(recordId);
         when(medicalRecordRepository.findById(recordId)).thenReturn(Optional.of(record));
         assertThrows(ResourceNotFoundException.class, () -> medicalRecordService.getClinicalForm(recordId));
         MedicalService service = MedicalService.builder().serviceId(UUID.randomUUID()).build();
         record.setQueueTicket(QueueTicket.builder().service(service).build());
-        ClinicalFormTemplateVersion latest = ClinicalFormTemplateVersion.builder().versionId(UUID.randomUUID()).build();
-        var expectedLatest = mock(org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse.class);
-        when(clinicalFormTemplateService.resolveVersion(service.getServiceId(), null)).thenReturn(latest);
-        when(clinicalFormTemplateService.resolvedResponse(latest, null)).thenReturn(expectedLatest);
-        assertSame(expectedLatest, medicalRecordService.getClinicalForm(recordId));
-
-        ClinicalFormTemplateVersion stored = ClinicalFormTemplateVersion.builder().versionId(UUID.randomUUID()).build();
-        var data = new tools.jackson.databind.json.JsonMapper().readTree("{\"pain\":2}");
-        record.setFormTemplateVersion(stored); record.setSpecialtyData(data);
-        var expectedStored = mock(org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse.class);
-        when(clinicalFormTemplateService.resolvedResponse(stored, data)).thenReturn(expectedStored);
-        assertSame(expectedStored, medicalRecordService.getClinicalForm(recordId));
+        assertNull(medicalRecordService.getClinicalForm(recordId));
 
         UUID profileId = UUID.randomUUID();
         assertThrows(org.springframework.security.access.AccessDeniedException.class,
@@ -1255,6 +1211,6 @@ class MedicalRecordServiceTest {
         assertThrows(org.springframework.security.access.AccessDeniedException.class,
                 () -> medicalRecordService.getClinicalFormForPatient(recordId, profileId));
         record.setVisit(CustomerVisit.builder().customer(Profile.builder().profileId(profileId).build()).build());
-        assertSame(expectedStored, medicalRecordService.getClinicalFormForPatient(recordId, profileId));
+        assertNull(medicalRecordService.getClinicalFormForPatient(recordId, profileId));
     }
 }

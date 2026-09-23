@@ -39,9 +39,23 @@ class LaboratoryAnalyteCatalogTest {
 
         var panel = LaboratoryAnalyteCatalog.schemaForService("LAB-001", object);
         assertTrue(panel.path("fields").isArray());
-        assertEquals(24, panel.path("fields").size());
+        assertEquals(8, panel.path("fields").size());
         assertFalse(panel.has("selectionMode"));
         assertTrue(panel.path("fields").get(0).path("required").asBoolean());
+    }
+
+    @Test
+    void crpPanelAndAnalyteUseTheSameConfiguredField() throws Exception {
+        var schema = mapper.readTree("{\"fields\":[]}");
+
+        var panel = LaboratoryAnalyteCatalog.schemaForService("LAB-007", schema);
+        var analyte = LaboratoryAnalyteCatalog.schemaForService("AN-CRP", schema);
+
+        assertEquals(1, panel.path("fields").size());
+        assertEquals("crp", panel.path("fields").get(0).path("key").asText());
+        assertEquals(1, analyte.path("fields").size());
+        assertEquals("crp", analyte.path("fields").get(0).path("key").asText());
+        assertEquals("SINGLE_ANALYTE", analyte.path("selectionMode").asText());
     }
 
     @Test

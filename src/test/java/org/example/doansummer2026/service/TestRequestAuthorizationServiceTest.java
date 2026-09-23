@@ -33,8 +33,6 @@ import static org.mockito.Mockito.*;
 class TestRequestAuthorizationServiceTest {
     @Mock TestRequestRepository repo;
     @Mock TestResultRepository resultRepo;
-    @Mock TestResultRevisionRepository revisionRepo;
-    @Mock TestResultAttachmentRepository attachmentRepo;
     @Mock MedicalRecordRepository recordRepo;
     @Mock CustomerVisitRepository visitRepo;
     @Mock MedicalServiceRepository serviceRepo;
@@ -47,8 +45,8 @@ class TestRequestAuthorizationServiceTest {
     @Mock SimpMessagingTemplate messagingTemplate;
     @Mock NotificationService notificationService;
     @Mock AuthService authService;
-    @Mock ClinicalFormTemplateService clinicalFormTemplateService;
     @Mock ClinicalFormEngine clinicalFormEngine;
+    @Mock FixedClinicalFormService fixedClinicalFormService;
     @Mock StaffDutyService staffDutyService;
 
     @InjectMocks TestRequestService service;
@@ -196,7 +194,7 @@ class TestRequestAuthorizationServiceTest {
 
         assertThrows(AccessDeniedException.class,
                 () -> service.actionPermissions(request.getTestRequestId()));
-        verifyNoInteractions(resultRepo, revisionRepo, attachmentRepo);
+        verifyNoInteractions(resultRepo);
     }
 
     private void stubView(TestRequest request, StaffInfo actor) {

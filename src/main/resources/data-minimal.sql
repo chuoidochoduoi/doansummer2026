@@ -190,8 +190,8 @@ INSERT INTO clinic_information (
     '00000000-0000-0000-0000-000000000100', NOW(), NOW(), false,
     'Phòng khám CareS', 'Công ty TNHH Phòng khám CareS', '0101234567', '000123/HNO-GPHD',
     'Phòng khám đa khoa cung cấp dịch vụ chăm sóc sức khỏe chất lượng và thuận tiện.',
-    'lienhe@caresclinic.vn', '1900 1234',
-    'Khu Công nghệ cao Hòa Lạc, Thạch Thất, Hà Nội', NULL,
+    'phongkhamcares@gmail.com', '0968161266',
+    'Thôn 1, Canh Nậu, Thạch Thất, Hà Nội', NULL,
     'https://www.facebook.com/profile.php?id=61593125259676', NULL, NULL,
     21.0128000, 105.5259000
 )

@@ -1,0 +1,28 @@
+{"kind":"deck","id":"pr/nusqa3","name":"Deck"}
+{"kind":"layout","layoutId":"3d2f7d55-7dd8-4f8a-9717-edd706f44fdc","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"d13509b4-d75b-4272-a53d-0fc944b280d1","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/x6kb0e","slide":1,"title":"Testing Overview","textShapes":17}
+{"kind":"shape","id":"sh/tozuh0ry","slide":1,"bbox":[390,46,420,74]}
+{"kind":"textbox","id":"sh/8nqd8fqd","slide":1,"text":"Testing Overview","textPreview":"Testing Overview","textChars":16,"textLines":1,"bbox":[340,57,520,56]}
+{"kind":"textbox","id":"sh/jyxcbq9w","slide":1,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[122,205,225,46]}
+{"kind":"textbox","id":"sh/yxob2l8b","slide":1,"text":"Unit Test","textPreview":"Unit Test","textChars":9,"textLines":1,"bbox":[122,251,225,45]}
+{"kind":"shape","id":"sh/l0zud0rm","slide":1,"bbox":[122,303,54,4]}
+{"kind":"textbox","id":"sh/kz6t4vq1","slide":1,"text":"Service logic, validation\nand exception handling","textPreview":"Service logic, validation | and exception handling","textChars":48,"textLines":2,"bbox":[122,326,225,76]}
+{"kind":"textbox","id":"sh/3u1cnu90","slide":1,"text":"1,440 / 1,440 passed","textPreview":"1,440 / 1,440 passed","textChars":20,"textLines":1,"bbox":[122,422,225,48]}
+{"kind":"textbox","id":"sh/2tsvep8f","slide":1,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[365,205,225,46]}
+{"kind":"textbox","id":"sh/8rapkz6l","slide":1,"text":"Integration Test","textPreview":"Integration Test","textChars":16,"textLines":1,"bbox":[365,251,225,45]}
+{"kind":"shape","id":"sh/9cj6t4n6","slide":1,"bbox":[365,303,54,4]}
+{"kind":"textbox","id":"sh/mps7ipof","slide":1,"text":"Component contracts and\nconnected workflows","textPreview":"Component contracts and | connected workflows","textChars":43,"textLines":2,"bbox":[365,326,225,76]}
+{"kind":"textbox","id":"sh/7q1oru50","slide":1,"text":"Round 2: 189 / 189 passed","textPreview":"Round 2: 189 / 189 passed","textChars":25,"textLines":1,"bbox":[365,422,225,48]}
+{"kind":"textbox","id":"sh/knqpgf6p","slide":1,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[608,205,225,46]}
+{"kind":"textbox","id":"sh/loz6pkna","slide":1,"text":"System Test","textPreview":"System Test","textChars":11,"textLines":1,"bbox":[608,251,225,45]}
+{"kind":"shape","id":"sh/yl87epoj","slide":1,"bbox":[608,303,54,4]}
+{"kind":"textbox","id":"sh/zmhona54","slide":1,"text":"End-to-end workflows\nfor operational roles","textPreview":"End-to-end workflows | for operational roles","textChars":42,"textLines":2,"bbox":[608,326,225,76]}
+{"kind":"textbox","id":"sh/cjq5cf6d","slide":1,"text":"Round 2: 60 / 60 passed","textPreview":"Round 2: 60 / 60 passed","textChars":23,"textLines":1,"bbox":[608,422,225,48]}
+{"kind":"textbox","id":"sh/xkz6lkny","slide":1,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[851,205,225,46]}
+{"kind":"textbox","id":"sh/dgrmpwzm","slide":1,"text":"Acceptance Test","textPreview":"Acceptance Test","textChars":15,"textLines":1,"bbox":[851,251,225,45]}
+{"kind":"shape","id":"sh/cfi5gbyh","slide":1,"bbox":[851,303,54,4]}
+{"kind":"textbox","id":"sh/re94n6hw","slide":1,"text":"User-facing requirements\nand business scenarios","textPreview":"User-facing requirements | and business scenarios","textChars":47,"textLines":2,"bbox":[851,326,225,76]}
+{"kind":"textbox","id":"sh/qd03e1gb","slide":1,"text":"110 / 110 TRUE","textPreview":"110 / 110 TRUE","textChars":14,"textLines":1,"bbox":[851,422,225,48]}
+{"kind":"image","id":"im/retony9w","slide":1,"name":"","alt":"CareS presentation template background","bbox":[0,0,1200,675]}
+{"kind":"notes","id":"nt/x6kb0e","slide":1,"text":"Trong dự án CareS, nhóm thực hiện bốn cấp kiểm thử. Unit Test kiểm tra logic service, validation và xử lý exception, với 1.440 test đều đạt. Integration Test kiểm tra sự phối hợp giữa các thành phần và các luồng nghiệp vụ, Round 2 đạt 189 trên 189. System Test kiểm tra các luồng hoàn chỉnh theo từng vai trò như lễ tân, bác sĩ, y tá và thu ngân, Round 2 đạt 60 trên 60. Cuối cùng, Acceptance Test kiểm tra các chức năng người dùng trực tiếp thao tác trên giao diện, gồm 110 trường hợp và tất cả đều đạt."}

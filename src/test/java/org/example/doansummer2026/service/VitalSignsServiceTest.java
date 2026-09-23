@@ -64,7 +64,7 @@ class VitalSignsServiceTest {
                 () -> assertEquals(staffId, response.recordedById()),
                 () -> assertNotNull(response.recordedAt()),
                 () -> assertSame(record.getVitalSigns().getMedicalRecord(), record));
-        verify(medicalRecordRepository).save(record);
+        verify(repository).save(any(VitalSigns.class));
     }
 
     @Test

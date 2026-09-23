@@ -16,6 +16,9 @@ import java.util.UUID;
 public interface MedicalServiceServiceInterface {
     PageResponse<MedicalServiceResponse> search(String keyword, DepartmentType departmentType,
                                                  ServiceStatus status, UUID specializationId, Pageable pageable);
+    PageResponse<MedicalServiceResponse> search(String keyword, DepartmentType departmentType,
+                                                 ServiceStatus status, UUID specializationId,
+                                                 boolean primaryOnly, Pageable pageable);
 
     /** API cho khach hang/benh nhan xem dich vu dang hoat dong. */
     PageResponse<MedicalServiceResponse> listAvailable(String keyword, DepartmentType departmentType,
@@ -23,6 +26,7 @@ public interface MedicalServiceServiceInterface {
 
     MedicalServiceResponse get(UUID id);
     Map<String, Long> getStats();
+    Map<String, Long> getStats(boolean primaryOnly);
     MedicalServiceResponse create(MedicalServiceCreateRequest req);
     MedicalServiceResponse update(UUID id, MedicalServiceUpdateRequest req);
     void delete(UUID id);
@@ -30,5 +34,4 @@ public interface MedicalServiceServiceInterface {
     MedicalServiceResponse publish(UUID id);
     MedicalService findById(UUID id);
 }
-
 

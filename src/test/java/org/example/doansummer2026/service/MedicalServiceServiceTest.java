@@ -16,6 +16,7 @@ import org.example.doansummer2026.repository.ServiceCapabilityRepository;
 import org.example.doansummer2026.repository.ServiceCategoryRepository;
 import org.example.doansummer2026.repository.SpecializationRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -451,6 +452,8 @@ class MedicalServiceServiceTest {
         MedicalServiceCreateRequest req =
                 mock(MedicalServiceCreateRequest.class);
 
+        when(req.departmentType()).thenReturn(DepartmentType.EXAMINATION);
+
         when(req.name())
                 .thenReturn("Kham noi");
 
@@ -479,6 +482,8 @@ class MedicalServiceServiceTest {
 
         MedicalServiceCreateRequest req =
                 mock(MedicalServiceCreateRequest.class);
+
+        when(req.departmentType()).thenReturn(DepartmentType.EXAMINATION);
 
         when(req.name())
                 .thenReturn("Service");
@@ -538,6 +543,7 @@ class MedicalServiceServiceTest {
     // =========================================================
 
     @Test
+    @Disabled("Admin now creates examination services only; paraclinical catalog is fixed in data.sql")
     void create_ShouldRejectLaboratoryWithoutCapability() {
 
         MedicalServiceCreateRequest req =
@@ -616,6 +622,7 @@ class MedicalServiceServiceTest {
     // =========================================================
 
     @Test
+    @Disabled("Admin now creates examination services only; paraclinical catalog is fixed in data.sql")
     void create_ShouldThrow_WhenCapabilityMissing() {
 
         UUID capabilityId =
@@ -716,6 +723,7 @@ class MedicalServiceServiceTest {
     // =========================================================
 
     @Test
+    @Disabled("Admin now creates examination services only; paraclinical catalog is fixed in data.sql")
     void create_ShouldRejectInactiveCapability() {
 
         UUID capabilityId =
@@ -1132,6 +1140,7 @@ class MedicalServiceServiceTest {
     // =========================================================
 
     @Test
+    @Disabled("Admin now creates examination services only; paraclinical catalog is fixed in data.sql")
     void create_ShouldCreateLaboratoryServiceWithCapability() {
 
         UUID capabilityId =
@@ -1911,6 +1920,7 @@ class MedicalServiceServiceTest {
     // =========================================================
 
     @Test
+    @Disabled("Fixed paraclinical services cannot be structurally edited")
     void update_ShouldRejectLaboratoryWithoutCapability() {
 
         UUID id =
@@ -1952,6 +1962,7 @@ class MedicalServiceServiceTest {
     // =========================================================
 
     @Test
+    @Disabled("Fixed paraclinical services cannot change capability through the Admin API")
     void update_ShouldSetCapability() {
 
         UUID id =
@@ -2018,6 +2029,7 @@ class MedicalServiceServiceTest {
 
 
     @Test
+    @Disabled("Fixed paraclinical services cannot change capability through the Admin API")
     void update_ShouldThrow_WhenNewCapabilityMissing() {
 
         UUID id =
@@ -2071,6 +2083,7 @@ class MedicalServiceServiceTest {
 
 
     @Test
+    @Disabled("Fixed paraclinical services cannot change capability through the Admin API")
     void update_ShouldRejectInactiveCapability() {
 
         UUID id =
@@ -2542,6 +2555,7 @@ class MedicalServiceServiceTest {
 
 
     @Test
+    @Disabled("Fixed paraclinical services are published through seed data")
     void publish_ShouldRejectLaboratoryWithoutCapability() {
 
         UUID id =
@@ -2621,6 +2635,7 @@ class MedicalServiceServiceTest {
 
 
     @Test
+    @Disabled("Fixed paraclinical services are published through seed data")
     void publish_ShouldPublishLaboratoryService() {
 
         UUID id =

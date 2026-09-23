@@ -21,7 +21,6 @@ class ClinicOverviewReportTest {
     @Mock CustomerVisitRepository visitRepo;
     @Mock TransactionRepository transactionRepo;
     @Mock MembershipCardLedgerRepository ledgerRepo;
-    @Mock TestResultRevisionRepository revisionRepo;
     @Mock InvoiceRepository invoiceRepo;
     @Mock MedicalServiceRepository serviceRepo;
     @Mock QueueTicketRepository queueTicketRepo;
@@ -105,20 +104,21 @@ class ClinicOverviewReportTest {
                 .status(TestRequestStatus.COMPLETED).completedAt(day.atTime(11,0)).build();
         var unsigned = TestRequest.builder().testRequestId(UUID.randomUUID()).status(TestRequestStatus.COMPLETED)
                 .completedAt(day.atTime(11,0)).performingDepartment(room).build();
+        t1.setTestResult(signedResult(t1));
+        t2.setTestResult(signedResult(t2));
         when(visitRepo.findAll()).thenReturn(List.of(visit)); when(queueTicketRepo.findAll()).thenReturn(List.of(q,skipped));
         when(medicalRecordRepo.findAll()).thenReturn(List.of(r1,r2)); when(departmentRepo.findAll()).thenReturn(List.of(room));
         when(testRequestRepo.findAll()).thenReturn(List.of(t1,t2,unsigned));
-        when(revisionRepo.findAll()).thenReturn(List.of(signed(t1),signed(t1),signed(t2)));
         var report = service.getOverview(day,day);
         assertEquals(1,report.activity().arrivals()); assertEquals(1,report.activity().closedVisits());
         assertEquals(1,report.activity().partialVisits()); assertEquals(2,report.activity().completedExaminations());
         assertEquals(2,report.activity().completedTests()); assertEquals(2,report.rooms().get(0).completedTests());
         assertEquals(1,report.rooms().get(0).ratingCount()); assertEquals(5.0,report.rooms().get(0).rating());
     }
-    private TestResultRevision signed(TestRequest request) {
-        return TestResultRevision.builder().testResult(TestResult.builder().testRequest(request).build())
-                .status(TestResultRevisionStatus.SIGNED).signedBy(StaffInfo.builder().staffId(UUID.randomUUID()).build())
-                .signedAt(day.atTime(11,0)).build();
+    private TestResult signedResult(TestRequest request) {
+        return TestResult.builder().testRequest(request)
+                .verifiedBy(StaffInfo.builder().staffId(UUID.randomUUID()).build())
+                .verifiedAt(day.atTime(11,0)).build();
     }
 
     @Test void recordUpdatesDoNotMoveCompletionIntoAnotherPeriodAndNoFeedbackIsNotZeroStars() {
@@ -146,12 +146,6 @@ class ClinicOverviewReportTest {
                 .paymentMethod(PaymentMethod.INSURANCE).paidAt(today.atTime(12, 0)).amount(b(99)).build();
         var noDatePayment = Transaction.builder().status(TransactionStatus.SUCCESS)
                 .paymentMethod(PaymentMethod.CASH).amount(b(99)).build();
-        var deletedRevision = TestResultRevision.builder()
-                .status(TestResultRevisionStatus.SIGNED).signedAt(today.atTime(12, 0))
-                .signedBy(StaffInfo.builder().staffId(UUID.randomUUID()).build()).build();
-        deletedRevision.setDeleted(true);
-        var incompleteRevision = TestResultRevision.builder().status(TestResultRevisionStatus.DRAFT).build();
-        incompleteRevision.setDeleted(false);
         var orphanItem = InvoiceItem.builder().invoice(null).build();
         var orphanQueue = QueueTicket.builder().status(QueueStatus.SKIPPED).visit(null).workDate(today).build();
         var cancelledVisit = CustomerVisit.builder().visitId(UUID.randomUUID()).status(VisitStatus.CANCELLED)
@@ -159,7 +153,6 @@ class ClinicOverviewReportTest {
 
         when(invoiceRepo.findAll()).thenReturn(List.of(cancelledInvoice));
         when(transactionRepo.findAll()).thenReturn(List.of(insurancePayment, noDatePayment));
-        when(revisionRepo.findAll()).thenReturn(List.of(deletedRevision, incompleteRevision));
         when(invoiceItemRepo.findAll()).thenReturn(List.of(orphanItem));
         when(queueTicketRepo.findAll()).thenReturn(List.of(orphanQueue));
         when(visitRepo.findAll()).thenReturn(List.of(cancelledVisit));

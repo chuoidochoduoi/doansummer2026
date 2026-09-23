@@ -150,7 +150,7 @@ public class MedicalRecordController {
     }
 
     @DeleteMapping("/api/v1/medical-records/{id}")
-    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
     @Auditable(action = AuditAction.DELETE, entityName = "MedicalRecord", idParamName = "id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
@@ -168,7 +168,7 @@ public class MedicalRecordController {
     // --- PATIENT ENDPOINTS ---
 
     @GetMapping("/api/patient/medical-history")
-    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER')")
     public ResponseEntity<ReceptionistRecordPageResponse<MedicalHistoryResponse>> getMedicalHistory(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) UUID patientProfileId,
@@ -182,7 +182,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/patient/medical-history/{recordId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER')")
     public ResponseEntity<VisitDetailResponse> getVisitDetail(@PathVariable UUID recordId,
                                                                @RequestParam(required = false) UUID patientProfileId) {
         UUID profileId = patientProfileId(patientProfileId, false);
@@ -194,7 +194,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/patient/medical-history/visits")
-    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER')")
     public ResponseEntity<ReceptionistRecordPageResponse<VisitHistorySummaryResponse>> getVisitHistory(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) UUID patientProfileId, Pageable pageable) {
@@ -207,7 +207,7 @@ public class MedicalRecordController {
     }
 
     @GetMapping("/api/patient/medical-history/visits/{visitId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER')")
     public ResponseEntity<VisitDetailResponse> getPatientVisitDetail(@PathVariable UUID visitId,
                                                                       @RequestParam(required = false) UUID patientProfileId) {
         UUID profileId = patientProfileId(patientProfileId, false);
@@ -227,7 +227,7 @@ public class MedicalRecordController {
     }
 
     @PostMapping("/api/patient/medical-history/{recordId}/rate")
-    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER')")
     @Auditable(action = AuditAction.UPDATE, entityName = "MedicalRecord", idParamName = "recordId", description = "Đánh giá lượt khám")
     public ResponseEntity<MedicalRecordResponse> rateVisit(@PathVariable UUID recordId,
                                                           @RequestParam(required = false) UUID patientProfileId,
@@ -362,5 +362,6 @@ public class MedicalRecordController {
     }
 
 }
+
 
 

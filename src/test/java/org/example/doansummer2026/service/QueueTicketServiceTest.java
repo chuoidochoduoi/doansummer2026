@@ -2624,7 +2624,7 @@ class QueueTicketServiceTest {
                 null, null, null,
                 new org.example.doansummer2026.dto.medicalrecord.FollowUpRequest(
                         "Tái khám sau một tuần", LocalDate.of(2026, 9, 14)),
-                null, null, null);
+                null, null);
 
         queueTicketService.completeAndReturnRecord(fixture.ticketId(), update);
 

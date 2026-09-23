@@ -64,9 +64,19 @@ public record CustomerVisitResponse(
                         .filter(java.util.Objects::nonNull)
                         .reduce((first, next) -> first + ", " + next)
                         .orElse(null);
+        VisitStatus effectiveStatus = base.status();
+        if (effectiveStatus == VisitStatus.CHECKED_IN && v.getQueueTickets() != null
+                && v.getQueueTickets().stream().anyMatch(ticket -> java.util.Set.of(
+                        org.example.doansummer2026.enums.QueueStatus.CALLED,
+                        org.example.doansummer2026.enums.QueueStatus.IN_PROGRESS,
+                        org.example.doansummer2026.enums.QueueStatus.WAITING_FOR_TEST,
+                        org.example.doansummer2026.enums.QueueStatus.TEST_DONE,
+                        org.example.doansummer2026.enums.QueueStatus.DONE).contains(ticket.getStatus()))) {
+            effectiveStatus = VisitStatus.IN_PROGRESS;
+        }
         return new CustomerVisitResponse(base.visitId(), base.customerId(), base.patientCode(),
                 base.customerName(), base.patientPhone(), base.appointmentId(), base.invoiceId(),
                 serviceSummary, invoice != null && invoice.getStatus() != null ? invoice.getStatus().name() : null,
-                base.checkInTime(), base.checkOutTime(), base.status(), base.createdAt());
+                base.checkInTime(), base.checkOutTime(), effectiveStatus, base.createdAt());
     }
 }

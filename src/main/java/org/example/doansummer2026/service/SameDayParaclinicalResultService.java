@@ -126,7 +126,31 @@ public class SameDayParaclinicalResultService {
     }
 
     private List<TestResponse.TestResultResponse> structuredResults(TestResult result) {
-        return List.of();
+        if (result == null || result.getResultData() == null || result.getTestRequest() == null) {
+            return java.util.List.of();
+        }
+        String serviceCode = result.getTestRequest().getService() != null ? 
+                result.getTestRequest().getService().getServiceCode() : null;
+        var panelOpt = org.example.doansummer2026.service.LaboratoryAnalyteCatalog.panel(serviceCode)
+                .or(() -> org.example.doansummer2026.service.LaboratoryAnalyteCatalog.parentPanel(serviceCode));
+        if (panelOpt.isEmpty()) {
+            return java.util.List.of();
+        }
+        tools.jackson.databind.JsonNode data = result.getResultData();
+        List<TestResponse.TestResultResponse> list = new java.util.ArrayList<>();
+        for (var analyte : panelOpt.get().analytes()) {
+            tools.jackson.databind.JsonNode valueNode = data.get(analyte.fieldKey());
+            if (valueNode != null && !valueNode.isNull()) {
+                list.add(new TestResponse.TestResultResponse(
+                        analyte.name(),
+                        valueNode.asText(),
+                        "-",
+                        "",
+                        "NORMAL"
+                ));
+            }
+        }
+        return list;
     }
 
     private String visitCode(UUID visitId) {

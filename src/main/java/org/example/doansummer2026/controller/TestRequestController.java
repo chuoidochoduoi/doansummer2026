@@ -44,7 +44,7 @@ public class TestRequestController {
     private final TestRequestService service;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
     public ResponseEntity<PageResponse<TestRequestResponse>> list(
             @RequestParam(required = false) UUID recordId,
             @RequestParam(required = false) UUID departmentId,
@@ -57,7 +57,7 @@ public class TestRequestController {
 
     /** Group billable analytes into one laboratory workbench per parent panel. */
     @GetMapping("/panels")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
     public ResponseEntity<PageResponse<org.example.doansummer2026.dto.testrequest.LabPanelSummaryResponse>> panels(
             @RequestParam(required = false) UUID recordId,
             @RequestParam(required = false) UUID departmentId,
@@ -71,13 +71,13 @@ public class TestRequestController {
     // Keep the UUID detail endpoint from swallowing literal sub-resources
     // such as /panels when Spring resolves request mappings.
     @GetMapping("/{id:[0-9a-fA-F-]+}")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
     public ResponseEntity<TestRequestResponse> get(@PathVariable UUID id) {
         return RestResponses.ok(service.get(id));
     }
 
     @GetMapping("/{id}/panel-workbench")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
     public ResponseEntity<org.example.doansummer2026.dto.testrequest.LabPanelWorkbenchResponse> panelWorkbench(
             @PathVariable UUID id) {
         return RestResponses.ok(service.getPanelWorkbench(id));
@@ -92,7 +92,7 @@ public class TestRequestController {
     }
 
     @PostMapping("/{id}/panel-workbench/complete")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
     public ResponseEntity<org.example.doansummer2026.dto.testrequest.LabPanelWorkbenchResponse> completePanelResult(
             @PathVariable UUID id,
             @Valid @RequestBody org.example.doansummer2026.dto.testrequest.LabPanelResultRequest req) {
@@ -100,7 +100,7 @@ public class TestRequestController {
     }
 
     @GetMapping("/{id}/action-permissions")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
     public ResponseEntity<org.example.doansummer2026.dto.testrequest.TestRequestActionPermissionsResponse> actionPermissions(
             @PathVariable UUID id) {
         return RestResponses.ok(service.actionPermissions(id));
@@ -108,19 +108,19 @@ public class TestRequestController {
 
     /** Danh sach yeu cau CLS trong toan bo luot kham, dung de chan chi dinh trung. */
     @GetMapping("/visit/{visitId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
     public ResponseEntity<List<TestRequestResponse>> listByVisit(@PathVariable UUID visitId) {
         return RestResponses.ok(service.listByVisit(visitId));
     }
 
     @GetMapping("/queue/{ticketId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
     public ResponseEntity<List<TestRequestResponse>> listByQueue(@PathVariable UUID ticketId) {
         return RestResponses.ok(service.listByQueueTicket(ticketId));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
     @Auditable(action = AuditAction.CREATE, entityName = "TestRequest")
     public ResponseEntity<TestRequestResponse> create(@Valid @RequestBody TestRequestCreateRequest req) {
         TestRequestResponse created = service.create(req);
@@ -131,7 +131,7 @@ public class TestRequestController {
      * Tao nhieu TestRequest cung luc - bac si chon nhieu dich vu xet nghiem.
      */
     @PostMapping("/batch")
-    @PreAuthorize("hasAnyAuthority('ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_DOCTOR')")
     @Auditable(action = AuditAction.CREATE, entityName = "TestRequest", description = "Tạo danh sách yêu cầu cận lâm sàng")
     public ResponseEntity<List<TestRequestResponse>> createBatch(
             @Valid @RequestBody TestRequestBatchCreateRequest req) {
@@ -179,7 +179,7 @@ public class TestRequestController {
      * Tim TestRequest theo InvoiceItem (traceability: Invoice -> InvoiceItem -> TestRequest).
      */
     @GetMapping("/by-invoice-item/{itemId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
     public ResponseEntity<List<TestRequestResponse>> findByInvoiceItem(@PathVariable UUID itemId) {
         return RestResponses.ok(service.findByInvoiceItem(itemId));
     }
@@ -188,7 +188,7 @@ public class TestRequestController {
      * Tim TestRequest theo Invoice (traceability: Invoice -> InvoiceItem -> TestRequest).
      */
     @GetMapping("/by-invoice/{invoiceId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
     public ResponseEntity<List<TestRequestResponse>> findByInvoice(@PathVariable UUID invoiceId) {
         return RestResponses.ok(service.findByInvoice(invoiceId));
     }
@@ -196,13 +196,13 @@ public class TestRequestController {
     // --- TestResult sub-resource ---
 
     @GetMapping("/{id}/result")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
     public ResponseEntity<TestResultResponse> getResult(@PathVariable UUID id) {
         return RestResponses.ok(service.getResult(id));
     }
 
     @GetMapping("/{id}/clinical-form")
-    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR','ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_NURSE','ROLE_DOCTOR')")
     public ResponseEntity<org.example.doansummer2026.dto.clinicalform.ResolvedClinicalFormResponse> getClinicalForm(
             @PathVariable UUID id) {
         return RestResponses.ok(service.getClinicalForm(id));
@@ -255,4 +255,7 @@ public class TestRequestController {
     }
 
 }
+
+
+
 

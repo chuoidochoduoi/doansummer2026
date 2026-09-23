@@ -74,7 +74,9 @@ public class StaffDutyService {
     @Transactional(readOnly = true)
     public boolean isOnDuty(StaffInfo staff, LocalDateTime at) {
         if (staff == null || at == null) return false;
-        return schedulesAround(staff.getStaffId(), at.toLocalDate()).stream()
+        List<StaffSchedule> schedules = schedulesAround(staff.getStaffId(), at.toLocalDate());
+        System.out.println("isOnDuty checking for staff " + staff.getStaffId() + " at " + at + ". Schedules around: " + schedules.size());
+        return schedules.stream()
                 .anyMatch(schedule -> contains(schedule, at));
     }
 
@@ -152,18 +154,28 @@ public class StaffDutyService {
     }
 
     private boolean contains(StaffSchedule schedule, LocalDateTime at) {
-        if (schedule.getStatus() != ScheduleStatus.SCHEDULED || schedule.getWorkDate() == null) return false;
+        if (schedule.getStatus() != ScheduleStatus.SCHEDULED || schedule.getWorkDate() == null) {
+            System.out.println("contains() false: status=" + schedule.getStatus() + " date=" + schedule.getWorkDate() + " for schedule " + schedule.getScheduleId());
+            return false;
+        }
         LocalTime start = schedule.getActualStartTime();
         LocalTime end = schedule.getActualEndTime();
         if (start == null && schedule.getShift() != null) start = LocalTime.parse(schedule.getShift().getStartTime());
         if (end == null && schedule.getShift() != null) end = LocalTime.parse(schedule.getShift().getEndTime());
-        if (start == null || end == null) return false;
+        if (start == null || end == null) {
+            System.out.println("contains() false: start=" + start + " end=" + end + " for schedule " + schedule.getScheduleId());
+            return false;
+        }
         LocalDate date = schedule.getWorkDate();
         LocalDateTime from = LocalDateTime.of(date, start);
         boolean finalBoundary = end.equals(LocalTime.of(23, 59, 59));
         LocalDateTime to = finalBoundary
                 ? date.plusDays(1).atStartOfDay()
                 : LocalDateTime.of(end.isAfter(start) ? date : date.plusDays(1), end);
-        return !at.isBefore(from) && at.isBefore(to);
+        boolean contains = !at.isBefore(from) && at.isBefore(to);
+        if (!contains) {
+            System.out.println("contains() false: at=" + at + " not between from=" + from + " and to=" + to + " for schedule " + schedule.getScheduleId());
+        }
+        return contains;
     }
 }
