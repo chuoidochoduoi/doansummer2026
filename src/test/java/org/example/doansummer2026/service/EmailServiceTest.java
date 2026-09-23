@@ -18,12 +18,15 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class EmailServiceTest {
     @Mock JavaMailSender mailSender;
+    @Mock BrevoEmailClient brevoEmailClient;
     private EmailService service;
 
     @BeforeEach
     void setUp() {
-        service = new EmailService(mailSender);
+        service = new EmailService(mailSender, brevoEmailClient);
         ReflectionTestUtils.setField(service, "fromEmail", "no-reply@cares.vn");
+        ReflectionTestUtils.setField(service, "brevoApiKey", "");
+        ReflectionTestUtils.setField(service, "brevoSenderEmail", "no-reply@cares.vn");
     }
 
     @Test
@@ -50,6 +53,18 @@ class EmailServiceTest {
                 () -> service.sendOtpEmail("duc@example.com", "123456"));
         assertEquals("Không thể gửi email lúc này. Vui lòng thử lại sau.", error.getMessage());
         assertSame(cause, error.getCause());
+    }
+
+    @Test
+    void brevoApiIsUsedInsteadOfSmtpWhenConfigured() {
+        ReflectionTestUtils.setField(service, "brevoApiKey", "brevo-secret");
+
+        service.sendOtpEmail("duc@example.com", "123456");
+
+        verify(brevoEmailClient).send(eq("brevo-secret"), eq("no-reply@cares.vn"),
+                eq("Phòng khám CareS"), eq("duc@example.com"),
+                eq("Mã xác thực OTP của bạn"), contains("123456"), isNull());
+        verifyNoInteractions(mailSender);
     }
 
     @Test

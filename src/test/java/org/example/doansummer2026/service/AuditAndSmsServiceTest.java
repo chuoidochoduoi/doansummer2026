@@ -103,7 +103,7 @@ class AuditAndSmsServiceTest {
                             any(com.twilio.type.PhoneNumber.class), anyString()))
                     .thenReturn(creator);
 
-            service.sendOtp("+84901234567", "123456");
+            service.sendOtp("0901234567", "123456");
 
             message.verify(() -> Message.creator(eq(new com.twilio.type.PhoneNumber("+84901234567")),
                     eq(new com.twilio.type.PhoneNumber("+10000000000")),

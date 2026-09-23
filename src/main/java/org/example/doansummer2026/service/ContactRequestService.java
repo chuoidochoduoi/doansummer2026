@@ -37,9 +37,19 @@ public class ContactRequestService {
     @Value("${spring.mail.password:}")
     private String mailPassword;
 
+    @Value("${app.brevo.api-key:}")
+    private String brevoApiKey;
+
+    @Value("${app.brevo.sender-email:${spring.mail.username:}}")
+    private String brevoSenderEmail;
+
     public void send(ContactRequestCreateRequest request) {
         String recipient = normalizeOptional(recipientEmail);
-        if (recipient == null || normalizeOptional(mailUsername) == null || normalizeOptional(mailPassword) == null) {
+        boolean brevoConfigured = normalizeOptional(brevoApiKey) != null
+                && normalizeOptional(brevoSenderEmail) != null;
+        boolean smtpConfigured = normalizeOptional(mailUsername) != null
+                && normalizeOptional(mailPassword) != null;
+        if (recipient == null || (!brevoConfigured && !smtpConfigured)) {
             throw new ServiceUnavailableException("Kênh liên hệ qua email chưa được cấu hình");
         }
 

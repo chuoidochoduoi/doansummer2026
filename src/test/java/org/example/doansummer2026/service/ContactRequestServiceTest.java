@@ -46,6 +46,19 @@ class ContactRequestServiceTest {
     }
 
     @Test
+    void brevoConfigurationDoesNotRequireSmtpPassword() {
+        configure("contact@cares.vn", "verified@cares.vn", "");
+        ReflectionTestUtils.setField(service, "brevoApiKey", "brevo-secret");
+        ReflectionTestUtils.setField(service, "brevoSenderEmail", "verified@cares.vn");
+        when(values.increment(anyString())).thenReturn(1L);
+
+        service.send(validRequest());
+
+        verify(emailService).sendContactEmail(eq("contact@cares.vn"), anyString(),
+                anyString(), any(), anyString(), anyString());
+    }
+
+    @Test
     void sendsTrimmedContactDataAndStartsRateLimitWindow() {
         when(values.increment(anyString())).thenReturn(1L);
         service.send(request(" Nguyễn Anh Đức ", " 0987654321 ", " duc@example.com ",
@@ -117,6 +130,8 @@ class ContactRequestServiceTest {
         ReflectionTestUtils.setField(service, "recipientEmail", recipient);
         ReflectionTestUtils.setField(service, "mailUsername", username);
         ReflectionTestUtils.setField(service, "mailPassword", password);
+        ReflectionTestUtils.setField(service, "brevoApiKey", "");
+        ReflectionTestUtils.setField(service, "brevoSenderEmail", username);
     }
 
     private ContactRequestCreateRequest validRequest() {
