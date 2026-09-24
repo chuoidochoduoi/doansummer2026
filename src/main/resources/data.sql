@@ -1742,6 +1742,526 @@ VALUES
  'Paracetamol 500mg', 6, 'Viên', 'Uống sau ăn khi đau hoặc sốt, tối đa 2 viên mỗi ngày.', 2,
  pg_temp.demo_now()-interval '28 days', pg_temp.demo_now()-interval '28 days', false);
 
+-- ---------------------------------------------------------------------------
+-- Rolling 60-day reporting demo
+-- ---------------------------------------------------------------------------
+-- The operational reports filter each aggregate by its own business timestamp:
+-- visit check-in/check-out, medical-record completion, invoice issue date and
+-- payment paid_at. Keep those timestamps aligned and spread the historical
+-- journeys over the latest two months so every report tab has meaningful data.
+DROP TABLE IF EXISTS pg_temp.report_demo_visit_map;
+CREATE TEMP TABLE report_demo_visit_map ON COMMIT DROP AS
+WITH ranked AS (
+    SELECT v.visit_id,
+           row_number() OVER (ORDER BY v.check_in_time, v.visit_id) AS sequence_no,
+           count(*) OVER () AS visit_count
+    FROM customer_visit v
+    JOIN invoice i ON i.visit_id = v.visit_id
+    WHERE i.invoice_code ~ '^INV-DEMO-[0-9]{4}$'
+      AND v.visit_id NOT IN (
+          'd5ee978d-cb75-979f-16ff-d348536a3a85'::uuid,
+          '07ac9a53-0f97-2fb6-1f9d-34924096efc6'::uuid
+      )
+)
+SELECT visit_id,
+       sequence_no,
+       pg_temp.demo_date()
+           - round(58.0 * (visit_count - sequence_no) / greatest(visit_count - 1, 1))::integer AS work_date,
+       CASE
+           WHEN mod(sequence_no - 1, 5) = 0 THEN 'INT-101'
+           WHEN mod(sequence_no - 1, 5) = 1 THEN 'INT-102'
+           WHEN mod(sequence_no - 1, 5) = 2 THEN 'SUR-201'
+           WHEN mod(sequence_no - 1, 5) = 3 THEN 'SUR-202'
+           ELSE 'DER-401'
+       END AS room_code,
+       CASE
+           WHEN mod(sequence_no - 1, 5) = 0 THEN 'EX-IN-001'
+           WHEN mod(sequence_no - 1, 5) = 1 THEN 'EX-IN-002'
+           WHEN mod(sequence_no - 1, 5) = 2 THEN 'EX-SU-001'
+           WHEN mod(sequence_no - 1, 5) = 3 THEN 'EX-SU-002'
+           ELSE 'EX-DER-001'
+       END AS service_code
+FROM ranked;
+
+UPDATE customer_visit v
+SET check_in_time = m.work_date + time '08:00',
+    check_out_time = m.work_date + time '09:00',
+    created_at = m.work_date + time '07:55',
+    updated_at = m.work_date + time '09:05'
+FROM report_demo_visit_map m
+WHERE v.visit_id = m.visit_id;
+
+UPDATE queue_ticket q
+SET department_id = d.department_id,
+    service_id = s.service_id,
+    work_date = m.work_date,
+    queue_number = 20 + m.sequence_no,
+    called_at = m.work_date + time '08:05',
+    completed_at = m.work_date + time '08:55',
+    created_at = m.work_date + time '08:00',
+    updated_at = m.work_date + time '08:55'
+FROM report_demo_visit_map m
+JOIN department d ON d.room_code = m.room_code
+JOIN medical_service s ON s.service_code = m.service_code
+WHERE q.ticket_id = pg_temp.did('historical-ticket-' || m.visit_id::text);
+
+-- Every completed examination must point at its examination ticket and have a
+-- completion time; otherwise the report correctly excludes it.
+UPDATE medical_record mr
+SET queue_ticket_id = q.ticket_id,
+    doctor_id = d.head_doctor_id,
+    completed_at = v.check_out_time - interval '5 minutes',
+    rating_score = 3 + mod(m.sequence_no::integer, 3),
+    rated_at = v.check_out_time + interval '2 hours',
+    created_at = v.check_in_time,
+    updated_at = v.check_out_time
+FROM report_demo_visit_map m
+JOIN customer_visit v ON v.visit_id = m.visit_id
+JOIN queue_ticket q ON q.ticket_id = pg_temp.did('historical-ticket-' || m.visit_id::text)
+JOIN department d ON d.department_id = q.department_id
+WHERE mr.visit_id = m.visit_id;
+
+UPDATE invoice i
+SET issue_date = m.work_date,
+    created_at = m.work_date + time '08:10',
+    updated_at = m.work_date + time '09:00'
+FROM report_demo_visit_map m
+WHERE i.visit_id = m.visit_id
+  AND i.invoice_code ~ '^INV-DEMO-[0-9]{4}$';
+
+-- Keep the examination line on each historical invoice consistent with the
+-- room/service used by that visit, including the snapshot price.
+UPDATE invoice_item ii
+SET service_id = s.service_id,
+    service_snapshot = s.name,
+    service_code_snapshot = s.service_code,
+    unit_price = s.price,
+    final_price = s.price,
+    line_total = s.price,
+    created_at = m.work_date + time '08:10',
+    updated_at = m.work_date + time '08:10'
+FROM report_demo_visit_map m
+JOIN invoice i ON i.visit_id = m.visit_id AND i.invoice_code ~ '^INV-DEMO-[0-9]{4}$'
+JOIN medical_service s ON s.service_code = m.service_code
+WHERE ii.item_id = pg_temp.did('historical-exam-item-' || i.invoice_id::text);
+
+-- Recalculate historical invoices after changing their representative service.
+UPDATE invoice i
+SET subtotal = totals.amount,
+    total_amount = totals.amount,
+    paid_amount = totals.amount
+FROM (
+    SELECT ii.invoice_id, sum(ii.line_total) AS amount
+    FROM invoice_item ii
+    WHERE ii.deleted = false
+    GROUP BY ii.invoice_id
+) totals
+WHERE i.invoice_id = totals.invoice_id
+  AND i.invoice_code ~ '^INV-DEMO-[0-9]{4}$';
+
+-- Payment reports use paid_at, not invoice issue_date. Align both and rotate
+-- common payment methods to make the payment-method breakdown demonstrable.
+UPDATE payment_transaction pt
+SET amount = i.paid_amount,
+    payment_method = CASE
+        WHEN pt.payment_method = 'MEMBERSHIP_CARD' THEN 'MEMBERSHIP_CARD'
+        WHEN mod(m.sequence_no::integer, 3) = 0 THEN 'BANK_TRANSFER'
+        WHEN mod(m.sequence_no::integer, 3) = 1 THEN 'CASH'
+        ELSE 'CARD'
+    END,
+    paid_at = m.work_date + time '08:20',
+    created_at = m.work_date + time '08:20',
+    updated_at = m.work_date + time '08:20'
+FROM report_demo_visit_map m
+JOIN invoice i ON i.visit_id = m.visit_id AND i.invoice_code ~ '^INV-DEMO-[0-9]{4}$'
+WHERE pt.invoice_id = i.invoice_id;
+
+-- Keep the two rich clinical journeys at their original dates, but make their
+-- report-facing timestamps complete as well.
+UPDATE customer_visit v
+SET created_at = v.check_in_time - interval '5 minutes',
+    updated_at = v.check_out_time + interval '5 minutes'
+WHERE v.visit_id IN (
+    'd5ee978d-cb75-979f-16ff-d348536a3a85'::uuid,
+    '07ac9a53-0f97-2fb6-1f9d-34924096efc6'::uuid
+);
+
+UPDATE medical_record mr
+SET queue_ticket_id = q.ticket_id,
+    completed_at = v.check_out_time - interval '5 minutes',
+    rating_score = CASE WHEN v.visit_id = '07ac9a53-0f97-2fb6-1f9d-34924096efc6'::uuid THEN 5 ELSE 4 END,
+    rated_at = v.check_out_time + interval '2 hours'
+FROM customer_visit v
+JOIN queue_ticket q ON q.ticket_id = pg_temp.did('historical-ticket-' || v.visit_id::text)
+WHERE mr.visit_id = v.visit_id
+  AND v.visit_id IN (
+      'd5ee978d-cb75-979f-16ff-d348536a3a85'::uuid,
+      '07ac9a53-0f97-2fb6-1f9d-34924096efc6'::uuid
+  );
+
+UPDATE payment_transaction pt
+SET amount = i.paid_amount,
+    paid_at = i.issue_date + time '08:20',
+    created_at = i.issue_date + time '08:20',
+    updated_at = i.issue_date + time '08:20'
+FROM invoice i
+WHERE pt.invoice_id = i.invoice_id
+  AND i.invoice_code ~ '^INV-DEMO-[0-9]{4}$'
+  AND i.visit_id IN (
+      'd5ee978d-cb75-979f-16ff-d348536a3a85'::uuid,
+      '07ac9a53-0f97-2fb6-1f9d-34924096efc6'::uuid
+  );
+
+-- Complete the original 25 historical journeys as real end-to-end workflows.
+-- They were originally useful for invoice charts, but visits were not linked
+-- back to their appointments and most records contained no clinical details.
+UPDATE customer_visit v
+SET appointment_id = a.appointment_id,
+    checked_in_by = '50ec3aa8-ede0-2354-2df1-5a50e7a19729'
+FROM appointment a
+WHERE a.customer_id = v.customer_id
+  AND a.status = 'CHECKED_IN' AND a.deleted = false
+  AND v.status = 'COMPLETED' AND v.deleted = false
+  AND EXISTS (SELECT 1 FROM invoice i WHERE i.visit_id = v.visit_id
+              AND i.invoice_code ~ '^INV-DEMO-[0-9]{4}$');
+
+UPDATE appointment a
+SET scheduled_at = v.check_in_time - interval '30 minutes',
+    created_at = v.check_in_time - interval '2 days',
+    updated_at = v.check_out_time
+FROM customer_visit v
+WHERE v.appointment_id = a.appointment_id
+  AND EXISTS (SELECT 1 FROM invoice i WHERE i.visit_id = v.visit_id
+              AND i.invoice_code ~ '^INV-DEMO-[0-9]{4}$');
+
+INSERT INTO appointment_services (appointment_id, service_id)
+SELECT DISTINCT v.appointment_id, q.service_id
+FROM customer_visit v
+JOIN invoice i ON i.visit_id = v.visit_id AND i.invoice_code ~ '^INV-DEMO-[0-9]{4}$'
+JOIN queue_ticket q ON q.visit_id = v.visit_id AND q.service_id IS NOT NULL AND q.deleted = false
+WHERE v.appointment_id IS NOT NULL
+ON CONFLICT DO NOTHING;
+
+UPDATE medical_record mr
+SET chief_complaint = COALESCE(mr.chief_complaint,
+        CASE
+            WHEN s.service_code LIKE 'EX-SU-%' THEN 'Đau và sưng nhẹ vùng phần mềm sau vận động.'
+            WHEN s.service_code LIKE 'EX-DER-%' THEN 'Ngứa và nổi ban đỏ khu trú.'
+            ELSE 'Mệt mỏi nhẹ, đến kiểm tra sức khỏe.'
+        END),
+    clinical_findings = COALESCE(mr.clinical_findings,
+        CASE
+            WHEN s.service_code LIKE 'EX-SU-%' THEN 'Sưng nhẹ, vận động còn tốt, chưa ghi nhận dấu hiệu gãy xương.'
+            WHEN s.service_code LIKE 'EX-DER-%' THEN 'Mảng đỏ khu trú, không rỉ dịch, chưa có dấu hiệu nhiễm trùng.'
+            ELSE 'Bệnh nhân tỉnh, tiếp xúc tốt, tim đều, phổi thông khí rõ.'
+        END),
+    diagnosis = COALESCE(mr.diagnosis,
+        CASE
+            WHEN s.service_code LIKE 'EX-SU-%' THEN 'Chấn thương phần mềm mức độ nhẹ.'
+            WHEN s.service_code LIKE 'EX-DER-%' THEN 'Viêm da không đặc hiệu.'
+            ELSE 'Khám sức khỏe định kỳ, chưa ghi nhận bất thường cấp tính.'
+        END),
+    prescription_note = COALESCE(mr.prescription_note, 'Dùng thuốc đúng hướng dẫn; không tự ý tăng liều.'),
+    conclusion = COALESCE(mr.conclusion, 'Tình trạng ổn định, điều trị và theo dõi ngoại trú.'),
+    patient_instruction = COALESCE(mr.patient_instruction,
+        'Nghỉ ngơi, uống đủ nước và tái khám sớm khi triệu chứng tăng.'),
+    specialty_data = COALESCE(mr.specialty_data, jsonb_build_object(
+        'generalCondition', 'Tỉnh táo, tiếp xúc tốt',
+        'serviceCode', s.service_code,
+        'demoWorkflow', true
+    )),
+    follow_up_note = COALESCE(mr.follow_up_note, 'Tái khám nếu triệu chứng chưa cải thiện.'),
+    follow_up_date = COALESCE(mr.follow_up_date, mr.completed_at::date + 14)
+FROM customer_visit v
+JOIN invoice i ON i.visit_id = v.visit_id AND i.invoice_code ~ '^INV-DEMO-[0-9]{4}$'
+JOIN queue_ticket q ON q.visit_id = v.visit_id
+JOIN medical_service s ON s.service_id = q.service_id
+WHERE mr.visit_id = v.visit_id AND q.ticket_id = mr.queue_ticket_id;
+
+INSERT INTO vital_signs
+    (vital_id, medical_record_id, blood_pressure, heart_rate, temperature,
+     weight, height, recorded_at, recorded_by, created_at, updated_at, deleted)
+SELECT pg_temp.did('historical-vital-' || mr.record_id::text), mr.record_id,
+       (116 + mod(abs(hashtext(mr.record_id::text)), 9))::text || '/' ||
+           (72 + mod(abs(hashtext(mr.record_id::text)), 8))::text,
+       68 + mod(abs(hashtext(mr.record_id::text)), 18),
+       36.5 + (mod(abs(hashtext(mr.record_id::text)), 4) * 0.1),
+       50.0 + mod(abs(hashtext(mr.record_id::text)), 25),
+       155.0 + mod(abs(hashtext(mr.record_id::text)), 20),
+       v.check_in_time + interval '5 minutes',
+       COALESCE((SELECT si.staff_id FROM staff_info si
+                 WHERE si.department_id = q.department_id
+                   AND si.system_role = 'NURSE' AND si.deleted = false
+                 ORDER BY si.staff_id LIMIT 1),
+                'd8dccd88-7bbc-a7b7-a014-572106a75b15'::uuid),
+       v.check_in_time + interval '5 minutes', v.check_in_time + interval '5 minutes', false
+FROM medical_record mr
+JOIN customer_visit v ON v.visit_id = mr.visit_id
+JOIN invoice i ON i.visit_id = v.visit_id AND i.invoice_code ~ '^INV-DEMO-[0-9]{4}$'
+JOIN queue_ticket q ON q.ticket_id = mr.queue_ticket_id
+WHERE NOT EXISTS (SELECT 1 FROM vital_signs vs
+                  WHERE vs.medical_record_id = mr.record_id AND vs.deleted = false);
+
+INSERT INTO icd_10_selections
+    (selection_id, record_id, code, code_name, note, created_at, updated_at, deleted)
+SELECT pg_temp.did('historical-icd-' || mr.record_id::text), mr.record_id,
+       CASE WHEN s.service_code LIKE 'EX-SU-%' THEN 'S09.9'
+            WHEN s.service_code LIKE 'EX-DER-%' THEN 'L30.9' ELSE 'Z00.0' END,
+       CASE WHEN s.service_code LIKE 'EX-SU-%' THEN 'Chấn thương phần mềm chưa xác định'
+            WHEN s.service_code LIKE 'EX-DER-%' THEN 'Viêm da không đặc hiệu'
+            ELSE 'Khám sức khỏe tổng quát' END,
+       'Chẩn đoán của lượt khám lịch sử.', mr.completed_at, mr.completed_at, false
+FROM medical_record mr
+JOIN customer_visit v ON v.visit_id = mr.visit_id
+JOIN invoice i ON i.visit_id = v.visit_id AND i.invoice_code ~ '^INV-DEMO-[0-9]{4}$'
+JOIN queue_ticket q ON q.ticket_id = mr.queue_ticket_id
+JOIN medical_service s ON s.service_id = q.service_id
+WHERE NOT EXISTS (SELECT 1 FROM icd_10_selections x
+                  WHERE x.record_id = mr.record_id AND x.deleted = false);
+
+INSERT INTO prescription_item
+    (prescription_item_id, record_id, medicine_name, quantity, unit, note,
+     frequency_per_day, created_at, updated_at, deleted)
+SELECT pg_temp.did('historical-prescription-' || mr.record_id::text), mr.record_id,
+       CASE WHEN s.service_code LIKE 'EX-DER-%' THEN 'Cetirizine 10mg'
+            ELSE 'Paracetamol 500mg' END,
+       10, 'Viên', 'Uống sau ăn khi có triệu chứng, theo hướng dẫn của bác sĩ.',
+       CASE WHEN s.service_code LIKE 'EX-DER-%' THEN 1 ELSE 2 END,
+       mr.completed_at, mr.completed_at, false
+FROM medical_record mr
+JOIN customer_visit v ON v.visit_id = mr.visit_id
+JOIN invoice i ON i.visit_id = v.visit_id AND i.invoice_code ~ '^INV-DEMO-[0-9]{4}$'
+JOIN queue_ticket q ON q.ticket_id = mr.queue_ticket_id
+JOIN medical_service s ON s.service_id = q.service_id
+WHERE NOT EXISTS (SELECT 1 FROM prescription_item x
+                  WHERE x.record_id = mr.record_id AND x.deleted = false);
+
+-- Guarantee a complete daily baseline for every date in the latest 60 days.
+-- Existing richer journeys remain in place, so the chart still has natural
+-- high/low days while never showing an artificial zero caused by missing seed.
+DROP TABLE IF EXISTS pg_temp.report_daily_baseline;
+CREATE TEMP TABLE report_daily_baseline ON COMMIT DROP AS
+WITH customer_pool AS (
+    SELECT array_agg(p.profile_id ORDER BY p.phone) AS profile_ids
+    FROM profile p
+    JOIN account a ON a.account_id = p.account_id
+    WHERE a.role = 'CUSTOMER' AND p.deleted = false
+), days AS (
+    SELECT offset_no,
+           pg_temp.demo_date() - offset_no AS work_date
+    FROM generate_series(0, 59) AS offset_no
+)
+SELECT d.offset_no,
+       d.work_date,
+       cp.profile_ids[1 + mod(d.offset_no, array_length(cp.profile_ids, 1))] AS customer_id,
+       -- Rotate only services whose eligibility accepts the adult customer
+       -- pool. Paediatrics/obstetrics keep their dedicated, suitable demos.
+       CASE mod(d.offset_no, 5)
+           WHEN 0 THEN 'INT-101'
+           WHEN 1 THEN 'INT-102'
+           WHEN 2 THEN 'SUR-201'
+           WHEN 3 THEN 'SUR-202'
+           ELSE 'DER-401'
+       END AS room_code,
+       CASE mod(d.offset_no, 5)
+           WHEN 0 THEN 'EX-IN-001'
+           WHEN 1 THEN 'EX-IN-002'
+           WHEN 2 THEN 'EX-SU-001'
+           WHEN 3 THEN 'EX-SU-002'
+           ELSE 'EX-DER-001'
+       END AS service_code
+FROM days d
+CROSS JOIN customer_pool cp;
+
+-- Each reporting visit is a real booked workflow. This keeps the appointment,
+-- reception and patient-history screens consistent with the report aggregates.
+INSERT INTO appointment
+    (appointment_id, created_at, updated_at, deleted, scheduled_at, status,
+     is_guest, customer_id, shift_name, shift_time, shift_version_id)
+SELECT pg_temp.did('report-daily-appointment-' || b.work_date::text),
+       b.work_date + time '08:30', b.work_date + time '11:05', false,
+       b.work_date + time '09:30', 'CHECKED_IN', false, b.customer_id,
+       'Ca Sáng', '07:30-11:30', '71000001-1111-1111-1111-111111111111'
+FROM report_daily_baseline b;
+
+INSERT INTO appointment_services (appointment_id, service_id)
+SELECT pg_temp.did('report-daily-appointment-' || b.work_date::text), s.service_id
+FROM report_daily_baseline b
+JOIN medical_service s ON s.service_code = b.service_code;
+
+INSERT INTO customer_visit
+    (visit_id, customer_id, appointment_id, status, check_in_time, check_out_time,
+     checked_in_by, created_at, updated_at, deleted)
+SELECT pg_temp.did('report-daily-visit-' || b.work_date::text), b.customer_id,
+       pg_temp.did('report-daily-appointment-' || b.work_date::text), 'COMPLETED',
+       b.work_date + time '10:00', b.work_date + time '11:00',
+       '50ec3aa8-ede0-2354-2df1-5a50e7a19729',
+       b.work_date + time '09:55', b.work_date + time '11:05', false
+FROM report_daily_baseline b;
+
+INSERT INTO queue_ticket
+    (ticket_id, created_at, updated_at, deleted, visit_id, department_id,
+     work_date, queue_number, status, called_at, completed_at, service_id)
+SELECT pg_temp.did('report-daily-ticket-' || b.work_date::text),
+       b.work_date + time '10:00', b.work_date + time '10:55', false,
+       pg_temp.did('report-daily-visit-' || b.work_date::text), d.department_id,
+       b.work_date, 90, 'DONE', b.work_date + time '10:05', b.work_date + time '10:55', s.service_id
+FROM report_daily_baseline b
+JOIN department d ON d.room_code = b.room_code
+JOIN medical_service s ON s.service_code = b.service_code;
+
+INSERT INTO medical_record
+    (record_id, record_code, visit_id, queue_ticket_id, doctor_id,
+     chief_complaint, clinical_findings, diagnosis, prescription_note,
+     conclusion, patient_instruction, specialty_data, status, completed_at,
+     rating_score, rated_at, follow_up_note, follow_up_date,
+     created_at, updated_at, deleted)
+SELECT pg_temp.did('report-daily-record-' || b.work_date::text),
+       'MR-REPORT-' || to_char(b.work_date, 'YYYYMMDD'),
+       pg_temp.did('report-daily-visit-' || b.work_date::text),
+       pg_temp.did('report-daily-ticket-' || b.work_date::text),
+       d.head_doctor_id,
+       CASE
+           WHEN b.service_code LIKE 'EX-SU-%' THEN 'Đau và sưng nhẹ vùng phần mềm sau vận động.'
+           WHEN b.service_code LIKE 'EX-PE-%' THEN 'Ho, nghẹt mũi và sốt nhẹ trong hai ngày.'
+           WHEN b.service_code LIKE 'EX-DER-%' THEN 'Ngứa và nổi ban đỏ khu trú.'
+           ELSE 'Mệt mỏi nhẹ, cần kiểm tra sức khỏe tổng quát.'
+       END,
+       CASE
+           WHEN b.service_code LIKE 'EX-SU-%' THEN 'Sưng nhẹ, vận động còn tốt, chưa ghi nhận dấu hiệu gãy xương.'
+           WHEN b.service_code LIKE 'EX-PE-%' THEN 'Trẻ tỉnh, họng đỏ nhẹ, phổi thông khí đều.'
+           WHEN b.service_code LIKE 'EX-DER-%' THEN 'Mảng đỏ khu trú, không rỉ dịch, chưa có dấu hiệu nhiễm trùng.'
+           ELSE 'Bệnh nhân tỉnh, tiếp xúc tốt, tim đều, phổi thông khí rõ.'
+       END,
+       CASE
+           WHEN b.service_code LIKE 'EX-SU-%' THEN 'Chấn thương phần mềm mức độ nhẹ.'
+           WHEN b.service_code LIKE 'EX-PE-%' THEN 'Viêm đường hô hấp trên cấp.'
+           WHEN b.service_code LIKE 'EX-DER-%' THEN 'Viêm da không đặc hiệu.'
+           ELSE 'Khám sức khỏe định kỳ, chưa ghi nhận bất thường cấp tính.'
+       END,
+       'Dùng thuốc đúng hướng dẫn; không tự ý tăng liều.',
+       'Tình trạng ổn định, điều trị và theo dõi ngoại trú.',
+       'Nghỉ ngơi, uống đủ nước và tái khám sớm khi triệu chứng tăng.',
+       jsonb_build_object(
+           'generalCondition', 'Tỉnh táo, tiếp xúc tốt',
+           'serviceCode', b.service_code,
+           'demoWorkflow', true
+       ),
+       'COMPLETED', b.work_date + time '10:55',
+       4 + mod(b.offset_no, 2), b.work_date + time '13:00',
+       'Tái khám nếu triệu chứng chưa cải thiện.', b.work_date + 14,
+       b.work_date + time '10:00', b.work_date + time '10:55', false
+FROM report_daily_baseline b
+JOIN department d ON d.room_code = b.room_code;
+
+INSERT INTO vital_signs
+    (vital_id, medical_record_id, blood_pressure, heart_rate, temperature,
+     weight, height, recorded_at, recorded_by, created_at, updated_at, deleted)
+SELECT pg_temp.did('report-daily-vital-' || b.work_date::text),
+       pg_temp.did('report-daily-record-' || b.work_date::text),
+       (118 + mod(b.offset_no, 7))::text || '/' || (74 + mod(b.offset_no, 6))::text,
+       70 + mod(b.offset_no, 15), 36.5 + (mod(b.offset_no, 4) * 0.1),
+       50.0 + mod(b.offset_no, 21), 155.0 + mod(b.offset_no, 20),
+       b.work_date + time '10:05',
+       COALESCE(
+           (SELECT si.staff_id
+            FROM staff_info si
+            WHERE si.department_id = d.department_id
+              AND si.system_role = 'NURSE' AND si.deleted = false
+            ORDER BY si.staff_id LIMIT 1),
+           'd8dccd88-7bbc-a7b7-a014-572106a75b15'::uuid
+       ),
+       b.work_date + time '10:05', b.work_date + time '10:05', false
+FROM report_daily_baseline b
+JOIN department d ON d.room_code = b.room_code;
+
+INSERT INTO icd_10_selections
+    (selection_id, record_id, code, code_name, note, created_at, updated_at, deleted)
+SELECT pg_temp.did('report-daily-icd-' || b.work_date::text),
+       pg_temp.did('report-daily-record-' || b.work_date::text),
+       CASE
+           WHEN b.service_code LIKE 'EX-SU-%' THEN 'S09.9'
+           WHEN b.service_code LIKE 'EX-PE-%' THEN 'J06.9'
+           WHEN b.service_code LIKE 'EX-DER-%' THEN 'L30.9'
+           ELSE 'Z00.0'
+       END,
+       CASE
+           WHEN b.service_code LIKE 'EX-SU-%' THEN 'Chấn thương phần mềm chưa xác định'
+           WHEN b.service_code LIKE 'EX-PE-%' THEN 'Nhiễm khuẩn hô hấp trên cấp'
+           WHEN b.service_code LIKE 'EX-DER-%' THEN 'Viêm da không đặc hiệu'
+           ELSE 'Khám sức khỏe tổng quát'
+       END,
+       'Chẩn đoán phục vụ hồ sơ khám hoàn chỉnh.',
+       b.work_date + time '10:45', b.work_date + time '10:45', false
+FROM report_daily_baseline b;
+
+INSERT INTO prescription_item
+    (prescription_item_id, record_id, medicine_name, quantity, unit, note,
+     frequency_per_day, created_at, updated_at, deleted)
+SELECT pg_temp.did('report-daily-prescription-' || b.work_date::text),
+       pg_temp.did('report-daily-record-' || b.work_date::text),
+       CASE
+           WHEN b.service_code LIKE 'EX-DER-%' THEN 'Cetirizine 10mg'
+           WHEN b.service_code LIKE 'EX-PE-%' THEN 'Paracetamol 250mg'
+           ELSE 'Paracetamol 500mg'
+       END,
+       CASE WHEN b.service_code LIKE 'EX-PE-%' THEN 6 ELSE 10 END,
+       'Viên', 'Uống sau ăn khi có triệu chứng, tuân thủ hướng dẫn của bác sĩ.',
+       CASE WHEN b.service_code LIKE 'EX-DER-%' THEN 1 ELSE 2 END,
+       b.work_date + time '10:50', b.work_date + time '10:50', false
+FROM report_daily_baseline b;
+
+INSERT INTO invoice
+    (invoice_id, created_at, deleted, updated_at, discount, due_date, invoice_code,
+     issue_date, note, paid_amount, status, subtotal, tax, total_amount,
+     customer_id, issued_by, medical_record_id, visit_id)
+SELECT pg_temp.did('report-daily-invoice-' || b.work_date::text), b.work_date + time '10:10', false,
+       b.work_date + time '10:20', 0, NULL, 'INV-REPORT-' || to_char(b.work_date, 'YYYYMMDD'),
+       b.work_date, 'Dữ liệu báo cáo vận hành theo ngày', s.price, 'PAID', s.price, 0, s.price,
+       b.customer_id, 'b693d136-402d-7de2-4835-117a5e2c5411',
+       pg_temp.did('report-daily-record-' || b.work_date::text),
+       pg_temp.did('report-daily-visit-' || b.work_date::text)
+FROM report_daily_baseline b
+JOIN medical_service s ON s.service_code = b.service_code;
+
+INSERT INTO invoice_item
+    (item_id, created_at, updated_at, deleted, invoice_id, service_id,
+     service_snapshot, service_code_snapshot, unit_price, quantity,
+     discount_percent, discount_amount, final_price, line_total, note, bhyt_fund)
+SELECT pg_temp.did('report-daily-item-' || b.work_date::text), b.work_date + time '10:10',
+       b.work_date + time '10:10', false,
+       pg_temp.did('report-daily-invoice-' || b.work_date::text), s.service_id,
+       s.name, s.service_code, s.price, 1, 0, 0, s.price, s.price,
+       'Dịch vụ khám dùng cho báo cáo theo ngày', 0
+FROM report_daily_baseline b
+JOIN medical_service s ON s.service_code = b.service_code;
+
+INSERT INTO payment_transaction
+    (transaction_id, invoice_id, transaction_code, amount, payment_method, status,
+     paid_at, gateway_reference, note, received_by, created_at, updated_at, deleted)
+SELECT pg_temp.did('report-daily-payment-' || b.work_date::text),
+       pg_temp.did('report-daily-invoice-' || b.work_date::text),
+       'PAY-REPORT-' || to_char(b.work_date, 'YYYYMMDD'), s.price,
+       CASE mod(b.offset_no, 3) WHEN 0 THEN 'CASH' WHEN 1 THEN 'CARD' ELSE 'BANK_TRANSFER' END,
+       'SUCCESS', b.work_date + time '10:20', NULL, 'Thanh toán dữ liệu báo cáo theo ngày',
+       'b693d136-402d-7de2-4835-117a5e2c5411',
+       b.work_date + time '10:20', b.work_date + time '10:20', false
+FROM report_daily_baseline b
+JOIN medical_service s ON s.service_code = b.service_code;
+
+-- Two cancelled visits make the cancellation indicator realistic without
+-- fabricating invoices or medical records for workflows that never completed.
+INSERT INTO customer_visit
+    (visit_id, customer_id, status, check_in_time, check_out_time,
+     created_at, updated_at, deleted)
+VALUES
+(pg_temp.did('report-cancelled-44-days'), '80221d38-65d4-f424-966b-52340f8125fc', 'CANCELLED',
+ pg_temp.demo_date()-interval '44 days'+time '09:00', pg_temp.demo_date()-interval '44 days'+time '09:20',
+ pg_temp.demo_date()-interval '44 days'+time '08:55', pg_temp.demo_date()-interval '44 days'+time '09:20', false),
+(pg_temp.did('report-cancelled-12-days'), 'd1841dfc-3567-7c11-fcec-a1a9dac19321', 'CANCELLED',
+ pg_temp.demo_date()-interval '12 days'+time '14:00', pg_temp.demo_date()-interval '12 days'+time '14:15',
+ pg_temp.demo_date()-interval '12 days'+time '13:55', pg_temp.demo_date()-interval '12 days'+time '14:15', false);
+
 -- Fail fast when a future edit leaves the board-demo catalogue incomplete.
 DO $verify_catalog$
 BEGIN
@@ -1811,6 +2331,22 @@ BEGIN
        OR NOT EXISTS (SELECT 1 FROM notification WHERE status IN ('SENT', 'PENDING') AND deleted = false) THEN
         RAISE EXCEPTION 'Demo notifications must include both read and unread items';
     END IF;
+    IF EXISTS (
+        SELECT 1 FROM notification n
+        WHERE (n.status = 'READ' AND (n.sent_at IS NULL OR n.read_at IS NULL OR n.read_at < n.sent_at))
+           OR (n.status = 'SENT' AND n.sent_at IS NULL)
+           OR (n.status = 'PENDING' AND (n.sent_at IS NOT NULL OR n.read_at IS NOT NULL))
+           OR (n.related_entity = 'Appointment' AND NOT EXISTS
+               (SELECT 1 FROM appointment a WHERE a.appointment_id = n.related_entity_id))
+           OR (n.related_entity = 'TestRequest' AND NOT EXISTS
+               (SELECT 1 FROM test_request tr WHERE tr.test_request_id = n.related_entity_id))
+           OR (n.related_entity = 'Invoice' AND NOT EXISTS
+               (SELECT 1 FROM invoice i WHERE i.invoice_id = n.related_entity_id))
+           OR (n.related_entity = 'ChatSession' AND NOT EXISTS
+               (SELECT 1 FROM chat_sessions cs WHERE cs.session_id = n.related_entity_id))
+    ) THEN
+        RAISE EXCEPTION 'Demo notification status, timestamps or related entity is inconsistent';
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM chat_sessions WHERE status = 'CLOSED' AND deleted = false)
        OR NOT EXISTS (SELECT 1 FROM chat_sessions WHERE status = 'IN_PROGRESS' AND deleted = false)
        OR NOT EXISTS (SELECT 1 FROM chat_sessions WHERE status = 'WAITING_FOR_AGENT' AND deleted = false) THEN
@@ -1819,9 +2355,29 @@ BEGIN
     IF EXISTS (
         SELECT 1 FROM chat_messages m
         JOIN chat_sessions s ON s.session_id = m.session_id
-        WHERE m.sender_type = 'CUSTOMER' AND m.sender_id IS DISTINCT FROM s.customer_id
+        WHERE (m.sender_type = 'CUSTOMER' AND m.sender_id IS DISTINCT FROM s.customer_id)
+           OR (m.sender_type = 'BOT' AND m.sender_id IS NOT NULL)
+           OR (m.sender_type = 'RECEPTIONIST' AND NOT EXISTS (
+               SELECT 1 FROM staff_info si
+               WHERE si.staff_id = m.sender_id AND si.system_role = 'RECEPTIONIST'
+           ))
+           OR m.created_at < s.created_at
     ) THEN
-        RAISE EXCEPTION 'Customer chat sender must reference the session customer profile';
+        RAISE EXCEPTION 'Demo chat message sender or timeline is inconsistent with its session';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM chat_sessions s
+        WHERE (s.status IN ('IN_PROGRESS', 'CLOSED') AND NOT EXISTS (
+                   SELECT 1 FROM staff_info si
+                   WHERE si.staff_id = s.assigned_receptionist_id
+                     AND si.system_role = 'RECEPTIONIST'
+              ))
+           OR (s.status = 'WAITING_FOR_AGENT' AND s.assigned_receptionist_id IS NOT NULL)
+           OR s.updated_at < COALESCE((
+               SELECT max(m.created_at) FROM chat_messages m WHERE m.session_id = s.session_id
+           ), s.created_at)
+    ) THEN
+        RAISE EXCEPTION 'Demo chat assignment, status or last-update time is inconsistent';
     END IF;
     IF NOT EXISTS (
         SELECT 1 FROM public_announcement
@@ -1858,10 +2414,120 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'CareS card balance does not match its latest ledger entry';
     END IF;
+    IF EXISTS (
+        SELECT 1 FROM membership_card_ledger l
+        LEFT JOIN membership_card c ON c.card_id = l.card_id
+        LEFT JOIN invoice i ON i.invoice_id = l.invoice_id
+        LEFT JOIN payment_transaction pt ON pt.transaction_id = l.payment_transaction_id
+        WHERE c.card_id IS NULL
+           OR (l.invoice_id IS NOT NULL AND i.invoice_id IS NULL)
+           OR (l.payment_transaction_id IS NOT NULL AND pt.transaction_id IS NULL)
+           OR (l.type = 'PAYMENT' AND (l.balance_after <> l.balance_before - l.amount
+                                      OR l.amount <> pt.amount))
+    ) THEN
+        RAISE EXCEPTION 'CareS card ledger references or running balance are inconsistent';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM family_member f
+        LEFT JOIN profile owner ON owner.profile_id = f.owner_profile_id
+        LEFT JOIN profile member ON member.profile_id = f.member_profile_id
+        WHERE owner.profile_id IS NULL OR member.profile_id IS NULL
+           OR f.owner_profile_id = f.member_profile_id
+    ) THEN
+        RAISE EXCEPTION 'Demo family-member relationship is invalid';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM audit_log l
+        LEFT JOIN account a ON a.account_id = l.actor_account_id
+        WHERE l.actor_account_id IS NOT NULL AND a.account_id IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Demo audit log references a missing actor account';
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM vital_signs WHERE medical_record_id = 'd90b3fc2-2b39-d940-d65f-7e6ed2262008' AND deleted = false)
        OR NOT EXISTS (SELECT 1 FROM icd_10_selections WHERE record_id = 'd90b3fc2-2b39-d940-d65f-7e6ed2262008' AND deleted = false)
        OR NOT EXISTS (SELECT 1 FROM prescription_item WHERE record_id = 'd90b3fc2-2b39-d940-d65f-7e6ed2262008' AND deleted = false) THEN
         RAISE EXCEPTION 'Historical medical record must include vital signs, ICD-10 and prescription data';
+    END IF;
+    IF (SELECT count(*) FROM customer_visit
+        WHERE status = 'COMPLETED' AND deleted = false
+          AND check_out_time::date BETWEEN pg_temp.demo_date()-59 AND pg_temp.demo_date()) < 25 THEN
+        RAISE EXCEPTION 'The rolling 60-day report must include at least 25 completed visits';
+    END IF;
+    IF (SELECT count(*) FROM medical_record mr
+        WHERE mr.status = 'COMPLETED' AND mr.deleted = false
+          AND mr.queue_ticket_id IS NOT NULL AND mr.completed_at IS NOT NULL
+          AND mr.completed_at::date BETWEEN pg_temp.demo_date()-59 AND pg_temp.demo_date()) < 25 THEN
+        RAISE EXCEPTION 'The rolling 60-day report must include at least 25 completed examination records';
+    END IF;
+    IF (SELECT count(DISTINCT pt.paid_at::date) FROM payment_transaction pt
+        WHERE pt.status = 'SUCCESS' AND pt.deleted = false
+          AND pt.paid_at::date BETWEEN pg_temp.demo_date()-59 AND pg_temp.demo_date()) <> 60 THEN
+        RAISE EXCEPTION 'Every day in the rolling 60-day report must have a successful payment';
+    END IF;
+    IF EXISTS (
+        SELECT report_date
+        FROM generate_series(pg_temp.demo_date()-59, pg_temp.demo_date(), interval '1 day') report_date
+        WHERE NOT EXISTS (
+            SELECT 1 FROM customer_visit v
+            WHERE v.status = 'COMPLETED' AND v.deleted = false
+              AND v.check_out_time::date = report_date::date
+        )
+    ) THEN
+        RAISE EXCEPTION 'Every day in the rolling 60-day report must have a completed visit';
+    END IF;
+    IF (SELECT count(*)
+        FROM customer_visit v
+        JOIN appointment a ON a.appointment_id = v.appointment_id
+        JOIN medical_record mr ON mr.visit_id = v.visit_id
+        JOIN queue_ticket q ON q.ticket_id = mr.queue_ticket_id AND q.visit_id = v.visit_id
+        JOIN appointment_services aps
+          ON aps.appointment_id = a.appointment_id AND aps.service_id = q.service_id
+        JOIN invoice i ON i.visit_id = v.visit_id AND i.medical_record_id = mr.record_id
+        JOIN invoice_item ii ON ii.invoice_id = i.invoice_id AND ii.service_id = q.service_id
+        JOIN payment_transaction pt ON pt.invoice_id = i.invoice_id AND pt.status = 'SUCCESS'
+        WHERE v.visit_id = pg_temp.did('report-daily-visit-' || v.check_in_time::date::text)
+          AND v.check_in_time::date BETWEEN pg_temp.demo_date()-59 AND pg_temp.demo_date()) <> 60 THEN
+        RAISE EXCEPTION 'All 60 daily report visits must be complete end-to-end workflows';
+    END IF;
+    IF (SELECT count(*)
+        FROM medical_record mr
+        JOIN vital_signs vs ON vs.medical_record_id = mr.record_id AND vs.deleted = false
+        JOIN icd_10_selections icd ON icd.record_id = mr.record_id AND icd.deleted = false
+        JOIN prescription_item pi ON pi.record_id = mr.record_id AND pi.deleted = false
+        WHERE mr.record_id = pg_temp.did('report-daily-record-' || mr.completed_at::date::text)
+          AND mr.completed_at::date BETWEEN pg_temp.demo_date()-59 AND pg_temp.demo_date()) <> 60 THEN
+        RAISE EXCEPTION 'All 60 daily report records must include vitals, ICD-10 and prescription data';
+    END IF;
+    IF (SELECT count(DISTINCT v.visit_id)
+        FROM customer_visit v
+        JOIN appointment a ON a.appointment_id = v.appointment_id
+        JOIN queue_ticket q ON q.visit_id = v.visit_id
+        JOIN appointment_services aps
+          ON aps.appointment_id = a.appointment_id AND aps.service_id = q.service_id
+        JOIN medical_record mr ON mr.visit_id = v.visit_id
+        JOIN vital_signs vs ON vs.medical_record_id = mr.record_id AND vs.deleted = false
+        JOIN icd_10_selections icd ON icd.record_id = mr.record_id AND icd.deleted = false
+        JOIN prescription_item pi ON pi.record_id = mr.record_id AND pi.deleted = false
+        JOIN invoice i ON i.visit_id = v.visit_id AND i.medical_record_id = mr.record_id
+        JOIN invoice_item ii ON ii.invoice_id = i.invoice_id
+        JOIN payment_transaction pt ON pt.invoice_id = i.invoice_id AND pt.status = 'SUCCESS'
+        WHERE i.invoice_code ~ '^INV-DEMO-[0-9]{4}$'
+          AND v.status = 'COMPLETED' AND mr.status = 'COMPLETED') <> 25 THEN
+        RAISE EXCEPTION 'All 25 historical visits must be complete end-to-end workflows';
+    END IF;
+    IF (SELECT count(DISTINCT q.department_id)
+        FROM medical_record mr
+        JOIN queue_ticket q ON q.ticket_id = mr.queue_ticket_id
+        JOIN department d ON d.department_id = q.department_id
+        WHERE mr.status = 'COMPLETED' AND mr.deleted = false
+          AND d.department_type = 'EXAMINATION'
+          AND mr.completed_at::date BETWEEN pg_temp.demo_date()-59 AND pg_temp.demo_date()) < 5 THEN
+        RAISE EXCEPTION 'All five adult general examination rooms must have completed report activity';
+    END IF;
+    IF (SELECT count(*) FROM customer_visit
+        WHERE status = 'CANCELLED' AND deleted = false
+          AND check_out_time::date BETWEEN pg_temp.demo_date()-59 AND pg_temp.demo_date()) < 2 THEN
+        RAISE EXCEPTION 'The rolling 60-day report must include cancelled visits';
     END IF;
 END
 $verify_catalog$;
