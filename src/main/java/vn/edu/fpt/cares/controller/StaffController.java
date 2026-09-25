@@ -1,0 +1,213 @@
+package vn.edu.fpt.cares.controller;
+
+import lombok.RequiredArgsConstructor;
+import vn.edu.fpt.cares.common.PageResponse;
+import vn.edu.fpt.cares.common.RestResponses;
+import vn.edu.fpt.cares.dto.schedule.MyScheduleResponse;
+import vn.edu.fpt.cares.dto.staff.StaffCreateRequest;
+import vn.edu.fpt.cares.dto.staff.StaffOptionResponse;
+import vn.edu.fpt.cares.dto.staff.StaffResponse;
+import vn.edu.fpt.cares.dto.staff.StaffUpdateRequest;
+import vn.edu.fpt.cares.dto.staff.StaffProfessionalUpdateRequest;
+import vn.edu.fpt.cares.dto.staff.StaffCapabilityRequest;
+import vn.edu.fpt.cares.dto.staff.StaffCapabilityResponse;
+import vn.edu.fpt.cares.dto.staff.ClinicManagerStaffResponse;
+import vn.edu.fpt.cares.enums.SystemRole;
+import vn.edu.fpt.cares.repository.ShiftConfigRepository;
+import vn.edu.fpt.cares.service.StaffScheduleService;
+import vn.edu.fpt.cares.service.StaffService;
+import vn.edu.fpt.cares.service.AuthService;
+import vn.edu.fpt.cares.aop.Auditable;
+import vn.edu.fpt.cares.enums.AuditAction;
+import org.springframework.data.domain.Pageable;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.util.*;
+
+@RestController
+@RequestMapping("/api/v1/staff")
+@RequiredArgsConstructor
+public class StaffController {
+
+    private final StaffService staffService;
+    private final StaffScheduleService staffScheduleService;
+    private final ShiftConfigRepository shiftConfigRepo;
+    private final AuthService authService;
+
+    /** Danh sách bác sĩ đang hoạt động dùng cho các trang công khai. */
+    @GetMapping("/public/doctors")
+    public ResponseEntity<List<StaffOptionResponse>> getPublicDoctors() {
+        return RestResponses.ok(staffService.getPublicActiveDoctors());
+    }
+
+    @GetMapping("/clinic-manager")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<PageResponse<ClinicManagerStaffResponse>> searchForClinicManager(
+            @RequestParam(required = false) String search, Pageable pageable) {
+        return RestResponses.ok(staffService.searchForClinicManager(search, pageable));
+    }
+
+    @GetMapping("/clinic-manager/{id}")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<ClinicManagerStaffResponse> getForClinicManager(@PathVariable UUID id) {
+        return RestResponses.ok(staffService.getForClinicManager(id));
+    }
+
+    @GetMapping("/{staffId}/capabilities")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER','ROLE_DOCTOR','ROLE_NURSE')")
+    public List<StaffCapabilityResponse> listCapabilities(@PathVariable UUID staffId) {
+        if (authService.getCurrentSystemRole() != SystemRole.ADMIN
+                && authService.getCurrentSystemRole() != SystemRole.CLINIC_MANAGER
+                && !java.util.Objects.equals(authService.currentStaffId(), staffId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Không có quyền xem năng lực của nhân viên khác");
+        }
+        return staffService.listCapabilities(staffId);
+    }
+
+    @PutMapping("/{staffId}/capabilities")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    public List<StaffCapabilityResponse> replaceCapabilities(@PathVariable UUID staffId,
+            @RequestBody List<StaffCapabilityRequest> requests) {
+        return staffService.replaceCapabilities(staffId, requests);
+    }
+
+    /** ADMIN vaf CLINIC_MANAGER xem danh sach. */
+    @GetMapping
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<PageResponse<StaffResponse>> search(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) UUID specializationId,
+            @RequestParam(required = false) SystemRole systemRole,
+            Pageable pageable) {
+        return RestResponses.ok(staffService.search(search, specializationId, systemRole, pageable));
+    }
+
+    /** ADMIN vaf CLINIC_MANAGER xem danh sach nhan su don gian (cho Schedule). */
+    @GetMapping("/list")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<List<StaffOptionResponse>> list(
+            @RequestParam(required = false) SystemRole systemRole) {
+        return RestResponses.ok(staffService.listForSchedule(systemRole));
+    }
+
+    /** Nhan su xem lich ca nhan. */
+    @GetMapping("/my-schedule")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_STAFF')")
+    public ResponseEntity<MyScheduleResponse> mySchedule(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate week) {
+        LocalDate weekStart = week.with(DayOfWeek.MONDAY);
+        LocalDate weekEnd = weekStart.plusDays(6);
+
+        // Lay staffId tu SecurityContext
+        UUID staffId = getCurrentStaffId();
+        if (staffId == null) {
+            return RestResponses.ok(new MyScheduleResponse(List.of(), Map.of(), null));
+        }
+
+        var schedules = staffScheduleService.findByStaffAndWeek(staffId, weekStart, weekEnd);
+        var response = MyScheduleResponse.from(schedules, staffId, shiftConfigRepo.findAll());
+        return RestResponses.ok(response);
+    }
+
+    private UUID getCurrentStaffId() {
+        return authService.currentStaffId();
+    }
+
+    private void ensureClinicManagerCanManage(SystemRole targetRole) {
+        if (authService.getCurrentSystemRole() == SystemRole.CLINIC_MANAGER
+                && (targetRole == SystemRole.ADMIN || targetRole == SystemRole.CLINIC_MANAGER)) {
+            throw new AccessDeniedException(
+                    "Quản lý phòng khám không có quyền quản lý tài khoản quản trị hệ thống hoặc quản lý phòng khám khác");
+        }
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_CLINIC_MANAGER', 'ROLE_STAFF', 'ROLE_DOCTOR', 'ROLE_NURSE', 'ROLE_RECEPTIONIST', 'ROLE_CASHIER')")
+    public ResponseEntity<StaffResponse> get(@PathVariable UUID id) {
+        SystemRole currentRole = authService.getCurrentSystemRole();
+        if (currentRole != SystemRole.ADMIN && currentRole != SystemRole.CLINIC_MANAGER
+                && !java.util.Objects.equals(authService.currentStaffId(), id)) {
+            throw new AccessDeniedException("Không có quyền xem hồ sơ nhân viên khác");
+        }
+        return RestResponses.ok(staffService.get(id));
+    }
+
+    @GetMapping("/account/{accountId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_STAFF', 'ROLE_DOCTOR', 'ROLE_NURSE', 'ROLE_RECEPTIONIST', 'ROLE_CASHIER')")
+    public ResponseEntity<StaffResponse> getByAccount(@PathVariable UUID accountId) {
+        var currentAccount = authService.currentAccount();
+        var currentRole = authService.getCurrentSystemRole();
+        if (currentRole != SystemRole.ADMIN && currentRole != SystemRole.CLINIC_MANAGER
+                && !currentAccount.getAccountId().equals(accountId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Không có quyền xem hồ sơ nhân viên khác");
+        }
+        return RestResponses.ok(staffService.getByAccountId(accountId));
+    }
+
+    /** Nhan vien tu cap nhat hoc vi va truong dao tao; chuyen khoa khong nam trong request. */
+    @PutMapping("/me/professional")
+    @PreAuthorize("hasAnyAuthority('ROLE_STAFF', 'ROLE_DOCTOR', 'ROLE_NURSE', 'ROLE_RECEPTIONIST', 'ROLE_CASHIER')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "StaffInfo")
+    public ResponseEntity<StaffResponse> updateOwnProfessionalInfo(
+            @Valid @RequestBody StaffProfessionalUpdateRequest req) {
+        UUID staffId = getCurrentStaffId();
+        if (staffId == null) {
+            throw new vn.edu.fpt.cares.exception.BadRequestException("Không xác định được nhân viên hiện tại");
+        }
+        return RestResponses.ok(staffService.updateOwnProfessionalInfo(staffId, req));
+    }
+
+    /** CHI ADMIN tao nhan vien moi (kem account + profile). */
+    @PostMapping
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.CREATE, entityName = "StaffInfo")
+    public ResponseEntity<StaffResponse> create(@Valid @RequestBody StaffCreateRequest req) {
+        ensureClinicManagerCanManage(req.systemRole().normalized());
+        StaffResponse created = staffService.create(req);
+        return RestResponses.created("/api/v1/staff/{id}", created.staffId(), created);
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "StaffInfo")
+    public ResponseEntity<StaffResponse> update(@PathVariable UUID id,
+                                                @Valid @RequestBody StaffUpdateRequest req) {
+        ensureClinicManagerCanManage(SystemRole.valueOf(staffService.get(id).systemRole().name()));
+        return RestResponses.ok(staffService.update(id, req));
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.DELETE, entityName = "StaffInfo", idParamName = "id")
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        staffService.delete(id);
+        return RestResponses.noContent();
+    }
+
+    /** ADMIN vaf CLINIC_MANAGER khoa tai khoan (KHONG cho phep khoa ADMIN/CLINIC_MANAGER). */
+    @PatchMapping("/{id}/lock")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.STATUS_CHANGE, entityName = "StaffInfo", idParamName = "id")
+    public ResponseEntity<StaffResponse> lock(@PathVariable UUID id) {
+        StaffResponse locked = staffService.lock(id);
+        return RestResponses.ok(locked);
+    }
+}

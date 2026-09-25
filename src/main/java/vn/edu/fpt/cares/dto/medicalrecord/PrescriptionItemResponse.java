@@ -1,0 +1,28 @@
+package vn.edu.fpt.cares.dto.medicalrecord;
+
+import vn.edu.fpt.cares.model.PrescriptionItem;
+
+import java.util.UUID;
+
+public record PrescriptionItemResponse(
+        UUID prescriptionItemId,
+        String medicineName,
+        Integer quantity,
+        String unit,
+        String note,
+        Integer frequencyPerDay
+) {
+    public static PrescriptionItemResponse from(PrescriptionItem p) {
+        return new PrescriptionItemResponse(
+                p.getPrescriptionItemId(),
+                p.getMedicineName(),
+                p.getQuantity(),
+                p.getUnit(),
+                p.getNote(),
+                p.getFrequencyPerDay()
+        );
+    }
+}
+
+
+

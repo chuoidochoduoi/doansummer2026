@@ -1,0 +1,89 @@
+package vn.edu.fpt.cares.repository;
+
+import vn.edu.fpt.cares.model.MedicalRecord;
+import vn.edu.fpt.cares.enums.MedicalRecordStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.List;
+
+@Repository
+public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, UUID>, JpaSpecificationExecutor<MedicalRecord> {
+
+    List<MedicalRecord> findAllByVisit_VisitIdOrderByCreatedAtAsc(UUID visitId);
+    @EntityGraph("MedicalRecord.withDetails")
+    Optional<MedicalRecord> findFirstByVisit_VisitIdOrderByCreatedAtDesc(UUID visitId);
+    Optional<MedicalRecord> findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(UUID visitId);
+    Page<MedicalRecord> findByRatingScoreIsNotNull(Pageable pageable);
+    @Query("""
+            SELECT COUNT(m) FROM MedicalRecord m
+            WHERE m.ratingScore IS NOT NULL
+              AND (m.managerResponse IS NULL OR TRIM(m.managerResponse) = '')
+            """)
+    long countUnansweredFeedbacks();
+    @Query("SELECT m FROM MedicalRecord m WHERE m.ratingScore IS NOT NULL AND m.doctor.staffId = :doctorId")
+    Page<MedicalRecord> findFeedbacksForStaff(@Param("doctorId") UUID doctorId, Pageable pageable);
+    Optional<MedicalRecord> findByQueueTicket_TicketId(UUID ticketId);
+
+    boolean existsByDoctor_StaffIdAndStatusIn(UUID staffId, List<MedicalRecordStatus> statuses);
+
+    @Query("""
+            SELECT m FROM MedicalRecord m
+            LEFT JOIN FETCH m.visit v
+            LEFT JOIN FETCH m.doctor d
+            LEFT JOIN FETCH d.profile
+            LEFT JOIN FETCH m.queueTicket q
+            LEFT JOIN FETCH q.service
+            WHERE v.customer.profileId = :profileId
+              AND m.recordId <> :currentRecordId
+              AND m.status = vn.edu.fpt.cares.enums.MedicalRecordStatus.COMPLETED
+              AND q IS NOT NULL
+              AND q.department.departmentType = vn.edu.fpt.cares.enums.DepartmentType.EXAMINATION
+            ORDER BY m.createdAt DESC
+            """)
+    List<MedicalRecord> findCompletedHistoryByProfileIdExcludingRecord(
+            @Param("profileId") UUID profileId, @Param("currentRecordId") UUID currentRecordId);
+
+
+    @Query(value = """
+            SELECT record_code
+            FROM medical_record
+            WHERE record_code ~ ('^' || :prefix || '[0-9]+$')
+            ORDER BY CAST(SUBSTRING(record_code FROM CHAR_LENGTH(:prefix) + 1) AS BIGINT) DESC
+            LIMIT 1
+            """, nativeQuery = true)
+    String findTopByRecordCodeStartingWithOrderByRecordCodeDesc(@Param("prefix") String prefix);
+
+    default Page<MedicalRecord> search(UUID doctorId, MedicalRecordStatus status,
+                                        LocalDateTime from, LocalDateTime to, Pageable pageable) {
+        // Standalone record chi la cau noi ky thuat cho CLS; khong hien nhu mot
+        // benh an kham tren cac danh sach bac si/le tan.
+        Specification<MedicalRecord> spec = (root, query, cb) -> cb.isNotNull(root.get("queueTicket"));
+
+        if (doctorId != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("doctor").get("staffId"), doctorId));
+        }
+        if (status != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        if (from != null) {
+            spec = spec.and((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("createdAt"), from));
+        }
+        if (to != null) {
+            spec = spec.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("createdAt"), to));
+        }
+
+        return findAll(spec, pageable);
+    }
+}

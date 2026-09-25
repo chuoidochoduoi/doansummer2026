@@ -1,0 +1,85 @@
+package vn.edu.fpt.cares.repository;
+
+import jakarta.persistence.LockModeType;
+import vn.edu.fpt.cares.model.ShiftConfig;
+import vn.edu.fpt.cares.model.StaffInfo;
+import vn.edu.fpt.cares.model.StaffSchedule;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.*;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface StaffScheduleRepository extends JpaRepository<StaffSchedule, UUID>, JpaSpecificationExecutor<StaffSchedule> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT schedule FROM StaffSchedule schedule WHERE schedule.scheduleId = :id")
+    Optional<StaffSchedule> findByIdForUpdate(@Param("id") UUID id);
+
+    Page<StaffSchedule> findByStaff_StaffId(UUID staffId, Pageable pageable);
+
+    default Page<StaffSchedule> search(UUID staffId, LocalDate from,
+                                        LocalDate to, ShiftConfig shift, Pageable pageable) {
+        Specification<StaffSchedule> spec = (root, query, cb) -> cb.conjunction();
+
+        if (staffId != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("staff").get("staffId"), staffId));
+        }
+        if (from != null) {
+            spec = spec.and((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("workDate"), from));
+        }
+        if (to != null) {
+            spec = spec.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("workDate"), to));
+        }
+        if (shift != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("shift"), shift));
+        }
+
+        return findAll(spec, pageable);
+    }
+
+    List<StaffSchedule> findByStaffAndWorkDateBetween(StaffInfo staff, LocalDate from, LocalDate to);
+
+    List<StaffSchedule> findAllByWorkDateBetween(LocalDate from, LocalDate to);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT schedule FROM StaffSchedule schedule "
+            + "WHERE schedule.workDate BETWEEN :from AND :to")
+    List<StaffSchedule> findAllByWorkDateBetweenForUpdate(
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to);
+
+    Optional<StaffSchedule> findByStaffAndWorkDateAndShift(StaffInfo staff, LocalDate workDate, ShiftConfig shift);
+    List<StaffSchedule> findAllByStaff_StaffIdAndWorkDate(UUID staffId, LocalDate workDate);
+
+    List<StaffSchedule> findAllByWorkDateAndShift_ShiftIdAndStatus(
+            LocalDate workDate, UUID shiftId, vn.edu.fpt.cares.enums.ScheduleStatus status);
+
+    List<StaffSchedule> findAllByWorkDateAndStatus(
+            LocalDate workDate, vn.edu.fpt.cares.enums.ScheduleStatus status);
+
+    long countByWorkDateAndShift_ShiftIdAndStatus(
+            LocalDate workDate, UUID shiftId, vn.edu.fpt.cares.enums.ScheduleStatus status);
+
+    long countByShift_ShiftId(UUID shiftId);
+
+    long countByTemplate_TemplateId(UUID templateId);
+
+    boolean existsByShift_ShiftIdAndWorkDateGreaterThanEqualAndStatus(
+            UUID shiftId, LocalDate workDate, vn.edu.fpt.cares.enums.ScheduleStatus status);
+
+    boolean existsByStaff_StaffIdAndWorkDateGreaterThanEqualAndStatus(
+            UUID staffId, LocalDate workDate, vn.edu.fpt.cares.enums.ScheduleStatus status);
+
+    boolean existsByStaff_Department_DepartmentIdAndWorkDateGreaterThanEqualAndStatus(
+            UUID departmentId, LocalDate workDate, vn.edu.fpt.cares.enums.ScheduleStatus status);
+
+    void deleteByStaffAndWorkDateAndShift(StaffInfo staff, LocalDate workDate, ShiftConfig shift);
+}

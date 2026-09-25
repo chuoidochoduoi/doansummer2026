@@ -1,0 +1,207 @@
+package vn.edu.fpt.cares.controller;
+
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import vn.edu.fpt.cares.common.PageResponse;
+import vn.edu.fpt.cares.common.RestResponses;
+import vn.edu.fpt.cares.dto.schedule.ClinicManagerScheduleResponse;
+import vn.edu.fpt.cares.dto.schedule.ScheduleAssignRequest;
+import vn.edu.fpt.cares.dto.schedule.ScheduleCopyRequest;
+import vn.edu.fpt.cares.dto.schedule.ScheduleCreateRequest;
+import vn.edu.fpt.cares.dto.schedule.ScheduleGenerateRequest;
+import vn.edu.fpt.cares.dto.schedule.ScheduleResponse;
+import vn.edu.fpt.cares.dto.schedule.ScheduleShiftUpdateRequest;
+import vn.edu.fpt.cares.dto.schedule.ScheduleUpdateRequest;
+import vn.edu.fpt.cares.repository.ShiftConfigRepository;
+import vn.edu.fpt.cares.repository.DepartmentRepository;
+import vn.edu.fpt.cares.service.StaffScheduleService;
+import vn.edu.fpt.cares.service.AuthService;
+import org.springframework.data.domain.Pageable;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import vn.edu.fpt.cares.aop.Auditable;
+import vn.edu.fpt.cares.enums.AuditAction;
+
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequiredArgsConstructor
+public class StaffScheduleController {
+
+    private final StaffScheduleService service;
+    private final ShiftConfigRepository shiftConfigRepo;
+    private final DepartmentRepository departmentRepo;
+    private final AuthService authService;
+
+    // --- MAIN ENDPOINTS ---
+
+    @GetMapping("/api/v1/schedules")
+    @PreAuthorize("hasRole() or hasRole('STAFF')")
+    public ResponseEntity<PageResponse<ScheduleResponse>> search(
+            @RequestParam(required = false) UUID staffId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) UUID shiftId,
+            Pageable pageable) {
+        UUID effectiveStaffId = authService.getCurrentSystemRole()
+                == vn.edu.fpt.cares.enums.SystemRole.ADMIN
+                ? staffId : authService.currentStaffId();
+        if (effectiveStaffId == null) {
+            throw new vn.edu.fpt.cares.exception.BadRequestException(
+                    "Không xác định được nhân viên đang đăng nhập");
+        }
+        return RestResponses.ok(service.search(effectiveStaffId, from, to, shiftId, pageable));
+    }
+
+    @GetMapping("/api/v1/schedules/{id}")
+    @PreAuthorize("hasRole() or hasRole('STAFF')")
+    public ResponseEntity<ScheduleResponse> get(@PathVariable UUID id) {
+        if (authService.getCurrentSystemRole() == vn.edu.fpt.cares.enums.SystemRole.ADMIN) {
+            return RestResponses.ok(service.get(id));
+        }
+        UUID staffId = authService.currentStaffId();
+        if (staffId == null) {
+            throw new vn.edu.fpt.cares.exception.BadRequestException(
+                    "Không xác định được nhân viên đang đăng nhập");
+        }
+        return RestResponses.ok(service.getForStaff(id, staffId));
+    }
+
+    @PostMapping("/api/v1/schedules")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule", description = "Tạo lịch trực nhân sự")
+    public ResponseEntity<ScheduleResponse> create(@Valid @RequestBody ScheduleCreateRequest req) {
+        ScheduleResponse created = service.create(req);
+        return RestResponses.created("/api/v1/schedules/{id}", created.scheduleId(), created);
+    }
+
+    @PutMapping("/api/v1/schedules/{id}")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "StaffSchedule", idParamName = "id", description = "Cập nhật lịch trực nhân sự")
+    public ResponseEntity<ScheduleResponse> update(@PathVariable UUID id,
+                                                   @RequestBody ScheduleUpdateRequest req) {
+        return RestResponses.ok(service.update(id, req));
+    }
+
+    @DeleteMapping("/api/v1/schedules/{id}")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.DELETE, entityName = "StaffSchedule", idParamName = "id", description = "Gỡ lịch trực nhân sự")
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        service.delete(id);
+        return RestResponses.noContent();
+    }
+
+    /** POST tac vu batch - sinh nhieu lich, khong co Location don le -> 200 OK. */
+    @PostMapping("/api/v1/schedules/generate")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule", description = "Sinh lịch trực theo mẫu tuần")
+    public ResponseEntity<List<ScheduleResponse>> generate(@RequestBody ScheduleGenerateRequest req) {
+        return RestResponses.ok(service.generateFromTemplates(
+                req.weekStart(), req.staffIds(), req.overrideExisting()));
+    }
+
+    // --- CLINIC MANAGER ENDPOINTS ---
+
+    /**
+     * API lay lich truc cho Clinic Manager.
+     * - week: ngay bat ky trong tuan (thu 2 - chu nhat).
+     */
+    @GetMapping("/api/v1/clinic-manager/schedules")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<ClinicManagerScheduleResponse> getSchedules(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate week,
+            @RequestParam(required = false) UUID departmentId,
+            @RequestParam(required = false) String staffGroup) {
+        LocalDate weekStart = week.with(DayOfWeek.MONDAY);
+        LocalDate weekEnd = weekStart.plusDays(6);
+
+        var schedules = service.findByWeek(weekStart, weekEnd).stream()
+                .filter(schedule -> departmentId == null || (schedule.getStaff() != null
+                        && schedule.getStaff().getDepartment() != null
+                        && departmentId.equals(schedule.getStaff().getDepartment().getDepartmentId())))
+                .filter(schedule -> matchesStaffGroup(schedule, staffGroup))
+                .toList();
+        boolean requiresDoctorForProfessionalRoom = departmentId == null
+                || departmentRepo.findById(departmentId)
+                .map(department -> department.getDepartmentType() == null
+                        || department.getDepartmentType().normalized()
+                        == vn.edu.fpt.cares.enums.DepartmentType.EXAMINATION)
+                .orElse(true);
+        var response = ClinicManagerScheduleResponse.from(
+                schedules, weekStart, shiftConfigRepo.findAllByIsActiveTrueOrderByStartTimeAsc(),
+                staffGroup, requiresDoctorForProfessionalRoom);
+        return RestResponses.ok(response);
+    }
+
+    private boolean matchesStaffGroup(vn.edu.fpt.cares.model.StaffSchedule schedule,
+                                      String staffGroup) {
+        if (staffGroup == null || staffGroup.isBlank()) return true;
+        if (schedule.getStaff() == null || schedule.getStaff().getSystemRole() == null) return false;
+        var role = schedule.getStaff().getSystemRole();
+        if ("PROFESSIONAL".equalsIgnoreCase(staffGroup)) {
+            return role.isDoctor() || role == vn.edu.fpt.cares.enums.SystemRole.NURSE;
+        }
+        if ("GENERAL".equalsIgnoreCase(staffGroup)) {
+            return role == vn.edu.fpt.cares.enums.SystemRole.RECEPTIONIST
+                    || role == vn.edu.fpt.cares.enums.SystemRole.CASHIER
+                    || role == vn.edu.fpt.cares.enums.SystemRole.CLINIC_MANAGER;
+        }
+        return true;
+    }
+
+    /**
+     * Gán nhân sự vào ca truc.
+     * - action: add hoặc remove
+     */
+    @PostMapping("/api/v1/clinic-manager/schedules/assign")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.UPDATE, entityName = "StaffSchedule", description = "Thay đổi phân công lịch trực")
+    public ResponseEntity<Void> assign(@Valid @RequestBody ScheduleAssignRequest req) {
+        service.assignStaff(req);
+        return RestResponses.noContent();
+    }
+
+    /**
+     * Sao chep lich sang tuan moi.
+     */
+    @PostMapping("/api/v1/clinic-manager/schedules/copy")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    @Auditable(action = AuditAction.CREATE, entityName = "StaffSchedule", description = "Sao chép lịch trực tuần trước")
+    public ResponseEntity<ClinicManagerScheduleResponse> copy(@Valid @RequestBody ScheduleCopyRequest req) {
+        LocalDate weekStart = req.week().with(DayOfWeek.MONDAY);
+        LocalDate prevWeekStart = weekStart.minusDays(7);
+        LocalDate weekEnd = weekStart.plusDays(6);
+
+        var schedules = service.copyWeek(prevWeekStart, weekStart);
+        var response = ClinicManagerScheduleResponse.from(
+                schedules, weekStart, shiftConfigRepo.findAllByIsActiveTrueOrderByStartTimeAsc());
+        return RestResponses.ok(response);
+    }
+
+    /**
+     * Luu ca truc (shift template).
+     */
+    @PutMapping("/api/v1/clinic-manager/schedules/shifts")
+    @PreAuthorize("hasAuthority('ROLE_CLINIC_MANAGER')")
+    public ResponseEntity<Void> updateShifts(@Valid @RequestBody ScheduleShiftUpdateRequest req) {
+        // Hien tai chi co 3 shift co ban, khong cho sua
+        // Neu can them shift moi, sua logic o day
+        return RestResponses.noContent();
+    }
+}
+
+
+

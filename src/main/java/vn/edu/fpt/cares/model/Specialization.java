@@ -1,0 +1,54 @@
+package vn.edu.fpt.cares.model;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import vn.edu.fpt.cares.common.BaseEntity;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
+
+import java.util.UUID;
+
+@Entity
+@Table(name = "specialization")
+@SQLDelete(sql = "UPDATE specialization SET deleted = true WHERE specialization_id = ?")
+@SQLRestriction("deleted = false")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Specialization extends BaseEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(name = "specialization_id")
+    private UUID specializationId;
+
+    @NotBlank
+    @Size(max = 150)
+    @Column(nullable = false, unique = true, length = 150)
+    private String name;
+
+    @Size(max = 500)
+    @Column(length = 500)
+    private String description;
+
+    /** Cho phep dung chuyen khoa cho cac cau hinh moi. */
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    @Builder.Default
+    private Boolean active = true;
+}
+
+
+

@@ -1,0 +1,1638 @@
+package vn.edu.fpt.cares.service;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import tools.jackson.databind.JsonNode;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Set;
+import vn.edu.fpt.cares.common.PageResponse;
+import vn.edu.fpt.cares.dto.testrequest.*;
+import vn.edu.fpt.cares.dto.testresult.TestResultCreateRequest;
+import vn.edu.fpt.cares.dto.testresult.TestResultResponse;
+import vn.edu.fpt.cares.dto.testresult.TestResultUpdateRequest;
+import vn.edu.fpt.cares.exception.ConflictException;
+import vn.edu.fpt.cares.exception.BadRequestException;
+import vn.edu.fpt.cares.exception.ResourceNotFoundException;
+import vn.edu.fpt.cares.model.MedicalRecord;
+import vn.edu.fpt.cares.model.Department;
+import vn.edu.fpt.cares.model.MedicalService;
+import vn.edu.fpt.cares.model.QueueTicket;
+import vn.edu.fpt.cares.model.StaffInfo;
+import vn.edu.fpt.cares.model.TestRequest;
+import vn.edu.fpt.cares.model.InvoiceItem;
+import vn.edu.fpt.cares.enums.MedicalRecordStatus;
+import vn.edu.fpt.cares.enums.DepartmentStatus;
+import vn.edu.fpt.cares.enums.QueueStatus;
+import vn.edu.fpt.cares.enums.TestRequestStatus;
+import vn.edu.fpt.cares.model.TestResult;
+import vn.edu.fpt.cares.repository.MedicalRecordRepository;
+import vn.edu.fpt.cares.repository.MedicalServiceRepository;
+import vn.edu.fpt.cares.repository.QueueTicketRepository;
+import vn.edu.fpt.cares.repository.StaffInfoRepository;
+import vn.edu.fpt.cares.repository.TestRequestRepository;
+import vn.edu.fpt.cares.repository.TestResultRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import vn.edu.fpt.cares.service.interfaces.TestRequestServiceInterface;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+@Transactional
+@RequiredArgsConstructor
+@Slf4j
+public class TestRequestService implements TestRequestServiceInterface {
+
+    private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+
+    @org.springframework.beans.factory.annotation.Value("${app.upload.root:uploads}")
+    private String uploadRoot;
+
+    private final TestRequestRepository repo;
+    private final TestResultRepository resultRepo;
+    private final MedicalRecordRepository recordRepo;
+    private final vn.edu.fpt.cares.repository.CustomerVisitRepository visitRepo;
+    private final MedicalServiceRepository serviceRepo;
+    private final StaffInfoRepository staffRepo;
+    private final QueueTicketRepository queueTicketRepo;
+    private final vn.edu.fpt.cares.repository.DepartmentRepository departmentRepo;
+    private final vn.edu.fpt.cares.repository.InvoiceItemRepository invoiceItemRepo;
+    private final MedicalRecordService medicalRecordService;
+    private final PatientJourneyService patientJourneyService;
+    private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+    private final NotificationService notificationService;
+    private final AuthService authService;
+    private final ClinicalFormEngine clinicalFormEngine;
+    private final FixedClinicalFormService fixedClinicalFormService;
+    private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
+    private final StaffDutyService staffDutyService;
+    private final MedicalServiceSelectionPolicyService serviceSelectionPolicyService;
+
+    @Transactional(readOnly = true)
+    public PageResponse<TestRequestResponse> search(UUID recordId, UUID departmentId,
+                                                     TestRequestStatus status, String search,
+                                                     java.time.LocalDate workDate,
+                                                     Pageable pageable) {
+        departmentId = restrictSearchScope(recordId, departmentId);
+        String normalizedSearch = search == null ? "" : search.trim().toLowerCase();
+        Page<TestRequest> page = repo.search(recordId, departmentId, status,
+                normalizedSearch, workDate, pageable);
+        return PageResponse.from(page, TestRequestResponse::from);
+    }
+
+    /**
+     * The persistence model keeps one TestRequest per billed analyte.  The lab
+     * worklist deliberately does not: it groups those requests by queue/record
+     * and their catalogued parent panel so one blood sample is handled once.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<LabPanelSummaryResponse> searchPanels(UUID recordId, UUID departmentId,
+                                                               TestRequestStatus status, String search,
+                                                               LocalDate workDate, Pageable pageable) {
+        departmentId = restrictSearchScope(recordId, departmentId);
+        String normalizedSearch = search == null ? "" : search.trim().toLowerCase();
+        // Aggregate the complete panel first. Filtering individual analytes by
+        // status before grouping can make a partly completed panel look fully
+        // cancelled (or vice versa).
+        List<TestRequest> requests = repo.search(recordId, departmentId, null, normalizedSearch,
+                        workDate, Pageable.unpaged())
+                .getContent();
+        java.util.Map<String, List<TestRequest>> groups = requests.stream()
+                .collect(java.util.stream.Collectors.groupingBy(this::panelGroupKey,
+                        java.util.LinkedHashMap::new, java.util.stream.Collectors.toList()));
+        List<LabPanelSummaryResponse> summaries = groups.values().stream()
+                .map(this::toPanelSummary)
+                .filter(summary -> status == null || summary.status() == status)
+                .sorted(java.util.Comparator.comparing(LabPanelSummaryResponse::createdAt,
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .toList();
+        int size = pageable.isPaged() ? pageable.getPageSize() : summaries.size();
+        int page = pageable.isPaged() ? pageable.getPageNumber() : 0;
+        int from = Math.min(page * Math.max(1, size), summaries.size());
+        int to = Math.min(from + Math.max(1, size), summaries.size());
+        int totalPages = size <= 0 ? 1 : (int) Math.ceil((double) summaries.size() / size);
+        return new PageResponse<>(summaries.subList(from, to), page, size, summaries.size(), totalPages,
+                page == 0, page >= totalPages - 1);
+    }
+
+    @Transactional(readOnly = true)
+    public LabPanelWorkbenchResponse getPanelWorkbench(UUID representativeId) {
+        return toPanelWorkbench(resolvePanelContext(representativeId));
+    }
+
+    /** Save the shared screen back to the existing per-service records. */
+    public LabPanelWorkbenchResponse savePanelResult(UUID representativeId,
+                                                      LabPanelResultRequest request,
+                                                      boolean complete) {
+        PanelContext context = resolvePanelContext(representativeId);
+        ensureResultNotCancelled(context.anchor);
+        java.util.LinkedHashSet<TestRequest> targets = new java.util.LinkedHashSet<>(context.purchasedByCode.values());
+        if (targets.isEmpty()) throw new BadRequestException("Phiếu xét nghiệm chưa có chỉ số đã thanh toán");
+        targets.forEach(this::ensureResultNotCancelled);
+        var expectedSampleType = defaultSpecimenType(context.anchor);
+        if (request.sampleType() != null && request.sampleType() != expectedSampleType) {
+            throw new BadRequestException("Loại mẫu bệnh phẩm phải phù hợp với dịch vụ xét nghiệm: "
+                    + expectedSampleType.name());
+        }
+
+        for (TestRequest target : targets) {
+            String code = target.getService() == null ? "" : target.getService().getServiceCode();
+            tools.jackson.databind.JsonNode data = resultDataForRequest(request.resultData(), context.panel, code);
+            TestResultCreateRequest item = new TestResultCreateRequest(target.getTestRequestId(), request.imageUrl(),
+                    request.conclusion(), request.sampleId(), expectedSampleType, request.sampleStatus(),
+                    data, request.performedById());
+            if (complete) completeResult(target.getTestRequestId(), item);
+            else if (target.getTestResult() == null) createResult(target.getTestRequestId(), item);
+            else updateResult(target.getTestRequestId(), new TestResultUpdateRequest(
+                    request.imageUrl(), request.conclusion(), request.sampleId(), expectedSampleType,
+                    request.sampleStatus(), data, false));
+        }
+        return getPanelWorkbench(representativeId);
+    }
+
+    private String panelGroupKey(TestRequest request) {
+        var panel = panelOf(request);
+        if (panel.isEmpty()) return "REQUEST:" + request.getTestRequestId();
+        String scope = request.getQueueTicket() != null ? "QUEUE:" + request.getQueueTicket().getTicketId()
+                : request.getMedicalRecord() != null ? "RECORD:" + request.getMedicalRecord().getRecordId()
+                : "REQUEST:" + request.getTestRequestId();
+        return scope + "|" + panel.get().serviceCode();
+    }
+
+    private java.util.Optional<LaboratoryAnalyteCatalog.Panel> panelOf(TestRequest request) {
+        String code = request.getService() == null ? null : request.getService().getServiceCode();
+        return LaboratoryAnalyteCatalog.panel(code).or(() -> LaboratoryAnalyteCatalog.parentPanel(code));
+    }
+
+    private LabPanelSummaryResponse toPanelSummary(List<TestRequest> requests) {
+        TestRequest representative = requests.stream()
+                .filter(item -> panelOf(item).map(panel -> panel.serviceCode().equalsIgnoreCase(
+                        item.getService().getServiceCode())).orElse(false))
+                .findFirst().orElse(requests.get(0));
+        var panel = panelOf(representative).orElse(null);
+        if (panel == null) {
+            TestRequestResponse raw = TestRequestResponse.from(representative);
+            String serviceCode = representative.getService() == null
+                    ? null : representative.getService().getServiceCode();
+            return new LabPanelSummaryResponse(representative.getTestRequestId(), raw.queueTicketId(), raw.queueNumber(),
+                    raw.queueStatus(), raw.performingDepartmentId(), serviceCode, raw.serviceName(), raw.patientCode(),
+                    raw.patientName(), raw.createdAt(), raw.status(), 1, 1,
+                    raw.status() == TestRequestStatus.COMPLETED ? 1 : 0, false,
+                    Boolean.TRUE.equals(raw.requiresSpecimen()), raw.specimenReadyForRelease(),
+                    raw.status() == TestRequestStatus.COMPLETED || raw.testResultId() != null);
+        }
+        java.util.Set<String> selectedCodes = purchasedCodes(panel, requests);
+        int completed = completedAnalytes(panel, requests, selectedCodes);
+        List<TestRequest> activeRequests = requests.stream()
+                .filter(item -> item.getStatus() != TestRequestStatus.CANCELLED)
+                .toList();
+        TestRequestStatus aggregate;
+        if (activeRequests.isEmpty()) {
+            aggregate = TestRequestStatus.CANCELLED;
+        } else if (activeRequests.stream().anyMatch(item -> item.getStatus() == TestRequestStatus.IN_PROGRESS)) {
+            aggregate = TestRequestStatus.IN_PROGRESS;
+        } else if (activeRequests.stream().anyMatch(item -> item.getStatus() == TestRequestStatus.PENDING
+                || item.getStatus() == TestRequestStatus.BLOCKED)) {
+            aggregate = TestRequestStatus.PENDING;
+        } else {
+            aggregate = TestRequestStatus.COMPLETED;
+        }
+        TestRequestResponse raw = TestRequestResponse.from(representative);
+        boolean requiresSpecimen = activeRequests.stream().anyMatch(item -> item.getService() != null
+                && Boolean.TRUE.equals(item.getService().getRequiresSpecimen()));
+        boolean specimenReadyForRelease = requiresSpecimen && activeRequests.stream()
+                .filter(item -> item.getService() != null
+                        && Boolean.TRUE.equals(item.getService().getRequiresSpecimen()))
+                .allMatch(item -> {
+                    TestResult result = item.getTestResult();
+                    return result != null && result.getCollectedAt() != null
+                            && result.getSampleId() != null && !result.getSampleId().isBlank()
+                            && result.getSampleType() != null
+                            && result.getSampleStatus()
+                            == vn.edu.fpt.cares.enums.SpecimenStatus.ACCEPTED;
+                });
+        boolean serviceReadyForRelease = !activeRequests.isEmpty() && activeRequests.stream().allMatch(item -> {
+            if (item.getStatus() == TestRequestStatus.COMPLETED) return true;
+            if (item.getService() != null && Boolean.TRUE.equals(item.getService().getRequiresSpecimen())) {
+                TestResult result = item.getTestResult();
+                return result != null && result.getCollectedAt() != null
+                        && result.getSampleId() != null && !result.getSampleId().isBlank()
+                        && result.getSampleType() != null
+                        && result.getSampleStatus()
+                        == vn.edu.fpt.cares.enums.SpecimenStatus.ACCEPTED;
+            }
+            // Với chẩn đoán hình ảnh/CLS khác, bản nháp kết quả là bằng chứng
+            // kỹ thuật đã được thực hiện; việc ký chuyên môn có thể diễn ra sau.
+            return item.getTestResult() != null;
+        });
+        return new LabPanelSummaryResponse(representative.getTestRequestId(), raw.queueTicketId(), raw.queueNumber(),
+                raw.queueStatus(), raw.performingDepartmentId(), panel.serviceCode(), panel.name(), raw.patientCode(),
+                raw.patientName(), requests.stream().map(TestRequest::getCreatedAt).filter(java.util.Objects::nonNull)
+                .min(LocalDateTime::compareTo).orElse(raw.createdAt()), aggregate, selectedCodes.size(),
+                panel.analytes().size(), completed, true, requiresSpecimen, specimenReadyForRelease,
+                serviceReadyForRelease);
+    }
+
+    private PanelContext resolvePanelContext(UUID representativeId) {
+        TestRequest anchor = findById(representativeId);
+        ensureCurrentStaffCanView(anchor);
+        LaboratoryAnalyteCatalog.Panel panel = panelOf(anchor)
+                .orElseThrow(() -> new BadRequestException("Dịch vụ này không thuộc gói xét nghiệm"));
+        List<TestRequest> scope = anchor.getQueueTicket() != null
+                ? repo.findAllByQueueTicket_TicketId(anchor.getQueueTicket().getTicketId())
+                : anchor.getMedicalRecord() == null || anchor.getMedicalRecord().getVisit() == null
+                ? List.of(anchor)
+                : repo.findAllByVisitIdWithDetails(anchor.getMedicalRecord().getVisit().getVisitId()).stream()
+                .filter(item -> item.getMedicalRecord() != null && anchor.getMedicalRecord().getRecordId()
+                        .equals(item.getMedicalRecord().getRecordId())).toList();
+        List<TestRequest> requests = scope.stream().filter(item -> panelOf(item)
+                        .map(candidate -> candidate.serviceCode().equals(panel.serviceCode())).orElse(false))
+                .toList();
+        if (requests.stream().noneMatch(item -> representativeId.equals(item.getTestRequestId()))) {
+            throw new ResourceNotFoundException("Không tìm thấy phiếu xét nghiệm trong nhóm này");
+        }
+        java.util.Map<String, TestRequest> purchased = new java.util.LinkedHashMap<>();
+        for (TestRequest item : requests) {
+            String code = item.getService().getServiceCode();
+            if (panel.serviceCode().equalsIgnoreCase(code)) {
+                panel.analytes().forEach(analyte -> purchased.put(analyte.serviceCode(), item));
+            } else if (LaboratoryAnalyteCatalog.analyte(code).isPresent()) {
+                purchased.put(code, item);
+            }
+        }
+        return new PanelContext(anchor, panel, requests, purchased);
+    }
+
+    private LabPanelWorkbenchResponse toPanelWorkbench(PanelContext context) {
+        TestRequest anchor = context.anchor;
+        TestResult sampleResult = context.purchasedByCode.values().stream()
+                .map(TestRequest::getTestResult).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        tools.jackson.databind.node.ObjectNode values = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        context.purchasedByCode.values().stream().distinct().map(TestRequest::getTestResult)
+                .filter(java.util.Objects::nonNull).map(TestResult::getResultData)
+                .filter(java.util.Objects::nonNull).filter(tools.jackson.databind.JsonNode::isObject)
+                .forEach(data -> data.properties().forEach(entry -> {
+                    if ("_omissions".equals(entry.getKey()) && entry.getValue().isObject()) {
+                        tools.jackson.databind.node.ObjectNode omissions = values.has("_omissions")
+                                && values.get("_omissions").isObject()
+                                ? (tools.jackson.databind.node.ObjectNode) values.get("_omissions")
+                                : values.putObject("_omissions");
+                        entry.getValue().properties().forEach(omission -> omissions.set(omission.getKey(), omission.getValue()));
+                    } else values.set(entry.getKey(), entry.getValue());
+                }));
+        MedicalService panelService = serviceRepo.findByServiceCode(context.panel.serviceCode())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cấu hình gói xét nghiệm"));
+        vn.edu.fpt.cares.dto.clinicalform.ResolvedClinicalFormResponse form =
+                fixedClinicalFormService.resolveForService(panelService.getServiceId(), values);
+        List<LabPanelWorkbenchResponse.AnalyteItem> analytes = context.panel.analytes().stream().map(analyte -> {
+            TestRequest request = context.purchasedByCode.get(analyte.serviceCode());
+            return new LabPanelWorkbenchResponse.AnalyteItem(analyte.serviceCode(), analyte.fieldKey(), analyte.name(),
+                    request != null, request == null ? null : request.getTestRequestId(),
+                    request == null ? null : request.getStatus());
+        }).toList();
+        int completed = completedAnalytes(context.panel, context.requests, context.purchasedByCode.keySet());
+        TestRequestResponse raw = TestRequestResponse.from(anchor);
+        return new LabPanelWorkbenchResponse(anchor.getTestRequestId(), raw.queueTicketId(), raw.queueNumber(),
+                raw.queueStatus(), raw.performingDepartmentId(), context.panel.serviceCode(), context.panel.name(), raw.patientCode(), raw.patientName(),
+                raw.createdAt(), sampleResult == null ? null : sampleResult.getSampleId(),
+                sampleResult == null || sampleResult.getSampleType() == null
+                        ? defaultSpecimenType(anchor).name() : sampleResult.getSampleType().name(),
+                sampleResult == null || sampleResult.getSampleStatus() == null ? null : sampleResult.getSampleStatus().name(),
+                sampleResult == null ? null : sampleResult.getConclusion(), values, null, form,
+                context.purchasedByCode.size(), context.panel.analytes().size(), completed, analytes);
+    }
+
+    private java.util.Set<String> purchasedCodes(LaboratoryAnalyteCatalog.Panel panel, List<TestRequest> requests) {
+        java.util.Set<String> codes = new java.util.LinkedHashSet<>();
+        requests.forEach(item -> {
+            String code = item.getService().getServiceCode();
+            if (panel.serviceCode().equalsIgnoreCase(code)) panel.analytes().forEach(analyte -> codes.add(analyte.serviceCode()));
+            else if (LaboratoryAnalyteCatalog.analyte(code).isPresent()) codes.add(code);
+        });
+        return codes;
+    }
+
+    private int completedAnalytes(LaboratoryAnalyteCatalog.Panel panel, List<TestRequest> requests,
+                                  java.util.Set<String> selectedCodes) {
+        return (int) selectedCodes.stream().filter(code -> requests.stream().anyMatch(item -> {
+            String itemCode = item.getService().getServiceCode();
+            return item.getStatus() == TestRequestStatus.COMPLETED
+                    && (code.equalsIgnoreCase(itemCode) || panel.serviceCode().equalsIgnoreCase(itemCode));
+        })).count();
+    }
+
+    private tools.jackson.databind.JsonNode resultDataForRequest(tools.jackson.databind.JsonNode values,
+                                                                  LaboratoryAnalyteCatalog.Panel panel,
+                                                                  String serviceCode) {
+        if (values == null || !values.isObject()) return values;
+        if (panel.serviceCode().equalsIgnoreCase(serviceCode)) return values;
+        String key = LaboratoryAnalyteCatalog.analyte(serviceCode).map(LaboratoryAnalyteCatalog.Analyte::fieldKey)
+                .orElse(null);
+        if (key == null) return values;
+        tools.jackson.databind.node.ObjectNode result = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        if (values.has(key)) result.set(key, values.get(key));
+        // Do not copy omissions of other paid analytes into this individual
+        // TestRequest.  Each billed analyte keeps only its own clinical data.
+        JsonNode omissions = values.path("_omissions");
+        if (omissions.isObject() && omissions.has(key)) {
+            tools.jackson.databind.node.ObjectNode ownOmissions = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+            ownOmissions.set(key, omissions.get(key));
+            result.set("_omissions", ownOmissions);
+        }
+        return result;
+    }
+
+    private record PanelContext(TestRequest anchor, LaboratoryAnalyteCatalog.Panel panel,
+                                List<TestRequest> requests, java.util.Map<String, TestRequest> purchasedByCode) {}
+
+    @Transactional(readOnly = true)
+    public List<TestRequestResponse> listByVisit(UUID visitId) {
+        visitRepo.findById(visitId)
+                .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
+        List<TestRequest> requests = repo.findAllByVisitIdWithDetails(visitId);
+        ensureCurrentStaffCanViewAny(requests);
+        return requests.stream()
+                .map(TestRequestResponse::from)
+                .toList();
+    }
+
+    /**
+     * Gan yeu cau CLS da dat va thanh toan truoc vao ho so dang kham.
+     * Khong tao TestRequest/Invoice moi. Tra ve false neu dich vu chua duoc dat truoc.
+     */
+    public boolean attachPrepaidRequestToExamination(UUID visitId, UUID medicalRecordId,
+                                                      UUID serviceId, UUID doctorId, String notes) {
+        MedicalRecord targetRecord = recordRepo.findById(medicalRecordId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ khám: " + medicalRecordId));
+        if (targetRecord.getVisit() == null || !visitId.equals(targetRecord.getVisit().getVisitId())) {
+            throw new BadRequestException("Hồ sơ khám không thuộc lượt khám hiện tại");
+        }
+
+        List<TestRequest> visitRequests = repo.findAllByVisitIdWithDetails(visitId);
+        TestRequest existing = visitRequests.stream()
+                .filter(request -> request.getService() != null
+                        && serviceId.equals(request.getService().getServiceId()))
+                .filter(request -> request.getStatus() != TestRequestStatus.CANCELLED)
+                .findFirst()
+                .orElse(null);
+        if (existing == null) return false;
+
+        MedicalRecord existingRecord = existing.getMedicalRecord();
+        if (existingRecord != null && medicalRecordId.equals(existingRecord.getRecordId())) {
+            // Dich vu da dat truoc va da duoc gan tu dong vao dung ho so kham.
+            // Xem nhu da xu ly de bac si chon lai tren giao dien khong tao trung/thu tien lai.
+            return true;
+        }
+        if (existingRecord != null && existingRecord.getQueueTicket() != null) {
+            throw new vn.edu.fpt.cares.exception.ConflictException(
+                    "Dịch vụ cận lâm sàng đã được một phòng khám khác chỉ định");
+        }
+        StaffInfo doctor = staffRepo.findById(doctorId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bác sĩ chỉ định"));
+
+        /*
+         * Lan chi dinh CLS dau tien la moc gom toan bo CLS da thanh toan tu dau
+         * cua cung visit. Chung van giu nguyen InvoiceItem, QueueTicket va lich su
+         * thanh toan; chi gan ve benh an nguon de hanh trinh cho benh nhan lam
+         * het cac phong CLS roi quay lai dung bac si.
+         */
+        boolean firstClinicalAssignment = visitRequests.stream().noneMatch(request ->
+                request.getStatus() != TestRequestStatus.CANCELLED
+                        && request.getMedicalRecord() != null
+                        && request.getMedicalRecord().getQueueTicket() != null);
+        List<TestRequest> requestsToAttach = firstClinicalAssignment
+                ? visitRequests.stream()
+                .filter(request -> request.getStatus() != TestRequestStatus.CANCELLED
+                        && request.getStatus() != TestRequestStatus.COMPLETED)
+                .filter(request -> request.getMedicalRecord() != null
+                        && request.getMedicalRecord().getQueueTicket() == null)
+                .filter(request -> request.getInvoiceItem() != null
+                        && request.getInvoiceItem().getInvoice() != null
+                        && request.getInvoiceItem().getInvoice().getMedicalRecord() == null
+                        && request.getInvoiceItem().getInvoice().getStatus()
+                        == vn.edu.fpt.cares.enums.InvoiceStatus.PAID)
+                .toList()
+                : List.of(existing);
+        if (!requestsToAttach.contains(existing)) {
+            requestsToAttach = new java.util.ArrayList<>(requestsToAttach);
+            requestsToAttach.add(existing);
+        }
+        for (TestRequest request : requestsToAttach) {
+            request.setMedicalRecord(targetRecord);
+            request.setRequestedBy(doctor);
+            if (request == existing && notes != null && !notes.isBlank()) {
+                request.setDescription(notes.trim());
+            }
+            repo.save(request);
+        }
+        return true;
+    }
+
+    @Transactional(readOnly = true)
+    public TestRequestResponse get(UUID id) {
+        TestRequest request = findById(id);
+        ensureCurrentStaffCanView(request);
+        return TestRequestResponse.from(request);
+    }
+
+    @Transactional(readOnly = true)
+    public TestRequestActionPermissionsResponse actionPermissions(UUID id) {
+        TestRequest request = findById(id);
+        ensureCurrentStaffCanView(request);
+
+        UUID staffId = authService.currentStaffId();
+        StaffInfo actor = staffId == null ? null : staffRepo.findById(staffId).orElse(null);
+        Department department = request.getPerformingDepartment();
+        boolean responsibleDoctor = isResponsibleDoctor(department, actor);
+        boolean assignedNurse = isAssignedNurse(department, actor);
+        boolean finished = request.getStatus() == TestRequestStatus.COMPLETED
+                || request.getStatus() == TestRequestStatus.CANCELLED;
+        QueueTicket queue = request.getQueueTicket();
+        boolean executionStarted = queue != null && (queue.getStatus() == QueueStatus.IN_PROGRESS
+                || queue.getStatus() == QueueStatus.DONE);
+        boolean canEdit = !finished && executionStarted && (responsibleDoctor || assignedNurse);
+        boolean canCancel = responsibleDoctor && java.util.Set.of(
+                TestRequestStatus.BLOCKED, TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS)
+                .contains(request.getStatus());
+
+        return new TestRequestActionPermissionsResponse(
+                true,
+                canEdit,
+                canEdit,
+                responsibleDoctor && !finished && executionStarted,
+                canCancel
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<TestRequestResponse> listByQueueTicket(UUID ticketId) {
+        if (!queueTicketRepo.existsById(ticketId)) {
+            throw new ResourceNotFoundException("Không tìm thấy phiếu cận lâm sàng: " + ticketId);
+        }
+        List<TestRequest> requests = repo.findAllByQueueTicket_TicketId(ticketId);
+        ensureCurrentStaffCanViewAny(requests);
+        return requests.stream()
+                .sorted(java.util.Comparator.comparing(TestRequest::getCreatedAt))
+                .map(TestRequestResponse::from)
+                .toList();
+    }
+
+    /** Bat dau xu ly cac yeu cau sau khi QueueTicket da chuyen sang IN_PROGRESS. */
+    public void startRequestsForQueue(UUID ticketId) {
+        repo.findAllByQueueTicket_TicketId(ticketId).stream()
+                .filter(request -> request.getStatus() == TestRequestStatus.PENDING)
+                .forEach(request -> {
+                    request.setStatus(TestRequestStatus.IN_PROGRESS);
+                    repo.save(request);
+                });
+    }
+
+    /** Tam khoa cac ky thuat khi benh nhan vang o buoc goi. */
+    public void blockRequestsForQueue(UUID ticketId) {
+        repo.findAllByQueueTicket_TicketId(ticketId).stream()
+                .filter(request -> request.getStatus() == TestRequestStatus.PENDING)
+                .forEach(request -> {
+                    request.setStatus(TestRequestStatus.BLOCKED);
+                    repo.save(request);
+                });
+    }
+
+    /** Dong bo ky thuat khi dua benh nhan vang quay lai workflow. */
+    public void restoreRequestsForQueue(UUID ticketId, boolean queueBlocked) {
+        repo.findAllByQueueTicket_TicketId(ticketId).stream()
+                .filter(request -> request.getStatus() == TestRequestStatus.BLOCKED)
+                .forEach(request -> {
+                    request.setStatus(queueBlocked ? TestRequestStatus.BLOCKED : TestRequestStatus.PENDING);
+                    repo.save(request);
+                });
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasIncompleteRequestsForRecord(UUID recordId) {
+        return repo.countByMedicalRecordAndStatusIn(recordId,
+                java.util.List.of(TestRequestStatus.BLOCKED, TestRequestStatus.PENDING,
+                        TestRequestStatus.IN_PROGRESS)) > 0;
+    }
+
+    public TestRequestResponse create(TestRequestCreateRequest req) {
+        if (req.invoiceItemId() != null) {
+            List<TestRequest> existing = repo.findByInvoiceItem_ItemId(req.invoiceItemId());
+            if (!existing.isEmpty()) return TestRequestResponse.from(existing.get(0));
+        }
+        MedicalRecord record = recordRepo.findById(req.medicalRecordId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Hồ sơ bệnh án không tồn tại: " + req.medicalRecordId()));
+        MedicalService service = serviceRepo.findById(req.serviceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + req.serviceId()));
+        requireParaclinicalService(service);
+        validateSelectionAgainstExistingRequests(record, List.of(service.getServiceId()));
+        ensureNoSignedSameDayResult(record, service);
+        ensureServiceNotAlreadyRequested(record, service.getServiceId());
+        Department dept = selectPerformingDepartment(service);
+        StaffInfo requestedBy = staffRepo.findById(req.requestedById())
+                .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại: " + req.requestedById()));
+
+        // Link voi InvoiceItem neu co (traceability: Invoice -> TestRequest)
+        InvoiceItem invoiceItem = null;
+        if (req.invoiceItemId() != null) {
+            invoiceItem = invoiceItemRepo.findById(req.invoiceItemId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Dòng hóa đơn không tồn tại: " + req.invoiceItemId()));
+        }
+
+        TestRequest t = TestRequest.builder()
+                .medicalRecord(record)
+                .service(service)
+                .performingDepartment(dept)
+                .description(req.notes())
+                .requestedBy(requestedBy)
+                .status(TestRequestStatus.PENDING)
+                .invoiceItem(invoiceItem)
+                .build();
+        TestRequest saved = repo.save(t);
+        
+        String patientName = record.getVisit() != null && record.getVisit().getCustomer() != null ? record.getVisit().getCustomer().getFullName() : "Khách";
+        notificationService.notifyStaffByRole(
+            vn.edu.fpt.cares.enums.SystemRole.CASHIER,
+            "Yêu cầu cận lâm sàng mới",
+            String.format("Bệnh nhân %s có chỉ định mới (%s), vui lòng thu phí.", patientName, service.getName()),
+            "TestRequest",
+            saved.getTestRequestId()
+        );
+        
+        return TestRequestResponse.from(saved);
+    }
+
+    /** Dung cho cac luong tao hoa don tu man kham, noi TestRequest chi duoc sinh sau thanh toan. */
+    public void ensureServiceNotAlreadyRequested(UUID medicalRecordId, UUID serviceId) {
+        MedicalRecord record = recordRepo.findById(medicalRecordId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ bệnh án không tồn tại: " + medicalRecordId));
+        ensureServiceNotAlreadyRequested(record, serviceId);
+    }
+
+    /** Tao hang cho sau thanh toan, ke ca luot chi co dich vu can lam sang chua co ho so. */
+    public TestRequestResponse createFromPaidInvoice(UUID visitId, UUID medicalRecordId, UUID serviceId,
+                                                     UUID requestedById, String notes, UUID invoiceItemId) {
+        MedicalService service = serviceRepo.findById(serviceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + serviceId));
+        requireParaclinicalService(service);
+        if (visitId != null) {
+            var targetVisit = visitRepo.findById(visitId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
+            if (sameDayParaclinicalResultService.hasReusableResult(targetVisit, serviceId)) {
+                throw new ConflictException(
+                        "Dịch vụ cận lâm sàng này đã có kết quả được ký trong ngày; hãy sử dụng kết quả tham chiếu"
+                );
+            }
+        }
+
+        /*
+         * Idempotency khong dong nghia voi return ngay lap tuc.
+         * Mot so luong cu/luong dat dich vu co the da tao TestRequest truoc khi
+         * hoa don duoc thanh toan. Ban ghi do chua co QueueTicket; neu return o
+         * day thi PAID thanh cong nhung benh nhan khong bao gio vao hang cho.
+         */
+        TestRequest existingRequest = invoiceItemId == null ? null
+                : repo.findTopByInvoiceItem_ItemIdOrderByCreatedAtAsc(invoiceItemId).orElse(null);
+        if (existingRequest != null && existingRequest.getStatus() == TestRequestStatus.CANCELLED) {
+            existingRequest = null;
+        }
+        if (existingRequest == null && visitId != null) {
+            // Chan trung theo nghiep vu visit + service, khong chi theo invoice
+            // item. Request da huy khong chan chi dinh/mua lai dich vu.
+            existingRequest = repo
+                    .findTopByMedicalRecord_Visit_VisitIdAndService_ServiceIdAndStatusNotOrderByCreatedAtAsc(
+                            visitId, serviceId, TestRequestStatus.CANCELLED)
+                    .orElse(null);
+        }
+
+        Department dept = existingRequest != null && existingRequest.getPerformingDepartment() != null
+                ? existingRequest.getPerformingDepartment()
+                : selectPerformingDepartment(service);
+        StaffInfo requester = resolvePaymentRequester(requestedById, dept);
+        if (requester == null) {
+            throw new BadRequestException("Phòng " + dept.getName()
+                    + " chưa có nhân sự phụ trách để tiếp nhận dịch vụ");
+        }
+
+        /*
+         * Yeu cau da duoc bac si chi dinh phai giu MedicalRecord goc de sau khi
+         * co du ket qua, hanh trinh biet can dua benh nhan quay lai dung bac si.
+         * Chi dich vu CLS mua truc tiep (khong co TestRequest truoc thanh toan)
+         * moi dung standalone record va tu ket thuc sau khi co du ket qua.
+         */
+        MedicalRecord record = existingRequest != null ? existingRequest.getMedicalRecord() : null;
+        if (record == null && medicalRecordId != null) {
+            record = recordRepo.findById(medicalRecordId)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Hồ sơ chỉ định cận lâm sàng không tồn tại: " + medicalRecordId));
+            if (record.getVisit() == null || !visitId.equals(record.getVisit().getVisitId())) {
+                throw new BadRequestException("Hồ sơ chỉ định không thuộc lượt khám của hóa đơn");
+            }
+        }
+        if (record == null) {
+            record = getOrCreateStandaloneRecord(visitId, requester, dept);
+        }
+
+        if (existingRequest != null) {
+            boolean changed = false;
+            if (existingRequest.getInvoiceItem() == null && invoiceItemId != null) {
+                InvoiceItem paidItem = invoiceItemRepo.findById(invoiceItemId).orElse(null);
+                if (paidItem != null) {
+                    existingRequest.setInvoiceItem(paidItem);
+                    changed = true;
+                }
+            }
+            if (existingRequest.getQueueTicket() == null) {
+                QueueTicket repairedQueue = ensureParaclinicalQueue(record, service, dept);
+                existingRequest.setQueueTicket(repairedQueue);
+                changed = true;
+                // Khong doi trang thai cua ket qua da hoan thanh/huy. Cac yeu cau
+                // dang cho phai phan anh dung trang thai cua queue vua gan.
+                if (existingRequest.getStatus() != TestRequestStatus.COMPLETED
+                        && existingRequest.getStatus() != TestRequestStatus.CANCELLED) {
+                    existingRequest.setStatus(repairedQueue.getStatus() == QueueStatus.BLOCKED
+                            ? TestRequestStatus.BLOCKED : TestRequestStatus.PENDING);
+                    changed = true;
+                }
+            } else if (existingRequest.getStatus() != TestRequestStatus.COMPLETED
+                    && existingRequest.getStatus() != TestRequestStatus.CANCELLED) {
+                // Du lieu cu co the da gan ticket nhung lech trang thai do ticket
+                // bi block/mo sau khi TestRequest duoc tao. Dong bo lai tai diem
+                // thanh toan ma khong lam song lai ket qua da xong.
+                QueueStatus queueStatus = existingRequest.getQueueTicket().getStatus();
+                if (queueStatus == QueueStatus.BLOCKED
+                        && existingRequest.getStatus() != TestRequestStatus.BLOCKED) {
+                    existingRequest.setStatus(TestRequestStatus.BLOCKED);
+                    changed = true;
+                } else if (java.util.List.of(QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_PROGRESS)
+                        .contains(queueStatus)
+                        && existingRequest.getStatus() == TestRequestStatus.BLOCKED) {
+                    existingRequest.setStatus(TestRequestStatus.PENDING);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                existingRequest = repo.save(existingRequest);
+                publishLabQueueUpdated(dept.getDepartmentId());
+            }
+            return TestRequestResponse.from(existingRequest);
+        }
+
+        InvoiceItem invoiceItem = invoiceItemId != null ? invoiceItemRepo.findById(invoiceItemId).orElse(null) : null;
+        QueueTicket labQueueTicket = ensureParaclinicalQueue(record, service, dept);
+        TestRequest request = TestRequest.builder().medicalRecord(record).service(service)
+                .performingDepartment(dept).description(notes).requestedBy(requester)
+                .status(labQueueTicket.getStatus() == QueueStatus.BLOCKED
+                        ? TestRequestStatus.BLOCKED : TestRequestStatus.PENDING)
+                .invoiceItem(invoiceItem).queueTicket(labQueueTicket).build();
+        TestRequest saved = repo.save(request);
+        publishLabQueueUpdated(dept.getDepartmentId());
+        notifyNurses(saved);
+        return TestRequestResponse.from(saved);
+    }
+
+    /**
+     * TestRequest sinh tu hoa don la yeu cau he thong sau khi thu ngan xac nhan
+     * thanh toan; no khong phai chi dinh cua bac si. Vi vay khong duoc chan luong
+     * chi vi phong CLS chua gan headDoctor. Uu tien dung nhan vien thu ngan/nguoi
+     * lap hoa don, sau do moi dung nhan su dang truc hoac bat ky nhan su cua phong.
+     */
+    private StaffInfo resolvePaymentRequester(UUID requestedById, Department department) {
+        if (requestedById != null) {
+            StaffInfo requestedBy = staffRepo.findById(requestedById).orElse(null);
+            if (requestedBy != null) return requestedBy;
+        }
+        StaffInfo onDuty = staffDutyService.findOnDutyStaff(department, LocalDateTime.now(CLINIC_ZONE))
+                .stream().findFirst().orElse(null);
+        if (onDuty != null) return onDuty;
+        return staffRepo.findByDepartment_DepartmentId(department.getDepartmentId()).stream()
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Mot visit chi co duy nhat mot MedicalRecord khong gan QueueTicket de chua
+     * toan bo CLS. Khoa visit truoc khi tim/tao de cac InvoiceItem xu ly dong
+     * thoi khong sinh ra hai standalone record.
+     */
+    private MedicalRecord getOrCreateStandaloneRecord(UUID visitId, StaffInfo requester, Department department) {
+        if (visitId == null) {
+            throw new BadRequestException("Không thể tạo yêu cầu cận lâm sàng khi chưa có lượt khám");
+        }
+        visitRepo.findByIdForUpdate(visitId)
+                .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
+
+        MedicalRecord standalone = recordRepo
+                .findFirstByVisit_VisitIdAndQueueTicketIsNullOrderByCreatedAtDesc(visitId)
+                .orElse(null);
+        if (standalone != null) return standalone;
+
+        StaffInfo responsibleStaff = staffDutyService.findOnDutyStaff(
+                        department, LocalDateTime.now(CLINIC_ZONE)).stream()
+                .filter(staff -> staff.getSystemRole() != null && staff.getSystemRole().isDoctor())
+                .findFirst().orElse(requester);
+        if (responsibleStaff == null) {
+            throw new BadRequestException("Phòng cận lâm sàng chưa có nhân sự trực để tiếp nhận yêu cầu");
+        }
+        var created = medicalRecordService.create(
+                new vn.edu.fpt.cares.dto.medicalrecord.MedicalRecordCreateRequest(
+                        visitId,
+                        responsibleStaff.getStaffId(),
+                        "Dịch vụ cận lâm sàng",
+                        null, null, null, null, null, null));
+        return recordRepo.findById(created.recordId())
+                .orElseThrow(() -> new ResourceNotFoundException("Không thể tạo hồ sơ cận lâm sàng cho lượt khám"));
+    }
+
+    private void publishLabQueueUpdated(UUID departmentId) {
+        try {
+            messagingTemplate.convertAndSend("/topic/department-" + departmentId + "-lab-queue", "LAB_UPDATED");
+            messagingTemplate.convertAndSend("/topic/queue-display", "QUEUE_UPDATED");
+        } catch (Exception ignored) {
+            // Khong de WebSocket lam huy giao dich nghiep vu.
+        }
+    }
+    
+    private void publishExaminationQueueUpdated(QueueTicket queueTicket) {
+        if (queueTicket == null || queueTicket.getDepartment() == null) return;
+        try {
+            messagingTemplate.convertAndSend(
+                    "/topic/department-" + queueTicket.getDepartment().getDepartmentId() + "-queue",
+                    "QUEUE_UPDATED");
+            messagingTemplate.convertAndSend("/topic/queue-display", "QUEUE_UPDATED");
+        } catch (Exception ignored) {
+            // Khong de WebSocket lam huy giao dich nghiep vu.
+        }
+    }
+
+    private void notifyNurses(TestRequest t) {
+        // Một gói xét nghiệm có thể được lưu thành nhiều TestRequest chỉ số lẻ
+        // để nhập kết quả và đối soát. Chỉ request đầu tiên của cùng gói/queue
+        // được phát thông báo, tránh 8 chỉ số CBC tạo thành 8 toast riêng.
+        if (!isFirstRequestOfNotificationGroup(t)) return;
+        String patientName = t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null && t.getMedicalRecord().getVisit().getCustomer() != null ? t.getMedicalRecord().getVisit().getCustomer().getFullName() : "Khách";
+        String serviceName = notificationGroupName(t.getService());
+        String content = String.format("Có yêu cầu mới (%s) cần thực hiện cho bệnh nhân %s", serviceName, patientName);
+        
+        List<StaffInfo> labStaff = staffDutyService.findOnDutyStaff(
+                t.getPerformingDepartment(), LocalDateTime.now(CLINIC_ZONE));
+        for (StaffInfo staff : labStaff) {
+            boolean clinicalStaff = staff.getSystemRole() != null
+                    && (staff.getSystemRole().isDoctor()
+                    || staff.getSystemRole() == vn.edu.fpt.cares.enums.SystemRole.NURSE);
+            if (clinicalStaff && staff.getProfile() != null) {
+                try {
+                    notificationService.create(new vn.edu.fpt.cares.dto.notification.NotificationCreateRequest(
+                            staff.getProfile().getProfileId(),
+                            vn.edu.fpt.cares.enums.NotificationType.GENERAL,
+                            vn.edu.fpt.cares.enums.NotificationChannel.IN_APP,
+                            "Yêu cầu cận lâm sàng mới",
+                            content,
+                            "TestRequest",
+                            t.getTestRequestId()
+                    ));
+                } catch (Exception e) {
+                    log.warn("Không thể gửi thông báo cho yêu cầu CLS {}", t.getTestRequestId(), e);
+                }
+            }
+        }
+    }
+
+    private boolean isFirstRequestOfNotificationGroup(TestRequest request) {
+        if (request == null || request.getQueueTicket() == null) return true;
+        String groupCode = notificationGroupCode(request.getService());
+        long sameGroupCount = repo.findAllByQueueTicket_TicketId(request.getQueueTicket().getTicketId()).stream()
+                .filter(item -> item.getStatus() != TestRequestStatus.CANCELLED)
+                .filter(item -> groupCode.equals(notificationGroupCode(item.getService())))
+                .count();
+        return sameGroupCount <= 1;
+    }
+
+    private String notificationGroupCode(MedicalService service) {
+        if (service == null || service.getServiceCode() == null) return "PARACLINICAL";
+        return LaboratoryAnalyteCatalog.panel(service.getServiceCode())
+                .or(() -> LaboratoryAnalyteCatalog.parentPanel(service.getServiceCode()))
+                .map(LaboratoryAnalyteCatalog.Panel::serviceCode)
+                .orElse(service.getServiceCode());
+    }
+
+    private String notificationGroupName(MedicalService service) {
+        if (service == null || service.getServiceCode() == null) return "Cận lâm sàng";
+        return LaboratoryAnalyteCatalog.panel(service.getServiceCode())
+                .or(() -> LaboratoryAnalyteCatalog.parentPanel(service.getServiceCode()))
+                .map(LaboratoryAnalyteCatalog.Panel::name)
+                .orElse(service.getName());
+    }
+
+    public TestRequestResponse update(UUID id, TestRequestUpdateRequest req) {
+        TestRequest t = findById(id);
+        ensureCurrentStaffCanOperate(t);
+        if (req.status() != null) {
+            throw new BadRequestException(
+                    "Trạng thái yêu cầu được cập nhật tự động theo hàng chờ; vui lòng dùng đúng thao tác gọi, bắt đầu, hoàn thành hoặc hủy");
+        }
+        TestRequest saved = repo.save(t);
+        try {
+            messagingTemplate.convertAndSend("/topic/department-" + saved.getPerformingDepartment().getDepartmentId() + "-lab-queue", "LAB_UPDATED");
+        } catch (Exception e) {
+            log.warn("Không thể phát sự kiện cập nhật hàng chờ CLS {}", saved.getTestRequestId(), e);
+        }
+        
+        return TestRequestResponse.from(saved);
+    }
+    
+    private void notifyDoctorResult(TestRequest t) {
+        if (t.getRequestedBy() == null || t.getRequestedBy().getProfile() == null) return;
+        String patientName = t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null && t.getMedicalRecord().getVisit().getCustomer() != null ? t.getMedicalRecord().getVisit().getCustomer().getFullName() : "Khách";
+        String serviceName = t.getService() != null ? t.getService().getName() : "Cận lâm sàng";
+        String content = String.format("Bệnh nhân %s đã có kết quả %s", patientName, serviceName);
+        
+        try {
+            notificationService.create(new vn.edu.fpt.cares.dto.notification.NotificationCreateRequest(
+                    t.getRequestedBy().getProfile().getProfileId(),
+                    vn.edu.fpt.cares.enums.NotificationType.GENERAL,
+                    vn.edu.fpt.cares.enums.NotificationChannel.IN_APP,
+                    "Kết quả xét nghiệm",
+                    content,
+                    "TestRequest",
+                    t.getTestRequestId()
+            ));
+        } catch (Exception e) {
+            log.warn("Không thể gửi thông báo kết quả CLS {}", t.getTestRequestId(), e);
+        }
+    }
+
+    public void delete(UUID id) {
+        cancel(id, new TestRequestCancelRequest("Hủy yêu cầu thay cho thao tác xóa"));
+    }
+
+    // Override default method trong interface
+    @Override
+    public TestRequest findById(UUID id) {
+        return repo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + id));
+    }
+
+    // --- TestResult sub-resource ---
+
+    @Transactional(readOnly = true)
+    public TestResultResponse getResult(UUID testRequestId) {
+        TestRequest t = findById(testRequestId);
+        ensureCurrentStaffCanView(t);
+        TestResult r = resultRepo.findByTestRequest_TestRequestId(t.getTestRequestId())
+                .orElseThrow(() -> new ResourceNotFoundException("Chưa có kết quả cho yêu cầu này"));
+        return TestResultResponse.from(r);
+    }
+
+    @Transactional(readOnly = true)
+    public vn.edu.fpt.cares.dto.clinicalform.ResolvedClinicalFormResponse getClinicalForm(UUID testRequestId) {
+        TestRequest request = findById(testRequestId);
+        ensureCurrentStaffCanView(request);
+        if (request.getService() == null) throw new ResourceNotFoundException("Yêu cầu chưa gắn dịch vụ");
+        TestResult result = resultRepo.findByTestRequest_TestRequestId(testRequestId).orElse(null);
+        return fixedClinicalFormService.resolveForService(request.getService().getServiceId(),
+                result == null ? null : result.getResultData());
+    }
+
+    public TestResultResponse createResult(UUID testRequestId, TestResultCreateRequest req) {
+        TestRequest t = repo.findByIdForUpdate(testRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
+        ensureCurrentStaffCanOperate(t);
+        ensureExecutionStarted(t);
+        // Kiem tra neu da COMPLETED thi khong cho tao moi
+        if (t.getStatus() == TestRequestStatus.COMPLETED) {
+            throw new ConflictException("Yêu cầu cận lâm sàng đã hoàn thành, không thể tạo kết quả mới");
+        }
+        if (resultRepo.findByTestRequest_TestRequestId(testRequestId).isPresent()) {
+            throw new ConflictException("Yêu cầu đã có kết quả; vui lòng dùng chức năng cập nhật");
+        }
+        StaffInfo performedBy = resolveCurrentPerformer(req.performedById());
+        TestResult r = TestResult.builder()
+                .testRequest(t)
+                .imageUrl(req.imageUrl())
+                .conclusion(req.conclusion())
+                .sampleId(req.sampleId())
+                .performedBy(performedBy)
+                .performedAt(LocalDateTime.now())
+                .build();
+        applyStructuredResult(t, r, req.resultData(), false);
+        applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
+        TestResult saved = resultRepo.save(r);
+        // Keep the inverse side in sync inside the current persistence context.
+        // savePanelResult returns a freshly mapped workbench in the same
+        // transaction; without this assignment that response sees no result
+        // until a browser reload starts another transaction.
+        t.setTestResult(saved);
+
+        if (t.getStatus() == TestRequestStatus.PENDING) {
+            t.setStatus(TestRequestStatus.IN_PROGRESS);
+            repo.save(t);
+        }
+
+        return TestResultResponse.from(saved);
+    }
+
+    public TestResultResponse updateResult(UUID testRequestId, TestResultUpdateRequest req) {
+        TestRequest t = repo.findByIdForUpdate(testRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
+        ensureCurrentStaffCanOperate(t);
+        ensureExecutionStarted(t);
+
+        if (Boolean.TRUE.equals(req.complete())) {
+            throw new BadRequestException("Vui lòng dùng chức năng ký xác nhận của bác sĩ để hoàn thành kết quả");
+        }
+
+        // Kiem tra neu da COMPLETED thi khong cho cap nhat (tru khi muon cap nhat lai ket qua)
+        if (t.getStatus() == TestRequestStatus.COMPLETED && !Boolean.TRUE.equals(req.complete())) {
+            throw new ConflictException("Yêu cầu cận lâm sàng đã hoàn thành, không thể cập nhật kết quả");
+        }
+
+        TestResult r = resultRepo.findByTestRequest_TestRequestId(t.getTestRequestId())
+                .orElseThrow(() -> new ResourceNotFoundException("Chưa có kết quả để cập nhật"));
+        updateResultFileUrl(r, req.imageUrl());
+        if (req.conclusion() != null) r.setConclusion(req.conclusion());
+        if (req.sampleId() != null) r.setSampleId(req.sampleId());
+        applyStructuredResult(t, r, req.resultData(), false);
+        applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
+
+        if (t.getStatus() == TestRequestStatus.PENDING) {
+            t.setStatus(TestRequestStatus.IN_PROGRESS);
+            repo.save(t);
+        }
+
+        TestResult saved = resultRepo.save(r);
+        return TestResultResponse.from(saved);
+    }
+
+    /**
+     * Hoan thanh ket qua xet nghiem - TAO MOI hoac CAP NHAT ROI CHUYEN STATUS SANG COMPLETED.
+     * Phu hop cho truong hop luu nhap + hoan thanh sau.
+     */
+    public TestResultResponse completeResult(UUID testRequestId, TestResultCreateRequest req) {
+        // Dung findByIdWithResult de eager fetch testResult - tranh lazy loading
+        TestRequest t = repo.findByIdForUpdate(testRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + testRequestId));
+        StaffInfo verifier = requireResponsibleDoctorLocked(t);
+        ensureResultNotCancelled(t);
+
+        // Kiem tra neu da COMPLETED thi khong cho tao/cap nhat nua
+        if (t.getStatus() == TestRequestStatus.COMPLETED) {
+            throw new ConflictException("Yêu cầu cận lâm sàng đã hoàn thành, không thể thay đổi kết quả");
+        }
+        QueueTicket executionQueue = t.getQueueTicket();
+        if (executionQueue == null || (executionQueue.getStatus() != QueueStatus.IN_PROGRESS
+                && executionQueue.getStatus() != QueueStatus.DONE)) {
+            throw new BadRequestException("Chỉ có thể hoàn thành kết quả sau khi bệnh nhân đã vào phòng thực hiện");
+        }
+        TestResult r;
+
+        if (t.getTestResult() != null) {
+            // Neu da co ket qua, cap nhat
+            r = t.getTestResult();
+            updateResultFileUrl(r, req.imageUrl());
+            if (req.conclusion() != null) r.setConclusion(req.conclusion());
+            if (req.sampleId() != null) r.setSampleId(req.sampleId());
+            applyStructuredResult(t, r, req.resultData(), true);
+            applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
+        } else {
+            // Tao moi
+            StaffInfo performedBy = resolveCurrentPerformer(req.performedById());
+            r = TestResult.builder()
+                    .testRequest(t)
+                    .imageUrl(req.imageUrl())
+                    .conclusion(req.conclusion())
+                    .sampleId(req.sampleId())
+                    .performedBy(performedBy)
+                    .performedAt(LocalDateTime.now())
+                    .build();
+            applyStructuredResult(t, r, req.resultData(), true);
+            applySpecimenInformation(t, r, req.sampleId(), req.sampleType(), req.sampleStatus());
+        }
+
+        if (r.getSampleStatus() == vn.edu.fpt.cares.enums.SpecimenStatus.REJECTED || r.getSampleStatus() == vn.edu.fpt.cares.enums.SpecimenStatus.RECOLLECT) {
+            throw new BadRequestException("Không thể hoàn thành kết quả khi mẫu vật bị hỏng hoặc cần lấy lại");
+        }
+
+        if (r.getConclusion() == null || r.getConclusion().isBlank()) {
+            throw new BadRequestException("Vui lòng nhập kết luận của bác sĩ");
+        }
+        if (r.getResultData() == null && (r.getImageUrl() == null || r.getImageUrl().isBlank()))
+            throw new BadRequestException("Vui lòng nhập kết quả có cấu trúc hoặc tải tệp kết quả");
+
+        r.setVerifiedBy(verifier);
+        r.setVerifiedAt(LocalDateTime.now());
+
+        resultRepo.save(r);
+
+        // Chuyen status sang COMPLETED
+        t.setStatus(TestRequestStatus.COMPLETED);
+        t.setCompletedAt(LocalDateTime.now());
+        repo.save(t);
+
+        // Hoàn thành phiếu gọi số cận lâm sàng khi mọi kỹ thuật trong cùng phiếu đã xong.
+        if (t.getQueueTicket() != null) {
+            UUID labTicketId = t.getQueueTicket().getTicketId();
+            long remainingInLabQueue = repo.countByQueueTicket_TicketIdAndStatusIn(
+                    labTicketId, java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS, TestRequestStatus.BLOCKED));
+            if (remainingInLabQueue == 0) {
+                t.getQueueTicket().setStatus(QueueStatus.DONE);
+                t.getQueueTicket().setCompletedAt(LocalDateTime.now());
+                queueTicketRepo.save(t.getQueueTicket());
+            }
+        }
+
+        // Kiem tra tat ca TestRequest trong medical record de set status TEST_DONE hoac WAITING_FOR_TEST
+        if (t.getMedicalRecord() != null && t.getMedicalRecord().getVisit() != null) {
+            // Chi dua benh nhan ve dung phong kham da chi dinh yeu cau nay.
+            // Khong tim "phong dang cho" dau tien cua visit vi mot lich hen co
+            // the co nhieu benh an kham doc lap.
+            QueueTicket queueTicket = t.getMedicalRecord().getQueueTicket();
+            if (queueTicket != null && queueTicket.getStatus() != QueueStatus.WAITING_FOR_TEST
+                    && queueTicket.getStatus() != QueueStatus.TEST_DONE) {
+                queueTicket = null;
+            }
+            if (queueTicket != null) {
+                long totalTestRequests = repo.countByMedicalRecord_MedicalRecordId(t.getMedicalRecord().getRecordId());
+                long incompleteCount = repo.countByMedicalRecordAndStatusIn(
+                        t.getMedicalRecord().getRecordId(),
+                        java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS, TestRequestStatus.BLOCKED));
+
+                completeStandaloneRecordIfReady(t.getMedicalRecord(), totalTestRequests, incompleteCount);
+                boolean waitingForCarriedPrebookedTests = patientJourneyService
+                        .hasOutstandingTestsForExamination(queueTicket.getTicketId());
+                if (totalTestRequests > 0 && incompleteCount == 0
+                        && !waitingForCarriedPrebookedTests) {
+                    queueTicket.setStatus(QueueStatus.TEST_DONE);
+                } else {
+                    queueTicket.setStatus(QueueStatus.WAITING_FOR_TEST);
+                    queueTicket.setCalledAt(null);
+                }
+                queueTicketRepo.save(queueTicket);
+                publishExaminationQueueUpdated(queueTicket);
+            }
+            // CLS dat truoc co MedicalRecord ky thuat rieng, nen sau khi no
+            // hoan thanh can kiem tra lai benh an bac si dang cho ket qua.
+            patientJourneyService.refreshWaitingExaminationsAfterTestCompletion(
+                    t.getMedicalRecord().getVisit().getVisitId());
+            if (queueTicket == null || queueTicket.getStatus() != QueueStatus.TEST_DONE)
+                patientJourneyService.activateNext(t.getMedicalRecord().getVisit().getVisitId());
+        }
+
+        publishLabQueueUpdated(t.getPerformingDepartment().getDepartmentId());
+        return TestResultResponse.from(r);
+    }
+
+    private void applyStructuredResult(TestRequest request, TestResult result,
+                                       JsonNode input,
+                                       boolean requireComplete) {
+        if (input == null && !requireComplete) return;
+        if (request.getService() == null) throw new BadRequestException("Yêu cầu chưa gắn dịch vụ để xác định biểu mẫu");
+        JsonNode effectiveInput = input != null ? input : result.getResultData();
+        result.setResultData(effectiveInput);
+    }
+
+    /**
+     * Chi ap dung mau vat cho dich vu duoc admin cau hinh requiresSpecimen. Thoi gian va
+     * nguoi lay mau chi duoc ghi o lan luu dau tien va luon lay tu tai khoan dang dang nhap.
+     */
+    private void applySpecimenInformation(TestRequest request, TestResult result,
+                                          String sampleId,
+                                          vn.edu.fpt.cares.enums.SpecimenType sampleType,
+                                          vn.edu.fpt.cares.enums.SpecimenStatus sampleStatus) {
+        String normalizedSampleId = sampleId == null || sampleId.isBlank() ? null : sampleId.trim();
+        boolean hasSpecimenInput = normalizedSampleId != null || sampleType != null || sampleStatus != null;
+        boolean specimenService = request.getService() != null
+                && Boolean.TRUE.equals(request.getService().getRequiresSpecimen());
+        if (!specimenService) {
+            if (hasSpecimenInput) {
+                throw new BadRequestException("Dịch vụ này không sử dụng mẫu vật");
+            }
+            result.setSampleId(null);
+            result.setSampleType(null);
+            result.setSampleStatus(null);
+            return;
+        }
+        if (normalizedSampleId == null && (result.getSampleId() == null || result.getSampleId().isBlank())) {
+            String compactId = request.getTestRequestId().toString().replace("-", "")
+                    .substring(0, 8).toUpperCase(java.util.Locale.ROOT);
+            normalizedSampleId = "SMP-" + LocalDate.now(CLINIC_ZONE)
+                    .format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE) + "-" + compactId;
+        }
+        if (sampleType == null && result.getSampleType() == null) {
+            sampleType = defaultSpecimenType(request);
+        }
+        if (sampleStatus == null && result.getSampleStatus() == null) {
+            sampleStatus = vn.edu.fpt.cares.enums.SpecimenStatus.ACCEPTED;
+        }
+        hasSpecimenInput = normalizedSampleId != null || sampleType != null || sampleStatus != null;
+        if (normalizedSampleId != null) result.setSampleId(normalizedSampleId);
+        if (sampleType != null) result.setSampleType(sampleType);
+        if (sampleStatus != null) result.setSampleStatus(sampleStatus);
+        if (hasSpecimenInput && result.getCollectedAt() == null) {
+            StaffInfo collector = authService.currentStaffId() == null ? null
+                    : staffRepo.findById(authService.currentStaffId()).orElse(null);
+            if (collector == null) {
+                throw new BadRequestException("Không tìm thấy nhân viên đang lấy mẫu");
+            }
+            result.setCollectedAt(LocalDateTime.now());
+            result.setCollectedBy(collector);
+        }
+    }
+
+    private vn.edu.fpt.cares.enums.SpecimenType defaultSpecimenType(TestRequest request) {
+        String service = request.getService() == null ? "" : ((request.getService().getServiceCode() == null ? "" : request.getService().getServiceCode())
+                + " " + (request.getService().getName() == null ? "" : request.getService().getName()))
+                .toLowerCase(java.util.Locale.ROOT);
+        if (service.contains("nước tiểu") || service.contains("urine"))
+            return vn.edu.fpt.cares.enums.SpecimenType.URINE;
+        if (service.contains("ngoáy") || service.contains("swab") || service.contains("cúm"))
+            return vn.edu.fpt.cares.enums.SpecimenType.SWAB;
+        return vn.edu.fpt.cares.enums.SpecimenType.BLOOD;
+    }
+
+    /**
+     * TestResultResponse tra URL xem PDF qua endpoint bao ve. Khi frontend gui lai URL nay
+     * trong luc luu nhap/ky ket qua, giu nguyen duong dan tep goc thay vi ghi de bang URL xem.
+     */
+    private void updateResultFileUrl(TestResult result, String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) return;
+        String protectedFileUrl = "/api/v1/test-results/" + result.getResultId() + "/file";
+        if (!protectedFileUrl.equals(imageUrl)) {
+            result.setImageUrl(imageUrl);
+        }
+    }
+
+    /** Lượt chỉ làm cận lâm sàng không quay lại phòng khám, nên tự đóng hồ sơ khi đủ kết quả. */
+    private void completeStandaloneRecordIfReady(MedicalRecord record, long total, long incomplete) {
+        if (record != null && record.getQueueTicket() == null && total > 0 && incomplete == 0
+                && record.getStatus() != MedicalRecordStatus.COMPLETED) {
+            record.setStatus(MedicalRecordStatus.COMPLETED);
+            record.setCompletedAt(LocalDateTime.now());
+            recordRepo.save(record);
+        }
+    }
+
+    /**
+     * Upload ket qua xet nghiem - luu file vao local storage.
+     * Tra ve URL de truy cap file.
+     */
+    public String uploadResultFile(UUID testRequestId, MultipartFile file) throws IOException {
+        TestRequest request = findById(testRequestId);
+        ensureCurrentStaffCanOperate(request);
+        ensureExecutionStarted(request);
+
+        if (file == null || file.isEmpty()) {
+            throw new BadRequestException("Tệp kết quả không được để trống");
+        }
+        String originalName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "result";
+        String lowerName = originalName.toLowerCase(java.util.Locale.ROOT);
+        String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase(java.util.Locale.ROOT);
+        boolean pdf = lowerName.endsWith(".pdf") && "application/pdf".equals(contentType);
+        boolean jpeg = (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) && "image/jpeg".equals(contentType);
+        boolean png = lowerName.endsWith(".png") && "image/png".equals(contentType);
+        boolean webp = lowerName.endsWith(".webp") && "image/webp".equals(contentType);
+        if (!pdf && !jpeg && !png && !webp) {
+            throw new BadRequestException("Chỉ chấp nhận tệp PDF hoặc ảnh JPG, PNG, WEBP");
+        }
+        if (file.getSize() > 10L * 1024 * 1024) {
+            throw new BadRequestException("Tệp kết quả không được vượt quá 10 MB");
+        }
+        // PDF readers allow the %PDF- header to appear within the first 1024
+        // bytes (some exporters prepend a BOM/newline). Keep magic-byte
+        // validation, but do not reject an otherwise valid PDF for that reason.
+        byte[] signature = new byte[1024];
+        int signatureLength;
+        try (var input = file.getInputStream()) {
+            signatureLength = input.read(signature);
+        }
+        boolean validSignature = pdf && containsSequence(signature, signatureLength, "%PDF-".getBytes(java.nio.charset.StandardCharsets.US_ASCII))
+                || jpeg && signatureLength >= 3 && (signature[0] & 0xff) == 0xff && (signature[1] & 0xff) == 0xd8 && (signature[2] & 0xff) == 0xff
+                || png && startsWith(signature, signatureLength, new byte[]{(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a})
+                || webp && signatureLength >= 12
+                && startsWith(signature, signatureLength, "RIFF".getBytes(java.nio.charset.StandardCharsets.US_ASCII))
+                && signature[8] == 'W' && signature[9] == 'E' && signature[10] == 'B' && signature[11] == 'P';
+        if (!validSignature) {
+            throw new BadRequestException("Nội dung tệp không khớp định dạng PDF hoặc ảnh đã chọn");
+        }
+
+        // Tao thu muc luu tru neu chua co
+        Path uploadDir = Paths.get(uploadRoot, "test-results");
+        Files.createDirectories(uploadDir);
+
+        // Tao ten file duy nhat
+        String safeName = Paths.get(originalName).getFileName().toString().replaceAll("[^a-zA-Z0-9._-]", "_");
+        String fileName = System.currentTimeMillis() + "_" + safeName;
+        Path target = uploadDir.resolve(fileName);
+        Files.copy(file.getInputStream(), target);
+
+        // Tra ve URL (trong moi truong dev)
+        return "/uploads/test-results/" + fileName;
+    }
+
+    private boolean startsWith(byte[] content, int contentLength, byte[] prefix) {
+        if (contentLength < prefix.length) return false;
+        for (int i = 0; i < prefix.length; i++) {
+            if (content[i] != prefix[i]) return false;
+        }
+        return true;
+    }
+
+    private boolean containsSequence(byte[] content, int contentLength, byte[] sequence) {
+        if (contentLength < sequence.length) return false;
+        for (int offset = 0; offset <= contentLength - sequence.length; offset++) {
+            boolean matches = true;
+            for (int index = 0; index < sequence.length; index++) {
+                if (content[offset + index] != sequence[index]) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) return true;
+        }
+        return false;
+    }
+
+    /** Huy yeu cau chi dinh khi phong thuc hien chua bat dau xu ly. */
+    public TestRequestResponse cancel(UUID id, TestRequestCancelRequest req) {
+        TestRequest t = repo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cận lâm sàng không tồn tại: " + id));
+        requireResponsibleDoctorLocked(t);
+
+        if (t.getStatus() == TestRequestStatus.CANCELLED) {
+            throw new vn.edu.fpt.cares.exception.ConflictException("Yêu cầu đã bị hủy");
+        }
+        if (t.getStatus() != TestRequestStatus.PENDING
+                && t.getStatus() != TestRequestStatus.BLOCKED
+                && t.getStatus() != TestRequestStatus.IN_PROGRESS) {
+            throw new vn.edu.fpt.cares.exception.ConflictException(
+                    "Chỉ có thể hủy yêu cầu trước khi kết quả được ký");
+        }
+
+        t.setStatus(TestRequestStatus.CANCELLED);
+        t.setCancelReason(req.reason());
+        repo.save(t);
+
+        QueueTicket paraclinicalQueue = t.getQueueTicket();
+        boolean closedCancelledQueue = false;
+        if (paraclinicalQueue != null) {
+            long remainingInQueue = repo.countByQueueTicket_TicketIdAndStatusIn(
+                    paraclinicalQueue.getTicketId(),
+                    java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS,
+                            TestRequestStatus.BLOCKED));
+            if (remainingInQueue == 0) {
+                // SKIPPED danh cho benh nhan vang va se tam khoa ca hanh trinh.
+                // Tat ca ky thuat bi huy nghia la buoc nay da ket thuc, phai mo
+                // phong ke tiep thay vi bat nguoi dung "quay lai hang cho".
+                paraclinicalQueue.setStatus(QueueStatus.DONE);
+                paraclinicalQueue.setCompletedAt(LocalDateTime.now());
+                queueTicketRepo.save(paraclinicalQueue);
+                closedCancelledQueue = true;
+            }
+        }
+
+        MedicalRecord sourceRecord = t.getMedicalRecord();
+        if (sourceRecord != null && sourceRecord.getVisit() != null) {
+            long remainingInRecord = repo.countByMedicalRecordAndStatusIn(
+                    sourceRecord.getRecordId(),
+                    java.util.List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS,
+                            TestRequestStatus.BLOCKED));
+            QueueTicket sourceQueue = sourceRecord.getQueueTicket();
+            if (remainingInRecord == 0 && sourceQueue != null
+                    && sourceQueue.getStatus() == QueueStatus.WAITING_FOR_TEST) {
+                // Khong con yeu cau CLS can cho: dua benh nhan ve lai phong
+                // nguon de bac si tiep tuc ket luan hoac chi dinh lai.
+                sourceQueue.setStatus(QueueStatus.TEST_DONE);
+                sourceQueue.setCalledAt(null);
+                queueTicketRepo.save(sourceQueue);
+            } else if (remainingInRecord == 0 && sourceQueue == null) {
+                completeStandaloneRecordIfReady(sourceRecord,
+                        repo.countByMedicalRecord_MedicalRecordId(sourceRecord.getRecordId()), 0);
+            }
+            if (closedCancelledQueue || (remainingInRecord == 0 && sourceQueue == null)) {
+                patientJourneyService.activateNext(sourceRecord.getVisit().getVisitId());
+            }
+        }
+
+        if (t.getPerformingDepartment() != null) {
+            publishLabQueueUpdated(t.getPerformingDepartment().getDepartmentId());
+        }
+
+        return TestRequestResponse.from(t);
+    }
+
+    /**
+     * Tao nhieu TestRequest cung luc - bac si chon nhieu dich vu xet nghiem.
+     * - Bo qua cac dich vu da ton tai trong medical record.
+     * - invoiceItemId: lien ket voi InvoiceItem tu hoa don (de trace luong Invoice -> TestRequest).
+     */
+    public List<TestRequestResponse> createBatch(TestRequestBatchCreateRequest req) {
+        MedicalRecord record = recordRepo.findById(req.medicalRecordId())
+                .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ bệnh án không tồn tại"));
+        StaffInfo requestedBy = staffRepo.findById(req.requestedById())
+                .orElseThrow(() -> new ResourceNotFoundException("Nhân viên không tồn tại"));
+
+        // Link voi InvoiceItem neu co
+        InvoiceItem invoiceItem = null;
+        if (req.invoiceItemId() != null) {
+            invoiceItem = invoiceItemRepo.findById(req.invoiceItemId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Dòng hóa đơn không tồn tại: " + req.invoiceItemId()));
+        }
+
+        InvoiceItem finalInvoiceItem = invoiceItem;
+        java.util.List<MedicalService> normalizedServices =
+                serviceSelectionPolicyService.normalizeOrThrow(req.serviceIds());
+        validateSelectionAgainstExistingRequests(record,
+                normalizedServices.stream().map(MedicalService::getServiceId).toList());
+        java.util.List<TestRequest> toCreate = normalizedServices.stream()
+                .map((java.util.function.Function<MedicalService, TestRequest>) service -> {
+                    requireParaclinicalService(service);
+                    ensureNoSignedSameDayResult(record, service);
+                    ensureServiceNotAlreadyRequested(record, service.getServiceId());
+                    Department dept = selectPerformingDepartment(service);
+                    return TestRequest.builder()
+                            .medicalRecord(record)
+                            .service(service)
+                            .performingDepartment(dept)
+                            .description(req.notes())
+                            .requestedBy(requestedBy)
+                            .status(TestRequestStatus.PENDING)
+                            .invoiceItem(finalInvoiceItem)
+                            .build();
+                })
+                .toList();
+
+
+        return repo.saveAll(toCreate).stream()
+                .map(TestRequestResponse::from)
+                .toList();
+    }
+
+    /** Chan chi dinh lap dich vu trong cung CustomerVisit, ke ca khi y lenh truoc do
+     * nam o mot MedicalRecord khac cua cung luot kham. */
+    private void ensureServiceNotAlreadyRequested(MedicalRecord record, UUID serviceId) {
+        if (record == null || record.getVisit() == null) return;
+        UUID visitId = record.getVisit().getVisitId();
+        if (repo.existsByMedicalRecord_Visit_VisitIdAndService_ServiceIdAndStatusNot(
+                visitId, serviceId, TestRequestStatus.CANCELLED)) {
+            throw new ConflictException("Dịch vụ này đã được chỉ định trong lượt khám hiện tại.");
+        }
+    }
+
+    private void validateSelectionAgainstExistingRequests(MedicalRecord record, List<UUID> requestedServiceIds) {
+        if (serviceSelectionPolicyService == null || record == null || record.getVisit() == null) return;
+        serviceSelectionPolicyService.validateAgainstExisting(requestedServiceIds,
+                repo.findDistinctActiveServiceIdsByVisit(
+                        record.getVisit().getVisitId(), TestRequestStatus.CANCELLED));
+    }
+
+    private void requireParaclinicalService(MedicalService service) {
+        if (service == null || service.getDepartmentType() == null
+                || !service.getDepartmentType().isParaclinical()) {
+            throw new BadRequestException(
+                    "Chỉ được tạo yêu cầu cho dịch vụ cận lâm sàng; dịch vụ khám phải được lễ tân tạo lượt riêng"
+            );
+        }
+    }
+
+    private void ensureNoSignedSameDayResult(MedicalRecord record, MedicalService service) {
+        if (record != null && record.getVisit() != null
+                && sameDayParaclinicalResultService.hasReusableResult(
+                        record.getVisit(), service.getServiceId())) {
+            throw new ConflictException(
+                    "Dịch vụ cận lâm sàng này đã có kết quả được ký trong ngày; hãy sử dụng kết quả tham chiếu"
+            );
+        }
+    }
+
+    /**
+     * Danh sach tong hop chi duoc xem theo ho so do bac si phu trach, hoac theo
+     * phong ma nhan vien dang duoc phan cong. Khong tin departmentId do frontend
+     * gui len vi co the doi UUID de doc yeu cau cua phong khac.
+     */
+    private UUID restrictSearchScope(UUID recordId, UUID requestedDepartmentId) {
+        if (isCurrentAdmin()) return requestedDepartmentId;
+
+        UUID staffId = authService.currentStaffId();
+        StaffInfo staff = staffId == null ? null : staffRepo.findById(staffId).orElse(null);
+        if (staff == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Không xác định được nhân viên đang đăng nhập");
+        }
+
+        if (recordId != null) {
+            MedicalRecord record = recordRepo.findById(recordId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ khám"));
+            if (record.getDoctor() != null && staffId.equals(record.getDoctor().getStaffId())) {
+                return requestedDepartmentId;
+            }
+        }
+
+        Department assignedDepartment = staff.getDepartment();
+        if (assignedDepartment == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Nhân viên chưa được phân công phòng");
+        }
+        UUID assignedDepartmentId = assignedDepartment.getDepartmentId();
+        if (requestedDepartmentId != null && !assignedDepartmentId.equals(requestedDepartmentId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Không được xem yêu cầu cận lâm sàng của phòng khác");
+        }
+        return assignedDepartmentId;
+    }
+
+    private void ensureCurrentStaffCanViewAny(List<TestRequest> requests) {
+        if (isCurrentAdmin() || requests == null || requests.isEmpty()) return;
+        boolean allowed = requests.stream().anyMatch(this::canCurrentStaffView);
+        if (!allowed) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Không được xem yêu cầu cận lâm sàng này");
+        }
+    }
+
+    private void ensureCurrentStaffCanView(TestRequest request) {
+        if (isCurrentAdmin() || canCurrentStaffView(request)) return;
+        throw new org.springframework.security.access.AccessDeniedException(
+                "Không được xem yêu cầu cận lâm sàng này");
+    }
+
+    private boolean canCurrentStaffView(TestRequest request) {
+        UUID staffId = authService.currentStaffId();
+        if (staffId == null || request == null) return false;
+
+        boolean requester = request.getRequestedBy() != null
+                && staffId.equals(request.getRequestedBy().getStaffId());
+        boolean recordDoctor = request.getMedicalRecord() != null
+                && request.getMedicalRecord().getDoctor() != null
+                && staffId.equals(request.getMedicalRecord().getDoctor().getStaffId());
+        Department department = request.getPerformingDepartment();
+        StaffInfo actor = staffRepo.findById(staffId).orElse(null);
+        boolean departmentMember = department != null && actor != null
+                && actor.getDepartment() != null
+                && department.getDepartmentId().equals(actor.getDepartment().getDepartmentId());
+        return requester || recordDoctor || departmentMember;
+    }
+
+    private void ensureCurrentStaffCanOperate(TestRequest request) {
+        UUID staffId = authService.currentStaffId();
+        Department department = request.getPerformingDepartment();
+        if (staffId == null || department == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Không xác định được nhân viên hoặc phòng thực hiện");
+        }
+        staffDutyService.requireCurrentStaffOnDuty(department, false);
+    }
+
+    private void ensureResultNotCancelled(TestRequest request) {
+        if (request.getStatus() == TestRequestStatus.CANCELLED) {
+            throw new ConflictException("Yêu cầu cận lâm sàng đã hủy, không thể ghi hoặc ký kết quả");
+        }
+    }
+
+    private void ensureExecutionStarted(TestRequest request) {
+        ensureResultNotCancelled(request);
+        QueueTicket queue = request.getQueueTicket();
+        if (queue == null || (queue.getStatus() != QueueStatus.IN_PROGRESS
+                && queue.getStatus() != QueueStatus.DONE)) {
+            throw new BadRequestException(
+                    "Chỉ được nhập hoặc tải kết quả sau khi bệnh nhân đã bắt đầu thực hiện tại phòng");
+        }
+    }
+
+    private StaffInfo resolveCurrentPerformer(UUID requestedPerformerId) {
+        UUID currentStaffId = authService.currentStaffId();
+        if (currentStaffId == null || requestedPerformerId == null
+                || !currentStaffId.equals(requestedPerformerId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Người thực hiện phải là tài khoản nhân viên đang đăng nhập");
+        }
+        return staffRepo.findById(currentStaffId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên thực hiện"));
+    }
+
+    private StaffInfo requireResponsibleDoctorLocked(TestRequest request) {
+        UUID staffId = authService.currentStaffId();
+        Department currentDepartment = request.getPerformingDepartment();
+        if (staffId == null || currentDepartment == null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Chỉ bác sĩ trực tại phòng thực hiện mới được phép thao tác");
+        }
+        Department lockedDepartment = departmentRepo.findByIdForUpdate(currentDepartment.getDepartmentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Phòng thực hiện không tồn tại"));
+        return staffDutyService.requireCurrentStaffOnDuty(lockedDepartment, true);
+    }
+
+    private boolean isResponsibleDoctor(Department department, StaffInfo actor) {
+        return department != null && actor != null && actor.getSystemRole() != null
+                && actor.getSystemRole().isDoctor()
+                && actor.getDepartment() != null
+                && department.getDepartmentId().equals(actor.getDepartment().getDepartmentId());
+    }
+
+    private boolean isAssignedNurse(Department department, StaffInfo actor) {
+        return department != null && actor != null
+                && actor.getSystemRole() == vn.edu.fpt.cares.enums.SystemRole.NURSE
+                && actor.getDepartment() != null
+                && department.getDepartmentId().equals(actor.getDepartment().getDepartmentId());
+    }
+
+    private boolean isCurrentAdmin() {
+        var authentication = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+    }
+
+    /** Tim TestRequest da hoan thanh theo profileId (cho hien thi trong profile). */
+    @Transactional(readOnly = true)
+    public List<TestRequest> findMyCompletedTests(UUID profileId) {
+        return repo.findByProfileIdAndStatusCompleted(profileId);
+    }
+
+    /** Tim TestRequest theo InvoiceItem (traceability: Invoice -> InvoiceItem -> TestRequest). */
+    @Transactional(readOnly = true)
+    public List<TestRequestResponse> findByInvoiceItem(UUID itemId) {
+        List<TestRequest> requests = repo.findByInvoiceItem_ItemId(itemId);
+        ensureCurrentStaffCanViewAny(requests);
+        return requests.stream()
+                .map(TestRequestResponse::from)
+                .toList();
+    }
+
+    /** Tim TestRequest theo Invoice (traceability: Invoice -> InvoiceItem -> TestRequest). */
+    @Transactional(readOnly = true)
+    public List<TestRequestResponse> findByInvoice(UUID invoiceId) {
+        List<TestRequest> requests = repo.findByInvoiceId(invoiceId);
+        ensureCurrentStaffCanViewAny(requests);
+        return requests.stream()
+                .map(TestRequestResponse::from)
+                .toList();
+    }
+
+    /** Điểm mở rộng cho AI: hiện dùng rule cứng + tải hàng đợi, sau này có thể thay bộ xếp hạng. */
+    private Department selectPerformingDepartment(MedicalService service) {
+        if (service.getRequiredCapability() == null) {
+            if (service.getDepartment() != null) {
+                Department configuredDepartment = service.getDepartment();
+                if (configuredDepartment.getStatus() == DepartmentStatus.MAINTENANCE) {
+                    throw new BadRequestException("Phòng thực hiện dịch vụ " + service.getName()
+                            + " hiện không sẵn sàng");
+                }
+                return configuredDepartment;
+            }
+            throw new ResourceNotFoundException("Dịch vụ chưa chọn danh mục kỹ thuật: " + service.getServiceId());
+        }
+        List<Department> candidates = departmentRepo.findEligibleByCapability(
+                service.getRequiredCapability().getCapabilityId());
+        return candidates.stream()
+                .min(java.util.Comparator.comparingLong(department ->
+                        repo.countByPerformingDepartment_DepartmentIdAndStatusIn(
+                                department.getDepartmentId(),
+                                List.of(TestRequestStatus.PENDING, TestRequestStatus.IN_PROGRESS))))
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Không có phòng đang hoạt động hỗ trợ danh mục kỹ thuật: " + service.getRequiredCapability().getName()));
+    }
+
+    /** Tạo một số gọi cho mỗi phòng/lượt; các kỹ thuật cùng phòng được gom chung số. */
+    private QueueTicket ensureParaclinicalQueue(MedicalRecord record, MedicalService service, Department department) {
+        UUID visitId = record.getVisit().getVisitId();
+        // Khoa chung Visit truoc khi khoa phong. Hai phong khac nhau cua cung
+        // luot khong the cung duoc mo WAITING khi callback den dong thoi.
+        visitRepo.findByIdForUpdate(visitId)
+                .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
+        // Khoa phong truoc khi kiem tra/tang so de cac request dong thoi khong tao trung ticket/so goi.
+        department = departmentRepo.findByIdForUpdate(department.getDepartmentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Phòng thực hiện không tồn tại"));
+        QueueTicket existing = queueTicketRepo
+                .findTopByVisit_VisitIdAndDepartment_DepartmentIdAndStatusNotInOrderByCreatedAtDesc(
+                        visitId,
+                        department.getDepartmentId(),
+                        List.of(QueueStatus.DONE, QueueStatus.SKIPPED))
+                .orElse(null);
+        // Tat ca yeu cau can lam sang cung phong trong cung dot dung chung mot so goi.
+        if (existing != null) return existing;
+
+        // Chi buoc dau tien cua luot kham duoc mo. Cac phong con lai giu
+        // BLOCKED va se duoc PatientJourneyService.activateNext() mo tuan tu.
+        boolean hasActiveWorkflowStep = patientJourneyService.hasActiveStep(visitId)
+                || queueTicketRepo.findAllByVisit_VisitId(visitId).stream()
+                .anyMatch(queue -> queue.getStatus() == QueueStatus.SKIPPED);
+        java.time.LocalDate workDate = java.time.LocalDate.now(CLINIC_ZONE);
+        int nextNumber = queueTicketRepo.findMaxQueueNumberForDay(department.getDepartmentId(), workDate).orElse(0) + 1;
+        return queueTicketRepo.save(QueueTicket.builder()
+                .visit(record.getVisit()).department(department).service(service)
+                .workDate(workDate).queueNumber(nextNumber)
+                .status(hasActiveWorkflowStep ? QueueStatus.BLOCKED : QueueStatus.WAITING)
+                .build());
+    }
+}

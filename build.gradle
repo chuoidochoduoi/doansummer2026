@@ -6,9 +6,9 @@ plugins {
     id 'com.autonomousapps.dependency-analysis' version '3.19.1'
 }
 
-group = 'org.example'
+group = 'vn.edu.fpt'
 version = '0.0.1-SNAPSHOT'
-description = 'doAnSummer2026'
+description = 'CareS Clinic Management System'
 
 // Cho phép bộ test WSL dùng thư mục output riêng, tránh xung đột với backend
 // đang chạy từ build/classes trên Windows và làm sai execution data của JaCoCo.
@@ -145,10 +145,10 @@ tasks.register('jacocoServiceTestCoverageVerification', JacocoCoverageVerificati
     violationRules {
         rule {
             element = 'CLASS'
-            includes = ['org.example.doansummer2026.service.*']
+            includes = ['vn.edu.fpt.cares.service.*']
             excludes = [
-                'org.example.doansummer2026.service.interfaces.*',
-                'org.example.doansummer2026.service.SmsService'
+                'vn.edu.fpt.cares.service.interfaces.*',
+                'vn.edu.fpt.cares.service.SmsService'
             ]
             limit { counter = 'LINE'; value = 'COVEREDRATIO'; minimum = 1.00 }
             limit { counter = 'BRANCH'; value = 'COVEREDRATIO'; minimum = 1.00 }

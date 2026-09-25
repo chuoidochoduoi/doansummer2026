@@ -31,6 +31,7 @@ TRUNCATE TABLE
     test_result, test_request, vital_signs, medical_record, queue_ticket,
     invoice, customer_visit, appointment_services, appointment,
     department_capability, staff_capability, staff_info, medical_service,
+    medical_service_form_template, clinical_form_template_version, clinical_form_template,
     service_category, service_capability, medicine_catalog, icd_10_codes,
     insurance, department, specialization, shift_config, profile, account
 RESTART IDENTITY CASCADE;
@@ -281,13 +282,13 @@ INSERT INTO medical_service (
 ('41000015-0000-0000-0000-000000000015', 'EX-DER-002', pg_temp.demo_now(), pg_temp.demo_now(), false, 'Khám và tư vấn điều trị mụn trứng cá.', 'ACTIVE', false, 'Khám mụn trứng cá', 220000, 'EXAMINATION', 30, 1, false, false, false, 0, true, 0, 120, NULL, NULL, '00000004-4444-4444-4444-444444444444', NULL),
 ('41000016-0000-0000-0000-000000000016', 'EX-DER-003', pg_temp.demo_now(), pg_temp.demo_now(), false, 'Khám viêm da và các tình trạng dị ứng.', 'ACTIVE', false, 'Khám viêm da, dị ứng', 220000, 'EXAMINATION', 30, 1, false, false, false, 0, true, 0, 120, NULL, NULL, '00000004-4444-4444-4444-444444444444', NULL),
 ('41000017-0000-0000-0000-000000000017', 'EX-DER-004', pg_temp.demo_now(), pg_temp.demo_now(), false, 'Khám và điều trị các bệnh nấm da.', 'ACTIVE', false, 'Khám nấm da', 200000, 'EXAMINATION', 30, 1, false, false, false, 0, true, 0, 120, NULL, NULL, '00000004-4444-4444-4444-444444444444', NULL),
-('40000008-0000-0000-0000-000000000008', 'LAB-001', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Đánh giá các thành phần tế bào máu.', 'ACTIVE', false, 'Công thức máu', 120000, 'LABORATORY', 15, 1, true, true, true, 45, false, 0, 120, NULL, NULL, NULL, 'ca000001-0000-0000-0000-000000000001'),
-('40000009-0000-0000-0000-000000000009', 'LAB-002', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Đo nồng độ glucose trong máu.', 'ACTIVE', false, 'Đường huyết', 70000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
-('40000015-0000-0000-0000-000000000015', 'IMG-003', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Khảo sát các cơ quan trong ổ bụng.', 'ACTIVE', false, 'Siêu âm ổ bụng tổng quát', 250000, 'PARACLINICAL', 20, 1, true, true, false, 10, false, 0, 120, NULL, NULL, NULL, 'ca000003-0000-0000-0000-000000000003'),
-('40000017-0000-0000-0000-000000000017', 'IMG-001', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chụp hình vùng ngực.', 'ACTIVE', false, 'X-quang ngực', 180000, 'PARACLINICAL', 15, 1, true, true, false, 15, false, 6, 120, NULL, NULL, NULL, 'ca000004-0000-0000-0000-000000000004'),
-('41000018-0000-0000-0000-000000000018', 'IMG-002', pg_temp.demo_now(), pg_temp.demo_now(), false, 'Chụp X-quang đánh giá xương và khớp.', 'ACTIVE', false, 'X-quang xương khớp', 200000, 'PARACLINICAL', 20, 1, true, true, false, 15, false, 6, 120, NULL, NULL, NULL, 'ca000004-0000-0000-0000-000000000004'),
-('41000019-0000-0000-0000-000000000019', 'IMG-004', pg_temp.demo_now(), pg_temp.demo_now(), false, 'Siêu âm đánh giá tuyến giáp.', 'ACTIVE', false, 'Siêu âm tuyến giáp', 220000, 'PARACLINICAL', 20, 1, true, true, false, 10, false, 0, 120, NULL, NULL, NULL, 'ca000003-0000-0000-0000-000000000003'),
-('41000020-0000-0000-0000-000000000020', 'IMG-005', pg_temp.demo_now(), pg_temp.demo_now(), false, 'Siêu âm theo dõi thai.', 'ACTIVE', false, 'Siêu âm thai', 300000, 'PARACLINICAL', 25, 1, true, true, false, 10, false, 16, 55, 'FEMALE', NULL, NULL, 'ca000003-0000-0000-0000-000000000003'),
+('40000008-0000-0000-0000-000000000008', 'LAB-001', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Đánh giá các thành phần tế bào máu.', 'ACTIVE', false, 'Công thức máu', 120000, 'LABORATORY', 15, 1, true, true, true, 45, true, 0, 120, NULL, NULL, NULL, 'ca000001-0000-0000-0000-000000000001'),
+('40000009-0000-0000-0000-000000000009', 'LAB-002', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Đo nồng độ glucose trong máu.', 'ACTIVE', false, 'Đường huyết', 70000, 'LABORATORY', 10, 1, true, true, true, 30, true, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
+('40000015-0000-0000-0000-000000000015', 'IMG-003', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Khảo sát các cơ quan trong ổ bụng.', 'ACTIVE', false, 'Siêu âm ổ bụng tổng quát', 250000, 'PARACLINICAL', 20, 1, true, true, false, 10, true, 0, 120, NULL, NULL, NULL, 'ca000003-0000-0000-0000-000000000003'),
+('40000017-0000-0000-0000-000000000017', 'IMG-001', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chụp hình vùng ngực.', 'ACTIVE', false, 'X-quang ngực', 180000, 'PARACLINICAL', 15, 1, true, true, false, 15, true, 6, 120, NULL, NULL, NULL, 'ca000004-0000-0000-0000-000000000004'),
+('41000018-0000-0000-0000-000000000018', 'IMG-002', pg_temp.demo_now(), pg_temp.demo_now(), false, 'Chụp X-quang đánh giá xương và khớp.', 'ACTIVE', false, 'X-quang xương khớp', 200000, 'PARACLINICAL', 20, 1, true, true, false, 15, true, 6, 120, NULL, NULL, NULL, 'ca000004-0000-0000-0000-000000000004'),
+('41000019-0000-0000-0000-000000000019', 'IMG-004', pg_temp.demo_now(), pg_temp.demo_now(), false, 'Siêu âm đánh giá tuyến giáp.', 'ACTIVE', false, 'Siêu âm tuyến giáp', 220000, 'PARACLINICAL', 20, 1, true, true, false, 10, true, 0, 120, NULL, NULL, NULL, 'ca000003-0000-0000-0000-000000000003'),
+('41000020-0000-0000-0000-000000000020', 'IMG-005', pg_temp.demo_now(), pg_temp.demo_now(), false, 'Siêu âm theo dõi thai.', 'ACTIVE', false, 'Siêu âm thai', 300000, 'PARACLINICAL', 25, 1, true, true, false, 10, true, 16, 55, 'FEMALE', NULL, NULL, 'ca000003-0000-0000-0000-000000000003'),
 ('4000000a-0065-0000-0000-000000000065', 'AN-CBC-RBC', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Số lượng hồng cầu (RBC)', 5000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-0067-0000-0000-000000000067', 'AN-CBC-HGB', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Huyết sắc tố (HGB)', 5000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-0069-0000-0000-000000000069', 'AN-CBC-HCT', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Hematocrit (HCT)', 5000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
@@ -296,7 +297,7 @@ INSERT INTO medical_service (
 ('4000000a-0077-0000-0000-000000000077', 'AN-CBC-NEUTP', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Bạch cầu trung tính (%)', 5000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-007b-0000-0000-00000000007b', 'AN-CBC-LYMP', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Bạch cầu lympho (%)', 5000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-008b-0000-0000-00000000008b', 'AN-CBC-PLT', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Số lượng tiểu cầu (PLT)', 10000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
-('4000000a-0095-0000-0000-000000000095', 'LAB-003', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Gói xét nghiệm', 'ACTIVE', false, 'Sinh hóa máu cơ bản', 250000, 'LABORATORY', 15, 1, true, true, true, 45, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
+('4000000a-0095-0000-0000-000000000095', 'LAB-003', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Gói xét nghiệm', 'ACTIVE', false, 'Sinh hóa máu cơ bản', 250000, 'LABORATORY', 15, 1, true, true, true, 45, true, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-0096-0000-0000-000000000096', 'AN-BIO-HBA1C', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Hemoglobin A1c', 30000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-0098-0000-0000-000000000098', 'AN-BIO-TC', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Cholesterol toàn phần', 30000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-009a-0000-0000-00000000009a', 'AN-BIO-TG', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Triglyceride', 30000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
@@ -304,7 +305,7 @@ INSERT INTO medical_service (
 ('4000000a-009e-0000-0000-00000000009e', 'AN-BIO-LDL', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'LDL Cholesterol', 30000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00a0-0000-0000-0000000000a0', 'AN-BIO-UA', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Acid uric', 30000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00a2-0000-0000-0000000000a2', 'AN-BIO-TP', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Protein toàn phần', 30000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
-('4000000a-00a4-0000-0000-0000000000a4', 'LAB-004', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Gói xét nghiệm', 'ACTIVE', false, 'Chức năng gan', 200000, 'LABORATORY', 15, 1, true, true, true, 45, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
+('4000000a-00a4-0000-0000-0000000000a4', 'LAB-004', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Gói xét nghiệm', 'ACTIVE', false, 'Chức năng gan', 200000, 'LABORATORY', 15, 1, true, true, true, 45, true, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00a5-0000-0000-0000000000a5', 'AN-LIV-AST', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'AST', 25000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00a7-0000-0000-0000000000a7', 'AN-LIV-ALT', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'ALT', 25000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00a9-0000-0000-0000000000a9', 'AN-LIV-ALP', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Alkaline phosphatase', 25000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
@@ -312,14 +313,14 @@ INSERT INTO medical_service (
 ('4000000a-00ad-0000-0000-0000000000ad', 'AN-LIV-TBIL', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Bilirubin toàn phần', 25000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00af-0000-0000-0000000000af', 'AN-LIV-DBIL', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Bilirubin trực tiếp', 25000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00b1-0000-0000-0000000000b1', 'AN-LIV-ALB', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Albumin', 25000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
-('4000000a-00b3-0000-0000-0000000000b3', 'LAB-005', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Gói xét nghiệm', 'ACTIVE', false, 'Chức năng thận', 180000, 'LABORATORY', 15, 1, true, true, true, 45, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
+('4000000a-00b3-0000-0000-0000000000b3', 'LAB-005', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Gói xét nghiệm', 'ACTIVE', false, 'Chức năng thận', 180000, 'LABORATORY', 15, 1, true, true, true, 45, true, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00b4-0000-0000-0000000000b4', 'AN-REN-UREA', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Urea', 20000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00b6-0000-0000-0000000000b6', 'AN-REN-CREA', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Creatinine', 20000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00b8-0000-0000-0000000000b8', 'AN-REN-NA', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Sodium', 20000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00ba-0000-0000-0000000000ba', 'AN-REN-K', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Potassium', 20000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00bc-0000-0000-0000000000bc', 'AN-REN-CL', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Chloride', 20000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00c0-0000-0000-0000000000c0', 'AN-REN-CA', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Calcium toàn phần', 20000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
-('4000000a-00c4-0000-0000-0000000000c4', 'LAB-006', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Gói xét nghiệm', 'ACTIVE', false, 'Tổng phân tích nước tiểu', 100000, 'LABORATORY', 15, 1, true, true, true, 45, false, 0, 120, NULL, NULL, NULL, 'ca000005-0000-0000-0000-000000000005'),
+('4000000a-00c4-0000-0000-0000000000c4', 'LAB-006', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Gói xét nghiệm', 'ACTIVE', false, 'Tổng phân tích nước tiểu', 100000, 'LABORATORY', 15, 1, true, true, true, 45, true, 0, 120, NULL, NULL, NULL, 'ca000005-0000-0000-0000-000000000005'),
 ('4000000a-00c5-0000-0000-0000000000c5', 'AN-URI-SG', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Tỷ trọng nước tiểu', 10000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00c7-0000-0000-0000000000c7', 'AN-URI-PH', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'pH nước tiểu', 10000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00c9-0000-0000-0000000000c9', 'AN-URI-LEU', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Leukocyte Esterase', 10000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
@@ -328,7 +329,7 @@ INSERT INTO medical_service (
 ('4000000a-00cf-0000-0000-0000000000cf', 'AN-URI-GLU', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Glucose nước tiểu', 10000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00d1-0000-0000-0000000000d1', 'AN-URI-KET', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Ketone', 10000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000002-0000-0000-0000-000000000002'),
 ('4000000a-00d7-0000-0000-0000000000d7', 'AN-URI-BLD', (pg_temp.demo_now()-interval '60 days'), (pg_temp.demo_now()-interval '60 days'), false, 'Chỉ số lẻ', 'ACTIVE', false, 'Máu/Hemoglobin nước tiểu', 10000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000005-0000-0000-0000-000000000005'),
-('41000021-0000-0000-0000-000000000021', 'LAB-007', pg_temp.demo_now(), pg_temp.demo_now(), false, 'Định lượng protein phản ứng C.', 'ACTIVE', false, 'Xét nghiệm CRP', 100000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000008-0000-0000-0000-000000000008'),
+('41000021-0000-0000-0000-000000000021', 'LAB-007', pg_temp.demo_now(), pg_temp.demo_now(), false, 'Định lượng protein phản ứng C.', 'ACTIVE', false, 'Xét nghiệm CRP', 100000, 'LABORATORY', 10, 1, true, true, true, 30, true, 0, 120, NULL, NULL, NULL, 'ca000008-0000-0000-0000-000000000008'),
 ('41000022-0000-0000-0000-000000000022', 'AN-CRP', pg_temp.demo_now(), pg_temp.demo_now(), false, 'Chỉ số CRP định lượng.', 'ACTIVE', false, 'CRP định lượng', 100000, 'LABORATORY', 10, 1, true, true, true, 30, false, 0, 120, NULL, NULL, NULL, 'ca000008-0000-0000-0000-000000000008');
 
 -- Fixed result form for the CBC package. This is a technical configuration,
@@ -1482,7 +1483,7 @@ INSERT INTO invoice
      issue_date, note, paid_amount, status, subtotal, tax, total_amount,
      customer_id, issued_by, medical_record_id, visit_id)
 VALUES
-('e4000000-0000-0000-0000-000000000001', pg_temp.demo_now()-interval '15 minutes', false, pg_temp.demo_now(),
+('e4000000-0000-0000-0000-000000000001', pg_temp.demo_now()-interval '15 minutes', false, pg_temp.demo_now()-interval '12 minutes',
  0, NULL, 'INV-DEMO-CBC-TODAY', pg_temp.demo_date(), 'Gói Công thức máu đầy đủ đã thanh toán',
  120000, 'PAID', 120000, 0, 120000,
  'b96b77f8-3078-38f6-cd3f-19135ce19b9b', 'b693d136-402d-7de2-4835-117a5e2c5411',
@@ -1506,20 +1507,12 @@ VALUES
 ('e6000000-0000-0000-0000-000000000001', pg_temp.demo_now()-interval '15 minutes', pg_temp.demo_now(), false,
  'e3000000-0000-0000-0000-000000000001', '40000008-0000-0000-0000-000000000008',
  '760edff5-8292-2100-0b77-7fc8e316e913', 'e2000000-0000-0000-0000-000000000002',
- 'Thực hiện gói Công thức máu đầy đủ', 'COMPLETED', '74cf86f9-d830-e246-7dc3-538a0874779d',
- pg_temp.demo_now()-interval '5 minutes', NULL, 'e5000000-0000-0000-0000-000000000001');
+ 'Thực hiện gói Công thức máu đầy đủ', 'PENDING', '74cf86f9-d830-e246-7dc3-538a0874779d',
+ NULL, NULL, 'e5000000-0000-0000-0000-000000000001');
 
-INSERT INTO test_result
-    (result_id, created_at, updated_at, deleted, test_request_id, image_url, conclusion,
-     result_data, sample_id, sample_type, sample_status, collected_at, collected_by,
-     performed_by, performed_at, verified_by, verified_at)
-VALUES
-('e7000000-0000-0000-0000-000000000001', pg_temp.demo_now()-interval '5 minutes', pg_temp.demo_now()-interval '5 minutes', false,
- 'e6000000-0000-0000-0000-000000000001', NULL, 'Các chỉ số huyết học trong giới hạn bình thường.',
- '{"rbc":4.80,"hgb":140,"hct":42.0,"mcv":88.0,"wbc":7.2,"neutPercent":60.0,"lymphPercent":30.0,"plt":250}'::jsonb,
- 'SMP-CBC-TODAY-001', 'BLOOD', 'ACCEPTED', pg_temp.demo_now()-interval '10 minutes',
- '0f348c8d-74b9-3ef2-981b-61105eab787e', '74cf86f9-d830-e246-7dc3-538a0874779d',
- pg_temp.demo_now()-interval '6 minutes', '74cf86f9-d830-e246-7dc3-538a0874779d', pg_temp.demo_now()-interval '5 minutes');
+-- Phiếu CBC hôm nay chỉ mới thanh toán và đang chờ vào phòng nên chưa có
+-- test_result. Dữ liệu CBC đã hoàn thành để xem lịch sử nằm ở phiếu f300...,
+-- tránh trạng thái "vừa gọi bệnh nhân" nhưng kết quả đã hoàn thành 8/8.
 
 -- ---------------------------------------------------------------------------
 -- UI demo history: notifications, support chat, announcements and audit trail
@@ -1749,7 +1742,6 @@ VALUES
 -- visit check-in/check-out, medical-record completion, invoice issue date and
 -- payment paid_at. Keep those timestamps aligned and spread the historical
 -- journeys over the latest two months so every report tab has meaningful data.
-DROP TABLE IF EXISTS pg_temp.report_demo_visit_map;
 CREATE TEMP TABLE report_demo_visit_map ON COMMIT DROP AS
 WITH ranked AS (
     SELECT v.visit_id,
@@ -2039,7 +2031,6 @@ WHERE NOT EXISTS (SELECT 1 FROM prescription_item x
 -- Guarantee a complete daily baseline for every date in the latest 60 days.
 -- Existing richer journeys remain in place, so the chart still has natural
 -- high/low days while never showing an artificial zero caused by missing seed.
-DROP TABLE IF EXISTS pg_temp.report_daily_baseline;
 CREATE TEMP TABLE report_daily_baseline ON COMMIT DROP AS
 WITH customer_pool AS (
     SELECT array_agg(p.profile_id ORDER BY p.phone) AS profile_ids
@@ -2282,6 +2273,18 @@ BEGIN
         WHERE status = 'ACTIVE' AND deleted = false AND service_code LIKE 'IMG-%') <> 5 THEN
         RAISE EXCEPTION 'CareS demo seed must contain exactly 5 imaging services';
     END IF;
+    IF (SELECT count(*) FROM medical_service
+        WHERE status = 'ACTIVE' AND deleted = false
+          AND service_code ~ '^(LAB|IMG)-'
+          AND allow_customer_booking = true) <> 12 THEN
+        RAISE EXCEPTION 'All 12 primary paraclinical services must be available for customer booking';
+    END IF;
+    IF EXISTS (SELECT 1 FROM medical_service
+        WHERE status = 'ACTIVE' AND deleted = false
+          AND service_code LIKE 'AN-%'
+          AND allow_customer_booking = true) THEN
+        RAISE EXCEPTION 'Internal laboratory analytes must not be directly bookable by customers';
+    END IF;
     IF (SELECT count(*)
         FROM medical_service s
         JOIN medical_service_form_template b ON b.service_id = s.service_id AND b.deleted = false
@@ -2304,11 +2307,15 @@ BEGIN
         SELECT 1 FROM test_request tr
         JOIN queue_ticket q ON q.ticket_id = tr.queue_ticket_id
         WHERE q.work_date = pg_temp.demo_date() AND q.status = 'WAITING'
-          AND tr.status = 'COMPLETED'
+          AND tr.status = 'PENDING' AND tr.completed_at IS NULL
           AND tr.service_id = '40000008-0000-0000-0000-000000000008'
           AND tr.invoice_item_id = 'e5000000-0000-0000-0000-000000000001'
+          AND NOT EXISTS (
+              SELECT 1 FROM test_result result
+              WHERE result.test_request_id = tr.test_request_id AND result.deleted = false
+          )
     ) THEN
-        RAISE EXCEPTION 'Laboratory must have one paid full-CBC demo patient with recorded results today';
+        RAISE EXCEPTION 'Laboratory must have one paid full-CBC patient waiting without recorded results today';
     END IF;
     IF EXISTS (
         SELECT 1
@@ -2326,6 +2333,24 @@ BEGIN
                                           WHERE ii.invoice_id = i.invoice_id AND ii.deleted = false), 0)
     ) THEN
         RAISE EXCEPTION 'Demo invoice total does not match its invoice items';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM test_request tr
+        WHERE (tr.status = 'COMPLETED' AND (tr.completed_at IS NULL OR NOT EXISTS (
+                   SELECT 1 FROM test_result result
+                   WHERE result.test_request_id = tr.test_request_id AND result.deleted = false
+              )))
+           OR (tr.status <> 'COMPLETED' AND tr.completed_at IS NOT NULL)
+    ) THEN
+        RAISE EXCEPTION 'Test-request status, completion time and result are inconsistent';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM queue_ticket q
+        WHERE (q.status IN ('WAITING', 'CALLED', 'IN_PROGRESS', 'BLOCKED', 'WAITING_FOR_TEST', 'TEST_DONE')
+                   AND q.completed_at IS NOT NULL)
+           OR (q.status = 'DONE' AND q.completed_at IS NULL)
+    ) THEN
+        RAISE EXCEPTION 'Queue-ticket status and completion time are inconsistent';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM notification WHERE status = 'READ' AND deleted = false)
        OR NOT EXISTS (SELECT 1 FROM notification WHERE status IN ('SENT', 'PENDING') AND deleted = false) THEN

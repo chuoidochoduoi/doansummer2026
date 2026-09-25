@@ -1,0 +1,388 @@
+package vn.edu.fpt.cares.service;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import vn.edu.fpt.cares.dto.invoice.InvoiceResponse;
+import vn.edu.fpt.cares.dto.membership.*;
+import vn.edu.fpt.cares.enums.*;
+import vn.edu.fpt.cares.exception.*;
+import vn.edu.fpt.cares.model.*;
+import vn.edu.fpt.cares.repository.*;
+import org.springframework.data.domain.*;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.*;
+import java.time.*;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class MembershipCardService {
+    private static final ZoneId CLINIC_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final BigDecimal DEFAULT_MINIMUM = new BigDecimal("1000000");
+    private static final BigDecimal DEFAULT_DISCOUNT = new BigDecimal("15");
+    private static final int DEFAULT_MONTHS = 12;
+
+    private final MembershipPolicyRepository policyRepository;
+    private final MembershipCardRepository cardRepository;
+    private final MembershipCardLedgerRepository ledgerRepository;
+    private final InvoiceRepository invoiceRepository;
+    private final InvoiceItemRepository itemRepository;
+    private final TransactionRepository transactionRepository;
+    private final StaffInfoRepository staffRepository;
+    private final QueueTicketRepository queueTicketRepository;
+    private final TestRequestRepository testRequestRepository;
+    private final FamilyAccessService familyAccessService;
+    private final InvoiceService invoiceService;
+    private final PasswordEncoder passwordEncoder;
+    private final StringRedisTemplate redisTemplate;
+    private final SimpMessagingTemplate messagingTemplate;
+
+    @Transactional
+    public MembershipCardResponse register(UUID accountId, MembershipCardRequest request) {
+        if (!Boolean.TRUE.equals(request.acceptedTerms())) {
+            throw new BadRequestException("Bạn cần xác nhận điều khoản sử dụng thẻ trả trước");
+        }
+        Profile owner = familyAccessService.ownerProfile(accountId);
+        if (cardRepository.findByOwnerProfile_ProfileId(owner.getProfileId()).isPresent()) {
+            throw new ConflictException("Tài khoản đã đăng ký thẻ trả trước CareS");
+        }
+        MembershipPolicy policy = policy();
+        MembershipCard card = MembershipCard.builder()
+                .cardCode("CS-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase())
+                .ownerProfile(owner).status(MembershipCardStatus.PENDING).balance(BigDecimal.ZERO)
+                .pinHash(passwordEncoder.encode(request.pin()))
+                .benefitPercent(policy.getDiscountPercent()).build();
+        MembershipCard saved = cardRepository.save(card);
+        publishCardUpdateAfterCommit(saved);
+        return MembershipCardResponse.from(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public MembershipCardResponse myCard(UUID accountId) {
+        Profile owner = familyAccessService.ownerProfile(accountId);
+        return cardRepository.findByOwnerProfile_ProfileId(owner.getProfileId())
+                .map(MembershipCardResponse::from)
+                .orElseThrow(() -> new ResourceNotFoundException("Bạn chưa đăng ký thẻ trả trước CareS"));
+    }
+
+    /**
+     * A forgotten PIN is replaced, never revealed.  Re-authenticating with the
+     * signed-in account password prevents a customer session alone from being
+     * enough to take over the card's payment PIN.
+     */
+    @Transactional
+    public MembershipCardResponse resetPin(UUID accountId, MembershipPinResetRequest request) {
+        if (!request.newPin().equals(request.confirmPin())) {
+            throw new BadRequestException("Xác nhận mã PIN mới không khớp");
+        }
+        Profile owner = familyAccessService.ownerProfile(accountId);
+        Account account = owner.getAccount();
+        if (account == null || !passwordEncoder.matches(request.currentPassword(), account.getPasswordHash())) {
+            throw new BadRequestException("Mật khẩu tài khoản không đúng");
+        }
+        MembershipCard existing = cardRepository.findByOwnerProfile_ProfileId(owner.getProfileId())
+                .orElseThrow(() -> new ResourceNotFoundException("Bạn chưa đăng ký thẻ trả trước CareS"));
+        MembershipCard card = cardRepository.findByIdForUpdate(existing.getCardId()).orElseThrow();
+        card.setPinHash(passwordEncoder.encode(request.newPin()));
+        MembershipCard saved = cardRepository.save(card);
+        try {
+            redisTemplate.delete("membership:pin-fail:" + saved.getCardId());
+        } catch (RuntimeException ex) {
+            // Resetting a PIN must not fail after its hash was safely persisted just because Redis is unavailable.
+            log.warn("Không thể xóa bộ đếm PIN sai sau khi đặt lại mã PIN");
+        }
+        publishCardUpdateAfterCommit(saved);
+        return MembershipCardResponse.from(saved);
+    }
+
+    @Transactional
+    public MembershipTopUpResponse topUp(String cardCode, MembershipTopUpRequest request, UUID staffId) {
+        MembershipCard card = cardRepository.findByCodeForUpdate(cardCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thẻ trả trước"));
+        MembershipCardLedger duplicated = ledgerRepository.findByIdempotencyKey(request.idempotencyKey()).orElse(null);
+        if (duplicated != null) {
+            if (!duplicated.getCard().getCardId().equals(card.getCardId())) {
+                throw new ConflictException("Mã chống gửi lặp đã được sử dụng cho giao dịch khác");
+            }
+            return MembershipTopUpResponse.from(card, duplicated);
+        }
+        if (card.getStatus() == MembershipCardStatus.CLOSED || card.getStatus() == MembershipCardStatus.SUSPENDED) {
+            throw new ConflictException("Thẻ hiện không thể nạp tiền");
+        }
+        if (request.paymentMethod() == PaymentMethod.MEMBERSHIP_CARD || request.paymentMethod() == PaymentMethod.INSURANCE) {
+            throw new BadRequestException("Phương thức nạp tiền không hợp lệ");
+        }
+        MembershipPolicy policy = policy();
+        if (card.getStatus() == MembershipCardStatus.PENDING
+                && request.amount().compareTo(policy.getMinimumTopUp()) < 0) {
+            throw new BadRequestException("Lần nạp đầu tối thiểu " + policy.getMinimumTopUp().toPlainString() + " đồng");
+        }
+        BigDecimal before = card.getBalance();
+        card.setBalance(before.add(request.amount()));
+        LocalDateTime now = LocalDateTime.now(CLINIC_ZONE);
+        if (card.getStatus() == MembershipCardStatus.PENDING) {
+            card.setStatus(MembershipCardStatus.ACTIVE);
+            card.setActivatedAt(now);
+            card.setBenefitPercent(policy.getDiscountPercent());
+        }
+        if (request.amount().compareTo(policy.getMinimumTopUp()) >= 0) {
+            LocalDateTime existingStartsAt = benefitStartsAt(card);
+            if (card.getBenefitStartsAt() == null && existingStartsAt != null) {
+                card.setBenefitStartsAt(existingStartsAt);
+            }
+            boolean hasCurrentOrScheduledBenefit = existingStartsAt != null
+                    && card.getBenefitExpiresAt() != null
+                    && now.isBefore(card.getBenefitExpiresAt());
+            if (hasCurrentOrScheduledBenefit) {
+                card.setBenefitExpiresAt(card.getBenefitExpiresAt().plusMonths(policy.getValidityMonths()));
+            } else {
+                LocalDateTime startsAt = now.toLocalDate().plusDays(1).atStartOfDay();
+                card.setBenefitStartsAt(startsAt);
+                card.setBenefitExpiresAt(startsAt.plusMonths(policy.getValidityMonths()));
+            }
+            card.setBenefitPercent(policy.getDiscountPercent());
+        }
+        cardRepository.save(card);
+        StaffInfo staff = staffId == null ? null : staffRepository.findById(staffId).orElse(null);
+        MembershipCardLedger ledger = ledgerRepository.save(MembershipCardLedger.builder().card(card).type(MembershipLedgerType.TOP_UP)
+                .amount(request.amount()).balanceBefore(before).balanceAfter(card.getBalance())
+                .performedBy(staff).sourcePaymentMethod(request.paymentMethod())
+                .idempotencyKey(request.idempotencyKey()).referenceCode(reference("NT")).build());
+        publishCardUpdateAfterCommit(card);
+        return MembershipTopUpResponse.from(card, ledger);
+    }
+
+    @Transactional
+    public InvoiceResponse pay(UUID accountId, MembershipPaymentRequest request) {
+        Profile owner = familyAccessService.ownerProfile(accountId);
+        MembershipCard existing = cardRepository.findByOwnerProfile_ProfileId(owner.getProfileId())
+                .orElseThrow(() -> new ResourceNotFoundException("Bạn chưa đăng ký thẻ trả trước CareS"));
+        MembershipCard card = cardRepository.findByIdForUpdate(existing.getCardId()).orElseThrow();
+        MembershipCardLedger duplicated = ledgerRepository.findByIdempotencyKey(request.idempotencyKey()).orElse(null);
+        if (duplicated != null) {
+            if (duplicated.getInvoice() == null || !duplicated.getInvoice().getInvoiceId().equals(request.invoiceId())) {
+                throw new ConflictException("Mã chống gửi lặp đã được sử dụng cho giao dịch khác");
+            }
+            return invoiceService.get(request.invoiceId());
+        }
+        validatePin(card, request.pin());
+        if (card.getStatus() != MembershipCardStatus.ACTIVE) throw new ConflictException("Thẻ chưa hoạt động");
+
+        Profile patient = familyAccessService.resolveActiveProfile(accountId, request.patientProfileId());
+        Invoice invoice = invoiceRepository.findByIdForUpdate(request.invoiceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại"));
+        if (!invoice.getCustomer().getProfileId().equals(patient.getProfileId())) {
+            throw new BadRequestException("Hóa đơn không thuộc người được khám đã chọn");
+        }
+        if (invoice.getStatus() != InvoiceStatus.PENDING) throw new ConflictException("Chỉ thanh toán hóa đơn đang chờ");
+
+        LocalDateTime startsAt = benefitStartsAt(card);
+        if (card.getBenefitStartsAt() == null && startsAt != null) {
+            card.setBenefitStartsAt(startsAt);
+        }
+        LocalDateTime now = LocalDateTime.now(CLINIC_ZONE);
+        boolean benefit = Boolean.TRUE.equals(request.useBenefit())
+                && startsAt != null && !now.isBefore(startsAt)
+                && card.getBenefitExpiresAt() != null && now.isBefore(card.getBenefitExpiresAt())
+                && invoice.getIssueDate() != null
+                && !invoice.getIssueDate().isBefore(startsAt.toLocalDate());
+        if (benefit && transactionRepository.findByInvoice_InvoiceId(invoice.getInvoiceId()).stream()
+                .anyMatch(t -> t.getStatus() == TransactionStatus.SUCCESS)) {
+            throw new ConflictException("Ưu đãi thẻ chỉ áp dụng khi thẻ thanh toán toàn bộ hóa đơn");
+        }
+        BigDecimal benefitDiscount = benefit ? applyBenefit(invoice, card.getBenefitPercent()) : BigDecimal.ZERO;
+        BigDecimal remaining = invoice.getTotalAmount().subtract(invoice.getPaidAmount()).max(BigDecimal.ZERO);
+        BigDecimal amount = benefit ? remaining : (request.amount() == null ? remaining : request.amount().min(remaining));
+        if (amount.signum() <= 0) throw new ConflictException("Hóa đơn không còn số tiền cần thanh toán");
+        if (card.getBalance().compareTo(amount) < 0) throw new BadRequestException("Số dư thẻ không đủ");
+
+        BigDecimal before = card.getBalance();
+        card.setBalance(before.subtract(amount));
+        cardRepository.save(card);
+        Transaction tx = transactionRepository.save(Transaction.builder().invoice(invoice)
+                .transactionCode(reference("THE")).amount(amount).paymentMethod(PaymentMethod.MEMBERSHIP_CARD)
+                .status(TransactionStatus.SUCCESS).paidAt(now)
+                .note(benefit ? "Thanh toán thẻ CareS có áp dụng ưu đãi" : "Thanh toán bằng số dư thẻ CareS").build());
+        ledgerRepository.save(MembershipCardLedger.builder().card(card).type(MembershipLedgerType.PAYMENT)
+                .amount(amount).balanceBefore(before).balanceAfter(card.getBalance()).invoice(invoice)
+                .patientProfile(patient).paymentTransaction(tx).sourcePaymentMethod(PaymentMethod.MEMBERSHIP_CARD)
+                .benefitDiscount(benefitDiscount)
+                .idempotencyKey(request.idempotencyKey()).referenceCode(reference("TT")).build());
+        invoiceService.recalculatePaidAmount(invoice.getInvoiceId());
+        publishCardUpdateAfterCommit(card);
+        return invoiceService.get(invoice.getInvoiceId());
+    }
+
+    @Transactional
+    public InvoiceResponse payAtCounter(MembershipCounterPaymentRequest request) {
+        MembershipCard card = cardRepository.findByCardCode(request.cardCode().trim().toUpperCase())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thẻ trả trước"));
+        if (card.getOwnerProfile().getAccount() == null) {
+            throw new BadRequestException("Thẻ không có tài khoản chủ sở hữu hợp lệ");
+        }
+        Invoice invoice = invoiceRepository.findById(request.invoiceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại"));
+        return pay(card.getOwnerProfile().getAccount().getAccountId(), new MembershipPaymentRequest(
+                request.invoiceId(), invoice.getCustomer().getProfileId(), request.pin(), request.useBenefit(),
+                request.amount(), request.idempotencyKey()));
+    }
+
+    @Transactional
+    public MembershipLedgerResponse reverse(UUID ledgerId, MembershipReversalRequest request, UUID staffId) {
+        MembershipCardLedger original = ledgerRepository.findById(ledgerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy giao dịch thẻ"));
+        if (original.getType() != MembershipLedgerType.PAYMENT || original.getPaymentTransaction() == null) {
+            throw new BadRequestException("Chỉ có thể hoàn tác giao dịch thanh toán bằng thẻ");
+        }
+        if (ledgerRepository.existsByReversedLedger_LedgerId(ledgerId)) {
+            throw new ConflictException("Giao dịch đã được hoàn tác trước đó");
+        }
+        MembershipCardLedger duplicated = ledgerRepository.findByIdempotencyKey(request.idempotencyKey()).orElse(null);
+        if (duplicated != null) return MembershipLedgerResponse.from(duplicated);
+        Invoice invoice = invoiceRepository.findByIdForUpdate(original.getInvoice().getInvoiceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại"));
+        if (invoice.getVisit() != null) {
+            var serviceIds = itemRepository.findAllWithServiceByInvoiceId(invoice.getInvoiceId()).stream()
+                    .filter(item -> item.getService() != null).map(item -> item.getService().getServiceId()).collect(java.util.stream.Collectors.toSet());
+            var queues = queueTicketRepository.findAllByVisit_VisitId(invoice.getVisit().getVisitId()).stream()
+                    .filter(q -> q.getService() != null && serviceIds.contains(q.getService().getServiceId())).toList();
+            boolean started = queues.stream().anyMatch(q -> q.getStatus() == QueueStatus.IN_PROGRESS
+                    || q.getStatus() == QueueStatus.DONE || q.getStatus() == QueueStatus.TEST_DONE
+                    || q.getStatus() == QueueStatus.WAITING_FOR_TEST);
+            if (started) throw new ConflictException("Không thể hoàn tác vì dịch vụ đã bắt đầu thực hiện");
+            queues.stream().filter(q -> q.getStatus() == QueueStatus.WAITING || q.getStatus() == QueueStatus.BLOCKED
+                    || q.getStatus() == QueueStatus.CALLED).forEach(q -> { q.setStatus(QueueStatus.SKIPPED); queueTicketRepository.save(q); });
+        }
+        var tests = testRequestRepository.findByInvoiceId(invoice.getInvoiceId());
+        if (tests.stream().anyMatch(t -> t.getStatus() == TestRequestStatus.IN_PROGRESS
+                || t.getStatus() == TestRequestStatus.COMPLETED)) {
+            throw new ConflictException("Không thể hoàn tác vì dịch vụ cận lâm sàng đã bắt đầu thực hiện");
+        }
+        tests.forEach(t -> { t.setStatus(TestRequestStatus.CANCELLED); testRequestRepository.save(t); });
+        MembershipCard card = cardRepository.findByIdForUpdate(original.getCard().getCardId()).orElseThrow();
+        BigDecimal before = card.getBalance();
+        card.setBalance(before.add(original.getAmount()));
+        cardRepository.save(card);
+        Transaction tx = transactionRepository.findByIdForUpdate(original.getPaymentTransaction().getTransactionId()).orElseThrow();
+        tx.setStatus(TransactionStatus.CANCELLED);
+        tx.setNote("Hoàn tác thanh toán thẻ: " + request.reason().trim());
+        transactionRepository.save(tx);
+        restoreBenefit(invoice, original.getBenefitDiscount());
+        invoiceService.recalculatePaidAmount(invoice.getInvoiceId());
+        MembershipCardLedger reversal = ledgerRepository.save(MembershipCardLedger.builder().card(card)
+                .type(MembershipLedgerType.REVERSAL).amount(original.getAmount()).balanceBefore(before)
+                .balanceAfter(card.getBalance()).invoice(invoice).patientProfile(original.getPatientProfile())
+                .performedBy(staffId == null ? null : staffRepository.findById(staffId).orElse(null)).sourcePaymentMethod(PaymentMethod.MEMBERSHIP_CARD)
+                .idempotencyKey(request.idempotencyKey()).referenceCode(reference("HT"))
+                .reversedLedger(original).reason(request.reason().trim()).build());
+        publishCardUpdateAfterCommit(card);
+        return MembershipLedgerResponse.from(reversal);
+    }
+
+    private void publishCardUpdateAfterCommit(MembershipCard card) {
+        var ownerAccount = card.getOwnerProfile().getAccount();
+        if (ownerAccount == null) return;
+        String recipient = ownerAccount.getAccountId().toString();
+        // Capture identity while the transaction is open; do not access lazy entities after commit.
+        if (!TransactionSynchronizationManager.isSynchronizationActive()
+                || !TransactionSynchronizationManager.isActualTransactionActive()) return;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    messagingTemplate.convertAndSendToUser(recipient, "/queue/membership-card", "MEMBERSHIP_CARD_UPDATED");
+                } catch (RuntimeException ex) {
+                    // A notification failure must not turn a committed payment into an API failure.
+                    log.warn("Không thể gửi tín hiệu đồng bộ thẻ; khách hàng có thể tải lại dữ liệu");
+                }
+            }
+        });
+    }
+
+    @Transactional(readOnly = true)
+    public Page<MembershipLedgerResponse> history(UUID accountId, Pageable pageable) {
+        Profile owner = familyAccessService.ownerProfile(accountId);
+        MembershipCard card = cardRepository.findByOwnerProfile_ProfileId(owner.getProfileId())
+                .orElseThrow(() -> new ResourceNotFoundException("Bạn chưa đăng ký thẻ trả trước CareS"));
+        return ledgerRepository.findByCard_CardIdOrderByCreatedAtDesc(card.getCardId(), pageable)
+                .map(MembershipLedgerResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<MembershipLedgerResponse> allHistory(Pageable pageable) {
+        return ledgerRepository.findAllByOrderByCreatedAtDesc(pageable).map(MembershipLedgerResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<MembershipLedgerResponse> topUpHistory(Pageable pageable) {
+        return ledgerRepository.findByTypeOrderByCreatedAtDescLedgerIdDesc(MembershipLedgerType.TOP_UP, pageable)
+                .map(MembershipLedgerResponse::from);
+    }
+
+    @Transactional
+    public MembershipPolicy updatePolicy(MembershipPolicyRequest request) {
+        MembershipPolicy p = policy();
+        p.setMinimumTopUp(request.minimumTopUp());
+        p.setDiscountPercent(request.discountPercent());
+        p.setValidityMonths(request.validityMonths());
+        return policyRepository.save(p);
+    }
+
+    @Transactional
+    public MembershipPolicy getPolicy() { return policy(); }
+
+    private MembershipPolicy policy() {
+        return policyRepository.findFirstByActiveTrueOrderByCreatedAtDesc().orElseGet(() ->
+                policyRepository.save(MembershipPolicy.builder().minimumTopUp(DEFAULT_MINIMUM)
+                        .discountPercent(DEFAULT_DISCOUNT).validityMonths(DEFAULT_MONTHS).active(true).build()));
+    }
+
+    private BigDecimal applyBenefit(Invoice invoice, BigDecimal percent) {
+        BigDecimal patientPayable = invoice.getTotalAmount().subtract(invoice.getPaidAmount()).max(BigDecimal.ZERO);
+        BigDecimal added = patientPayable.multiply(percent)
+                .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+        invoice.setDiscount(invoice.getDiscount().add(added));
+        invoice.setTotalAmount(invoice.getSubtotal().subtract(invoice.getDiscount()).add(invoice.getTax()));
+        invoiceRepository.save(invoice);
+        return added;
+    }
+
+    private LocalDateTime benefitStartsAt(MembershipCard card) {
+        if (card.getBenefitStartsAt() != null) return card.getBenefitStartsAt();
+        if (card.getActivatedAt() == null || card.getBenefitExpiresAt() == null) return null;
+        return card.getActivatedAt().toLocalDate().plusDays(1).atStartOfDay();
+    }
+
+    private void restoreBenefit(Invoice invoice, BigDecimal discount) {
+        if (discount == null || discount.signum() <= 0) return;
+        invoice.setDiscount(invoice.getDiscount().subtract(discount).max(BigDecimal.ZERO));
+        invoice.setTotalAmount(invoice.getSubtotal().subtract(invoice.getDiscount()).add(invoice.getTax()));
+        invoiceRepository.save(invoice);
+    }
+
+    private void validatePin(MembershipCard card, String pin) {
+        String key = "membership:pin-fail:" + card.getCardId();
+        String raw = redisTemplate.opsForValue().get(key);
+        int failures = raw == null ? 0 : Integer.parseInt(raw);
+        if (failures >= 5) throw new BadRequestException("Thẻ tạm khóa xác thực PIN trong 15 phút");
+        if (!passwordEncoder.matches(pin, card.getPinHash())) {
+            Long count = redisTemplate.opsForValue().increment(key);
+            if (count != null && count == 1) redisTemplate.expire(key, 15, TimeUnit.MINUTES);
+            throw new BadRequestException("Mã PIN không đúng");
+        }
+        redisTemplate.delete(key);
+    }
+
+    private String reference(String prefix) {
+        return prefix + "-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+    }
+}

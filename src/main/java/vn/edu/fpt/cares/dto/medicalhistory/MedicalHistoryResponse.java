@@ -1,0 +1,78 @@
+package vn.edu.fpt.cares.dto.medicalhistory;
+
+import vn.edu.fpt.cares.enums.MedicalRecordStatus;
+import vn.edu.fpt.cares.model.MedicalRecord;
+
+import java.time.format.DateTimeFormatter;
+import java.util.UUID;
+
+/**
+ * DTO cho danh sach lich su kham benh cua benh nhan.
+ */
+public record MedicalHistoryResponse(
+        UUID id,
+        UUID visitId,
+        String recordCode,
+        String visitCode,
+        String date,
+        String time,
+        String specialty,
+        String doctor,
+        String diagnosis,
+        String status
+) {
+    public static MedicalHistoryResponse from(MedicalRecord record) {
+        String date = null;
+        String time = null;
+
+        if (record.getVisit() != null && record.getVisit().getCheckInTime() != null) {
+            date = record.getVisit().getCheckInTime().toLocalDate().toString();
+            time = record.getVisit().getCheckInTime().toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"));
+        }
+
+        String specialty = null;
+        String doctor = null;
+        if (record.getQueueTicket() != null && record.getQueueTicket().getService() != null) {
+            specialty = record.getQueueTicket().getService().getName();
+        }
+        if (record.getVisit() != null && record.getVisit().getAppointment() != null) {
+            var appt = record.getVisit().getAppointment();
+            // Hồ sơ cũ có thể chưa lưu dịch vụ trực tiếp trên queue ticket.
+            if (specialty == null && appt.getServices() != null && !appt.getServices().isEmpty()) {
+                specialty = appt.getServices().stream().findFirst()
+                        .map(s -> s.getName() != null ? s.getName() : "Khám bệnh")
+                        .orElse("Khám bệnh");
+            }
+        }
+        if (specialty == null) {
+            if (record.getQueueTicket() == null) specialty = "PARACLINICAL";
+            else specialty = "EXAMINATION";
+        }
+
+        if (record.getDoctor() != null && record.getDoctor().getProfile() != null && record.getDoctor().getProfile().getFullName() != null) {
+            doctor = "BS. " + record.getDoctor().getProfile().getFullName();
+        }
+
+        String statusStr = "pending";
+        if (record.getStatus() == MedicalRecordStatus.COMPLETED) {
+            statusStr = "completed";
+        } else if (record.getStatus() == MedicalRecordStatus.DRAFT) {
+            statusStr = "draft";
+        }
+
+        return new MedicalHistoryResponse(
+                record.getRecordId(),
+                record.getVisit() != null ? record.getVisit().getVisitId() : null,
+                record.getRecordCode(),
+                record.getVisit() != null
+                        ? "VIS-" + record.getVisit().getVisitId().toString().substring(0, 8).toUpperCase(java.util.Locale.ROOT)
+                        : null,
+                date,
+                time,
+                specialty,
+                doctor,
+                record.getDiagnosis(),
+                statusStr
+        );
+    }
+}

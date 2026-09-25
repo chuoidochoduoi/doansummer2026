@@ -1,0 +1,33 @@
+package vn.edu.fpt.cares.dto.staff;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Past;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+import vn.edu.fpt.cares.enums.SystemRole;
+
+import java.time.LocalDate;
+import java.util.UUID;
+
+public record StaffUpdateRequest(
+        // Phong chuyen mon duoc dieu chinh tai man Quan ly phong.
+        // Account & Profile
+        @Size(max = 50) String username,
+        @Size(min = 2, max = 100, message = "Họ tên phải có từ 2 đến 100 ký tự")
+        @Pattern(regexp = ".*\\S.*", message = "Họ tên không được để trống")
+        @Pattern(regexp = "^(?!.*\\p{N}).*$", message = "Họ tên không được chứa chữ số") String fullName,
+        @Pattern(regexp = "^$|^(\\+84|0)\\d{9,10}$", message = "Số điện thoại Việt Nam không hợp lệ") String phone,
+        @Email(message = "Email không hợp lệ") @Size(max = 255) String email,
+        @Past(message = "Ngày sinh phải là ngày trong quá khứ") LocalDate dateOfBirth,
+        @Pattern(regexp = "(?i)^(MALE|FEMALE)$", message = "Giới tính chỉ nhận MALE hoặc FEMALE") String gender,
+        @Size(max = 255) String address,
+        @Size(max = 2000000, message = "Dữ liệu ảnh đại diện quá lớn") String avatarUrl,
+
+        // StaffInfo
+        UUID specializationId,
+        SystemRole systemRole,
+        @Size(max = 20) String nationalId,
+        @Size(max = 100) String highestDegree,
+        @Size(max = 200) String university,
+        @Size(max = 50) String licenseNumber
+) {}

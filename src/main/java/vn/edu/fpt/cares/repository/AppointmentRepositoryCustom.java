@@ -1,0 +1,29 @@
+package vn.edu.fpt.cares.repository;
+
+import vn.edu.fpt.cares.model.Appointment;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Collection;
+import java.util.UUID;
+
+public interface AppointmentRepositoryCustom {
+    Page<Appointment> search(UUID customerId, String status,
+                            LocalDateTime from, LocalDateTime to, Pageable pageable);
+    
+    Page<Appointment> searchForCustomer(UUID customerId, String code, String specialty, String status, LocalDateTime from, LocalDateTime to, Pageable pageable);
+
+    Page<Appointment> searchForCustomers(Collection<UUID> customerIds, String code, String specialty,
+                                         String status, LocalDateTime from, LocalDateTime to, Pageable pageable);
+
+    List<Appointment> findByCustomerId(UUID customerId);
+
+    /**
+     * Tim cac appointment cua guest theo so dien thoai.
+     */
+    List<Appointment> findGuestAppointmentsByPhone(String phone);
+}
+
+

@@ -1,0 +1,936 @@
+package vn.edu.fpt.cares.service;
+
+import lombok.RequiredArgsConstructor;
+import vn.edu.fpt.cares.common.PageResponse;
+import vn.edu.fpt.cares.dto.invoice.InvoiceCreateRequest;
+import vn.edu.fpt.cares.dto.invoice.InvoiceItemCreateRequest;
+import vn.edu.fpt.cares.dto.invoice.InvoiceResponse;
+import vn.edu.fpt.cares.dto.invoice.InvoiceUpdateRequest;
+import vn.edu.fpt.cares.dto.invoice.InvoiceInsuranceRequest;
+import vn.edu.fpt.cares.dto.invoice.PaymentHistoryResponse;
+import vn.edu.fpt.cares.dto.invoice.ReceiptDetailResponse;
+import vn.edu.fpt.cares.dto.invoice.ReceiptPrintResponse;
+import vn.edu.fpt.cares.enums.PaymentMethod;
+import vn.edu.fpt.cares.exception.BadRequestException;
+import vn.edu.fpt.cares.exception.ConflictException;
+import vn.edu.fpt.cares.exception.ResourceNotFoundException;
+import vn.edu.fpt.cares.model.Invoice;
+import vn.edu.fpt.cares.model.InvoiceItem;
+import vn.edu.fpt.cares.enums.InvoiceStatus;
+import vn.edu.fpt.cares.model.MedicalRecord;
+import vn.edu.fpt.cares.model.MedicalService;
+import vn.edu.fpt.cares.model.CustomerVisit;
+import vn.edu.fpt.cares.model.Profile;
+import vn.edu.fpt.cares.model.StaffInfo;
+import vn.edu.fpt.cares.model.Department;
+import vn.edu.fpt.cares.enums.DepartmentType;
+import vn.edu.fpt.cares.enums.DepartmentStatus;
+import vn.edu.fpt.cares.enums.TransactionStatus;
+import vn.edu.fpt.cares.repository.InvoiceItemRepository;
+import vn.edu.fpt.cares.repository.InsuranceRepository;
+import vn.edu.fpt.cares.repository.InsuranceRuleRepository;
+import vn.edu.fpt.cares.repository.InvoiceRepository;
+import vn.edu.fpt.cares.repository.MedicalRecordRepository;
+import vn.edu.fpt.cares.repository.MedicalServiceRepository;
+import vn.edu.fpt.cares.repository.CustomerVisitRepository;
+import vn.edu.fpt.cares.repository.AccountRepository;
+import vn.edu.fpt.cares.repository.ProfileRepository;
+import vn.edu.fpt.cares.repository.StaffInfoRepository;
+import vn.edu.fpt.cares.repository.TransactionRepository;
+import vn.edu.fpt.cares.repository.MembershipCardLedgerRepository;
+import vn.edu.fpt.cares.repository.QueueTicketRepository;
+import vn.edu.fpt.cares.repository.TestRequestRepository;
+import vn.edu.fpt.cares.repository.DepartmentRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import vn.edu.fpt.cares.service.interfaces.InvoiceServiceInterface;
+import vn.edu.fpt.cares.service.interfaces.QueueTicketServiceInterface;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+
+@Service
+@Transactional
+@RequiredArgsConstructor
+public class InvoiceService implements InvoiceServiceInterface {
+
+    private static final java.time.ZoneId CLINIC_ZONE = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+
+    private final InvoiceRepository repo;
+    private final InvoiceItemRepository itemRepo;
+    private final TransactionRepository transactionRepo;
+    private final MembershipCardLedgerRepository membershipCardLedgerRepo;
+    private final ProfileRepository profileRepo;
+    private final CustomerVisitRepository visitRepo;
+    private final MedicalRecordRepository recordRepo;
+    private final StaffInfoRepository staffRepo;
+    private final MedicalServiceRepository serviceRepo;
+    private final AccountRepository accountRepo;
+    private final QueueTicketService queueTicketService;
+    private final TestRequestService testRequestService;
+    private final QueueTicketRepository queueTicketRepo;
+    private final TestRequestRepository testRequestRepo;
+    private final DepartmentRepository departmentRepo;
+    private final NotificationService notificationService;
+    private final SimpMessagingTemplate messagingTemplate;
+    private final InsuranceRepository insuranceRepository;
+    private final InsuranceRuleRepository insuranceRuleRepository;
+    private final BhxhIntegrationService bhxhIntegrationService;
+    private final SameDayParaclinicalResultService sameDayParaclinicalResultService;
+    private final MedicalServiceSelectionPolicyService serviceSelectionPolicyService;
+    private final PatientJourneyService patientJourneyService;
+
+    @Transactional(readOnly = true)
+    public PageResponse<InvoiceResponse> search(UUID customerId, InvoiceStatus status,
+                                                 String search, String category,
+                                                 LocalDate from, LocalDate to, Pageable pageable) {
+        String normalizedSearch = search == null || search.isBlank() ? null : search.trim().toLowerCase();
+        String normalizedCategory = category == null || category.isBlank() ? null : category.trim().toLowerCase();
+        Specification<Invoice> spec = (root, query, cb) -> cb.conjunction();
+
+        if (customerId != null) {
+            spec = spec.and((root, query, cb) ->
+                    cb.equal(root.get("customer").get("profileId"), customerId));
+        }
+        if (status != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        if (normalizedSearch != null) {
+            String pattern = "%" + normalizedSearch + "%";
+            spec = spec.and((root, query, cb) -> cb.or(
+                    cb.like(cb.lower(root.get("invoiceCode")), pattern),
+                    cb.like(cb.lower(root.get("customer").get("fullName")), pattern),
+                    cb.like(cb.lower(root.get("customer").get("phone")), pattern)
+            ));
+        }
+        if (normalizedCategory != null) {
+            String pattern = "%" + normalizedCategory + "%";
+            spec = spec.and((root, query, cb) -> {
+                var item = root.join("items", jakarta.persistence.criteria.JoinType.LEFT);
+                var medicalService = item.join("service", jakarta.persistence.criteria.JoinType.LEFT);
+                query.distinct(true);
+                return cb.or(
+                        cb.like(cb.lower(item.get("serviceSnapshot")), pattern),
+                        cb.like(cb.lower(medicalService.get("name")), pattern)
+                );
+            });
+        }
+        if (from != null) {
+            spec = spec.and((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("issueDate"), from));
+        }
+        if (to != null) {
+            spec = spec.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("issueDate"), to));
+        }
+
+        Pageable sortedPageable = pageable.getSort().isSorted()
+                ? pageable
+                : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<Invoice> page = repo.findAll(spec, sortedPageable);
+        return PageResponse.from(page, i -> {
+            List<UUID> txIds = transactionRepo.findByInvoice_InvoiceId(i.getInvoiceId()).stream()
+                    .map(t -> t.getTransactionId())
+                    .toList();
+            return InvoiceResponse.from(i, txIds);
+        });
+    }
+
+    @Transactional(readOnly = true)
+    public InvoiceResponse get(UUID id) {
+        Invoice i = repo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
+        List<UUID> txIds = transactionRepo.findByInvoice_InvoiceId(id).stream()
+                .map(t -> t.getTransactionId())
+                .toList();
+        return InvoiceResponse.from(i, txIds);
+    }
+
+    public InvoiceResponse create(InvoiceCreateRequest req) {
+        // Customer co the null cho guest vang lai check-in
+        Profile customer = null;
+        if (req.customerId() != null) {
+            customer = profileRepo.findById(req.customerId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Bệnh nhân không tồn tại: " + req.customerId()));
+        }
+        CustomerVisit visit = null;
+        if (req.visitId() != null) {
+            visit = visitRepo.findByIdForUpdate(req.visitId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + req.visitId()));
+        }
+        List<InvoiceItemCreateRequest> normalizedItems = normalizeItemRequests(req.items());
+        validateServiceRegistrations(normalizedItems, req.visitId(), null);
+        MedicalRecord record = null;
+        if (req.medicalRecordId() != null) {
+            record = recordRepo.findById(req.medicalRecordId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Hồ sơ bệnh án không tồn tại: " + req.medicalRecordId()));
+        }
+        if (normalizedItems != null && !normalizedItems.isEmpty() && visit == null) {
+            throw new BadRequestException("Hóa đơn dịch vụ phải được gắn với một lượt khám");
+        }
+        if (visit != null) {
+            if (customer == null) customer = visit.getCustomer();
+            if (customer == null || visit.getCustomer() == null
+                    || !customer.getProfileId().equals(visit.getCustomer().getProfileId())) {
+                throw new ConflictException("Bệnh nhân trên hóa đơn không khớp với lượt khám");
+            }
+        }
+        if (record != null && (record.getVisit() == null || visit == null
+                || !record.getVisit().getVisitId().equals(visit.getVisitId()))) {
+            throw new ConflictException("Bệnh án không thuộc lượt khám của hóa đơn");
+        }
+        StaffInfo issuedBy = null;
+        if (req.issuedById() != null) {
+            issuedBy = staffRepo.findById(req.issuedById())
+                    .orElseThrow(() -> new ResourceNotFoundException("Nhân viên lập hóa đơn không tồn tại"));
+        }
+        Invoice invoice = Invoice.builder()
+                .invoiceCode(generateInvoiceCode())
+                .customer(customer) // Co the null cho guest
+                .visit(visit)
+                .medicalRecord(record)
+                .issueDate(LocalDate.now(CLINIC_ZONE))
+                .dueDate(req.dueDate())
+                .subtotal(BigDecimal.ZERO)
+                .discount(req.discount() != null ? req.discount() : BigDecimal.ZERO)
+                .tax(req.tax() != null ? req.tax() : BigDecimal.ZERO)
+                .totalAmount(BigDecimal.ZERO)
+                .paidAmount(BigDecimal.ZERO)
+                .status(InvoiceStatus.PENDING)
+                .note(req.note())
+                .issuedBy(issuedBy)
+                .items(new ArrayList<>())
+                .build();
+        Invoice saved = repo.save(invoice);
+        if (normalizedItems != null) {
+            List<InvoiceItem> persistedItems = new ArrayList<>();
+            for (InvoiceItemCreateRequest itemReq : normalizedItems) {
+                /*
+                 * Invoice.items la phia mappedBy. Khong chi dua vao cascade cua
+                 * collection nay: o mot so luong tao luot kham (dac biet guest),
+                 * Invoice da duoc persist truoc khi item duoc them vao collection.
+                 * Luu owner InvoiceItem mot cach tuong minh de dam bao dong dich vu
+                 * ton tai truoc khi thu ngan thanh toan va dieu phoi hang cho.
+                 */
+                InvoiceItem item = buildItem(saved, itemReq);
+                persistedItems.add(itemRepo.save(item));
+            }
+            saved.getItems().addAll(persistedItems);
+        }
+        recalculateTotals(saved);
+        Invoice finalSaved = repo.save(saved);
+        notifyCashiers(finalSaved);
+        return InvoiceResponse.from(finalSaved);
+    }
+    
+    private void notifyCashiers(Invoice invoice) {
+        String patientName = invoice.getCustomer() != null ? invoice.getCustomer().getFullName() : (invoice.getVisit() != null && invoice.getVisit().getAppointment() != null ? invoice.getVisit().getAppointment().getGuestFullName() : "Khách");
+        if (patientName == null) patientName = "Khách";
+        String content = String.format("Có hóa đơn mới (Mã: %s) cần thanh toán từ bệnh nhân %s", invoice.getInvoiceCode(), patientName);
+
+        List<StaffInfo> cashiers = staffRepo.findAllBySystemRoleIn(List.of(vn.edu.fpt.cares.enums.SystemRole.CASHIER));
+        for (StaffInfo staff : cashiers) {
+            if (staff.getProfile() != null) {
+                try {
+                    notificationService.create(new vn.edu.fpt.cares.dto.notification.NotificationCreateRequest(
+                            staff.getProfile().getProfileId(),
+                            vn.edu.fpt.cares.enums.NotificationType.GENERAL,
+                            vn.edu.fpt.cares.enums.NotificationChannel.IN_APP,
+                            "Hóa đơn mới",
+                            content,
+                            "Invoice",
+                            invoice.getInvoiceId()
+                    ));
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
+        }
+    }
+
+    public InvoiceResponse update(UUID id, InvoiceUpdateRequest req) {
+        Invoice i = repo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
+        if (i.getStatus() != InvoiceStatus.PENDING) {
+            throw new ConflictException("Chỉ có thể sửa hóa đơn đang chờ thanh toán; trạng thái hiện tại: " + i.getStatus());
+        }
+        if (hasSuccessfulTransaction(id)) {
+            throw new ConflictException("Không thể sửa hóa đơn đã phát sinh giao dịch thanh toán thành công");
+        }
+        if (req.dueDate() != null) i.setDueDate(req.dueDate());
+        if (req.discount() != null) i.setDiscount(req.discount());
+        if (req.tax() != null) i.setTax(req.tax());
+        if (req.note() != null) i.setNote(req.note());
+        if (req.items() != null && !req.items().isEmpty()) {
+            List<InvoiceItemCreateRequest> normalizedItems = normalizeItemRequests(req.items());
+            validateServiceRegistrations(normalizedItems,
+                    i.getVisit() != null ? i.getVisit().getVisitId() : null, i.getInvoiceId());
+            itemRepo.deleteAll(i.getItems());
+            i.getItems().clear();
+            for (InvoiceItemCreateRequest itemReq : normalizedItems) {
+                i.getItems().add(buildItem(i, itemReq));
+            }
+        }
+        recalculateTotals(i);
+        return InvoiceResponse.from(repo.save(i));
+    }
+
+    public InvoiceResponse applyInsurance(UUID id, InvoiceInsuranceRequest req) {
+        Invoice invoice = repo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
+        if (invoice.getStatus() != InvoiceStatus.PENDING) {
+            throw new ConflictException("Chỉ có thể áp dụng bảo hiểm y tế khi hóa đơn đang chờ thanh toán");
+        }
+
+        if (hasSuccessfulTransaction(id)) {
+            throw new ConflictException("Không thể thay đổi bảo hiểm sau khi hóa đơn đã thu một phần");
+        }
+        var insurance = insuranceRepository.findById(req.insuranceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Bảo hiểm không tồn tại: " + req.insuranceId()));
+        var verification = bhxhIntegrationService.checkBhytCard(req.bhytCode().trim());
+        if (!verification.isValid()) {
+            throw new BadRequestException(verification.message());
+        }
+        if (verification.insuranceId() != null
+                && !verification.insuranceId().equals(insurance.getInsuranceId())) {
+            throw new BadRequestException("Mã thẻ không thuộc loại bảo hiểm đã chọn");
+        }
+        validateInsuranceIdentity(invoice, verification.fullName(), verification.dateOfBirth());
+
+        var rules = insuranceRuleRepository.findByInsurance_InsuranceId(insurance.getInsuranceId());
+        BigDecimal totalBhyt = BigDecimal.ZERO;
+        for (InvoiceItem item : invoice.getItems()) {
+            DepartmentType type = item.getService() != null ? item.getService().getDepartmentType() : null;
+            boolean individualAnalyte = item.getService() != null
+                    && item.getService().getServiceCode() != null
+                    && item.getService().getServiceCode().toUpperCase(java.util.Locale.ROOT).startsWith("AN-");
+            BigDecimal rate = individualAnalyte ? BigDecimal.ZERO : rules.stream()
+                    .filter(rule -> type != null && rule.getDepartmentType() == type)
+                    .map(rule -> rule.getDiscountPercent() != null ? rule.getDiscountPercent() : BigDecimal.ZERO)
+                    .findFirst()
+                    .orElse(BigDecimal.ZERO);
+            BigDecimal lineTotal = item.getLineTotal() != null ? item.getLineTotal() : BigDecimal.ZERO;
+            BigDecimal bhytAmount = lineTotal.multiply(rate)
+                    .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+            item.setDiscountPercent(rate);
+            item.setDiscountAmount(bhytAmount);
+            item.setBhytFund(bhytAmount);
+            item.setFinalPrice(lineTotal.subtract(bhytAmount));
+            totalBhyt = totalBhyt.add(bhytAmount);
+        }
+
+        invoice.getCustomer().setInsuranceId(req.bhytCode().trim());
+        profileRepo.save(invoice.getCustomer());
+        invoice.setDiscount(totalBhyt);
+        recalculateTotals(invoice);
+        return InvoiceResponse.from(repo.save(invoice));
+    }
+
+    private void validateInsuranceIdentity(Invoice invoice, String verifiedName, String verifiedDateOfBirth) {
+        if (invoice.getCustomer() == null
+                || invoice.getCustomer().getFullName() == null
+                || invoice.getCustomer().getDateOfBirth() == null) {
+            throw new BadRequestException(
+                    "Vui lòng cập nhật họ tên và ngày sinh bệnh nhân trước khi áp dụng BHYT");
+        }
+        if (verifiedName == null || verifiedName.isBlank()
+                || verifiedDateOfBirth == null || verifiedDateOfBirth.isBlank()) {
+            throw new BadRequestException("Hệ thống BHYT không trả đủ thông tin định danh người tham gia");
+        }
+
+        // --- BYPASS VALIDATION NẾU LÀ MOCK ---
+        if ("SKIP_VALIDATION".equals(verifiedName)) {
+            return; // Bỏ qua kiểm tra tên và ngày sinh
+        }
+        // -------------------------------------
+
+        if (!normalizePersonName(invoice.getCustomer().getFullName())
+                .equals(normalizePersonName(verifiedName))) {
+            throw new BadRequestException("Họ tên trên thẻ BHYT không khớp với bệnh nhân");
+        }
+        java.time.LocalDate verifiedDob = parseInsuranceDate(verifiedDateOfBirth);
+        if (!invoice.getCustomer().getDateOfBirth().equals(verifiedDob)) {
+            throw new BadRequestException("Ngày sinh trên thẻ BHYT không khớp với bệnh nhân");
+        }
+    }
+
+    private String normalizePersonName(String value) {
+        String normalized = java.text.Normalizer.normalize(value.trim(), java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .replace('đ', 'd').replace('Đ', 'D');
+        return normalized.replaceAll("\\s+", " ").toUpperCase(java.util.Locale.ROOT);
+    }
+
+    private java.time.LocalDate parseInsuranceDate(String value) {
+        String normalized = value.trim();
+        for (java.time.format.DateTimeFormatter formatter : java.util.List.of(
+                java.time.format.DateTimeFormatter.ISO_LOCAL_DATE,
+                java.time.format.DateTimeFormatter.ofPattern("dd/MM/uuuu"),
+                java.time.format.DateTimeFormatter.ofPattern("d/M/uuuu"))) {
+            try {
+                return java.time.LocalDate.parse(normalized, formatter);
+            } catch (java.time.format.DateTimeParseException ignored) {
+                // Thử định dạng tiếp theo.
+            }
+        }
+        throw new BadRequestException("Ngày sinh do hệ thống BHYT trả về không hợp lệ");
+    }
+
+    public InvoiceResponse issue(UUID id) {
+        Invoice i = findById(id);
+        if (i.getStatus() != InvoiceStatus.PENDING) {
+            throw new ConflictException("Chỉ có thể xuất hóa đơn đang chờ thanh toán; trạng thái hiện tại: " + i.getStatus());
+        }
+        if (i.getItems().isEmpty()) {
+            throw new BadRequestException("Không thể xuất hóa đơn không có dịch vụ nào");
+        }
+        i.setStatus(InvoiceStatus.PENDING);
+        return InvoiceResponse.from(repo.save(i));
+    }
+
+    public InvoiceResponse cancel(UUID id) {
+        Invoice i = repo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
+        if (i.getStatus() == InvoiceStatus.PAID) {
+            throw new ConflictException("Không thể hủy hóa đơn đã thanh toán; trạng thái hiện tại: " + i.getStatus());
+        }
+        boolean hasSuccess = transactionRepo.findByInvoice_InvoiceId(id).stream()
+                .anyMatch(t -> t.getStatus() == TransactionStatus.SUCCESS);
+        if (hasSuccess) {
+            throw new ConflictException("Không thể hủy vì hóa đơn đã có giao dịch thành công");
+        }
+        i.setStatus(InvoiceStatus.CANCELLED);
+        return InvoiceResponse.from(repo.save(i));
+    }
+
+    public InvoiceResponse pay(UUID id, UUID receivedById) {
+        Invoice i = repo.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
+        if (i.getStatus() == InvoiceStatus.PAID) {
+            /*
+             * Thanh toan la thao tac idempotent. Cac hoa don da PAID tu phien
+             * ban cu co the chua sinh TestRequest/QueueTicket; cho phep goi lai
+             * de tu phuc hoi workflow, tuyet doi khong tao giao dich thu tien moi.
+             */
+            createQueueTicketsFromInvoiceItems(i);
+            return InvoiceResponse.from(i);
+        }
+        if (i.getStatus() == InvoiceStatus.CANCELLED) {
+            throw new ConflictException("Không thể thanh toán hóa đơn đã hủy; trạng thái hiện tại: " + i.getStatus());
+        }
+        BigDecimal successfulPaid = transactionRepo.findByInvoice_InvoiceId(id).stream()
+                .filter(transaction -> transaction.getStatus() == TransactionStatus.SUCCESS)
+                .map(vn.edu.fpt.cares.model.Transaction::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal remaining = i.getTotalAmount().subtract(successfulPaid);
+        if (remaining.compareTo(BigDecimal.ZERO) < 0) {
+            throw new ConflictException("Số tiền đã thu đang lớn hơn tổng hóa đơn; vui lòng kiểm tra lịch sử giao dịch");
+        }
+        i.setPaidAmount(i.getTotalAmount());
+        i.setStatus(InvoiceStatus.PAID);
+        Invoice saved = repo.save(i);
+        StaffInfo cashier = receivedById != null
+                ? staffRepo.findById(receivedById)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thu ngân xác nhận thanh toán"))
+                : null;
+        if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+            transactionRepo.save(vn.edu.fpt.cares.model.Transaction.builder()
+                    .invoice(saved).transactionCode("PAY-" + saved.getInvoiceCode())
+                    .amount(remaining).paymentMethod(PaymentMethod.CASH)
+                    .status(TransactionStatus.SUCCESS).paidAt(java.time.LocalDateTime.now())
+                    .receivedBy(cashier).note("Thanh toan tai quay").build());
+        }
+        // Luon nap lai hoa don trong ham dieu phoi. Entity vua save co the chua
+        // mang quan he visit do LAZY loading, dan den hoa don CLS da PAID nhung
+        // bi bo qua viec tao hang cho.
+        createQueueTicketsFromInvoiceItems(saved);
+        return InvoiceResponse.from(saved);
+    }
+
+    public void delete(UUID id) {
+        findById(id);
+        throw new ConflictException("Không thể xóa hóa đơn. Hóa đơn chưa thanh toán chỉ được hủy; hóa đơn đã thanh toán phải được lưu lịch sử");
+    }
+
+    public Invoice findById(UUID id) {
+        return repo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
+    }
+
+    @Transactional(readOnly = true)
+    public ReceiptPrintResponse getReceiptPrintData(UUID id) {
+        Invoice invoice = repo.getWithDetailsByInvoiceId(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + id));
+        if (invoice.getStatus() != InvoiceStatus.PAID) {
+            throw new ConflictException("Chỉ có thể in phiếu thu sau khi hóa đơn đã thanh toán");
+        }
+        var payment = transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                id, TransactionStatus.SUCCESS).orElse(null);
+        var membershipLedger = payment == null ? null
+                : membershipCardLedgerRepo.findByPaymentTransaction_TransactionId(payment.getTransactionId()).orElse(null);
+        return ReceiptPrintResponse.from(invoice, payment, membershipLedger);
+    }
+
+    /** Recalculate paidAmount + status tuyen tu cac transaction SUCCESS. */
+    public void recalculatePaidAmount(UUID invoiceId) {
+        Invoice i = repo.findByIdForUpdate(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + invoiceId));
+        BigDecimal paid = transactionRepo.findByInvoice_InvoiceId(invoiceId).stream()
+                .filter(t -> t.getStatus() == TransactionStatus.SUCCESS)
+                .map(t -> t.getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        i.setPaidAmount(paid);
+        if (i.getStatus() == InvoiceStatus.CANCELLED) {
+            return;
+        }
+        int cmp = paid.compareTo(i.getTotalAmount());
+        if (cmp >= 0) {
+            i.setStatus(InvoiceStatus.PAID);
+        }  else if (i.getStatus() == InvoiceStatus.PAID ) {
+            i.setStatus(InvoiceStatus.PENDING);
+        }
+        Invoice saved = repo.save(i);
+        // Dung cung mot duong dieu phoi voi thanh toan tai quay; ham ben duoi tu
+        // nap quan he visit thay vi phu thuoc vao entity LAZY vua save.
+        if (saved.getStatus() == InvoiceStatus.PAID) {
+            createQueueTicketsFromInvoiceItems(saved);
+        }
+    }
+
+    /**
+     * Tao QueueTicket hoac TestRequest tu cac InvoiceItem sau khi thanh toan.
+     * - CLINICAL_EXAM: tao QueueTicket (xep hang cho bac si kham).
+     * - LAB_TEST, IMAGING, PROCEDURE: tao TestRequest (gui vao phong xet nghiem/CDHA/thu thuat tuong ung).
+     *
+     * Luong: Invoice(paid) -> TestRequest(PENDING = hang cho) -> TestResult -> TestRequest(COMPLETED).
+     * Moi TestRequest duoc lien ket voi InvoiceItem tuong ung de trace.
+     */
+    private void createQueueTicketsFromInvoiceItems(Invoice invoice) {
+        // Load invoice voi items, service, visit, medicalRecord, issuedBy
+        Invoice loaded = repo.getWithDetailsByInvoiceId(invoice.getInvoiceId())
+                .orElse(invoice);
+
+        UUID visitId = loaded.getVisit() != null ? loaded.getVisit().getVisitId() : null;
+        // Chi hoa don duoc tao tu man kham moi mang MedicalRecord nguon. Khong
+        // fallback sang ho so gan nhat cua visit, vi dich vu mua truc tiep khong
+        // duoc hieu nham la chi dinh cua bac si va ep quay lai phong kham.
+        UUID orderingMedicalRecordId = loaded.getMedicalRecord() != null
+                ? loaded.getMedicalRecord().getRecordId() : null;
+        UUID requestedById = loaded.getIssuedBy() != null ? loaded.getIssuedBy().getStaffId()
+                : transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                        loaded.getInvoiceId(), TransactionStatus.SUCCESS)
+                        .map(transaction -> transaction.getReceivedBy() != null
+                                ? transaction.getReceivedBy().getStaffId() : null)
+                        .orElse(null);
+        if (visitId == null) {
+            throw new BadRequestException("Hóa đơn có dịch vụ nhưng chưa gắn với lượt khám; không thể tạo hàng chờ");
+        }
+        // Invoice lock chi bao ve mot hoa don. Visit lock moi ngan hai hoa don
+        // cua cung luot cung mo hai buoc active khi thanh toan dong thoi.
+        visitRepo.findByIdForUpdate(visitId)
+                .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
+        boolean workflowActivated = queueTicketRepo.findAllByVisit_VisitId(visitId).stream()
+                .anyMatch(ticket -> ticket.getStatus() != vn.edu.fpt.cares.enums.QueueStatus.BLOCKED
+                        && ticket.getStatus() != vn.edu.fpt.cares.enums.QueueStatus.DONE
+                        && ticket.getStatus() != vn.edu.fpt.cares.enums.QueueStatus.SKIPPED
+                        && ticket.getStatus() != vn.edu.fpt.cares.enums.QueueStatus.WAITING_FOR_TEST)
+                || testRequestRepo.findAllByMedicalRecord_Visit_VisitId(visitId).stream()
+                // Ket qua van co the duoc xu ly sau khi benh nhan da roi phong.
+                // Chi request cu chua co QueueTicket moi dai dien mot buoc vat ly.
+                .anyMatch(test -> test.getQueueTicket() == null
+                        && (test.getStatus() == vn.edu.fpt.cares.enums.TestRequestStatus.PENDING
+                        || test.getStatus() == vn.edu.fpt.cares.enums.TestRequestStatus.IN_PROGRESS));
+
+        // Doc truc tiep tu InvoiceItem. Day la diem quan trong: Invoice.items la
+        // mappedBy + LAZY; neu collection cua entity vua luu chua dong bo thi vong
+        // lap rong va thanh toan da PAID nhung khong sinh TestRequest nao.
+        var workflowItems = new ArrayList<>(itemRepo.findAllWithServiceByInvoiceId(loaded.getInvoiceId()));
+        if (workflowItems.isEmpty()) {
+            // visitId is mandatory for this workflow and was validated above.
+            throw new BadRequestException("Hóa đơn của lượt khám chưa có dịch vụ. Vui lòng thêm dịch vụ trước khi thanh toán");
+        }
+        workflowItems.sort(java.util.Comparator
+                // Neu mot luot co ca kham benh va CLS, benh nhan phai vao phong
+                // kham truoc. workflowPriority chi sap xep ben trong cung nhom.
+                .comparing((InvoiceItem item) -> item.getService() == null
+                        || item.getService().getDepartmentType() != DepartmentType.EXAMINATION)
+                .thenComparing((InvoiceItem item) -> item.getService() != null && item.getService().getWorkflowPriority() != null ? item.getService().getWorkflowPriority() : 1, java.util.Comparator.reverseOrder())
+                .thenComparing((InvoiceItem item) -> item.getService() != null
+                                ? item.getService().getServiceCode() : null,
+                        java.util.Comparator.nullsLast(String::compareTo))
+                .thenComparing((InvoiceItem item) -> item.getService() != null && item.getService().getResultWaitMinutes() != null ? item.getService().getResultWaitMinutes() : 0, java.util.Comparator.reverseOrder()));
+        int dispatchedItemCount = 0;
+        // Mot luot co the co nhieu dich vu kham cua cung mot chuyen khoa.
+        // Chon phong mot lan tai day de cac benh an sau co the tiep noi cung
+        // phong, thay vi moi dich vu lai can bang tai doc lap.
+        Map<UUID, Department> examinationRoomsBySpecialization = new HashMap<>();
+        for (InvoiceItem item : workflowItems) {
+            MedicalService service = item.getService();
+            // Hoa don cu co the chi luu snapshot. Van phai dieu phoi sau thanh toan
+            // neu ma dich vu con ton tai trong danh muc.
+            if (service == null && item.getServiceCodeSnapshot() != null) {
+                service = serviceRepo.findByServiceCode(item.getServiceCodeSnapshot()).orElse(null);
+            }
+            // Dich vu can lam sang duoc xep phong dong theo danh muc ky thuat,
+            // nen khong bat buoc gan san department tren dich vu.
+            if (service == null) {
+                throw new BadRequestException("Không xác định được dịch vụ của dòng hóa đơn: "
+                        + item.getServiceSnapshot());
+            }
+
+            DepartmentType departmentType = service.getDepartmentType();
+            if (departmentType == DepartmentType.EXAMINATION) {
+                Department performingRoom = selectExaminationRoomForVisit(
+                        service, examinationRoomsBySpecialization);
+                boolean examinationQueueAlreadyExists = queueTicketRepo
+                        .findTopByVisit_VisitIdAndService_ServiceIdOrderByCreatedAtDesc(
+                                visitId, service.getServiceId())
+                        .isPresent();
+                // CLINICAL_EXAM: tao QueueTicket cho bac si kham
+                var ticket = queueTicketService.create(new vn.edu.fpt.cares.dto.queueticket.QueueTicketCreateRequest(
+                        visitId,
+                        performingRoom.getDepartmentId(),
+                        service.getServiceId(),
+                        null
+                ));
+                // Retry thanh toan/PayOS callback co the quay lai hoa don PAID.
+                // Khong bao gio block lai QueueTicket da ton tai; chi xep BLOCKED
+                // cho mot buoc vua duoc tao sau mot buoc active khac.
+                if (!examinationQueueAlreadyExists && workflowActivated) {
+                    queueTicketRepo.findById(ticket.ticketId()).ifPresent(blocked -> {
+                        blocked.setStatus(vn.edu.fpt.cares.enums.QueueStatus.BLOCKED);
+                        queueTicketRepo.save(blocked);
+                    });
+                } else if (!examinationQueueAlreadyExists) {
+                    workflowActivated = true;
+                }
+                dispatchedItemCount++;
+            } else if (departmentType != null && departmentType.isParaclinical()) {
+                // TestRequestService tim queue theo visit + phong truoc khi tao.
+                // Nhieu dich vu cung phong se dung chung mot QueueTicket.
+                testRequestService.createFromPaidInvoice(
+                        visitId,
+                        orderingMedicalRecordId,
+                        service.getServiceId(),
+                        requestedById,
+                        item.getNote() != null ? item.getNote() : service.getName(),
+                        item.getItemId()
+                );
+                // Khong block sau khi da tao: trang thai duoc quyet dinh ngay
+                // luc TestRequestService tim/tao ticket cua phong.
+                workflowActivated = true;
+                dispatchedItemCount++;
+            } else {
+                throw new BadRequestException("Dịch vụ '" + service.getName()
+                        + "' chưa có nhóm điều phối hợp lệ");
+            }
+        }
+        // Tao xong toan bo phiếu cua hoa don moi mo buoc ke tiep. Neu mo trong
+        // luc dang tao tung dong, mot phong CLS co the bi mo som trong khi phong
+        // khac cua cung dot van chua duoc gan vao chuoi dieu phoi.
+        // activateNext() tu kiem tra buoc dang hoat dong, nen hoa don kham ban
+        // dau van giu nguoi benh o phong kham; hoa don chi dinh CLS se mo dung
+        // phong CLS dau tien khi bac si da chuyen ho so sang WAITING_FOR_TEST.
+        patientJourneyService.activateNext(visitId);
+    }
+
+    // --- helpers ---
+
+    /**
+     * Dịch vụ khám được cấu hình theo chuyên khoa; phòng vật lý được chọn lúc
+     * thanh toán để có thể có nhiều phòng cùng một chuyên khoa. Giữ fallback
+     * cho dữ liệu dịch vụ cũ còn gắn phòng trực tiếp.
+     */
+    private Department selectExaminationRoom(MedicalService service) {
+        if (hasConfiguredExaminationRoom(service)) {
+            return service.getDepartment();
+        }
+
+        if (service.getRequiredSpecialization() == null) {
+            throw new BadRequestException("Dịch vụ khám bệnh '" + service.getName()
+                    + "' chưa được cấu hình chuyên khoa phục vụ");
+        }
+
+        return departmentRepo.findEligibleExaminationRoomsBySpecialization(
+                        service.getRequiredSpecialization().getSpecializationId())
+                .stream()
+                .min(java.util.Comparator
+                        .comparing((Department room) -> !hasDoctorMember(room))
+                        .thenComparingLong(room -> queueTicketRepo
+                                .countActiveTicketsByDepartment(room.getDepartmentId())))
+                .orElseThrow(() -> new BadRequestException("Chưa có phòng khám sẵn sàng "
+                        + "cho chuyen khoa '" + service.getRequiredSpecialization().getName()
+                        + "' cua dich vu '" + service.getName() + "'"));
+    }
+
+    /**
+     * Giu phong da chon trong pham vi mot luot + mot chuyen khoa. Phong gan
+     * truc tiep tren dich vu cu van uu tien; neu hai dich vu cu gan hai phong
+     * khac nhau, moi dich vu van dung phong da cau hinh va khong bi ep doi.
+     */
+    private Department selectExaminationRoomForVisit(
+            MedicalService service, Map<UUID, Department> roomsBySpecialization) {
+        if (hasConfiguredExaminationRoom(service)) {
+            Department configuredRoom = service.getDepartment();
+            if (service.getRequiredSpecialization() != null) {
+                roomsBySpecialization.putIfAbsent(
+                        service.getRequiredSpecialization().getSpecializationId(), configuredRoom);
+            }
+            return configuredRoom;
+        }
+
+        if (service.getRequiredSpecialization() == null) {
+            throw new BadRequestException("Dịch vụ khám bệnh '" + service.getName()
+                    + "' chưa được cấu hình chuyên khoa phục vụ");
+        }
+
+        UUID specializationId = service.getRequiredSpecialization().getSpecializationId();
+        return roomsBySpecialization.computeIfAbsent(specializationId,
+                ignored -> selectExaminationRoom(service));
+    }
+
+    private boolean hasConfiguredExaminationRoom(MedicalService service) {
+        return service.getDepartment() != null
+                && service.getDepartment().getDepartmentType() == DepartmentType.EXAMINATION
+                && service.getDepartment().getStatus() != DepartmentStatus.MAINTENANCE
+                && hasDoctorMember(service.getDepartment());
+    }
+
+    private boolean hasDoctorMember(Department department) {
+        return staffRepo.findByDepartment_DepartmentId(department.getDepartmentId()).stream()
+                .anyMatch(staff -> staff.getSystemRole() != null && staff.getSystemRole().isDoctor()
+                        && staff.getProfile() != null && staff.getProfile().getAccount() != null
+                        && Boolean.TRUE.equals(staff.getProfile().getAccount().getIsActive()));
+    }
+
+    private InvoiceItem buildItem(Invoice invoice, InvoiceItemCreateRequest req) {
+        if (req.serviceId() == null) {
+            throw new BadRequestException("Dòng hóa đơn chưa chọn dịch vụ");
+        }
+        MedicalService service = serviceRepo.findById(req.serviceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Dịch vụ không tồn tại: " + req.serviceId()));
+        if (service.getStatus() != vn.edu.fpt.cares.enums.ServiceStatus.ACTIVE) {
+            throw new ConflictException("Dịch vụ " + service.getName() + " hiện không áp dụng");
+        }
+        if (invoice.getVisit() != null && service.getDepartmentType() != null
+                && service.getDepartmentType().isParaclinical()
+                && sameDayParaclinicalResultService.hasReusableResult(
+                        invoice.getVisit(), service.getServiceId())) {
+            throw new ConflictException(
+                    "Dịch vụ cận lâm sàng này đã có kết quả được ký trong ngày; không được tạo hóa đơn lại"
+            );
+        }
+        // Gia dich vu luon lay tu danh muc backend; khong tin gia frontend gui len.
+        BigDecimal unitPrice = service.getPrice();
+        BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(req.quantity()));
+        BigDecimal discountAmount = req.discountAmount() != null ? req.discountAmount() : BigDecimal.ZERO;
+        if (discountAmount.compareTo(BigDecimal.ZERO) < 0 || discountAmount.compareTo(lineTotal) > 0) {
+            throw new BadRequestException("Số tiền giảm giá của dịch vụ không hợp lệ");
+        }
+        return InvoiceItem.builder()
+                .invoice(invoice)
+                .service(service)
+                .serviceSnapshot(service.getName())
+                .serviceCodeSnapshot(service.getServiceCode())
+                .unitPrice(unitPrice)
+                .quantity(req.quantity())
+                .discountPercent(req.discountPercent() != null ? req.discountPercent() : BigDecimal.ZERO)
+                .discountAmount(discountAmount)
+                .finalPrice(lineTotal.subtract(discountAmount))
+                .lineTotal(lineTotal)
+                .note(req.note())
+                .build();
+    }
+
+    private void validateServiceRegistrations(List<InvoiceItemCreateRequest> items,
+                                              UUID visitId, UUID excludedInvoiceId) {
+        if (items == null || items.isEmpty()) return;
+        java.util.List<UUID> requestedServiceIds = items.stream()
+                .map(InvoiceItemCreateRequest::serviceId)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        if (requestedServiceIds.size() != new java.util.HashSet<>(requestedServiceIds).size()) {
+            throw new BadRequestException("Không được thêm trùng dịch vụ trong cùng một hóa đơn");
+        }
+        java.util.Set<UUID> requestedExaminations = requestedServiceIds.stream()
+                .map(serviceRepo::findById)
+                .flatMap(java.util.Optional::stream)
+                .filter(service -> service.getDepartmentType() != null
+                        && service.getDepartmentType().normalized() == DepartmentType.EXAMINATION)
+                .map(MedicalService::getServiceId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (visitId != null) {
+            CustomerVisit targetVisit = visitRepo.findById(visitId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Lượt khám không tồn tại: " + visitId));
+            if (serviceSelectionPolicyService != null) {
+                serviceSelectionPolicyService.validateAgainstExisting(requestedServiceIds,
+                        itemRepo.findDistinctActiveServiceIdsByVisit(visitId, excludedInvoiceId));
+            }
+            if (targetVisit.getCustomer() != null && !requestedExaminations.isEmpty()) {
+                profileRepo.findByIdForUpdate(targetVisit.getCustomer().getProfileId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
+                LocalDate businessDate = targetVisit.getCheckInTime().toLocalDate();
+                itemRepo.findSameDayExaminationRegistrations(
+                                targetVisit.getCustomer().getProfileId(),
+                                businessDate.atStartOfDay(), businessDate.plusDays(1).atStartOfDay(),
+                                excludedInvoiceId)
+                        .stream()
+                        .filter(existingItem -> existingItem.getInvoice().getVisit() != null
+                                && !existingItem.getInvoice().getVisit().getVisitId().equals(visitId)
+                                && existingItem.getService() != null
+                                && requestedExaminations.contains(existingItem.getService().getServiceId()))
+                        .findFirst()
+                        .ifPresent(existingItem -> {
+                            String code = "VIS-" + existingItem.getInvoice().getVisit().getVisitId().toString()
+                                    .replace("-", "").substring(0, 8).toUpperCase();
+                            throw new ConflictException("Dịch vụ " + existingItem.getService().getName()
+                                    + " đã được đăng ký hôm nay trong lượt " + code);
+                        });
+            }
+            java.util.List<UUID> existing = itemRepo.findDistinctExaminationServiceIdsByVisit(
+                    visitId, excludedInvoiceId);
+            if (existing.stream().anyMatch(requestedExaminations::contains)) {
+                throw new BadRequestException("Dịch vụ khám bệnh này đã có trong lượt khám hiện tại");
+            }
+            java.util.Set<UUID> queuedExaminations = queueTicketRepo.findAllByVisit_VisitId(visitId).stream()
+                    .filter(ticket -> ticket.getService() != null
+                            && ticket.getService().getDepartmentType() != null
+                            && ticket.getService().getDepartmentType().normalized() == DepartmentType.EXAMINATION)
+                    .map(ticket -> ticket.getService().getServiceId())
+                    .collect(java.util.stream.Collectors.toSet());
+            if (queuedExaminations.stream().anyMatch(requestedExaminations::contains)) {
+                throw new BadRequestException("Dịch vụ khám bệnh này đã có trong lượt khám hiện tại");
+            }
+        }
+        // Mot luot co the co nhieu dich vu kham. Moi dich vu se duoc dieu phoi
+        // bang QueueTicket rieng va tao MedicalRecord rieng khi bac si bat dau.
+    }
+
+    private void recalculateTotals(Invoice i) {
+        BigDecimal subtotal = i.getItems().stream()
+                .map(it -> it.getLineTotal())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        i.setSubtotal(subtotal);
+        BigDecimal total = subtotal.subtract(i.getDiscount()).add(i.getTax());
+        if (total.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BadRequestException("Tổng tiền không hợp lệ; vui lòng kiểm tra giảm giá và thuế");
+        }
+        i.setTotalAmount(total);
+    }
+
+    private List<InvoiceItemCreateRequest> normalizeItemRequests(List<InvoiceItemCreateRequest> items) {
+        if (items == null || items.isEmpty()) return items;
+        if (serviceSelectionPolicyService == null) return items;
+        java.util.Set<UUID> retainedIds = serviceSelectionPolicyService.normalizeOrThrow(
+                        items.stream().map(InvoiceItemCreateRequest::serviceId).toList())
+                .stream().map(MedicalService::getServiceId)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+        return items.stream().filter(item -> retainedIds.contains(item.serviceId())).toList();
+    }
+
+    private boolean hasSuccessfulTransaction(UUID invoiceId) {
+        return transactionRepo.findByInvoice_InvoiceId(invoiceId).stream()
+                .anyMatch(transaction -> transaction.getStatus() == TransactionStatus.SUCCESS);
+    }
+
+    private String generateInvoiceCode() {
+        String prefix = "INV-" + LocalDate.now(CLINIC_ZONE).format(DateTimeFormatter.ofPattern("yyyyMMdd")) + "-";
+        for (int attempt = 0; attempt < 3; attempt++) {
+            String suffix = String.format("%06X",
+                    ThreadLocalRandom.current().nextInt(0, 0xFFFFFF));
+            String code = prefix + suffix;
+            if (!repo.existsByInvoiceCode(code)) return code;
+        }
+        throw new ConflictException("Không thể tạo mã hóa đơn sau 3 lần thử");
+    }
+
+    /**
+     * Lich su thanh toan cho benh nhan.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<PaymentHistoryResponse> getPaymentHistoryForPatient(UUID customerId,
+                                                                        LocalDate from, LocalDate to,
+                                                                        PaymentMethod paymentMethod,
+                                                                        Pageable pageable) {
+        Pageable sortedPageable = pageable.getSort().isSorted() ? pageable
+                : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));
+        var page = repo.findAll(searchForPatientSpec(customerId, from, to, paymentMethod), sortedPageable);
+        // Eager fetch customer, items de tranh LazyInitializationException
+        page.getContent().forEach(invoice -> {
+            if (invoice.getCustomer() != null) {
+                invoice.getCustomer().getFullName();
+            }
+            invoice.getItems().size();
+        });
+
+        return PageResponse.from(page, invoice -> {
+            var latestTx = transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                    invoice.getInvoiceId(), vn.edu.fpt.cares.enums.TransactionStatus.SUCCESS);
+            return PaymentHistoryResponse.from(invoice, latestTx.orElse(null));
+        });
+    }
+
+    private org.springframework.data.jpa.domain.Specification<Invoice> searchForPatientSpec(
+            UUID customerId, LocalDate from, LocalDate to, PaymentMethod paymentMethod) {
+        return (root, query, cb) -> {
+            var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+
+            if (customerId != null) {
+                predicates.add(cb.equal(root.get("customer").get("profileId"), customerId));
+            }
+            predicates.add(cb.equal(root.get("status"), InvoiceStatus.PAID));
+            if (from != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("issueDate"), from));
+            }
+            if (to != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("issueDate"), to));
+            }
+            if (paymentMethod != null) {
+                var subquery = query.subquery(UUID.class);
+                var tx = subquery.from(vn.edu.fpt.cares.model.Transaction.class);
+                subquery.select(tx.get("invoice").get("invoiceId"));
+                subquery.where(
+                        cb.equal(tx.get("invoice").get("invoiceId"), root.get("invoiceId")),
+                        cb.equal(tx.get("paymentMethod"), paymentMethod),
+                        cb.equal(tx.get("status"), TransactionStatus.SUCCESS)
+                );
+                predicates.add(cb.exists(subquery));
+            }
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+    }
+
+    /**
+     * Chi tiet phieu thu cho benh nhan.
+     */
+    @Transactional(readOnly = true)
+    public ReceiptDetailResponse getReceiptDetail(UUID invoiceId, UUID customerId) {
+        Invoice invoice = repo.findById(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hóa đơn không tồn tại: " + invoiceId));
+        // Kiem tra quyen: invoice phai thuoc ve khach hang nay
+        if (invoice.getCustomer() == null || !invoice.getCustomer().getProfileId().equals(customerId)) {
+            throw new ResourceNotFoundException("Không tìm thấy hóa đơn");
+        }
+        if (invoice.getStatus() != InvoiceStatus.PAID) {
+            throw new ConflictException("Chỉ có thể xem phiếu thu của hóa đơn đã thanh toán");
+        }
+        var payment = transactionRepo.findTopByInvoice_InvoiceIdAndStatusOrderByPaidAtDesc(
+                invoiceId, TransactionStatus.SUCCESS).orElse(null);
+        var membershipLedger = payment == null ? null
+                : membershipCardLedgerRepo.findByPaymentTransaction_TransactionId(payment.getTransactionId()).orElse(null);
+        return ReceiptDetailResponse.from(invoice, payment, membershipLedger);
+    }
+}

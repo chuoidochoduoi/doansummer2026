@@ -1,0 +1,23 @@
+package vn.edu.fpt.cares.repository;
+
+import vn.edu.fpt.cares.model.ServiceCategory;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface ServiceCategoryRepository extends JpaRepository<ServiceCategory, UUID> {
+
+    boolean existsByName(String name);
+    boolean existsByNameIgnoreCase(String name);
+    boolean existsByNameIgnoreCaseAndCategoryIdNot(String name, UUID categoryId);
+
+    Optional<ServiceCategory> findByName(String name);
+
+    boolean existsByParentCategory_CategoryId(UUID categoryId);
+}
+
+
+
